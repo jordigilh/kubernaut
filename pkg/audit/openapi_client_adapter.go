@@ -20,9 +20,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // ========================================
@@ -73,7 +76,7 @@ import (
 // - Preserves retry semantics (4xx not retryable, 5xx retryable)
 // - Supports same interface (drop-in replacement)
 type OpenAPIClientAdapter struct {
-	client  *dsgen.ClientWithResponses
+	client  *ogenclient.Client
 	baseURL string
 	timeout time.Duration
 }
@@ -102,6 +105,23 @@ type OpenAPIClientAdapter struct {
 //
 // Authority: DD-API-001 (OpenAPI Generated Client MANDATORY for V1.0)
 func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorageClient, error) {
+	return NewOpenAPIClientAdapterWithTransport(baseURL, timeout, nil)
+}
+
+// NewOpenAPIClientAdapterWithTransport creates a DataStorageClient with custom transport.
+// This constructor allows integration tests to inject mock auth transports.
+//
+// Production Usage (transport=nil):
+//   client := audit.NewOpenAPIClientAdapter(url, timeout)
+//   // Uses ServiceAccountTransport automatically
+//
+// Integration Test Usage (transport=mockTransport):
+//   mockTransport := testutil.NewMockUserTransport("test-user@example.com")
+//   client := audit.NewOpenAPIClientAdapterWithTransport(url, timeout, mockTransport)
+//   // Uses mock transport (injects X-Auth-Request-User header)
+//
+// DD-AUTH-005: Integration tests use this to inject mock user headers without oauth-proxy.
+func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) (DataStorageClient, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("baseURL cannot be empty")
 	}
@@ -110,20 +130,39 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 		timeout = 5 * time.Second // Default timeout
 	}
 
-	// Create HTTP client with configured timeout
-	httpClient := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
+	// ========================================
+	// DD-AUTH-005: Inject authentication transport
+	// Production (transport=nil): Uses ServiceAccountTransport (ALL 7 Go services)
+	// Integration tests (transport!=nil): Uses provided mock transport
+	//
+	// The ServiceAccount transport:
+	// - Reads ServiceAccount token from /var/run/secrets/kubernetes.io/serviceaccount/token
+	// - Caches token for 5 minutes (reduces filesystem I/O)
+	// - Injects Authorization: Bearer <token> header on every request
+	// - Gracefully degrades if token file doesn't exist (local dev)
+	//
+	// See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
+	// ========================================
+	if transport == nil {
+		// Production: Use ServiceAccount transport (default)
+		baseTransport := &http.Transport{
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 100,
 			IdleConnTimeout:     90 * time.Second,
-		},
+		}
+		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
 	}
 
-	// Create generated OpenAPI client (DD-API-001 compliant)
-	client, err := dsgen.NewClientWithResponses(baseURL, dsgen.WithHTTPClient(httpClient))
+	// Create HTTP client with auth transport (ServiceAccount or mock)
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: transport, // ← ServiceAccount token injection (or mock for tests)
+	}
+
+	// Create ogen-generated OpenAPI client (DD-API-001 compliant)
+	client, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(httpClient))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
+		return nil, fmt.Errorf("failed to create ogen client: %w", err)
 	}
 
 	return &OpenAPIClientAdapter{
@@ -150,46 +189,67 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 //
 // Authority: DD-API-001 (OpenAPI Generated Client MANDATORY)
 // Related: DD-AUDIT-002 (Audit Shared Library Design)
-func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
+func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
 	if len(events) == 0 {
 		return nil // No events to write
 	}
 
 	// Convert []*AuditEventRequest to []AuditEventRequest (value slice)
 	// The generated client expects a value slice, not pointer slice
-	valueEvents := make([]dsgen.AuditEventRequest, len(events))
+	valueEvents := make([]ogenclient.AuditEventRequest, len(events))
 	for i, event := range events {
 		if event != nil {
 			valueEvents[i] = *event
 		}
 	}
 
-	// ✅ DD-API-001 COMPLIANCE: Use generated OpenAPI client instead of direct HTTP
+	// ✅ DD-API-001 COMPLIANCE: Use ogen-generated OpenAPI client
 	// Type-safe parameters, contract-validated request/response
-	resp, err := a.client.CreateAuditEventsBatchWithResponse(ctx, valueEvents)
+	resp, err := a.client.CreateAuditEventsBatch(ctx, valueEvents)
 	if err != nil {
-		// Network-level error (connection failure, timeout, DNS resolution)
-		// These are retryable per GAP-11 retry logic
-		return NewNetworkError(err)
+		// Parse HTTP status code from ogen error if present
+		// Ogen errors for non-2xx responses contain "unexpected status code: XXX"
+		return parseOgenError(err)
 	}
 
-	// Check response status code (same logic as HTTPDataStorageClient)
-	statusCode := resp.StatusCode()
-	if statusCode < 200 || statusCode >= 300 {
-		// HTTP error (4xx client error or 5xx server error)
-		// GAP-11: 4xx NOT retryable (invalid data), 5xx retryable (server issue)
-		message := http.StatusText(statusCode)
-
-		// Try to extract error message from response body if available
-		// Note: CreateAuditEventsBatchResponse only has JSON201 field for success
-		// Error responses are in the raw HTTPResponse body
-		if resp.HTTPResponse != nil && len(resp.Body) > 0 {
-			message = string(resp.Body)
-		}
-
-		return NewHTTPError(statusCode, message)
-	}
+	// Ogen returns typed response directly, no status code checking needed
+	// Errors are returned via err parameter above
+	_ = resp // Response contains BatchAuditEventResponse
 
 	// Success (2xx status code)
 	return nil
+}
+
+// parseOgenError extracts HTTP status code from ogen errors and returns appropriate error type.
+//
+// Ogen returns errors for non-2xx responses with message format:
+// "decode response: unexpected status code: 400"
+//
+// This function:
+// - Extracts the status code from the error message
+// - Returns HTTPError for 4xx/5xx codes (with correct retry semantics)
+// - Returns NetworkError for other errors (connection failures, timeouts)
+//
+// Error Type Mapping (compatible with HTTPDataStorageClient):
+// - 4xx: HTTPError (NOT retryable - client errors)
+// - 5xx: HTTPError (retryable - server errors)
+// - Other: NetworkError (retryable - network failures)
+func parseOgenError(err error) error {
+	errMsg := err.Error()
+
+	// Check for HTTP status code in ogen error message
+	// Format: "decode response: unexpected status code: 400"
+	if strings.Contains(errMsg, "unexpected status code:") {
+		parts := strings.Split(errMsg, "unexpected status code:")
+		if len(parts) == 2 {
+			statusStr := strings.TrimSpace(parts[1])
+			if statusCode, parseErr := strconv.Atoi(statusStr); parseErr == nil {
+				// Create HTTPError with extracted status code (include full error)
+				return NewHTTPError(statusCode, fmt.Sprintf("HTTP %d error: %s", statusCode, errMsg))
+			}
+		}
+	}
+
+	// Not an HTTP error - treat as network error (connection failure, timeout, etc.)
+	return NewNetworkError(err)
 }

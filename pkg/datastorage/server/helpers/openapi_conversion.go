@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -52,7 +52,7 @@ import (
 // Returns:
 //   - *audit.AuditEvent: Internal audit event ready for storage
 //   - error: Conversion error (e.g., invalid event_data JSON)
-func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent, error) {
+func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEvent, error) {
 	// Convert event_data from map to JSON bytes
 	eventDataJSON, err := json.Marshal(req.EventData)
 	if err != nil {
@@ -61,23 +61,23 @@ func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent
 
 	// Extract optional fields with defaults
 	actorType := "service" // Default
-	if req.ActorType != nil {
-		actorType = *req.ActorType
+	if req.ActorType.IsSet() {
+		actorType = req.ActorType.Value
 	}
 
 	actorID := string(req.EventCategory) + "-service" // Default: category-service
-	if req.ActorId != nil {
-		actorID = *req.ActorId
+	if req.ActorID.IsSet() {
+		actorID = req.ActorID.Value
 	}
 
 	resourceType := string(req.EventCategory) // Default
-	if req.ResourceType != nil {
-		resourceType = *req.ResourceType
+	if req.ResourceType.IsSet() {
+		resourceType = req.ResourceType.Value
 	}
 
-	resourceID := req.CorrelationId // Default
-	if req.ResourceId != nil {
-		resourceID = *req.ResourceId
+	resourceID := req.CorrelationID // Default
+	if req.ResourceID.IsSet() {
+		resourceID = req.ResourceID.Value
 	}
 
 	// Build internal audit event
@@ -93,30 +93,31 @@ func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent
 		ActorID:        actorID,
 		ResourceType:   resourceType,
 		ResourceID:     resourceID,
-		CorrelationID:  req.CorrelationId,
+		CorrelationID:  req.CorrelationID,
 		EventData:      eventDataJSON,
 	}
 
-	// Optional fields
-	if req.ParentEventId != nil {
-		parentUUID := uuid.UUID(*req.ParentEventId)
+	// Optional fields (ogen OptNil types)
+	if req.ParentEventID.IsSet() {
+		parentUUID := req.ParentEventID.Value
 		event.ParentEventID = &parentUUID
 	}
 
-	if req.Namespace != nil {
-		event.Namespace = req.Namespace
+	if req.Namespace.IsSet() {
+		event.Namespace = &req.Namespace.Value
 	}
 
-	if req.ClusterName != nil {
-		event.ClusterName = req.ClusterName
+	if req.ClusterName.IsSet() {
+		event.ClusterName = &req.ClusterName.Value
 	}
 
-	if req.Severity != nil {
-		event.Severity = req.Severity
+	if req.Severity.IsSet() {
+		event.Severity = &req.Severity.Value
 	}
 
-	if req.DurationMs != nil {
-		event.DurationMs = req.DurationMs
+	if req.DurationMs.IsSet() {
+		durationValue := int(req.DurationMs.Value)
+		event.DurationMs = &durationValue
 	}
 
 	return event, nil
@@ -195,10 +196,10 @@ func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEv
 //   - event: Repository audit event from database
 //
 // Returns:
-//   - dsclient.AuditEventResponse: OpenAPI response type
-func ConvertToAuditEventResponse(event *repository.AuditEvent) dsclient.AuditEventResponse {
-	return dsclient.AuditEventResponse{
-		EventId:        event.EventID,
+//   - ogenclient.AuditEventResponse: OpenAPI response type
+func ConvertToAuditEventResponse(event *repository.AuditEvent) ogenclient.AuditEventResponse {
+	return ogenclient.AuditEventResponse{
+		EventID:        event.EventID,
 		EventTimestamp: event.EventTimestamp,
 		Message:        fmt.Sprintf("audit event %s created successfully", event.EventID),
 	}
@@ -223,7 +224,7 @@ func ConvertToAuditEventResponse(event *repository.AuditEvent) dsclient.AuditEve
 //
 // Returns:
 //   - error: Validation error if any business rules violated
-func ValidateAuditEventRequest(req *dsclient.AuditEventRequest) error {
+func ValidateAuditEventRequest(req *ogenclient.AuditEventRequest) error {
 	// BR-STORAGE-034: OpenAPI middleware now handles:
 	// - ✅ Required fields (including empty strings via minLength: 1)
 	// - ✅ Enum validation (event_outcome)

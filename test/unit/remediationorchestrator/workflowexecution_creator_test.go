@@ -35,7 +35,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("WorkflowExecutionCreator", func() {
@@ -68,8 +68,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -84,8 +84,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -105,9 +105,9 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 
 		It("should return existing name when WorkflowExecution already exists per BR-ORCH-025 idempotency", func() {
 			// Arrange
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
-			existingWE := testutil.NewWorkflowExecution("we-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			existingWE := helpers.NewWorkflowExecution("we-test-remediation", "default")
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingWE).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			ctx := context.Background()
@@ -124,8 +124,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -161,7 +161,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 	Describe("BuildTargetResourceString", func() {
 		It("should format namespaced resources as 'namespace/kind/name' per BR-ORCH-025", func() {
 			// Arrange
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
 
 			// Act
 			result := creator.BuildTargetResourceString(rr)
@@ -172,8 +172,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 
 		It("should format cluster-scoped Node as 'kind/name' per BR-ORCH-025", func() {
 			// Arrange - Node is cluster-scoped, factory sets empty namespace
-			rr := testutil.NewRemediationRequest("test-remediation", "default",
-				testutil.RemediationRequestOpts{TargetKind: "Node", TargetName: "worker-1"})
+			rr := helpers.NewRemediationRequest("test-remediation", "default",
+				helpers.RemediationRequestOpts{TargetKind: "Node", TargetName: "worker-1"})
 
 			// Act
 			result := creator.BuildTargetResourceString(rr)
@@ -184,8 +184,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 
 		It("should format cluster-scoped PersistentVolume as 'kind/name' per BR-ORCH-025", func() {
 			// Arrange - PersistentVolume is cluster-scoped, factory sets empty namespace
-			rr := testutil.NewRemediationRequest("pv-test", "default",
-				testutil.RemediationRequestOpts{TargetKind: "PersistentVolume", TargetName: "my-pv"})
+			rr := helpers.NewRemediationRequest("pv-test", "default",
+				helpers.RemediationRequestOpts{TargetKind: "PersistentVolume", TargetName: "my-pv"})
 
 			// Act
 			result := creator.BuildTargetResourceString(rr)
@@ -201,8 +201,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				// Arrange
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 				weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-				rr := testutil.NewRemediationRequest("test-remediation", "default")
-				ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
+				ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 				setupAI(ai)
 				ctx := context.Background()
 
@@ -236,8 +236,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 					},
 				}).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -257,8 +257,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 					},
 				}).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -276,13 +276,13 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			executingTimeout := metav1.Duration{Duration: 30 * 60 * 1000000000} // 30 minutes
-			rr := testutil.NewRemediationRequest("test-remediation", "default",
-				testutil.RemediationRequestOpts{
+			rr := helpers.NewRemediationRequest("test-remediation", "default",
+				helpers.RemediationRequestOpts{
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Executing: &executingTimeout,
 					},
 				})
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -303,8 +303,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default")
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act
@@ -323,13 +323,13 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := testutil.NewRemediationRequest("test-remediation", "default",
-				testutil.RemediationRequestOpts{
+			rr := helpers.NewRemediationRequest("test-remediation", "default",
+				helpers.RemediationRequestOpts{
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						// No timeout override (uses defaults)
 					},
 				})
-			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
 
 			// Act

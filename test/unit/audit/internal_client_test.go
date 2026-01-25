@@ -26,12 +26,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	audit "github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // Helper to create test event for internal client tests
-// DD-AUDIT-002 V2.0: Uses OpenAPI types
-func createInternalTestEvent(resourceID string) *dsgen.AuditEventRequest {
+// DD-AUDIT-002 V2.0: Uses OpenAPI types with ogen union constructors
+func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, "datastorage.audit.written")
@@ -41,7 +41,16 @@ func createInternalTestEvent(resourceID string) *dsgen.AuditEventRequest {
 	audit.SetActor(event, "service", "datastorage")
 	audit.SetResource(event, "AuditEvent", resourceID)
 	audit.SetCorrelationID(event, "test-correlation-id")
-	audit.SetEventData(event, map[string]interface{}{"version": "1.0", "service": "datastorage"})
+
+	// Use GatewayAuditPayload as generic test payload (ogen migration - discriminated union)
+	payload := ogenclient.GatewayAuditPayload{
+		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+		AlertName:   "test-alert",
+		Namespace:   "default",
+		Fingerprint: "test-fingerprint",
+	}
+	audit.SetEventData(event, ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload))
 	return event
 }
 
@@ -114,6 +123,24 @@ var _ = Describe("InternalAuditClient", func() {
 				// BEHAVIOR: Writes directly to PostgreSQL (not HTTP)
 				// DD-AUDIT-002 V2.0: OpenAPI types don't have EventID, RetentionDays, IsSensitive
 				// (those are database-specific and generated server-side)
+				// Extract OptString values for mock expectations (InternalAuditClient unwraps these)
+				actorType := ""
+				if event.ActorType.IsSet() {
+					actorType = event.ActorType.Value
+				}
+				actorID := ""
+				if event.ActorID.IsSet() {
+					actorID = event.ActorID.Value
+				}
+				resourceType := ""
+				if event.ResourceType.IsSet() {
+					resourceType = event.ResourceType.Value
+				}
+				resourceID := ""
+				if event.ResourceID.IsSet() {
+					resourceID = event.ResourceID.Value
+				}
+
 				mock.ExpectBegin()
 				mock.ExpectPrepare("INSERT INTO audit_events")
 				mock.ExpectExec("INSERT INTO audit_events").
@@ -125,20 +152,20 @@ var _ = Describe("InternalAuditClient", func() {
 						event.EventType,
 						event.EventCategory,
 						event.EventAction,
-						event.EventOutcome,
-						event.ActorType,
-						event.ActorId, // Note: lowercase 'd' in OpenAPI type
-						event.ResourceType,
-						event.ResourceId,    // Note: lowercase 'd' in OpenAPI type
-						event.CorrelationId, // Note: lowercase 'd' in OpenAPI type
-						sqlmock.AnyArg(),    // event_data (JSONB)
-						sqlmock.AnyArg(),    // retention_days (database default)
-						sqlmock.AnyArg(),    // is_sensitive (database default)
+						string(event.EventOutcome), // event_outcome (enum converted to string)
+						actorType,                  // actor_type (OptString unwrapped)
+						actorID,                    // actor_id (OptString unwrapped)
+						resourceType,               // resource_type (OptString unwrapped)
+						resourceID,                 // resource_id (OptString unwrapped)
+						event.CorrelationID,        // correlation_id (plain string)
+						sqlmock.AnyArg(),           // event_data (JSONB)
+						sqlmock.AnyArg(),           // retention_days (database default)
+						sqlmock.AnyArg(),           // is_sensitive (database default)
 					).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 				mock.ExpectCommit()
 
-				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
+				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{event})
 
 				// CORRECTNESS: Write succeeds without REST API call
 				Expect(err).ToNot(HaveOccurred())
@@ -162,7 +189,7 @@ var _ = Describe("InternalAuditClient", func() {
 				audit.SetEventOutcome(event2, audit.OutcomeFailure)
 				audit.SetCorrelationID(event2, "correlation-2")
 
-				events := []*dsgen.AuditEventRequest{event1, event2}
+				events := []*ogenclient.AuditEventRequest{event1, event2}
 
 				// BEHAVIOR: Single transaction with multiple inserts
 				mock.ExpectBegin()
@@ -190,7 +217,7 @@ var _ = Describe("InternalAuditClient", func() {
 				// BR-STORAGE-014: Must not waste resources on empty operations
 
 				// BEHAVIOR: No database calls for empty batch
-				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{})
+				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{})
 
 				// CORRECTNESS: No error, no database calls
 				Expect(err).ToNot(HaveOccurred())
@@ -210,7 +237,7 @@ var _ = Describe("InternalAuditClient", func() {
 				// BEHAVIOR: Database connection fails
 				mock.ExpectBegin().WillReturnError(fmt.Errorf("connection refused"))
 
-				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
+				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned gracefully (no panic)
 				Expect(err).To(HaveOccurred())
@@ -236,7 +263,7 @@ var _ = Describe("InternalAuditClient", func() {
 				mock.ExpectCommit().WillReturnError(fmt.Errorf("disk full"))
 				mock.ExpectRollback()
 
-				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
+				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned, transaction rolled back
 				Expect(err).To(HaveOccurred())
@@ -260,7 +287,7 @@ var _ = Describe("InternalAuditClient", func() {
 					WillReturnError(fmt.Errorf("constraint violation"))
 				mock.ExpectRollback()
 
-				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
+				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned, transaction rolled back
 				Expect(err).To(HaveOccurred())
@@ -281,7 +308,7 @@ var _ = Describe("InternalAuditClient", func() {
 				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Context cancellation handled
-				err := client.StoreBatch(cancelCtx, []*dsgen.AuditEventRequest{event})
+				err := client.StoreBatch(cancelCtx, []*ogenclient.AuditEventRequest{event})
 
 				// CORRECTNESS: Error indicates context cancellation
 				Expect(err).To(HaveOccurred())

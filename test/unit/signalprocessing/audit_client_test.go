@@ -38,18 +38,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
 // MockAuditStore implements pkg/audit.AuditStore for testing
 // Updated for DD-AUDIT-002 V2.0.1 to use OpenAPI types directly
 type MockAuditStore struct {
-	StoredEvents []*dsgen.AuditEventRequest
+	StoredEvents []*ogenclient.AuditEventRequest
 	StoreError   error
 }
 
-func (m *MockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	if m.StoreError != nil {
 		return m.StoreError
 	}
@@ -117,11 +117,11 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
 				Expect(event.EventType).To(Equal("signalprocessing.signal.processed"))
-				Expect(event.EventCategory).To(Equal(dsgen.AuditEventRequestEventCategory("signalprocessing")))
+				Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategory("signalprocessing")))
 				Expect(event.EventAction).To(Equal("processed"))
-				Expect(event.EventOutcome).To(Equal(dsgen.AuditEventRequestEventOutcome("success")))
-				Expect(*event.ResourceType).To(Equal("SignalProcessing"))
-				Expect(*event.ResourceId).To(Equal("completed"))
+				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("success")))
+				Expect(event.ResourceType.Value).To(Equal("SignalProcessing"))
+				Expect(event.ResourceID.Value).To(Equal("completed"))
 			})
 
 			// AC-HP-02: Record failed signal processing
@@ -134,7 +134,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventOutcome).To(Equal(dsgen.AuditEventRequestEventOutcome("failure")))
+				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
 			})
 		})
 	})
@@ -173,7 +173,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 					SLARequirement: "silver",
 				}
 
-				auditClient.RecordClassificationDecision(ctx, sp)
+				auditClient.RecordClassificationDecision(ctx, sp, 125) // 125ms duration
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
@@ -205,8 +205,8 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
 				Expect(event.EventType).To(Equal("signalprocessing.enrichment.completed"))
-				Expect(event.DurationMs).ToNot(BeNil())
-				Expect(*event.DurationMs).To(Equal(150))
+				Expect(event.DurationMs.IsSet()).To(BeTrue())
+				Expect(event.DurationMs.Value).To(Equal(150))
 			})
 		})
 	})
@@ -218,19 +218,19 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 				sp := createTestSignalProcessing("error-test")
 				testErr := errors.New("connection timeout")
 
-				auditClient.RecordError(ctx, sp, "enriching", testErr)
+				auditClient.RecordError(ctx, sp, "Enriching", testErr)
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
 				Expect(event.EventType).To(Equal("signalprocessing.error.occurred"))
-				Expect(event.EventOutcome).To(Equal(dsgen.AuditEventRequestEventOutcome("failure")))
-				// Error message is stored in EventData (DD-AUDIT-002 V2.0.1)
-				Expect(event.EventData).ToNot(BeNil())
-				eventDataMap, ok := event.EventData.(map[string]interface{})
-				Expect(ok).To(BeTrue(), "EventData should be a map")
-				errorMsg, ok := eventDataMap["error"].(string)
-				Expect(ok).To(BeTrue())
-				Expect(errorMsg).To(Equal("connection timeout"))
+				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
+				// Error message is stored in structured EventData (DD-AUDIT-004 V2.2)
+				// EventData is a discriminated union, access via GetSignalProcessingAuditPayload
+				payload, ok := event.EventData.GetSignalProcessingAuditPayload()
+				Expect(ok).To(BeTrue(), "EventData should be SignalProcessingAuditPayload")
+				Expect(payload.Error.IsSet()).To(BeTrue())
+				Expect(payload.Error.Value).To(Equal("connection timeout"))
+				Expect(payload.Phase).To(Equal(ogenclient.SignalProcessingAuditPayloadPhaseEnriching))
 			})
 		})
 	})
@@ -298,7 +298,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 			// Third call succeeds
 			mockStore.StoreError = nil
-			auditClient.RecordClassificationDecision(ctx, sp)
+			auditClient.RecordClassificationDecision(ctx, sp, 100) // 100ms duration
 			Expect(mockStore.StoredEvents).To(HaveLen(2))
 		})
 	})
@@ -319,7 +319,7 @@ func createTestSignalProcessing(name string) *signalprocessingv1alpha1.SignalPro
 			Signal: signalprocessingv1alpha1.SignalData{
 				Fingerprint: "test-fingerprint-abc123def456abc123def456abc123def456abc123d",
 				Name:        "TestSignal",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

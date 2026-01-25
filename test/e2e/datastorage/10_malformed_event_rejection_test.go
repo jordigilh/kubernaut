@@ -29,6 +29,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+
+	"github.com/google/uuid"
 )
 
 // ========================================
@@ -368,7 +370,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 	Describe("Malformed Event NOT Persisted", func() {
 		It("should NOT persist malformed events to database", func() {
 			// ARRANGE: Use unique correlation_id for test isolation (DD-TEST-002)
-			testCorrelationID := fmt.Sprintf("test-not-persisted-%d", time.Now().UnixNano())
+			testCorrelationID := fmt.Sprintf("test-not-persisted-%s", uuid.New().String()[:8])
 
 			// ACT: POST malformed event
 			malformedEvent := map[string]interface{}{

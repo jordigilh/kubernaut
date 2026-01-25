@@ -85,9 +85,11 @@
 5. **Timeout Tracking** - TokenReview/SubjectAccessReview timeouts
 
 ### **Business Requirements**
-- **BR-GATEWAY-010**: Implement comprehensive Prometheus metrics
-- **BR-GATEWAY-011**: Health and readiness endpoints
-- **BR-GATEWAY-012**: Observability for debugging 503/OOM issues
+- ~~**BR-GATEWAY-010**~~ ❌ **REMOVED** (Storm State Recovery - obsolete December 13, 2025)
+- **BR-GATEWAY-066-070**: Implement comprehensive Prometheus metrics (correct BR range)
+- **BR-GATEWAY-011**: Deduplication (correct - not health endpoints)
+- **BR-GATEWAY-012**: Deduplication TTL (correct)
+- **Observability**: For debugging 503/OOM issues (no specific BR assigned)
 - **BR-GATEWAY-013**: TokenReview/SubjectAccessReview timeout tracking
 - **BR-GATEWAY-014**: K8s API latency monitoring
 

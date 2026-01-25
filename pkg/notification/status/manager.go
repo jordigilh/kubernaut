@@ -7,6 +7,7 @@ import (
 
 	k8sretry "k8s.io/client-go/util/retry"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -15,13 +16,22 @@ import (
 
 // Manager handles NotificationRequest status updates
 type Manager struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // Bypasses cache for fresh reads (DD-STATUS-001)
 }
 
 // NewManager creates a new status manager
-func NewManager(client client.Client) *Manager {
+//
+// DD-STATUS-001: API Reader for Cache-Bypassed Refetches
+// The apiReader parameter is critical for resolving cache consistency issues
+// during rapid status updates (e.g., retries). It reads directly from the API
+// server instead of the controller-runtime cache, preventing lost updates.
+//
+// See: docs/services/crd-controllers/06-notification/design/DD-STATUS-001-api-reader-cache-bypass.md
+func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	return &Manager{
-		client: client,
+		client:    client,
+		apiReader: apiReader,
 	}
 }
 
@@ -32,8 +42,8 @@ func NewManager(client client.Client) *Manager {
 // See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, attempt notificationv1alpha1.DeliveryAttempt) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
 
@@ -43,11 +53,25 @@ func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notif
 		// 3. Update counters
 		notification.Status.TotalAttempts++
 
-		if attempt.Status == "success" {
-			notification.Status.SuccessfulDeliveries++
-		} else if attempt.Status == "failed" {
-			notification.Status.FailedDeliveries++
+		// BR-NOT-051: Calculate counters based on UNIQUE CHANNELS, not total attempts
+		// DD-E2E-003: SuccessfulDeliveries/FailedDeliveries track channel state, not attempt count
+		successfulChannels := make(map[string]bool)
+		failedChannels := make(map[string]bool)
+
+		for _, a := range notification.Status.DeliveryAttempts {
+			if a.Status == "success" {
+				successfulChannels[a.Channel] = true
+				delete(failedChannels, a.Channel) // Remove from failed if it later succeeds
+			} else if a.Status == "failed" {
+				// Only count as failed if the channel never succeeded
+				if !successfulChannels[a.Channel] {
+					failedChannels[a.Channel] = true
+				}
+			}
 		}
+
+		notification.Status.SuccessfulDeliveries = len(successfulChannels)
+		notification.Status.FailedDeliveries = len(failedChannels)
 
 		// 4. Update status using status subresource
 		if err := m.client.Status().Update(ctx, notification); err != nil {
@@ -75,10 +99,15 @@ func (m *Manager) AtomicStatusUpdate(
 	attempts []notificationv1alpha1.DeliveryAttempt,
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
+
+		// DD-STATUS-001: Debug logging to diagnose cache issues
+		ctrl.Log.WithName("status-manager").Info("🔍 DD-STATUS-001: API reader refetch complete",
+			"deliveryAttemptsBeforeUpdate", len(notification.Status.DeliveryAttempts),
+			"newAttemptsToAdd", len(attempts))
 
 		// 2. Validate phase transition (if phase is changing)
 		if notification.Status.Phase != newPhase {
@@ -100,13 +129,19 @@ func (m *Manager) AtomicStatusUpdate(
 
 		// 3. Record all delivery attempts atomically
 		// De-duplicate attempts to prevent concurrent reconciles from recording the same attempt twice
+		// BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly identical attempts
+		// Previous logic rejected legitimate failed attempts with same attempt# due to API propagation lag
 		for _, attempt := range attempts {
-			// Check if this exact attempt already exists (same channel, attempt number, timestamp within 1 second)
+			// Check if this exact attempt already exists (same channel, timestamp, status, and error message)
+			// We NO LONGER check attempt number because concurrent reconciles can assign the same attempt#
+			// before the previous status update propagates (even with apiReader cache bypass).
 			alreadyExists := false
 			for _, existing := range notification.Status.DeliveryAttempts {
 				if existing.Channel == attempt.Channel &&
-					existing.Attempt == attempt.Attempt &&
+					existing.Status == attempt.Status &&
+					existing.Error == attempt.Error &&
 					abs(existing.Timestamp.Time.Sub(attempt.Timestamp.Time)) < time.Second {
+					// Truly identical attempt (same error message at same time)
 					alreadyExists = true
 					break
 				}
@@ -118,13 +153,28 @@ func (m *Manager) AtomicStatusUpdate(
 
 			notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
 			notification.Status.TotalAttempts++
+		}
 
+		// BR-NOT-051: Calculate counters based on UNIQUE CHANNELS, not total attempts
+		// DD-E2E-003: SuccessfulDeliveries/FailedDeliveries track channel state, not attempt count
+		// Example: 1 console success + 5 file failures = SuccessfulDeliveries=1, FailedDeliveries=1
+		successfulChannels := make(map[string]bool)
+		failedChannels := make(map[string]bool)
+
+		for _, attempt := range notification.Status.DeliveryAttempts {
 			if attempt.Status == "success" {
-				notification.Status.SuccessfulDeliveries++
+				successfulChannels[attempt.Channel] = true
+				delete(failedChannels, attempt.Channel) // Remove from failed if it later succeeds
 			} else if attempt.Status == "failed" {
-				notification.Status.FailedDeliveries++
+				// Only count as failed if the channel never succeeded
+				if !successfulChannels[attempt.Channel] {
+					failedChannels[attempt.Channel] = true
+				}
 			}
 		}
+
+		notification.Status.SuccessfulDeliveries = len(successfulChannels)
+		notification.Status.FailedDeliveries = len(failedChannels)
 
 		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
 		notification.Status.ObservedGeneration = notification.Generation
@@ -148,8 +198,8 @@ func (m *Manager) AtomicStatusUpdate(
 // See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
 

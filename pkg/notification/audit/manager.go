@@ -48,7 +48,20 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+)
+
+// Event type constants for Notification audit events (from OpenAPI spec)
+const (
+	EventTypeMessageSent         = "notification.message.sent"
+	EventTypeMessageFailed       = "notification.message.failed"
+	EventTypeMessageAcknowledged = "notification.message.acknowledged"
+	EventTypeMessageEscalated    = "notification.message.escalated"
+)
+
+// Event category constant (from OpenAPI spec)
+const (
+	EventCategoryNotification = "notification"
 )
 
 // Manager provides helper functions for creating notification audit events
@@ -96,9 +109,9 @@ func NewManager(serviceName string) *Manager {
 //   - channel: The delivery channel (e.g., "slack", "email")
 //
 // Returns:
-//   - *dsgen.AuditEventRequest: The created audit event (OpenAPI type)
+//   - *ogenclient.AuditEventRequest: The created audit event (OpenAPI type)
 //   - error: Error if event creation fails (e.g., nil notification, empty channel)
-func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.NotificationRequest, channel string) (*dsgen.AuditEventRequest, error) {
+func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.NotificationRequest, channel string) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -107,42 +120,45 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 		return nil, fmt.Errorf("channel cannot be empty")
 	}
 
-	// Extract correlation ID (BR-NOT-064: Use remediation_id for tracing)
-	// Use metadata["remediationRequestName"] as correlation_id
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
+	// MANDATORY: Use RemediationRequest.Name as correlation_id (not UID)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications (not part of remediation workflow)
 		correlationID = string(notification.UID)
 	}
 
-	// Build structured event_data payload (DD-AUDIT-004: Type-safe audit events)
-	payload := MessageSentEventData{
+	// Build structured event_data payload using OpenAPI-generated type (DD-AUDIT-004 V2.0)
+	// Single source of truth: api/openapi/data-storage-v1.yaml
+	payload := ogenclient.NotificationMessageSentPayload{
 		NotificationID: notification.Name,
 		Channel:        channel,
 		Subject:        notification.Spec.Subject,
 		Body:           notification.Spec.Body,
 		Priority:       string(notification.Spec.Priority),
 		Type:           string(notification.Spec.Type),
-		Metadata:       notification.Spec.Metadata, // nil-safe: omitted from JSON if nil
+	}
+	// Set optional metadata if present
+	if notification.Spec.Metadata != nil {
+		payload.Metadata.SetTo(notification.Spec.Metadata)
 	}
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.sent")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageSent)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "sent")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
-	// V2.2: Direct assignment - no conversion needed (DD-AUDIT-004 v1.3)
-	audit.SetEventData(event, payload)
+	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
+	event.EventData = ogenclient.NewNotificationMessageSentPayloadAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -160,11 +176,11 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 //   - err: The error that caused the failure
 //
 // Returns:
-//   - *dsgen.AuditEventRequest: The created audit event with error details in event_data (OpenAPI type)
+//   - *ogenclient.AuditEventRequest: The created audit event with error details in event_data (OpenAPI type)
 //   - error: Error if event creation fails (e.g., nil notification, empty channel)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.NotificationRequest, channel string, err error) (*dsgen.AuditEventRequest, error) {
+func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.NotificationRequest, channel string, err error) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -173,44 +189,47 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 		return nil, fmt.Errorf("channel cannot be empty")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 
-	// Build structured event_data payload (DD-AUDIT-004: Type-safe audit events)
-	payload := MessageFailedEventData{
+	// Build structured event_data payload using OpenAPI-generated type (DD-AUDIT-004 V2.0)
+	payload := ogenclient.NotificationMessageFailedPayload{
 		NotificationID: notification.Name,
 		Channel:        channel,
 		Subject:        notification.Spec.Subject,
-		Body:           notification.Spec.Body, // NT-E2E-001 Fix: Include body for validation
+		Body:           notification.Spec.Body,
 		Priority:       string(notification.Spec.Priority),
-		ErrorType:      "transient",                // Default to transient (retry possible)
-		Metadata:       notification.Spec.Metadata, // nil-safe: omitted from JSON if nil
+		ErrorType:      "transient", // Default to transient (retry possible)
 	}
+	// Set optional metadata if present
+	if notification.Spec.Metadata != nil {
+		payload.Metadata.SetTo(notification.Spec.Metadata)
+	}
+	// Set optional error message if present
 	if err != nil {
-		payload.Error = err.Error() // empty-safe: omitted from JSON if empty
+		payload.Error.SetTo(err.Error())
 	}
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.failed")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageFailed)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "sent") // Action was "sent" (attempted), outcome is "failure"
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
-	// V2.2: Direct assignment - no conversion needed (DD-AUDIT-004 v1.3)
-	audit.SetEventData(event, payload)
+	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
+	event.EventData = ogenclient.NewNotificationMessageFailedPayloadAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -226,48 +245,50 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 //   - notification: The NotificationRequest CRD
 //
 // Returns:
-//   - *dsgen.AuditEventRequest: The created audit event (OpenAPI type)
+//   - *ogenclient.AuditEventRequest: The created audit event (OpenAPI type)
 //   - error: Error if event creation fails (e.g., nil notification)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alpha1.NotificationRequest) (*dsgen.AuditEventRequest, error) {
+func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alpha1.NotificationRequest) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 
-	// Build structured event_data payload (DD-AUDIT-004: Type-safe audit events)
-	payload := MessageAcknowledgedEventData{
+	// Build structured event_data payload using OpenAPI-generated type (DD-AUDIT-004 V2.0)
+	payload := ogenclient.NotificationMessageAcknowledgedPayload{
 		NotificationID: notification.Name,
 		Subject:        notification.Spec.Subject,
 		Priority:       string(notification.Spec.Priority),
-		Metadata:       notification.Spec.Metadata, // nil-safe: omitted from JSON if nil
+	}
+	// Set optional metadata if present
+	if notification.Spec.Metadata != nil {
+		payload.Metadata.SetTo(notification.Spec.Metadata)
 	}
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.acknowledged")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageAcknowledged)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "acknowledged")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
-	// V2.2: Direct assignment - no conversion needed (DD-AUDIT-004 v1.3)
-	audit.SetEventData(event, payload)
+	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
+	event.EventData = ogenclient.NewNotificationMessageAcknowledgedPayloadAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -283,59 +304,51 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 //   - notification: The NotificationRequest CRD
 //
 // Returns:
-//   - *dsgen.AuditEventRequest: The created audit event (OpenAPI type)
+//   - *ogenclient.AuditEventRequest: The created audit event (OpenAPI type)
 //   - error: Error if event creation fails (e.g., nil notification)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1.NotificationRequest) (*dsgen.AuditEventRequest, error) {
+func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1.NotificationRequest) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 
-	// Build structured event_data payload (DD-AUDIT-004: Type-safe audit events)
-	payload := MessageEscalatedEventData{
+	// Build structured event_data payload using OpenAPI-generated type (DD-AUDIT-004 V2.0)
+	payload := ogenclient.NotificationMessageEscalatedPayload{
 		NotificationID: notification.Name,
 		Subject:        notification.Spec.Subject,
 		Priority:       string(notification.Spec.Priority),
 		Reason:         fmt.Sprintf("Escalated due to %s priority", notification.Spec.Priority),
-		Metadata:       notification.Spec.Metadata, // nil-safe: omitted from JSON if nil
+	}
+	// Set optional metadata if present
+	if notification.Spec.Metadata != nil {
+		payload.Metadata.SetTo(notification.Spec.Metadata)
 	}
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.escalated")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageEscalated)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "escalated")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
-	// V2.2: Direct assignment - no conversion needed (DD-AUDIT-004 v1.3)
-	audit.SetEventData(event, payload)
+	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
+	event.EventData = ogenclient.NewNotificationMessageEscalatedPayloadAuditEventRequestEventData(payload)
 
 	return event, nil
 }
-
-
-
-
-
-
-
-
-
-

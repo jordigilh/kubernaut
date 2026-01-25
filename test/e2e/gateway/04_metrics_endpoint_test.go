@@ -25,13 +25,12 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 04: Metrics Endpoint (BR-GATEWAY-017)
@@ -44,16 +43,15 @@ import (
 // - BR-GATEWAY-017: Gateway must expose Prometheus metrics for observability
 var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "metrics")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -61,18 +59,9 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("Test 04: Metrics Endpoint (BR-GATEWAY-017) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("metrics-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient = getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
-
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "metrics")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -90,10 +79,8 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			return
 		}
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
+		// Clean up test namespace (Pattern: RO E2E)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		if testCancel != nil {
 			testCancel()
@@ -145,7 +132,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("")
 		testLogger.Info("Step 3: Send alert and verify metrics update")
 
-		alertName := fmt.Sprintf("MetricsTest-%d", time.Now().UnixNano())
+		alertName := fmt.Sprintf("MetricsTest-%s", uuid.New().String()[:8])
 		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: alertName,
 			Namespace: testNamespace,

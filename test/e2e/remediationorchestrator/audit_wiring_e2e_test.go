@@ -39,11 +39,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -59,7 +59,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			testNamespace string
 			testRR        *remediationv1.RemediationRequest
 			correlationID string
-			dsClient      *dsgen.ClientWithResponses
+			dsClient      *dsgen.Client
 		)
 
 		BeforeEach(func() {
@@ -69,7 +69,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
 			var err error
-			dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+			dsClient, err = dsgen.NewClient(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 			// Create RemediationRequest
@@ -102,21 +102,12 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
-			// Get UID as correlation ID
-			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      testRR.Name,
-					Namespace: testNamespace,
-				}, testRR); err != nil {
-					return false
-				}
-				return testRR.UID != ""
-			}, e2eTimeout, e2eInterval).Should(BeTrue())
+		// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+		// Per universal standard: All services use RemediationRequest.Name for audit correlation
+		correlationID = testRR.Name
 
-			correlationID = string(testRR.UID)
-
-			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (UID: %s)\n",
-				testNamespace, testRR.Name, correlationID)
+		GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
+			testNamespace, testRR.Name, correlationID)
 		})
 
 		AfterEach(func() {
@@ -128,33 +119,27 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 		// Per DD-API-001: Direct HTTP is FORBIDDEN - this uses type-safe client
 		queryAuditEvents := func(correlationID string) ([]dsgen.AuditEvent, int, error) {
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
-			eventCategory := "orchestration"
+			// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for type safety
 			limit := 100
 
 			// ✅ MANDATORY: Use generated client with type-safe parameters
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventCategory: &eventCategory,
-				Limit:         &limit,
+			resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
+				Limit:         dsgen.NewOptInt(limit),
 			})
 
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to query DataStorage: %w", err)
 			}
 
-			if resp.JSON200 == nil {
-				return nil, 0, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
-			}
-
+			// Access typed response directly (ogen pattern)
 			total := 0
-			if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-				total = *resp.JSON200.Pagination.Total
+			if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+				total = resp.Pagination.Value.Total.Value
 			}
 
-			events := []dsgen.AuditEvent{}
-			if resp.JSON200.Data != nil {
-				events = *resp.JSON200.Data
-			}
+			events := resp.Data
 
 			return events, total, nil
 		}
@@ -185,9 +170,9 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// Find lifecycle.started event (proves audit client is wired)
 			var foundLifecycleStarted bool
 			for _, event := range events {
-				if event.EventType == "orchestrator.lifecycle.started" {
+				if event.EventType == roaudit.EventTypeLifecycleStarted {
 					foundLifecycleStarted = true
-					Expect(event.CorrelationId).To(Equal(correlationID))
+					Expect(event.CorrelationID).To(Equal(correlationID))
 					break
 				}
 			}
@@ -204,19 +189,50 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// Per ADR-032 §1: All orchestration phase transitions must be audited
 
 			By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
-			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+			// DD-TESTING-001: Wait for COMPLETE audit trail, not just ">=2 events"
+			// Root cause of flakiness: Audit buffer flush (1s interval) may not have completed
+			// for phase transition events when we check. Solution: Wait for specific event types.
 			var events []dsgen.AuditEvent
 			var total int
 			var err error
 
-			Eventually(func() int {
+			Eventually(func() bool {
 				events, total, err = queryAuditEvents(correlationID)
 				if err != nil {
-					return 0
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return false
 				}
-				return total
-			}, 2*time.Minute, 10*time.Second).Should(BeNumerically(">=", 2),
-				"Expected multiple audit events (lifecycle.started + phase transitions/completion)")
+				if total == 0 {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (no events yet)\n")
+					return false
+				}
+
+				// Build event type map
+				eventTypes := make(map[string]bool)
+				for _, event := range events {
+					eventTypes[event.EventType] = true
+				}
+
+				// Check for lifecycle.started (should always be present first)
+				hasLifecycleStarted := eventTypes[roaudit.EventTypeLifecycleStarted]
+
+				// Check for phase transition or lifecycle completion/failure
+				hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
+					eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+					eventTypes[roaudit.EventTypeLifecycleFailed]
+
+				if !hasLifecycleStarted {
+					GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no lifecycle.started yet, %d total events)\n", total)
+					return false
+				}
+				if !hasPhaseTransitionOrCompletion {
+					GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no phase transition/completion yet, %d total events)\n", total)
+					return false
+				}
+
+				return true
+			}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
+				"Expected complete audit trail with lifecycle.started + phase transition/completion events")
 
 			// Verify we have different event types (proves continuous emission)
 			eventTypes := make(map[string]bool)
@@ -224,13 +240,13 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				eventTypes[event.EventType] = true
 			}
 
-			Expect(eventTypes).To(HaveKey("orchestrator.lifecycle.started"),
+			Expect(eventTypes).To(HaveKey(roaudit.EventTypeLifecycleStarted),
 				"Expected lifecycle.started event")
 
 			// Should have at least one phase transition or lifecycle completion/failure
-			hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
-				eventTypes["orchestrator.lifecycle.completed"] ||
-				eventTypes["orchestrator.lifecycle.failed"]
+			hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
+				eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+				eventTypes[roaudit.EventTypeLifecycleFailed]
 
 			Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
 				"Expected phase transition or lifecycle completion/failure event")

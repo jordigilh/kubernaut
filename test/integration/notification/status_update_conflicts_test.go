@@ -77,8 +77,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -101,7 +101,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// Wait for initial status update (validate business outcome per TESTING_GUIDELINES.md)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -121,7 +121,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// so controller has no reason to update it again without actual conflicts.
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -155,8 +155,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -180,7 +180,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// Wait for completion
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -243,8 +243,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -267,7 +267,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// BEHAVIOR VALIDATION: Controller eventually succeeds despite potential status update failures
 			// (Kubernetes controller-runtime automatically retries on status update conflicts)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -309,8 +309,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -334,7 +334,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// Wait for reconciliation to start (status phase set) before deletion race
 			Eventually(func() bool {
 				var checkNotif notificationv1alpha1.NotificationRequest
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, &checkNotif)
@@ -352,7 +352,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// BEHAVIOR VALIDATION: CRD is eventually deleted (no stuck finalizers)
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -386,8 +386,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -415,8 +415,11 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// NT-BUG-002 Fix: Wait for all retries to exhaust (not just first failure)
 			// Uses retryable 500 error, so default policy (MaxAttempts=5) will retry
+			// Timeout calculation: 5 attempts with exponential backoff (1s, 2s, 4s, 8s, 16s) = ~28s
+			// + jitter (~20% variance) + processing overhead (~2-3s per attempt in parallel)
+			// = ~35-40s total. 45s timeout provides 15s safety margin for parallel execution (12 procs).
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -425,13 +428,17 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 				}
 				// Wait for Failed phase AND all 5 attempts exhausted
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
-					notif.Status.FailedDeliveries == 5
-			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					len(notif.Status.DeliveryAttempts) == 5
+			}, 45*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Should reach Failed phase after exhausting all 5 retry attempts")
 
 			// BEHAVIOR VALIDATION: All delivery attempts recorded (Per TESTING_GUIDELINES.md)
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(5),
 				"Controller must record all 5 delivery attempts for failed notification (NT-BUG-002 fix)")
+			// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+			// 5 attempts for 1 channel (Slack) = 1 failed channel
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Should have exactly 1 failed channel (BR-NOT-051: unique channels, not attempts)")
 
 			// CORRECTNESS VALIDATION: Error message contains specific failure information
 			// Per TESTING_GUIDELINES.md: Test what, not just that fields exist
@@ -467,8 +474,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -501,7 +508,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// Notification enters Failed phase after attempt 1, but continues retrying
 			// We need to wait until all 7 attempts are completed before checking counts
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -510,15 +517,17 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 				}
 				// Wait for Failed phase AND all 7 attempts exhausted
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
-					notif.Status.FailedDeliveries == 7
+					len(notif.Status.DeliveryAttempts) == 7
 			}, 90*time.Second, 1*time.Second).Should(BeTrue(),
 				"Should reach Failed phase after exhausting all 7 retry attempts")
 
 			// BEHAVIOR VALIDATION: Status handles many delivery attempts
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(7),
 				"Status should contain all 7 delivery attempts (verified by Eventually condition)")
-			Expect(notif.Status.FailedDeliveries).To(Equal(7),
-				"Should have exactly 7 failed attempts (verified by Eventually condition)")
+			// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+			// 7 attempts for 1 channel (Slack) = 1 failed channel
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Should have exactly 1 failed channel (BR-NOT-051: unique channels, not attempts)")
 
 			// CORRECTNESS: Status object size is manageable (< 1MB)
 			// (Kubernetes etcd has ~1.5MB limit for objects)

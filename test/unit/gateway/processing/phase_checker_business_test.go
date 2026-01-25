@@ -154,7 +154,8 @@ var _ = Describe("BR-GATEWAY-182: Status Updater tracks duplicate signal occurre
 			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
 			Build()
 
-		updater = processing.NewStatusUpdater(k8sClient)
+		// DD-STATUS-001: Pass k8sClient as both client and apiReader (tests use fake client, already uncached)
+		updater = processing.NewStatusUpdater(k8sClient, k8sClient)
 	})
 
 	Context("Deduplication status initialization", func() {

@@ -106,7 +106,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 					return notif.Status.Phase
 				}, "30s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 					"Notification %d should reach Sent phase", i)
@@ -127,15 +127,17 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 			// Cleanup
 			for _, notif := range notifications {
-				deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			}
 		})
 
-		It("should handle rapid successive CRD creations (stress test)", Serial, FlakeAttempts(3), func() {
+		// DD-TEST-010: Multi-Controller Pattern - Serial REMOVED
+		// Previous: Marked Serial to prevent resource contention
+		// Now: Per-process envtest (DD-STATUS-001) eliminates contention
+		// FlakeAttempts(3): Stress test with timing sensitivity - retry up to 3 times in CI
+		It("should handle rapid successive CRD creations (stress test)", FlakeAttempts(3), func() {
 			// BEHAVIOR: Rapid creation doesn't cause controller failures
 			// CORRECTNESS: All CRDs processed in correct order
-			// NOTE: Marked Serial to prevent resource contention with parallel tests
-			// FlakeAttempts(3): Stress test with timing sensitivity - retry up to 3 times in CI
 
 			const rapidCount = 20
 			notifications := make([]*notificationv1alpha1.NotificationRequest, rapidCount)
@@ -172,7 +174,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 					return notif.Status.Phase
 				}, "60s", "1s").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 					"Rapid notification %d should reach Sent phase", i)
@@ -185,7 +187,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 			// Cleanup
 			for _, notif := range notifications {
-				deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			}
 		})
 
@@ -231,7 +233,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 							Name:      notif.Name,
 							Namespace: notif.Namespace,
 						}
-						Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+						Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 						return notif.Status.Phase
 					}, "30s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
@@ -240,7 +242,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 
 					// Validate status consistency
 					Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent))
@@ -250,7 +252,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						"Should have exactly 1 successful delivery")
 
 					// Cleanup
-					deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+					_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 				}(i)
 			}
 

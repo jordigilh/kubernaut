@@ -24,16 +24,14 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 15: Audit Trace Validation (DD-AUDIT-003)
@@ -56,8 +54,8 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
-		auditClient   *dsgen.ClientWithResponses
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
+		auditClient *dsgen.Client
 	)
 
 	BeforeAll(func() {
@@ -71,23 +69,13 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Setup OpenAPI audit client for Data Storage
 		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
-		dataStorageURL := "http://localhost:18091" // Kind hostPort maps to NodePort 30081
-		auditClient, _ = dsgen.NewClientWithResponses(dataStorageURL)
+		dataStorageURL := "http://127.0.0.1:18091" // Kind hostPort maps to NodePort 30081 - Use 127.0.0.1 for CI/CD IPv4 compatibility
+		auditClient, _ = dsgen.NewClient(dataStorageURL)
 
 		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
 
-		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("audit-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient = getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
-
+		// Create unique test namespace (Pattern: RO E2E)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "audit-trace")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -99,22 +87,15 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		if CurrentSpecReport().Failed() {
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			// Clean up test namespace (Pattern: RO E2E)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+			testLogger.Info("✅ Cleanup complete")
 		}
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
 
 		if testCancel != nil {
 			testCancel()
 		}
-
-		testLogger.Info("✅ Cleanup complete")
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -145,7 +126,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		})
 
 		// Use the package-level gatewayURL variable (set in gateway_e2e_suite_test.go)
-		// gatewayURL = "http://localhost:30080" (NodePort from gateway-deployment.yaml)
+		// gatewayURL = "http://127.0.0.1:8080" (extraPortMapping hostPort - Use 127.0.0.1 for CI/CD IPv4 compatibility)
 		resp, err := func() (*http.Response, error) {
 			req23, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
 			if err != nil {
@@ -192,29 +173,21 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		Eventually(func() int {
 			// Query using OpenAPI client with typed parameters
 			// Note: No "Service" parameter - use EventCategory instead
-			eventCategory := "gateway"
-			resp, err := auditClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
+			eventCategory := gateway.CategoryGateway
+			resp, err := auditClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
+				EventCategory: dsgen.NewOptString(eventCategory),
+				CorrelationID: dsgen.NewOptString(correlationID),
 			})
 			if err != nil {
 				testLogger.Info("Failed to query audit events (will retry)", "error", err)
 				return 0
 			}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-				testLogger.Info("Audit query returned non-200 status (will retry)",
-					"status", resp.StatusCode())
-				return 0
-			}
-
-			// Handle pointer types from OpenAPI client
-			if resp.JSON200.Data != nil {
-				auditEvents = *resp.JSON200.Data
-			}
+			// Access typed response directly (ogen pattern)
+			auditEvents = resp.Data
 			total := 0
-			if resp.JSON200.Pagination.Total != nil {
-				total = *resp.JSON200.Pagination.Total
+			if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+				total = resp.Pagination.Value.Total.Value
 			}
 			testLogger.Info("Audit events found", "count", total)
 			return total
@@ -223,7 +196,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		testLogger.Info("✅ Audit events found in Data Storage", "eventCount", len(auditEvents))
 
-		By("3. Validate 'signal.received' audit event using testutil.ValidateAuditEvent (P0 requirement)")
+		By("3. Validate 'signal.received' audit event using validators.ValidateAuditEvent (P0 requirement)")
 		// Gateway emits BOTH 'signal.received' AND 'crd.created' events per DD-AUDIT-003
 		// We need to find the 'signal.received' event specifically
 		Expect(auditEvents).To(HaveLen(2), "Should have 2 audit events: signal.received + crd.created")
@@ -231,7 +204,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// Find the 'gateway.signal.received' event
 		var signalEvent *dsgen.AuditEvent
 		for i := range auditEvents {
-			if auditEvents[i].EventType == "gateway.signal.received" {
+			if auditEvents[i].EventType == gateway.EventTypeSignalReceived {
 				signalEvent = &auditEvents[i]
 				break
 			}
@@ -240,71 +213,67 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		// STRUCTURED AUDIT VALIDATION (SERVICE_MATURITY_REQUIREMENTS.md v1.2.0)
-		// Per v1.2.0 update (2025-12-20): MUST use testutil.ValidateAuditEvent
+		// Per v1.2.0 update (2025-12-20): MUST use validators.ValidateAuditEvent
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		testutil.ValidateAuditEvent(*signalEvent, testutil.ExpectedAuditEvent{
-			EventType:     "gateway.signal.received",
+		validators.ValidateAuditEvent(*signalEvent, validators.ExpectedAuditEvent{
+			EventType:     gateway.EventTypeSignalReceived,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "received",
-			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+			EventOutcome:  validators.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
-			ResourceType:  testutil.StringPtr("Signal"),
-			ResourceID:    testutil.StringPtr(fingerprint),
-			Namespace:     testutil.StringPtr(testNamespace),
+			ResourceType:  validators.StringPtr("Signal"),
+			ResourceID:    validators.StringPtr(fingerprint),
+			Namespace:     validators.StringPtr(testNamespace),
 		})
 
-		testLogger.Info("✅ All critical ADR-034 fields validated via testutil.ValidateAuditEvent",
+		testLogger.Info("✅ All critical ADR-034 fields validated via validators.ValidateAuditEvent",
 			"event_type", signalEvent.EventType,
 			"correlation_id", correlationID,
 			"fingerprint", fingerprint)
 
 		By("4. Verify Gateway-specific event_data fields")
-		// Gateway event_data has nested structure: event_data.gateway.{field}
-		// Manual validation required (testutil.ValidateAuditEventDataNotEmpty expects flat keys)
-		eventData, ok := signalEvent.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data should be a map")
+		// Access strongly-typed Gateway payload (ogen discriminated union)
+		gatewayPayload := signalEvent.EventData.GatewayAuditPayload
 
-		gatewayData, ok := eventData["gateway"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data.gateway should exist")
-
-		// Validate Gateway-specific fields exist
-		Expect(gatewayData["signal_type"]).ToNot(BeEmpty(),
+		// Validate Gateway-specific fields exist (using strongly-typed payload)
+		Expect(gatewayPayload.SignalType).ToNot(BeEmpty(),
 			"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
-		Expect(gatewayData["alert_name"]).To(Equal("AuditTestAlert"),
+		Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
 			"Gateway event_data should include alert_name")
-		Expect(gatewayData["namespace"]).To(Equal(testNamespace),
+		Expect(gatewayPayload.Namespace).To(Equal(testNamespace),
 			"Gateway event_data should include namespace")
-		Expect(gatewayData["remediation_request"]).ToNot(BeEmpty(),
+		Expect(gatewayPayload.RemediationRequest.Set).To(BeTrue(),
 			"Gateway event_data should include remediation_request reference")
-		Expect(gatewayData["deduplication_status"]).To(Equal("new"),
+		Expect(gatewayPayload.DeduplicationStatus.Set).To(BeTrue(), "DeduplicationStatus should be set")
+		Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("new"),
 			"Gateway event_data should mark first signal as 'new'")
 
 		testLogger.Info("✅ All Gateway-specific event_data fields validated")
 
-		By("5. Verify 'crd.created' audit event using testutil.ValidateAuditEvent (DD-AUDIT-003)")
+		By("5. Verify 'crd.created' audit event using validators.ValidateAuditEvent (DD-AUDIT-003)")
 		// Find the 'gateway.crd.created' event
 		var crdEvent *dsgen.AuditEvent
 		for i := range auditEvents {
-			if auditEvents[i].EventType == "gateway.crd.created" {
+			if auditEvents[i].EventType == gateway.EventTypeCRDCreated {
 				crdEvent = &auditEvents[i]
 				break
 			}
 		}
 		Expect(crdEvent).ToNot(BeNil(), "Should find 'gateway.crd.created' event")
 
-		// Validate using testutil.ValidateAuditEvent (P0 requirement per v1.2.0)
-		testutil.ValidateAuditEvent(*crdEvent, testutil.ExpectedAuditEvent{
-			EventType:     "gateway.crd.created",
+		// Validate using validators.ValidateAuditEvent (P0 requirement per v1.2.0)
+		validators.ValidateAuditEvent(*crdEvent, validators.ExpectedAuditEvent{
+			EventType:     gateway.EventTypeCRDCreated,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "created",
-			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+			EventOutcome:  validators.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
-			ResourceType:  testutil.StringPtr("RemediationRequest"),
-			Namespace:     testutil.StringPtr(testNamespace),
+			ResourceType:  validators.StringPtr("RemediationRequest"),
+			Namespace:     validators.StringPtr(testNamespace),
 		})
 
-		testLogger.Info("✅ CRD creation audit event validated via testutil.ValidateAuditEvent")
+		testLogger.Info("✅ CRD creation audit event validated via validators.ValidateAuditEvent")
 
 		By("6. BUSINESS OUTCOME: Complete audit trail for compliance")
 		// This test proves that Gateway successfully integrates with Data Storage
@@ -314,7 +283,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// ✅ BR-GATEWAY-190: All signal ingestion creates audit trail
 		// ✅ ADR-034: Audit events follow standardized schema
 		// ✅ SOC2/HIPAA: Audit trails are queryable for compliance reporting
-		// ✅ SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Uses testutil.ValidateAuditEvent (P0)
+		// ✅ SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Uses validators.ValidateAuditEvent (P0)
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("✅ AUDIT TRACE VALIDATION COMPLETE")

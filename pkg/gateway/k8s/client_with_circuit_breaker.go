@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sony/gobreaker"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
@@ -101,6 +102,7 @@ func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metric
 // Circuit Breaker Behavior:
 // - If circuit is OPEN: Returns gobreaker.ErrOpenState immediately (fail-fast)
 // - If circuit is CLOSED/HALF-OPEN: Executes K8s API call and tracks result
+// - AlreadyExists errors are treated as idempotent success (don't trip circuit breaker)
 //
 // Benefits (BR-GATEWAY-093):
 // - Fail-fast during K8s API outages (BR-GATEWAY-093-A)
@@ -116,6 +118,16 @@ func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metric
 func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
 	_, err := c.cb.Execute(func() (interface{}, error) {
 		err := c.Client.CreateRemediationRequest(ctx, rr)
+
+		// BR-GATEWAY-CIRCUIT-BREAKER-IDEMPOTENT-FIX v3.0:
+		// Treat "AlreadyExists" as idempotent success for BOTH metrics AND circuit breaker state.
+		// This prevents circuit breaker from opening during parallel test execution.
+		if k8serrors.IsAlreadyExists(err) {
+			c.recordOperationResultWithIdempotency("create", err)  // Metrics: success
+			return nil, nil  // Circuit breaker: success (don't increment failure count)
+		}
+
+		// All other errors: record and return as-is
 		c.recordOperationResult("create", err)
 		return nil, err
 	})
@@ -187,3 +199,30 @@ func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err e
 	c.metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
 }
 
+// recordOperationResultWithIdempotency updates metrics treating IsAlreadyExists as success
+//
+// BR-GATEWAY-CIRCUIT-BREAKER-IDEMPOTENT-FIX:
+// This prevents circuit breaker from opening due to "AlreadyExists" errors during
+// parallel test execution or concurrent requests with the same fingerprint.
+//
+// Idempotent Operations:
+// - IsAlreadyExists(err) → Treated as SUCCESS for circuit breaker purposes
+// - Other errors → Treated as FAILURE (may trip circuit breaker)
+//
+// This method MUST be used for CRD Create operations to prevent false positives
+// in circuit breaker failure tracking.
+func (c *ClientWithCircuitBreaker) recordOperationResultWithIdempotency(operation string, err error) {
+	if c.metrics == nil {
+		return
+	}
+
+	result := "success"
+	if err != nil {
+		// Treat "AlreadyExists" as success (idempotent operation)
+		if !k8serrors.IsAlreadyExists(err) {
+			result = "failure"
+		}
+	}
+
+	c.metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
+}

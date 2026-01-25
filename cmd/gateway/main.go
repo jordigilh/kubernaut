@@ -48,7 +48,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("Gateway Service %s-%s (built: %s)\n", version, gitCommit, buildDate)
+		fmt.Printf("Gateway Service %s-%s (built: %s)\n", version, gitCommit, buildDate) //nolint:forbidigo // CLI version output
 		os.Exit(0)
 	}
 

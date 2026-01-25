@@ -17,8 +17,10 @@ limitations under the License.
 package holmesgptapi
 
 import (
+	"context"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,6 +50,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • PostgreSQL (port 15439)")
 	GinkgoWriter.Println("  • Redis (port 16387)")
 	GinkgoWriter.Println("  • Data Storage API (port 18098)")
+	GinkgoWriter.Println("  • Mock LLM Service (port 18140 - HAPI-specific)")
 	GinkgoWriter.Println("")
 	GinkgoWriter.Println("Benefits over Python subprocess approach:")
 	GinkgoWriter.Println("  ✅ No subprocess.run() calls")
@@ -65,6 +68,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully (DD-INTEGRATION-001 v2.0)")
 	GinkgoWriter.Println("✅ All services started and healthy (Go programmatic setup)")
 
+	By("Building Mock LLM image (DD-TEST-004 unique tag)")
+	// Per DD-TEST-004: Generate unique image tag to prevent collisions
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	mockLLMImageName, err := infrastructure.BuildMockLLMImage(ctx, "hapi", GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
+	Expect(mockLLMImageName).ToNot(BeEmpty(), "Mock LLM image name must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM image built: %s\n", mockLLMImageName)
+
+	By("Starting Mock LLM service (replaces embedded mock logic)")
+	// Per DD-TEST-001 v1.8: Port 18140 (HAPI-specific, unique)
+	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
+	mockLLMConfig := infrastructure.GetMockLLMConfigForHAPI()
+	mockLLMConfig.ImageTag = mockLLMImageName // Use the built image tag
+	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(ctx, mockLLMConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
+	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM service started and healthy (port %d)\n", mockLLMConfig.Port)
+
 	return nil // No shared data needed between processes
 }, func(data []byte) {
 	// This runs on ALL parallel processes - setup per-process resources if needed
@@ -78,6 +100,26 @@ var _ = SynchronizedAfterSuite(func() {
 }, func() {
 	// This runs ONCE on process 1 only - tears down shared infrastructure
 	By("Tearing down HolmesGPT API integration infrastructure")
+
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("holmesgptapi", []string{
+		infrastructure.HAPIIntegrationDataStorageContainer, // holmesgptapi_datastorage_1
+		infrastructure.HAPIIntegrationPostgresContainer,    // holmesgptapi_postgres_1
+		infrastructure.HAPIIntegrationRedisContainer,       // holmesgptapi_redis_1
+		infrastructure.MockLLMContainerNameHAPI,            // mock-llm-hapi
+	}, GinkgoWriter)
+
+	// Stop Mock LLM service first
+	By("Stopping Mock LLM service (HAPI-specific)")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	mockLLMConfig := infrastructure.GetMockLLMConfigForHAPI()
+	if err := infrastructure.StopMockLLMContainer(ctx, mockLLMConfig, GinkgoWriter); err != nil {
+		GinkgoWriter.Printf("⚠️  Failed to stop Mock LLM container: %v\n", err)
+	}
 
 	// DD-INTEGRATION-001 v2.0: Stop infrastructure using programmatic Go setup
 	By("Stopping HolmesGPT API infrastructure (programmatic Podman)")
@@ -94,9 +136,3 @@ var _ = SynchronizedAfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Infrastructure teardown complete (DD-INTEGRATION-001 v2.0)")
 })
-
-
-
-
-
-

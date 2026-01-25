@@ -24,15 +24,15 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)
@@ -46,7 +46,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {
@@ -54,35 +54,27 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger = logger.WithValues("test", "k8s-event-ingestion")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
-		// Unique namespace for parallel execution
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("k8s-event-%d-%d", processID, time.Now().UnixNano())
-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 08: Kubernetes Event Ingestion - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		k8sClient = getKubernetesClient()
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
-
+		// Create unique test namespace (Pattern: RO E2E)
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "k8s-event")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			// Clean up test namespace (Pattern: RO E2E)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+			testLogger.Info("✅ Test cleanup complete")
 		}
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		_ = k8sClient.Delete(testCtx, ns)
 		if testCancel != nil {
 			testCancel()
 		}
-		testLogger.Info("✅ Test cleanup complete")
 	})
 
 	It("should process K8s Events and create CRDs with correct resource information", func() {
@@ -110,7 +102,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 					"namespace": testNamespace,
 				},
 				"metadata": map[string]interface{}{
-					"name":      fmt.Sprintf("event-%d-%d", i, time.Now().UnixNano()),
+					"name":      fmt.Sprintf("event-%d-%s", i, uuid.New().String()[:8]),
 					"namespace": testNamespace,
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),
@@ -151,15 +143,16 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 		var crdList *remediationv1alpha1.RemediationRequestList
 		Eventually(func() int {
-			freshClient := getKubernetesClientSafe()
-			if freshClient == nil {
+			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
+			// freshClient removed - using suite k8sClient
+			if false { // SKIP: freshClient error check no longer needed
 				if err := GetLastK8sClientError(); err != nil {
 					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
-			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
+			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
 				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}

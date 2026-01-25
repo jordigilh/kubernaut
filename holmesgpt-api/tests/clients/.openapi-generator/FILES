@@ -13,6 +13,7 @@ docs/HumanReviewReason.md
 docs/IncidentAnalysisApi.md
 docs/IncidentRequest.md
 docs/IncidentResponse.md
+docs/LocationInner.md
 docs/OriginalRCA.md
 docs/PreviousExecution.md
 docs/RecoveryAnalysisApi.md
@@ -22,7 +23,6 @@ docs/RecoveryStrategy.md
 docs/SelectedWorkflowSummary.md
 docs/ValidationAttempt.md
 docs/ValidationError.md
-docs/ValidationErrorLocInner.md
 git_push.sh
 holmesgpt_api_client/__init__.py
 holmesgpt_api_client/api/__init__.py
@@ -42,6 +42,7 @@ holmesgpt_api_client/models/http_validation_error.py
 holmesgpt_api_client/models/human_review_reason.py
 holmesgpt_api_client/models/incident_request.py
 holmesgpt_api_client/models/incident_response.py
+holmesgpt_api_client/models/location_inner.py
 holmesgpt_api_client/models/original_rca.py
 holmesgpt_api_client/models/previous_execution.py
 holmesgpt_api_client/models/recovery_request.py
@@ -50,7 +51,6 @@ holmesgpt_api_client/models/recovery_strategy.py
 holmesgpt_api_client/models/selected_workflow_summary.py
 holmesgpt_api_client/models/validation_attempt.py
 holmesgpt_api_client/models/validation_error.py
-holmesgpt_api_client/models/validation_error_loc_inner.py
 holmesgpt_api_client/py.typed
 holmesgpt_api_client/rest.py
 pyproject.toml
@@ -59,4 +59,5 @@ setup.cfg
 setup.py
 test-requirements.txt
 test/__init__.py
+test/test_location_inner.py
 tox.ini

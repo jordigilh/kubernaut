@@ -56,7 +56,7 @@ func seedMetricsWithAnalysis() {
 			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 				SignalContext: aianalysisv1alpha1.SignalContextInput{
 					Fingerprint:      "metrics-seed-fp",
-					Severity:         "warning",
+					Severity:        "medium",
 					SignalType:       "PodCrashLooping",
 					Environment:      "staging",
 					BusinessPriority: "P2",

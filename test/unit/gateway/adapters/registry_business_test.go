@@ -189,34 +189,50 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 		})
 	})
 
-	Context("Severity required for priority routing", func() {
-		It("rejects signals with invalid severity - priority routing fails", func() {
-			// BUSINESS OUTCOME: Signals must have valid severity for prioritization
-			// Valid: critical, warning, info
-			signal := &types.NormalizedSignal{
-				Fingerprint: "abc123",
-				AlertName:   "TestAlert",
-				Severity:    "high", // Invalid - not in {critical, warning, info}
+	Context("Severity pass-through for downstream policy (BR-GATEWAY-181)", func() {
+		It("accepts ANY non-empty severity - pass-through architecture", func() {
+			// BUSINESS OUTCOME: Gateway passes through external severity values
+			// SignalProcessing Rego policies determine normalized severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+			testCases := []struct {
+				severity string
+				scheme   string
+			}{
+				{"critical", "standard"},
+				{"warning", "standard"},
+				{"info", "standard"},
+				{"Sev1", "enterprise"},
+				{"P0", "PagerDuty"},
+				{"HIGH", "custom"},
 			}
 
-			err := adapter.Validate(signal)
+			for _, tc := range testCases {
+				signal := &types.NormalizedSignal{
+					Fingerprint: "abc123",
+					AlertName:   "TestAlert",
+					Severity:    tc.severity,
+				}
 
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("invalid severity"),
-				"Clear error: severity must be critical, warning, or info")
+				err := adapter.Validate(signal)
+
+				Expect(err).NotTo(HaveOccurred(),
+					"BR-GATEWAY-181: Must accept '%s' (%s scheme)", tc.severity, tc.scheme)
+			}
 		})
 
-		It("accepts valid critical severity for immediate remediation", func() {
+		It("rejects empty severity - required for downstream policy", func() {
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123",
 				AlertName:   "OOMKilled",
-				Severity:    "critical",
+				Severity:    "", // Empty
 			}
 
 			err := adapter.Validate(signal)
 
-			Expect(err).NotTo(HaveOccurred(),
-				"Critical severity valid - signal proceeds to CRD creation")
+			Expect(err).To(HaveOccurred(),
+				"BR-GATEWAY-181: Empty severity rejected - downstream policy requires value")
+			Expect(err.Error()).To(ContainSubstring("severity"),
+				"Clear error: severity required")
 		})
 	})
 })
@@ -241,8 +257,9 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 	})
 
 	Context("Warning events trigger remediation workflows", func() {
-		It("parses Warning event and extracts resource targeting info", func() {
+		It("parses Warning event and passes through event type as severity", func() {
 			// BUSINESS OUTCOME: Warning event parsed → RO can select workflow
+			// Authority: BR-GATEWAY-181 - Event Type passed through as-is
 			payload := []byte(`{
 				"involvedObject": {"kind": "Pod", "name": "payment-api-789", "namespace": "production"},
 				"reason": "BackOff",
@@ -259,14 +276,16 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 				"Kind=Pod enables WE to target: kubectl delete pod")
 			Expect(signal.Resource.Name).To(Equal("payment-api-789"),
 				"Name enables WE to target specific pod")
-			Expect(signal.Severity).To(Equal("warning"),
-				"Warning severity for priority routing")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (no transformation)")
 		})
 	})
 
 	Context("Error events trigger high-priority remediation", func() {
-		It("parses Error event as critical severity", func() {
-			// BUSINESS OUTCOME: Error events are critical - immediate remediation
+		It("passes through Error event type as-is (BR-GATEWAY-181)", func() {
+			// BUSINESS OUTCOME: Gateway passes through raw K8s event type
+			// SignalProcessing Rego policies determine severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := []byte(`{
 				"involvedObject": {"kind": "Pod", "name": "api-server", "namespace": "prod"},
 				"reason": "OOMKilled",
@@ -277,8 +296,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 			signal, err := adapter.Parse(context.Background(), payload)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"Error events map to critical severity - immediate action required")
+			Expect(signal.Severity).To(Equal("Error"),
+				"BR-GATEWAY-181: Event Type 'Error' passed through (no reason-based mapping)")
 		})
 	})
 

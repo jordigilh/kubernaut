@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"

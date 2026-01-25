@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
@@ -47,8 +48,7 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme = runtime.NewScheme()
 )
 
 func init() {
@@ -269,8 +269,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create audit helpers
-	auditHelpers := notification.NewAuditHelpers("notification-controller")
+	// Create audit manager (direct usage, no wrapper needed)
+	auditManager := notificationaudit.NewManager("notification-controller")
 
 	logger.Info("Audit store initialized",
 		"buffer_size", auditConfig.BufferSize,
@@ -296,7 +296,7 @@ func main() {
 	// ========================================
 	// Create status manager for centralized status updates with retry logic
 	// Replaces controller's custom updateStatusWithRetry() method (~100 lines saved)
-	statusManager := notificationstatus.NewManager(mgr.GetClient())
+	statusManager := notificationstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	logger.Info("Status Manager initialized (Pattern 2 - P1)")
 
 	// ========================================
@@ -366,6 +366,7 @@ func main() {
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),                                 // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               mgr.GetScheme(),
 		ConsoleService:       consoleService,
 		SlackService:         slackService,
@@ -376,7 +377,7 @@ func main() {
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
 		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
 		AuditStore:           auditStore,                                         // ADR-032: Audit store
-		AuditHelpers:         auditHelpers,                                       // Audit helpers
+		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
 		StatusManager:        statusManager,                                      // Pattern 2: Status Manager (P1)
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")

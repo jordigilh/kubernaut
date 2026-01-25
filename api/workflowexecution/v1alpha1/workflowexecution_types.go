@@ -131,6 +131,17 @@ import (
 
 // WorkflowExecutionSpec defines the desired state of WorkflowExecution
 // Simplified per ADR-044 - Tekton handles step orchestration
+//
+// ADR-001: Spec Immutability
+// WorkflowExecution represents an immutable event (workflow execution attempt).
+// Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+// - Audit trail integrity (executed spec matches approved spec)
+// - No parameter tampering after HAPI validation
+// - No target resource changes after routing decisions
+//
+// To change execution parameters, delete and recreate the WorkflowExecution.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type WorkflowExecutionSpec struct {
 	// RemediationRequestRef references the parent RemediationRequest CRD
 	RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`

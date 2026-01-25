@@ -37,9 +37,9 @@ from src.toolsets.workflow_catalog import (
     WorkflowCatalogToolset
 )
 from holmes.core.tools import StructuredToolResultStatus
-from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
-from src.clients.datastorage.exceptions import ApiException
+from datastorage.models.workflow_search_response import WorkflowSearchResponse
+from datastorage.models.workflow_search_result import WorkflowSearchResult
+from datastorage.exceptions import ApiException
 
 
 # =============================================================================
@@ -64,7 +64,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows'):
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows'):
             result = tool.invoke(params={"query": "", "top_k": 5})
 
             # ASSERT - Query should be empty but tool continues (current behavior)
@@ -83,7 +83,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             # Mock a response to prevent actual HTTP call
             mock_response = Mock()
             mock_response.status_code = 200
@@ -108,7 +108,7 @@ class TestInputValidation:
         long_query = "OOMKilled " + "x" * 10000  # 10,000+ character query
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -133,7 +133,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -156,7 +156,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -179,7 +179,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -205,7 +205,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -235,7 +235,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT - Test with min_similarity > 1.0 (via additional filters)
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.elapsed.total_seconds.return_value = 0.05
@@ -270,7 +270,7 @@ class TestResponseTransformation:
     v3.0 response structure from Data Storage Service.
     """
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_transforms_uuid_workflow_id_u2_1(self, mock_search):
         """
         U2.1: workflow_id UUID is correctly parsed from v3.0 response via OpenAPI client
@@ -283,7 +283,7 @@ class TestResponseTransformation:
         test_uuid = UUID(test_uuid_str)
 
         mock_workflow = WorkflowSearchResult(
-            workflow_id=test_uuid,
+            workflow_id=str(test_uuid),
             title="OOMKill Fix",
             description="Fixes OOMKilled pods",
             signal_type="OOMKilled",
@@ -312,7 +312,7 @@ class TestResponseTransformation:
         parsed_uuid = uuid.UUID(data["workflows"][0]["workflow_id"])
         assert str(parsed_uuid) == test_uuid_str, "U2.1: workflow_id must be valid UUID"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_transforms_title_field_u2_2(self, mock_search):
         """
         U2.2: 'title' field parsed correctly (not 'name') via OpenAPI client
@@ -323,7 +323,7 @@ class TestResponseTransformation:
         from uuid import UUID
 
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+            workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
             title="OOMKill Remediation - Increase Memory Limits",
             description="Fixes OOMKilled pods",
             signal_type="OOMKilled",
@@ -348,7 +348,7 @@ class TestResponseTransformation:
         assert workflow["title"] == "OOMKill Remediation - Increase Memory Limits", \
             "U2.2: title must match API response"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_transforms_singular_signal_type_u2_3(self, mock_search):
         """
         U2.3: 'signal_type' is string (not array) per v3.0 via OpenAPI client
@@ -359,7 +359,7 @@ class TestResponseTransformation:
         from uuid import UUID
 
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+            workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
             title="OOMKill Fix",
             description="Fixes OOMKilled pods",
             signal_type="OOMKilled",  # Singular string, not array
@@ -386,7 +386,7 @@ class TestResponseTransformation:
         assert workflow["signal_type"] == "OOMKilled", \
             "U2.3: signal_type must match API response"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_transforms_confidence_score_u2_4(self, mock_search):
         """
         U2.4: 'confidence' float parsed correctly via OpenAPI client
@@ -397,7 +397,7 @@ class TestResponseTransformation:
         from uuid import UUID
 
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+            workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
             title="OOMKill Fix",
             description="Fixes OOMKilled pods",
             signal_type="OOMKilled",
@@ -426,7 +426,7 @@ class TestResponseTransformation:
         assert 0.0 <= workflow["confidence"] <= 1.0, \
             "U2.4: confidence must be in [0.0, 1.0]"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_handles_null_optional_fields_u2_5(self, mock_search):
         """
         U2.5: null container_image/container_digest handled gracefully via OpenAPI client
@@ -437,7 +437,7 @@ class TestResponseTransformation:
         from uuid import UUID
 
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+            workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
             title="OOMKill Fix",
             description="Fixes OOMKilled pods",
             signal_type="OOMKilled",
@@ -484,7 +484,7 @@ class TestErrorHandling:
     These tests validate graceful error handling for HTTP and parsing errors.
     """
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_http_error_returns_structured_error_u3_1(self, mock_search):
         """
         U3.1: HTTP 500 error returns ERROR status with message via OpenAPI client
@@ -508,7 +508,7 @@ class TestErrorHandling:
         assert len(result.error) > 0, \
             "U3.1: Error message must not be empty"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_invalid_json_returns_error_u3_2(self, mock_search):
         """
         U3.2: Malformed response returns ERROR status via OpenAPI client
@@ -529,7 +529,7 @@ class TestErrorHandling:
         assert result.error is not None, \
             "U3.2: Error message must be provided"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_connection_timeout_returns_error(self, mock_search):
         """
         Timeout error returns ERROR status with timeout message
@@ -552,7 +552,7 @@ class TestErrorHandling:
         assert "timeout" in result.error.lower(), \
             f"Error message must mention timeout, got: {result.error}"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_connection_refused_returns_error(self, mock_search):
         """
         Connection refused error returns ERROR status

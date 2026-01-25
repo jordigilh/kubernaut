@@ -39,7 +39,6 @@ from src.audit import (
     create_llm_response_event,
     create_tool_call_event,
 )
-from src.mock_responses import generate_mock_recovery_response
 from src.toolsets.workflow_catalog import SearchWorkflowCatalogTool
 from src.validation.workflow_response_validator import WorkflowResponseValidator
 from .constants import MinimalDAL
@@ -197,55 +196,10 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
     })
 
     # BR-AUDIT-005: Initialize audit store BEFORE mock check
-    # Per ADR-032 §1: Audit is MANDATORY for ALL LLM interactions (including mocked)
+    # Per ADR-032 §1: Audit is MANDATORY for ALL LLM interactions
     from src.audit import get_audit_store, create_llm_request_event, create_llm_response_event
     audit_store = get_audit_store()
-    remediation_id = request_data.get("remediation_id", "")
-
-    # BR-HAPI-212: Check mock mode with audit event generation
-    from src.mock_responses import is_mock_mode_enabled, generate_mock_recovery_response
-    if is_mock_mode_enabled():
-        logger.info({
-            "event": "mock_mode_active",
-            "incident_id": incident_id,
-            "message": "Returning deterministic mock response with audit (MOCK_LLM_MODE=true)"
-        })
-
-        # BR-AUDIT-005: Generate audit events even for mock responses (E2E testing requirement)
-        # AUDIT: LLM REQUEST
-        audit_store.store_audit(create_llm_request_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            model="mock://test-model",
-            prompt="MOCK LLM REQUEST (BR-HAPI-212)",
-            toolsets_enabled=["mock"],
-            mcp_servers=None
-        ))
-
-        # Generate mock response
-        result = generate_mock_recovery_response(request_data)
-
-        # AUDIT: LLM RESPONSE
-        # For recovery, analysis is the recovery actions string representation
-        analysis = str(result.get("recovery_actions", []))
-        audit_store.store_audit(create_llm_response_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            has_analysis=True,
-            analysis_length=len(analysis),
-            analysis_preview=analysis[:500] if analysis else "",
-            tool_call_count=0
-        ))
-
-        logger.info({
-            "event": "mock_mode_audit_complete",
-            "incident_id": incident_id,
-            "remediation_id": remediation_id,
-            "audit_events_generated": 2
-        })
-
-        return result
-
+    
     # BR-AUDIT-001: Extract remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
     remediation_id = request_data.get("remediation_id")
     if not remediation_id:
@@ -420,6 +374,32 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             dal=dal,
             config=config
         )
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # DEBUG: SDK RESPONSE INSPECTION (Option A: Understand SDK format)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        logger.info({
+            "event": "sdk_response_debug",
+            "incident_id": incident_id,
+            "result_type": type(investigation_result).__name__ if investigation_result else "None",
+            "has_result": investigation_result is not None,
+            "has_analysis": hasattr(investigation_result, 'analysis') if investigation_result else False,
+            "analysis_type": type(investigation_result.analysis).__name__ if investigation_result and hasattr(investigation_result, 'analysis') else "None",
+            "attributes": dir(investigation_result) if investigation_result else [],
+        })
+        
+        if investigation_result and hasattr(investigation_result, 'analysis'):
+            analysis_text = investigation_result.analysis
+            logger.info({
+                "event": "sdk_analysis_structure",
+                "incident_id": incident_id,
+                "analysis_length": len(analysis_text) if analysis_text else 0,
+                "has_json_codeblock": "```json" in analysis_text if analysis_text else False,
+                "has_section_headers": "# selected_workflow" in analysis_text if analysis_text else False,
+                "first_200_chars": analysis_text[:200] if analysis_text else "",
+                "contains_selected_workflow": "selected_workflow" in analysis_text if analysis_text else False,
+                "contains_root_cause": "root_cause" in analysis_text if analysis_text else False,
+            })
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # AUDIT: LLM RESPONSE (BR-AUDIT-005)

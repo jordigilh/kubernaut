@@ -43,12 +43,3 @@ func (m *MockRoutingEngine) Config() routing.Config {
 func (m *MockRoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) time.Duration {
 	return time.Duration(consecutiveFailures) * time.Minute
 }
-
-
-
-
-
-
-
-
-

@@ -33,8 +33,16 @@ urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 # Using local copy from ../dependencies/holmesgpt/ for faster installation
 ../dependencies/holmesgpt/
 
+# DataStorage OpenAPI Client (SOC2 audit events) - Required for audit emission
+# NOTE: Installed explicitly in Dockerfile before requirements.txt
+# DO NOT add here - causes "Invalid requirement" pip error
+
 # Additional service-specific dependencies (NOT in HolmesGPT SDK)
 # These are only for holmesgpt-api service functionality
+
+# Web framework dependencies (should come from HolmesGPT SDK but explicitly added for E2E)
+fastapi>=0.116
+uvicorn[standard]==0.30.6  # Pinned to avoid slow dependency resolution (pip resolver issue)
 
 # HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
 aiohttp>=3.9.1
@@ -63,6 +71,9 @@ watchdog>=3.0.0,<4.0.0
 #
 # Note: boto3, azure-*, opensearch-py are in HolmesGPT SDK dependencies
 # but not used by holmesgpt-api mock mode, so they're just wasted space in E2E
+
+
+
 
 
 

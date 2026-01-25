@@ -52,11 +52,12 @@ import (
 
 // PhaseBasedDeduplicationChecker checks for existing in-progress RRs by fingerprint
 type PhaseBasedDeduplicationChecker struct {
-	client client.Client
+	client client.Reader // Changed to Reader (can be apiReader or ctrlClient)
 }
 
 // NewPhaseBasedDeduplicationChecker creates a new phase-based checker
-func NewPhaseBasedDeduplicationChecker(k8sClient client.Client) *PhaseBasedDeduplicationChecker {
+// DD-GATEWAY-011: Accepts client.Reader to allow apiReader (cache-bypassed) for race-free deduplication
+func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader) *PhaseBasedDeduplicationChecker {
 	return &PhaseBasedDeduplicationChecker{
 		client: k8sClient,
 	}

@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,105 +28,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 )
-
-// ========================================
-// Phase 1 Integration Tests - Approval Conditions
-//
-// PHASE 1 PATTERN: RO Controller Only
-// - RO controller manages RAR lifecycle and Kubernetes Conditions
-// - Tests manually simulate human decisions (approve/reject/expire)
-// - NO child controllers running (SP, AI, WE)
-//
-// This isolates RO's core RAR logic:
-// - Condition management (ApprovalPending, ApprovalDecided, ApprovalExpired)
-// - Decision processing (approved, rejected, expired)
-// - RR phase transitions based on RAR outcomes
-// ========================================
-
-// ============================================================================
-// REMEDIATION APPROVAL REQUEST CONDITIONS INTEGRATION TESTS
-// Tests DD-CRD-002-RAR condition integration for RemediationApprovalRequest
-// Reference: DD-CRD-002-RemediationApprovalRequest, DD-CRD-002 v1.2
-// ============================================================================
-
-// Helper: Update SignalProcessing to Completed phase
-func updateSPStatusToCompleted(namespace, name string) { //nolint:unused
-	EventuallyWithOffset(1, func() error {
-		return updateSPStatus(namespace, name, signalprocessingv1.PhaseCompleted)
-	}, timeout, interval).Should(Succeed(), "Failed to update SignalProcessing status to Completed")
-}
-
-// Helper: Simulate AIAnalysis completion with low confidence (triggers approval workflow)
-func simulateAICompletionLowConfidence(namespace, name string) { //nolint:unused
-	lowConfidenceWorkflow := &aianalysisv1.SelectedWorkflow{
-		WorkflowID:     "test-workflow-1",
-		Version:        "v1.0.0",
-		ContainerImage: "kubernaut/workflows:test",
-		Confidence:     0.4, // Below 0.7 threshold - requires approval
-		Rationale:      "Test workflow for pod restart",
-	}
-	EventuallyWithOffset(1, func() error {
-		return updateAIAnalysisStatus(namespace, name, "Completed", lowConfidenceWorkflow)
-	}, timeout, interval).Should(Succeed(), "Failed to update AIAnalysis status to Completed")
-}
-
-// Helper: Simulate human approval decision
-func approveRemediationApprovalRequest(namespace, name, approver string) { //nolint:unused
-	EventuallyWithOffset(1, func() error {
-		rar := &remediationv1.RemediationApprovalRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {
-			return err
-		}
-
-		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-		rar.Status.DecidedBy = approver
-		rar.Status.DecisionMessage = "Approved for testing"
-		now := metav1.Now()
-		rar.Status.DecidedAt = &now
-
-		return k8sClient.Status().Update(ctx, rar)
-	}, timeout, interval).Should(Succeed(), "Failed to approve RemediationApprovalRequest")
-}
-
-// Helper: Simulate human rejection decision
-func rejectRemediationApprovalRequest(namespace, name, approver, reason string) { //nolint:unused
-	EventuallyWithOffset(1, func() error {
-		rar := &remediationv1.RemediationApprovalRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {
-			return err
-		}
-
-		rar.Status.Decision = remediationv1.ApprovalDecisionRejected
-		rar.Status.DecidedBy = approver
-		rar.Status.DecisionMessage = reason
-		now := metav1.Now()
-		rar.Status.DecidedAt = &now
-
-		return k8sClient.Status().Update(ctx, rar)
-	}, timeout, interval).Should(Succeed(), "Failed to reject RemediationApprovalRequest")
-}
-
-// Helper: Force RAR expiration by setting RequiredBy in the past
-func forceRARExpiration(namespace, name string) { //nolint:unused
-	EventuallyWithOffset(1, func() error {
-		rar := &remediationv1.RemediationApprovalRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {
-			return err
-		}
-
-		// Set RequiredBy to 1 second ago to force immediate expiration
-		past := metav1.NewTime(time.Now().Add(-1 * time.Second))
-		rar.Spec.RequiredBy = past
-
-		return k8sClient.Update(ctx, rar)
-	}, timeout, interval).Should(Succeed(), "Failed to force RAR expiration")
-}
-
 var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("integration", "approval", "conditions"), func() {
 
 	Context("DD-CRD-002-RAR: Initial Condition Setting", func() {
@@ -136,7 +41,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-rar-create")
-			rrName = fmt.Sprintf("rr-create-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-create-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -184,15 +89,15 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 
 			// Fetch the created object to get server-set fields (UID, ResourceVersion, etc.)
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 			}, timeout, interval).Should(Succeed(), "Failed to fetch created RAR")
 
 			// Set initial conditions on the fetched object (simulating creator logic)
-		rarconditions.SetApprovalPending(rar, true,
-			fmt.Sprintf("Awaiting decision, expires %s", requiredBy.Format(time.RFC3339)), nil)
-		rarconditions.SetApprovalDecided(rar, false,
-			rarconditions.ReasonPendingDecision, "No decision yet", nil)
-		rarconditions.SetApprovalExpired(rar, false, "Approval has not expired", nil)
+			rarconditions.SetApprovalPending(rar, true,
+				fmt.Sprintf("Awaiting decision, expires %s", requiredBy.Format(time.RFC3339)), nil)
+			rarconditions.SetApprovalDecided(rar, false,
+				rarconditions.ReasonPendingDecision, "No decision yet", nil)
+			rarconditions.SetApprovalExpired(rar, false, "Approval has not expired", nil)
 
 			// Update status to persist conditions (Kubernetes API requirement)
 			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
@@ -200,7 +105,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 			By("Verifying ApprovalPending=True condition")
 			fetched := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, fetched); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, fetched); err != nil {
 					return false
 				}
 				cond := meta.FindStatusCondition(fetched.Status.Conditions, rarconditions.ConditionApprovalPending)

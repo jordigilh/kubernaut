@@ -43,18 +43,20 @@ import (
 // BR-HAPI-197: Check needs_human_review before proceeding
 // BR-HAPI-200: Handle problem_resolved outcomes
 type ResponseProcessor struct {
-	log     logr.Logger
-	metrics *metrics.Metrics
+	log         logr.Logger
+	metrics     *metrics.Metrics
+	auditClient AuditClientInterface
 }
 
 // NewResponseProcessor creates a new ResponseProcessor
-func NewResponseProcessor(log logr.Logger, m *metrics.Metrics) *ResponseProcessor {
+func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface) *ResponseProcessor {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
 	return &ResponseProcessor{
-		log:     log.WithName("response-processor"),
-		metrics: m,
+		log:         log.WithName("response-processor"),
+		metrics:     m,
+		auditClient: auditClient,
 	}
 }
 
@@ -76,14 +78,21 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		"needsHumanReview", needsHumanReview,
 	)
 
-	// BR-HAPI-197: Check if workflow resolution failed
-	if needsHumanReview {
-		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
-	}
+	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.Confidence)
 
 	// BR-HAPI-200 Outcome A: Problem confidently resolved, no workflow needed
+	// CRITICAL: Check this BEFORE needs_human_review to correctly handle the "problem resolved" case
+	// When confidence >= 0.7 and no workflow is selected, HAPI has determined the problem is resolved
+	// and no remediation is needed. This is a SUCCESS case, not a failure.
 	if !hasSelectedWorkflow && resp.Confidence >= 0.7 {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
+	}
+
+	// BR-HAPI-197: Check if workflow resolution failed
+	// This handles cases where HAPI needs human review for reasons other than "problem resolved"
+	if needsHumanReview {
+		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
 	}
 
 	// Store HAPI response metadata
@@ -149,11 +158,14 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		analysis.Status.AlternativeWorkflows = alternatives
 	}
 
+	// BR-HAPI-197: No human review needed for successful workflow selection
+	analysis.Status.NeedsHumanReview = false
+
 	// Set InvestigationComplete condition
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
 
 	// Transition to Analyzing phase
-	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
+	// Note: ObservedGeneration set by InvestigatingHandler before returning
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
@@ -191,6 +203,9 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 		"hasSelectedWorkflow", hasSelectedWorkflow,
 		"needsHumanReview", needsHumanReview,
 	)
+
+	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.AnalysisConfidence)
 
 	// BR-HAPI-197: Check if recovery requires human review
 	// This takes precedence over other checks as HAPI has determined it cannot provide reliable recommendations
@@ -238,7 +253,7 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API recovery investigation completed successfully")
 
 	// Transition to Analyzing phase
-	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
+	// Note: ObservedGeneration set by InvestigatingHandler before returning
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Recovery investigation complete, starting analysis"
 
@@ -306,6 +321,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// BR-HAPI-197: Store human review flag and reason in CRD status
+	analysis.Status.NeedsHumanReview = true
+	if humanReviewReason != "" {
+		analysis.Status.HumanReviewReason = humanReviewReason
+	}
+
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
 
@@ -315,6 +336,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		subReason = string(resp.HumanReviewReason.Value)
 	}
 	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
+
+	// DD-AUDIT-003: Record analysis failure audit event
+	failureErr := fmt.Errorf("workflow resolution failed: %s", humanReviewReason)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
 
 	// Map HumanReviewReason enum to SubReason
 	if humanReviewReason != "" {
@@ -406,6 +433,9 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.SubReason = "ProblemResolved"
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// BR-HAPI-197: No human review needed for resolved problems
+	analysis.Status.NeedsHumanReview = false
+
 	if resp.Analysis != "" {
 		analysis.Status.Message = resp.Analysis
 	} else if len(resp.Warnings) > 0 {
@@ -427,6 +457,10 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 			}
 		}
 	}
+
+	// BR-HAPI-200: Record analysis completion audit event
+	// This is a successful completion even though no workflow was selected
+	p.auditClient.RecordAnalysisComplete(ctx, analysis)
 
 	return ctrl.Result{}, nil
 }
@@ -456,6 +490,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// BR-HAPI-197: Store human review flag and reason in CRD status (recovery flow)
+	analysis.Status.NeedsHumanReview = true
+	if humanReviewReason != "" {
+		analysis.Status.HumanReviewReason = humanReviewReason
+	}
+
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
 
@@ -465,6 +505,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 		subReason = humanReviewReason
 	}
 	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
+
+	// DD-AUDIT-003: Record analysis failure audit event
+	failureErr := fmt.Errorf("recovery workflow resolution failed: %s", humanReviewReason)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
 
 	// Map HumanReviewReason to SubReason
 	if humanReviewReason != "" {
@@ -506,11 +552,22 @@ func (p *ResponseProcessor) handleRecoveryNotPossible(ctx context.Context, analy
 	analysis.Status.Reason = "RecoveryNotPossible"
 	analysis.Status.SubReason = "NoRecoveryStrategy"
 
+	// BR-HAPI-197: Recovery not possible requires human review
+	analysis.Status.NeedsHumanReview = true
+	// Note: No HumanReviewReason set because HAPI determined recovery impossible (different from workflow resolution failure)
+
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("RecoveryNotPossible", "NoRecoveryStrategy").Inc()
 
 	// Record failure metric
 	p.metrics.RecordFailure("RecoveryNotPossible", "NoRecoveryStrategy")
+
+	// DD-AUDIT-003: Record analysis failure audit event
+	failureErr := fmt.Errorf("recovery not possible: no recovery strategy available")
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
 	analysis.Status.InvestigationID = resp.IncidentID
 	analysis.Status.Message = "HAPI determined recovery is not possible for this failure"
 	analysis.Status.Warnings = resp.Warnings

@@ -60,7 +60,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
+var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string
@@ -148,6 +148,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred(), "Create should succeed")
 
 				// ASSERT: Verify workflow persisted with correct composite PK
+				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)
 				var (
 					dbWorkflowName, dbVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
 					dbLabels                                                                                                []byte // JSONB
@@ -155,29 +156,29 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 					dbCreatedAt, dbUpdatedAt                                                                                time.Time
 				)
 
-				row := db.QueryRowContext(ctx, `
-					SELECT workflow_name, version, name, description, content, content_hash,
-					       labels, status, execution_engine, is_latest_version, created_at, updated_at
-					FROM remediation_workflow_catalog
-					WHERE workflow_name = $1 AND version = $2
-				`, workflowName, "v1.0.0")
+				Eventually(func() error {
+					row := db.QueryRowContext(ctx, `
+						SELECT workflow_name, version, name, description, content, content_hash,
+						       labels, status, execution_engine, is_latest_version, created_at, updated_at
+						FROM remediation_workflow_catalog
+						WHERE workflow_name = $1 AND version = $2
+					`, workflowName, "v1.0.0")
 
-				err = row.Scan(
-					&dbWorkflowName,
-					&dbVersion,
-					&dbName,
-					&dbDescription,
-					&dbContent,
-					&dbContentHash,
-					&dbLabels,
-					&dbStatus,
-					&dbExecutionEngine,
-					&dbIsLatestVersion,
-					&dbCreatedAt,
-					&dbUpdatedAt,
-				)
-
-				Expect(err).ToNot(HaveOccurred(), "Should retrieve workflow from database")
+					return row.Scan(
+						&dbWorkflowName,
+						&dbVersion,
+						&dbName,
+						&dbDescription,
+						&dbContent,
+						&dbContentHash,
+						&dbLabels,
+						&dbStatus,
+						&dbExecutionEngine,
+						&dbIsLatestVersion,
+						&dbCreatedAt,
+						&dbUpdatedAt,
+					)
+				}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 5 seconds")
 
 				// CRITICAL ASSERTIONS: Verify composite PK and all fields
 				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
@@ -310,13 +311,13 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(retrievedWorkflow).ToNot(BeNil())
 
-			// ASSERT: All fields populated correctly
-			Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
-			Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
-			Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
-			Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
-			Expect(retrievedWorkflow.Status).To(Equal("active"))
-			Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
+				// ASSERT: All fields populated correctly
+				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
+				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
+				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
+				Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
+				Expect(retrievedWorkflow.Status).To(Equal("active"))
+				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
@@ -459,6 +460,40 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(workflows).To(HaveLen(2), "Should return 2 workflows (limit=2)")
 				Expect(total).To(Equal(3), "Total should be 3 (all workflows)")
+			})
+		})
+
+		Context("with workflow_name filter", func() {
+			It("should filter workflows by exact workflow name match", func() {
+				// ARRANGE: Specific workflow name we want to find
+				targetWorkflowName := fmt.Sprintf("wf-repo-%s-list-1", testID)
+
+				// ACT: List workflows filtered by workflow_name
+				// Authority: DD-API-001 (OpenAPI client mandatory - workflow_name filter added Jan 2026)
+				// Used for test idempotency and workflow lookup by human-readable name
+				filters := &models.WorkflowSearchFilters{
+					WorkflowName: targetWorkflowName,
+				}
+				workflows, total, err := workflowRepo.List(ctx, filters, 50, 0)
+
+				// ASSERT: Only the specific workflow returned
+				Expect(err).ToNot(HaveOccurred())
+				Expect(workflows).To(HaveLen(1), "Should return exactly 1 workflow matching the name")
+				Expect(total).To(Equal(1), "Total should be 1")
+				Expect(workflows[0].WorkflowName).To(Equal(targetWorkflowName))
+			})
+
+			It("should return empty result for non-existent workflow name", func() {
+				// ACT: List workflows with non-existent workflow_name
+				filters := &models.WorkflowSearchFilters{
+					WorkflowName: "non-existent-workflow-name",
+				}
+				workflows, total, err := workflowRepo.List(ctx, filters, 50, 0)
+
+				// ASSERT: Empty result set
+				Expect(err).ToNot(HaveOccurred())
+				Expect(workflows).To(HaveLen(0), "Should return no workflows")
+				Expect(total).To(Equal(0), "Total should be 0")
 			})
 		})
 	})

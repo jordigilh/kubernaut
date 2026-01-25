@@ -75,12 +75,15 @@ func (h *PreviousExecutionFailedHandler) Handle(
 
 	logger.Info("WE skipped: PreviousExecutionFailed - manual intervention required")
 
-	// Update RR status to Failed + RequiresManualReview (BR-ORCH-032, BR-ORCH-036)
+	// Prepare failure reason
+	failureReason := "Previous execution failed during workflow run - cluster state may be inconsistent"
+
+	// Update RR status with handler-specific fields (BR-ORCH-032, BR-ORCH-036)
+	// Note: Phase transition and audit emission handled by TransitionToFailedFunc callback below
 	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, h.ctx.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		rr.Status.SkipReason = "PreviousExecutionFailed"
 		rr.Status.RequiresManualReview = true
-		rr.Status.Message = "Previous execution failed during workflow run - cluster state may be inconsistent"
+		rr.Status.Message = failureReason
 		return nil
 	})
 	if err != nil {
@@ -100,6 +103,7 @@ func (h *PreviousExecutionFailedHandler) Handle(
 		// Continue even if notification fails - don't block the skip handling
 	}
 
-	// Terminal state - no requeue
-	return ctrl.Result{}, nil
+	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
+	return h.ctx.TransitionToFailedFunc(ctx, rr, "workflow_execution", failureReason)
 }

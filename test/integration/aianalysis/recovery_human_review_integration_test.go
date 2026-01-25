@@ -25,7 +25,7 @@ import (
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Recovery Human Review Integration Tests
@@ -56,7 +56,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label("integration", "recovery", "human-review"), func() {
+var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integration", "recovery", "human-review"), func() {
 	// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
 	// No need to set it here - each test gets a unique namespace automatically
 
@@ -71,20 +71,20 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label
 			// (No need to configure mock - we're using the real service!)
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutil.UniqueTestName("recovery-hr-no-wf"),
+					Name:      helpers.UniqueTestName("recovery-hr-no-wf"),
 					Namespace: testNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      testutil.UniqueTestName("rr-recovery-hr-no-wf"),
+						Name:      helpers.UniqueTestName("rr-recovery-hr-no-wf"),
 						Namespace: testNamespace,
 					},
-					RemediationID:         testutil.UniqueTestName("rem-recovery-hr-no-wf"),
+					RemediationID:         helpers.UniqueTestName("rem-recovery-hr-no-wf"),
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint: testutil.UniqueTestName("fp-recovery-hr-no-wf"),
+							Fingerprint: helpers.UniqueTestName("fp-recovery-hr-no-wf"),
 							Severity:    "critical",
 							// Special signal type triggers HAPI mock edge case:
 							// - needs_human_review=true
@@ -178,20 +178,20 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label
 			// that triggers HAPI mock edge case (needs_human_review=true, reason=low_confidence)
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutil.UniqueTestName("recovery-hr-low-conf"),
+					Name:      helpers.UniqueTestName("recovery-hr-low-conf"),
 					Namespace: testNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      testutil.UniqueTestName("rr-recovery-hr-low-conf"),
+						Name:      helpers.UniqueTestName("rr-recovery-hr-low-conf"),
 						Namespace: testNamespace,
 					},
-					RemediationID:         testutil.UniqueTestName("rem-recovery-hr-low-conf"),
+					RemediationID:         helpers.UniqueTestName("rem-recovery-hr-low-conf"),
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint: testutil.UniqueTestName("fp-recovery-hr-low-conf"),
+							Fingerprint: helpers.UniqueTestName("fp-recovery-hr-low-conf"),
 							Severity:    "critical",
 							// Special signal type triggers HAPI mock edge case:
 							// - needs_human_review=true
@@ -274,20 +274,20 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label
 			// (NOT an edge case, HAPI returns needs_human_review=false)
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutil.UniqueTestName("recovery-normal"),
+					Name:      helpers.UniqueTestName("recovery-normal"),
 					Namespace: testNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      testutil.UniqueTestName("rr-recovery-normal"),
+						Name:      helpers.UniqueTestName("rr-recovery-normal"),
 						Namespace: testNamespace,
 					},
-					RemediationID:         testutil.UniqueTestName("rem-recovery-normal"),
+					RemediationID:         helpers.UniqueTestName("rem-recovery-normal"),
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint: testutil.UniqueTestName("fp-recovery-normal"),
+							Fingerprint: helpers.UniqueTestName("fp-recovery-normal"),
 							Severity:    "critical",
 							// Normal signal type (not an edge case)
 							// HAPI returns needs_human_review=false and provides workflow

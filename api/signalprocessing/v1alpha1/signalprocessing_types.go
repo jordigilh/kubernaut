@@ -43,7 +43,18 @@ type SignalProcessing struct {
 
 // SignalProcessingSpec defines the desired state of SignalProcessing.
 // Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+//
+// ADR-001: Spec Immutability
+// SignalProcessing represents an immutable event (signal enrichment).
+// Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+// - Audit trail integrity (processed signal matches original signal)
+// - No signal data tampering during enrichment
+// - Consistent context passed to AIAnalysis
+//
+// To reprocess a signal, delete and recreate the SignalProcessing CRD.
+//
 // +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ''",message="remediationRequestRef.name is required for audit trail correlation"
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type SignalProcessingSpec struct{
 	// Reference to parent RemediationRequest
 	RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
@@ -81,8 +92,9 @@ type SignalData struct {
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
 
-	// Severity level
-	// +kubebuilder:validation:Enum=critical;warning;info
+	// Severity level (external/raw value from monitoring system)
+	// DD-SEVERITY-001: No enum restriction - allows external severity schemes (Sev1-4, P0-P4, etc.)
+	// Normalized severity is stored in Status.Severity
 	Severity string `json:"severity"`
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
@@ -182,6 +194,21 @@ type SignalProcessingStatus struct {
 	EnvironmentClassification *EnvironmentClassification `json:"environmentClassification,omitempty"`
 	PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
 	BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
+
+	// Severity determination (DD-SEVERITY-001 v1.1)
+	// Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"
+	// Aligned with HAPI/workflow catalog severity levels for consistency across platform
+	// Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
+	// to interpret alert urgency without understanding external severity schemes.
+	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
+	// +optional
+	Severity string `json:"severity,omitempty"`
+
+	// PolicyHash is the SHA256 hash of the Rego policy used for severity determination
+	// Provides audit trail and policy version tracking for compliance requirements
+	// Expected format: 64-character hexadecimal string (SHA256 hash)
+	// +optional
+	PolicyHash string `json:"policyHash,omitempty"`
 
 	// Conditions for detailed status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

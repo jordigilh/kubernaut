@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -25,100 +25,112 @@ import (
 // ========================================
 
 // NewAuditEventRequest creates a new audit event request with default values
-func NewAuditEventRequest() *dsgen.AuditEventRequest {
-	now := time.Now()
+// CRITICAL: Timestamp MUST be UTC to match DataStorage server validation
+// Issue: DataStorage validates timestamps against server time (UTC)
+// Fix: Use time.Now().UTC() instead of time.Now() to avoid timezone mismatches
+func NewAuditEventRequest() *ogenclient.AuditEventRequest {
+	now := time.Now().UTC() // ✅ Force UTC to match DataStorage server timezone
 	version := "1.0"
-	return &dsgen.AuditEventRequest{
+	return &ogenclient.AuditEventRequest{
 		Version:        version,
 		EventTimestamp: now,
 	}
 }
 
 // SetEventType sets the event type
-func SetEventType(e *dsgen.AuditEventRequest, eventType string) {
+func SetEventType(e *ogenclient.AuditEventRequest, eventType string) {
 	e.EventType = eventType
 }
 
 // SetEventCategory sets the event category
 // Converts string to enum type for OpenAPI client type safety (DD-API-001)
-func SetEventCategory(e *dsgen.AuditEventRequest, category string) {
-	e.EventCategory = dsgen.AuditEventRequestEventCategory(category)
+func SetEventCategory(e *ogenclient.AuditEventRequest, category string) {
+	e.EventCategory = ogenclient.AuditEventRequestEventCategory(category)
 }
 
 // SetEventAction sets the event action
-func SetEventAction(e *dsgen.AuditEventRequest, action string) {
+func SetEventAction(e *ogenclient.AuditEventRequest, action string) {
 	e.EventAction = action
 }
 
 // SetEventOutcome sets the event outcome
-func SetEventOutcome(e *dsgen.AuditEventRequest, outcome dsgen.AuditEventRequestEventOutcome) {
+func SetEventOutcome(e *ogenclient.AuditEventRequest, outcome ogenclient.AuditEventRequestEventOutcome) {
 	e.EventOutcome = outcome
 }
 
 // SetActor sets actor information
-func SetActor(e *dsgen.AuditEventRequest, actorType, actorID string) {
-	e.ActorType = &actorType
-	e.ActorId = &actorID
+func SetActor(e *ogenclient.AuditEventRequest, actorType, actorID string) {
+	e.ActorType.SetTo(actorType)
+	e.ActorID.SetTo(actorID)
 }
 
 // SetResource sets resource information
-func SetResource(e *dsgen.AuditEventRequest, resourceType, resourceID string) {
-	e.ResourceType = &resourceType
-	e.ResourceId = &resourceID
+func SetResource(e *ogenclient.AuditEventRequest, resourceType, resourceID string) {
+	e.ResourceType.SetTo(resourceType)
+	e.ResourceID.SetTo(resourceID)
 }
 
 // SetCorrelationID sets the correlation ID
-func SetCorrelationID(e *dsgen.AuditEventRequest, correlationID string) {
-	e.CorrelationId = correlationID
+func SetCorrelationID(e *ogenclient.AuditEventRequest, correlationID string) {
+	e.CorrelationID = correlationID
 }
 
 // SetNamespace sets the namespace
-func SetNamespace(e *dsgen.AuditEventRequest, namespace string) {
-	e.Namespace = &namespace
+func SetNamespace(e *ogenclient.AuditEventRequest, namespace string) {
+	e.Namespace.SetTo(namespace)
 }
 
 // SetClusterName sets the cluster name
-func SetClusterName(e *dsgen.AuditEventRequest, clusterName string) {
-	e.ClusterName = &clusterName
+func SetClusterName(e *ogenclient.AuditEventRequest, clusterName string) {
+	e.ClusterName.SetTo(clusterName)
 }
 
 // SetDuration sets the operation duration in milliseconds
-func SetDuration(e *dsgen.AuditEventRequest, durationMs int) {
-	e.DurationMs = &durationMs
+func SetDuration(e *ogenclient.AuditEventRequest, durationMs int) {
+	e.DurationMs.SetTo(durationMs)
 }
 
 // SetSeverity sets the severity level
-func SetSeverity(e *dsgen.AuditEventRequest, severity string) {
-	e.Severity = &severity
+func SetSeverity(e *ogenclient.AuditEventRequest, severity string) {
+	e.Severity.SetTo(severity)
 }
 
-// SetEventData sets the event data payload from any structured type
+// SetEventData sets the event data payload from an ogen-generated union type
 //
-// V1.0: ZERO UNSTRUCTURED DATA - Accepts structured Go types directly.
+// V3.0: OGEN TYPED UNIONS - Proper type-safe discriminated unions (no interface{})
 //
-// Usage:
+// ⚠️ MIGRATION IN PROGRESS: This function is being deprecated in favor of direct ogen constructor calls.
 //
-//	payload := MessageSentEventData{
-//	    NotificationID: notification.Name,
-//	    Channel:        notification.Spec.Channel,
-//	}
-//	audit.SetEventData(event, payload)  // ✅ Direct assignment, no conversion
+// OLD PATTERN (V2.0 - oapi-codegen with interface{}):
 //
-// The OpenAPI client now uses interface{} for EventData, eliminating the need for
-// map[string]interface{} conversion. JSON marshaling happens at the HTTP layer.
+//	payload := WorkflowExecutionAuditPayload{...}
+//	audit.SetEventData(event, payload)  // Assigned to interface{}
 //
-// DD-AUDIT-004: V1.0 - Zero Unstructured Data (no map[string]interface{})
-func SetEventData(e *dsgen.AuditEventRequest, data interface{}) {
+// NEW PATTERN (V3.0 - ogen with typed unions):
+//
+//	payload := ogenclient.WorkflowExecutionAuditPayload{...}
+//	event.EventData = ogenclient.NewWorkflowExecutionAuditPayloadAuditEventRequestEventData(payload)
+//
+// WHY CHANGE?
+// - ✅ Type safety: Compile-time checking of payload types
+// - ✅ No marshaling: Direct struct assignment (performance)
+// - ✅ No interface{}: Proper discriminated unions
+// - ✅ Better IDE support: Autocomplete for payload fields
+//
+// This function remains temporarily for backward compatibility but will be removed in V4.0.
+//
+// DD-AUDIT-005: Ogen Migration - Eliminating json.RawMessage and interface{} conversions
+func SetEventData(e *ogenclient.AuditEventRequest, data ogenclient.AuditEventRequestEventData) {
 	e.EventData = data
 }
 
 // SetEventDataFromEnvelope sets the event data from a CommonEnvelope
-func SetEventDataFromEnvelope(e *dsgen.AuditEventRequest, envelope *CommonEnvelope) error {
-	data, err := EnvelopeToMap(envelope)
-	if err != nil {
-		return err
-	}
-	e.EventData = data
+//
+// ⚠️ DEPRECATED: This function is being removed in V4.0.
+// Envelopes should be converted to proper ogen union types instead.
+func SetEventDataFromEnvelope(e *ogenclient.AuditEventRequest, envelope *CommonEnvelope) error {
+	// TODO: Convert envelope to proper ogen union type
+	// For now, this function is not used in production code
 	return nil
 }
 
@@ -193,11 +205,11 @@ func StructToMap(data interface{}) (map[string]interface{}, error) {
 
 const (
 	// OutcomeSuccess indicates successful operation
-	OutcomeSuccess = dsgen.AuditEventRequestEventOutcomeSuccess
+	OutcomeSuccess = ogenclient.AuditEventRequestEventOutcomeSuccess
 
 	// OutcomeFailure indicates failed operation
-	OutcomeFailure = dsgen.AuditEventRequestEventOutcomeFailure
+	OutcomeFailure = ogenclient.AuditEventRequestEventOutcomeFailure
 
 	// OutcomePending indicates operation still in progress
-	OutcomePending = dsgen.AuditEventRequestEventOutcomePending
+	OutcomePending = ogenclient.AuditEventRequestEventOutcomePending
 )

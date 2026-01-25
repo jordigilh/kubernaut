@@ -119,10 +119,39 @@ func main() {
 
 	// Gap 3.3: Pass DLQ max length for capacity monitoring
 	dlqMaxLen := int64(cfg.Redis.DLQMaxLen)
-	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg, dlqMaxLen)
-	if err != nil {
-		logger.Error(err, "Failed to create server")
-		os.Exit(1)
+
+	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
+	// Retry logic for PostgreSQL/Redis connection (E2E timing issue fix)
+	// In Kind clusters, PostgreSQL may not be ready when DataStorage starts
+	var srv *server.Server
+	maxRetries := 10
+	retryDelay := 2 * time.Second
+
+	logger.Info("Connecting to PostgreSQL and Redis (with retry logic)...",
+		"max_retries", maxRetries,
+		"retry_delay", retryDelay)
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		var err error
+		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, cfg, serverCfg, dlqMaxLen)
+		if err == nil {
+			logger.Info("Successfully connected to PostgreSQL and Redis",
+				"attempt", attempt)
+			break
+		}
+
+		if attempt == maxRetries {
+			logger.Error(err, "Failed to create server after all retries",
+				"attempts", maxRetries)
+			os.Exit(1)
+		}
+
+		logger.Info("Failed to connect, retrying...",
+			"attempt", attempt,
+			"max_retries", maxRetries,
+			"error", err.Error(),
+			"next_retry_in", retryDelay)
+		time.Sleep(retryDelay)
 	}
 
 	// DD-007: Graceful shutdown timeout (Kubernetes terminationGracePeriodSeconds)

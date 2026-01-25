@@ -25,8 +25,9 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 # Service auto-discovery from cmd/ directory
-SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))
-# Result: aianalysis datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
+# Result: aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+# Note: must-gather is a bash tool, built separately via cmd/must-gather/Makefile
 
 # Test configuration
 # Dynamically detect CPU cores (works on Linux and macOS)
@@ -78,6 +79,29 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ Generation complete"
 
+.PHONY: generate-datastorage-client
+generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from spec (DD-API-001)
+	@echo "📋 Generating DataStorage clients (Go + Python) from api/openapi/data-storage-v1.yaml..."
+	@echo ""
+	@echo "🔧 [1/2] Generating Go client with ogen..."
+	@go generate ./pkg/datastorage/ogen-client/...
+	@echo "✅ Go client generated: pkg/datastorage/ogen-client/oas_*_gen.go"
+	@echo ""
+	@echo "🔧 [2/2] Generating Python client..."
+	@rm -rf holmesgpt-api/src/clients/datastorage
+	@podman run --rm -v "$(PWD)":/local:z openapitools/openapi-generator-cli:v7.2.0 generate \
+		-i /local/api/openapi/data-storage-v1.yaml \
+		-g python \
+		-o /local/holmesgpt-api/src/clients/datastorage \
+		--package-name datastorage \
+		--additional-properties=packageVersion=1.0.0
+	@echo "✅ Python client generated: holmesgpt-api/src/clients/datastorage/"
+	@echo ""
+	@echo "✨ Both clients generated successfully!"
+	@echo "   Go (ogen):  pkg/datastorage/ogen-client/"
+	@echo "   Python:     holmesgpt-api/src/clients/datastorage/"
+	@echo "   Spec:       api/openapi/data-storage-v1.yaml"
+
 .PHONY: generate-holmesgpt-client
 generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
@@ -116,12 +140,32 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ginkgo setup-envtest ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/$*/...
+	@echo "💡 For coverage: make test-integration-$*-coverage"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
+
+# Integration Tests with Coverage (WorkflowExecution pattern)
+.PHONY: test-integration-%-coverage
+test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 $* - Integration Tests with Production Code Coverage"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: go test with -coverpkg (captures goroutine controller code)"
+	@echo "⏱️  Note: Sequential execution (no parallel) for accurate coverage"
+	@go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) \
+		-coverprofile=coverage_integration_$*.out \
+		-coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$* \
+		./test/integration/$*/...
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ Coverage report: coverage_integration_$*.out"
+	@echo "📊 View details: go tool cover -func=coverage_integration_$*.out"
+	@echo "🌐 HTML report: go tool cover -html=coverage_integration_$*.out"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # E2E Tests
 .PHONY: ensure-coverdata
@@ -134,11 +178,33 @@ ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collecti
 	fi
 
 .PHONY: test-e2e-%
-test-e2e-%: ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
+	@# Pre-generate DataStorage client to catch spec inconsistencies (DD-API-001)
+	@if [ "$*" = "datastorage" ]; then \
+		echo "🔍 Pre-validating DataStorage OpenAPI client generation..."; \
+		$(MAKE) generate-datastorage-client || { \
+			echo "❌ DataStorage client generation failed - OpenAPI spec may be invalid"; \
+			exit 1; \
+		}; \
+		echo "✅ DataStorage client validated successfully"; \
+	fi
+	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS)"; \
+	if [ -n "$(GINKGO_LABEL)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
+		echo "🏷️  Label filter: $(GINKGO_LABEL)"; \
+	fi; \
+	if [ -n "$(GINKGO_FOCUS)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; \
+		echo "🔍 Focusing on: $(GINKGO_FOCUS)"; \
+	fi; \
+	if [ -n "$(GINKGO_SKIP)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; \
+		echo "⏭️  Skipping: $(GINKGO_SKIP)"; \
+	fi; \
+	eval "$$GINKGO_CMD ./test/e2e/$*/..."
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -435,6 +501,46 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 	@podman image prune -f --filter "label=test=holmesgptapi" 2>/dev/null || true
 	@echo "✅ Complete cleanup done (containers + images)"
 
+##@ Special Cases - Authentication Webhook
+
+.PHONY: test-unit-authwebhook
+test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
+
+# test-integration-authwebhook now uses the general test-integration-% pattern (no override needed)
+.PHONY: test-e2e-authwebhook
+test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/e2e/authwebhook/...
+
+.PHONY: test-all-authwebhook
+test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Running ALL Authentication Webhook Tests (3 tiers)"
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	$(MAKE) test-unit-authwebhook || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-integration-authwebhook || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-e2e-authwebhook || FAILED=$$((FAILED + 1)); \
+	if [ $$FAILED -gt 0 ]; then \
+		echo "❌ $$FAILED test tier(s) failed"; \
+		exit 1; \
+	fi
+	@echo "✅ All webhook test tiers completed successfully!"
+
+.PHONY: clean-authwebhook-integration
+clean-authwebhook-integration: ## Clean webhook integration test infrastructure
+	@echo "🧹 Cleaning webhook integration infrastructure..."
+	@podman stop authwebhook_postgres_1 authwebhook_redis_1 authwebhook_datastorage_1 2>/dev/null || true
+	@podman rm authwebhook_postgres_1 authwebhook_redis_1 authwebhook_datastorage_1 2>/dev/null || true
+	@podman network rm authwebhook_test-network 2>/dev/null || true
+	@echo "✅ Cleanup complete"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
@@ -518,3 +624,23 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+##@ Cursor Rule Compliance
+
+.PHONY: lint-rules
+lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance ## Run all cursor rule compliance checks
+
+.PHONY: lint-test-patterns
+lint-test-patterns: ## Check for test anti-patterns
+	@echo "🔍 Checking for test anti-patterns..."
+	@./scripts/validation/check-test-anti-patterns.sh
+
+.PHONY: lint-business-integration
+lint-business-integration: ## Check business code integration in main applications
+	@echo "🔍 Checking business code integration..."
+	@./scripts/validation/check-business-integration.sh
+
+.PHONY: lint-tdd-compliance
+lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
+	@echo "🔍 Checking TDD compliance..."
+	@./scripts/validation/check-tdd-compliance.sh

@@ -188,9 +188,10 @@ func main() {
 	// DD-PERF-001: Atomic Status Updates
 	// Status Manager for reducing K8s API calls by 50-75%
 	// Consolidates multiple status field updates into single atomic operations
+	// AA-HAPI-001: Pass APIReader to bypass cache for fresh refetches
 	// ========================================
-	statusManager := aistatus.NewManager(mgr.GetClient())
-	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001)")
+	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
+	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
 
 	if err = (&aianalysis.AIAnalysisReconciler{
 		Client:               mgr.GetClient(),

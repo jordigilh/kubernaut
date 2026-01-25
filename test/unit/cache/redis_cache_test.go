@@ -62,11 +62,11 @@ var _ = Describe("Redis Cache", func() {
 
 	AfterEach(func() {
 		if client != nil {
-		_ = client.Close()
-	}
-	if miniRedis != nil {
-		miniRedis.Close()
-	}
+			_ = client.Close()
+		}
+		if miniRedis != nil {
+			miniRedis.Close()
+		}
 	})
 
 	Describe("NewCache", func() {
@@ -233,7 +233,7 @@ var _ = Describe("Redis Cache", func() {
 					DialTimeout: 100 * time.Millisecond,
 				}
 				unavailableClient := rediscache.NewClient(opts, logger)
-				defer unavailableClient.Close()
+				defer func() { _ = unavailableClient.Close() }()
 
 				cache := rediscache.NewCache[string](unavailableClient, "test", 5*time.Minute)
 
@@ -251,7 +251,7 @@ var _ = Describe("Redis Cache", func() {
 					DialTimeout: 100 * time.Millisecond,
 				}
 				unavailableClient := rediscache.NewClient(opts, logger)
-				defer unavailableClient.Close()
+				defer func() { _ = unavailableClient.Close() }()
 
 				cache := rediscache.NewCache[string](unavailableClient, "test", 5*time.Minute)
 

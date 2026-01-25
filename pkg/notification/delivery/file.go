@@ -110,16 +110,10 @@ func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// TDD GREEN: Use FileDeliveryConfig from CRD if specified, otherwise use constructor outputDir
+	// Use service-level configuration (constructor outputDir)
+	// Per design decision: Channel-specific config should NOT be in CRD
 	outputDir := s.outputDir
-	format := "json" // Default format
-
-	if notification.Spec.FileDeliveryConfig != nil {
-		outputDir = notification.Spec.FileDeliveryConfig.OutputDirectory
-		if notification.Spec.FileDeliveryConfig.Format != "" {
-			format = notification.Spec.FileDeliveryConfig.Format
-		}
-	}
+	format := "json" // Default format (hardcoded for E2E simplicity)
 
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -210,21 +204,6 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 
 	return nil
 }
-
-// generateFilename creates a unique filename for the notification (legacy method).
-//
-// Format: notification-{name}-{timestamp}.json
-// Example: notification-critical-alert-20251123-143022.123456.json
-//
-// Timestamp includes microseconds to prevent collisions in high-throughput scenarios.
-// This ensures thread-safe concurrent delivery without overwrites.
-//
-// DEPRECATED: Use generateFilenameWithFormat instead
-func (s *FileDeliveryService) generateFilename(notification *notificationv1alpha1.NotificationRequest) string {
-	timestamp := time.Now().Format("20060102-150405.000000")
-	return fmt.Sprintf("notification-%s-%s.json", notification.Name, timestamp)
-}
-
 // generateFilenameWithFormat creates a unique filename for the notification with specified format.
 //
 // Format: notification-{name}-{timestamp}.{format}

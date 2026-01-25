@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ConsoleDeliveryService delivers notifications to console (stdout)
@@ -50,8 +51,9 @@ func (s *ConsoleDeliveryService) Deliver(ctx context.Context, notification *noti
 		notification.Spec.Body,
 	)
 
-	// Print to stdout
-	fmt.Print(formattedMessage)
+	// Log to controller-runtime logger (ADR: LOGGING_STANDARD.md)
+	logger := log.FromContext(ctx)
+	logger.Info(formattedMessage)
 
 	return nil
 }

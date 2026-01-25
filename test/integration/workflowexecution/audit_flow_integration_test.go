@@ -29,7 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -61,30 +62,35 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
 	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort)
 
-	var dsClient *dsgen.ClientWithResponses
+	var dsClient *ogenclient.Client
 
 	BeforeEach(func() {
 		// Verify Data Storage is available
-		// Per TESTING_GUIDELINES.md: Integration tests MUST use real services
+		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests MUST fail
+		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
 		if err != nil || resp.StatusCode != http.StatusOK {
-			Skip(fmt.Sprintf(
-				"Data Storage not available at %s - skipping audit flow tests\n"+
-					"Start WE infrastructure: make test-integration-workflowexecution",
-				dataStorageURL))
+			Fail(fmt.Sprintf(
+				"REQUIRED: Data Storage not available at %s\n"+
+					"  Per DD-AUDIT-003: WorkflowExecution MUST have audit capability\n"+
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Health check error: %v\n"+
+					"  Start infrastructure: make test-integration-workflowexecution\n",
+				dataStorageURL, err))
 		}
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 
-		// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		// ✅ DD-API-001: Use ogen OpenAPI client (MANDATORY)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage ogen client")
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {
-		It("should emit 'workflow.started' audit event to Data Storage", func() {
+		It("should emit 'workflowexecution.execution.started' audit event to Data Storage (ADR-034 v1.5)", func() {
 			// BUSINESS SCENARIO:
 			// When WorkflowExecution controller creates a PipelineRun:
 			// 1. Validates workflow configuration
@@ -109,8 +115,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			targetResource := fmt.Sprintf("%s/deployment/test-app", testNs.Name)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      wfeName,
-					Namespace: testNs.Name,
+					Name:       wfeName,
+					Namespace:  testNs.Name,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -133,8 +139,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			// Use WFE name as correlation ID (production pattern)
-			correlationID := wfeName
+			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
+			correlationID := "test-rr-" + wfeName
 
 			By("3. Wait for controller to process (BUSINESS LOGIC)")
 			Eventually(func() string {
@@ -150,55 +156,51 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			}, 15*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
 				"Controller should start processing workflow execution")
 
-			By("4. Query Data Storage for 'workflow.started' audit event (SIDE EFFECT)")
+			By("4. Query Data Storage for 'workflowexecution.execution.started' audit event (SIDE EFFECT)")
 			// ✅ DD-API-001: Use OpenAPI client with type-safe parameters
-			eventType := "workflow.started"
-			eventCategory := "workflow"
-			var auditEvents []dsgen.AuditEvent
+			// Per ADR-034 v1.5: event_type = weaudit.EventTypeExecutionStarted, event_category = "workflowexecution"
+			eventType := weaudit.EventTypeExecutionStarted
+			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
+			var auditEvents []ogenclient.AuditEvent
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventType:     &eventType,
-					EventCategory: &eventCategory,
-					CorrelationId: &correlationID,
+				resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
 				})
 				if err != nil {
 					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
 					return 0
 				}
 
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-					GinkgoWriter.Printf("Audit query returned status %d\n", resp.StatusCode())
-					return 0
+				auditEvents = resp.Data
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
 				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
-				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
-				return 0
+				return len(auditEvents)
 			}, 20*time.Second, 1*time.Second).Should(Equal(1),
-				"BR-WE-005: WorkflowExecution MUST emit exactly 1 workflow.started audit event (DD-TESTING-001)")
+				"BR-WE-005: WorkflowExecution MUST emit exactly 1 workflowexecution.execution.started audit event (DD-TESTING-001, ADR-034 v1.5)")
 
 			By("5. Validate audit event content")
-			var startedEvent *dsgen.AuditEvent
+			var startedEvent *ogenclient.AuditEvent
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflow.started" {
+				if auditEvents[i].EventType == weaudit.EventTypeExecutionStarted {
 					startedEvent = &auditEvents[i]
 					break
 				}
 			}
-			Expect(startedEvent).ToNot(BeNil(), "Should have 'workflow.started' audit event")
+			Expect(startedEvent).ToNot(BeNil(), "Should have 'execution.workflow.started' audit event")
 
 			// Validate key fields
-			Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryWorkflow))
+			Expect(startedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflowexecution)) // Per ADR-034 v1.5: workflowexecution category
 			Expect(startedEvent.EventAction).To(Equal("started"))
-			Expect(startedEvent.CorrelationId).To(Equal(correlationID))
-			Expect(startedEvent.ResourceType).ToNot(BeNil())
-			Expect(*startedEvent.ResourceType).To(Equal("WorkflowExecution"))
+			Expect(startedEvent.CorrelationID).To(Equal(correlationID))
+			Expect(startedEvent.ResourceType.IsSet()).To(BeTrue())
+			Expect(startedEvent.ResourceType.Value).To(Equal("WorkflowExecution"))
 
-			GinkgoWriter.Printf("✅ workflow.started audit event validated: %s\n", startedEvent.EventId)
+			GinkgoWriter.Printf("✅ execution.workflow.started audit event validated: %s\n", startedEvent.EventID)
 		})
 	})
 
@@ -206,7 +208,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 		It("should track workflow lifecycle through audit events", func() {
 			// BUSINESS SCENARIO:
 			// When WorkflowExecution progresses through phases:
-			// 1. Pending → Running (workflow.started)
+			// 1. Pending → Running (execution.workflow.started)
 			// 2. Running → Completed/Failed (workflow.completed/workflow.failed)
 			// 3. Each transition MUST emit audit event
 			//
@@ -228,8 +230,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			targetResource := fmt.Sprintf("%s/deployment/test-app", testNs.Name)
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      wfeName,
-					Namespace: testNs.Name,
+					Name:       wfeName,
+					Namespace:  testNs.Name,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -252,63 +254,60 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			correlationID := wfeName
+			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
+			correlationID := "test-rr-" + wfeName
 
-			By("3. Wait for controller to process and emit workflow.started event")
+			By("3. Wait for controller to process and emit workflowexecution.execution.started event")
 			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-			eventCategory := "workflow"
+			// Don't filter by category - get all events for this correlation ID (workflowexecution category)
+			// Per ADR-034 v1.5: all WorkflowExecution events use "workflowexecution" category
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &correlationID,
+				// REQUIRED: Flush audit buffer on each poll to ensure events are written to DataStorage
+				flushAuditBuffer()
+				resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
 				})
-				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+				if err != nil {
 					return 0
 				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
-				return 0
+				return len(resp.Data)
 			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-				"Controller should emit at least workflow.started event")
+				"Controller should emit at least workflowexecution.execution.started event")
 
 			By("4. Fetch all workflow audit events for detailed validation")
-			// ✅ DD-API-001: Use OpenAPI client
-			var auditEvents []dsgen.AuditEvent
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
+			// ✅ DD-API-001: Use ogen OpenAPI client
+			// REQUIRED: Flush audit buffer to ensure all events are written to DataStorage for concurrent tests
+			flushAuditBuffer()
+			var auditEvents []ogenclient.AuditEvent
+			resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
 			Expect(err).ToNot(HaveOccurred(), "Should successfully query audit events")
-			Expect(resp.StatusCode()).To(Equal(http.StatusOK), "Query should return 200")
-			Expect(resp.JSON200).ToNot(BeNil(), "Response should have JSON body")
-			if resp.JSON200.Data != nil {
-				auditEvents = *resp.JSON200.Data
-			}
-			// DD-TESTING-001: Deterministic validation - we always expect workflow.started
-			// May also have workflow.completed/failed if Tekton is available
+			auditEvents = resp.Data
+			// DD-TESTING-001: Deterministic validation - we always expect workflowexecution.execution.started
+			// May also have workflowexecution.workflow.completed/failed if Tekton is available
+			// Per ADR-034 v1.5: all event types prefixed with "workflowexecution"
 			Expect(len(auditEvents)).To(BeNumerically(">=", 1),
-				"Should have at least workflow.started event")
+				"Should have at least workflowexecution.execution.started event")
 
 			By("5. Verify workflow lifecycle events")
 			eventTypes := make(map[string]bool)
 			for _, event := range auditEvents {
 				eventTypes[event.EventType] = true
 				GinkgoWriter.Printf("  Found audit event: %s (correlation: %s)\n",
-					event.EventType, event.CorrelationId)
+					event.EventType, event.CorrelationID)
 			}
 
-			// Should have at minimum workflow.started
-			Expect(eventTypes).To(HaveKey("workflow.started"),
-				"Expected workflow.started event in lifecycle")
+			// Should have at minimum workflowexecution.execution.started (per ADR-034 v1.5)
+			Expect(eventTypes).To(HaveKey(weaudit.EventTypeExecutionStarted),
+				"Expected workflowexecution.execution.started event in lifecycle (ADR-034 v1.5)")
 
-			// May have workflow.completed or workflow.failed depending on Tekton availability
-			if eventTypes["workflow.completed"] || eventTypes["workflow.failed"] {
+			// May have workflowexecution.workflow.completed or workflowexecution.workflow.failed depending on Tekton availability
+			if eventTypes["workflowexecution.workflow.completed"] || eventTypes["workflowexecution.workflow.failed"] {
 				GinkgoWriter.Println("✅ Complete workflow lifecycle tracked in audit trail")
 			} else {
-				GinkgoWriter.Println("⚠️  Only workflow.started event found (expected in test env without full Tekton)")
+				GinkgoWriter.Println("⚠️  Only workflowexecution.execution.started event found (expected in test env without full Tekton)")
 			}
 		})
 	})
 })
-

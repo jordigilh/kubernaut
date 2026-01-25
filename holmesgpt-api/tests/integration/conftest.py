@@ -188,7 +188,7 @@ def audit_store(data_storage_url):
         print(f"✅ Audit store flushed (all buffered events written)")
     else:
         print(f"⚠️  Warning: Audit store flush timed out or failed")
-    
+
     print(f"🔄 Closing audit store...")
     store.close()
     print(f"✅ Audit store closed")
@@ -223,11 +223,10 @@ def hapi_client():
     import os
     from fastapi.testclient import TestClient
 
-    # Set configuration environment variables
-    os.environ["CONFIG_FILE"] = "config.yaml"
-    os.environ["MOCK_LLM_MODE"] = "true"
+    # Environment variables are set globally in pytest_configure
+    # (CONFIG_FILE, MOCK_LLM_MODE, LLM_MODEL, LLM_ENDPOINT)
 
-    # Import app AFTER setting environment variables
+    # Import app (env vars already set by pytest_configure)
     from src.main import app
 
     client = TestClient(app)
@@ -390,11 +389,27 @@ def is_integration_infra_available() -> bool:
 
 
 # ========================================
-# PYTEST MARKERS
+# PYTEST MARKERS AND GLOBAL CONFIGURATION
 # ========================================
 
 def pytest_configure(config):
-    """Register custom pytest markers."""
+    """
+    Register custom pytest markers and set global environment variables.
+
+    CRITICAL: Set LLM configuration env vars here (before test collection)
+    to ensure they're available in all pytest workers (gw0-gw3).
+    """
+    import os
+
+    # Set LLM configuration for all integration tests
+    # These must be set BEFORE any test modules import src.main
+    os.environ["LLM_MODEL"] = "gpt-4-turbo"
+    # DD-TEST-001 v2.5: Mock LLM on port 18140 (HAPI integration tests)
+    os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:18140"
+    os.environ["MOCK_LLM_MODE"] = "true"
+    os.environ["CONFIG_FILE"] = "config.yaml"
+    os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
+
     config.addinivalue_line(
         "markers",
         "requires_data_storage: mark test as requiring Data Storage service"
@@ -429,17 +444,6 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_ds)
 
         # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)
-
-def pytest_configure(config):
-    """Register custom pytest markers."""
-    config.addinivalue_line(
-        "markers",
-        "requires_data_storage: mark test as requiring Data Storage service"
-    )
-    config.addinivalue_line(
-        "markers",
-        "requires_hapi: mark test as requiring HAPI service"
-    )
 
 
 def pytest_collection_modifyitems(config, items):

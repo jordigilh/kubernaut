@@ -29,21 +29,20 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, func() {
 	var (
-		testCtx       context.Context
-		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "structured-logging")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -51,15 +50,9 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("Test 16: Structured Logging Verification - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("logging")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
-
+		// Create unique test namespace (Pattern: RO E2E)
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "logging")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -78,23 +71,12 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
 			testLogger.Info(fmt.Sprintf("  kubectl logs -n %s deployment/gateway -f", testNamespace))
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+			// Clean up test namespace (Pattern: RO E2E)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+			testLogger.Info("✅ Test cleanup complete")
 		}
-
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		_ = k8sClient.Delete(testCtx, ns)
-
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -105,7 +87,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		processID := GinkgoParallelProcess()
-		uniqueMarker := fmt.Sprintf("LoggingTest-p%d-%d", processID, time.Now().UnixNano())
+		uniqueMarker := fmt.Sprintf("LoggingTest-p%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("Step 1: Send alert with unique marker")
 		alertPayload := map[string]interface{}{
@@ -150,24 +132,28 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 
 		testLogger.Info("✅ Alert sent with unique marker", "marker", uniqueMarker)
 
-		testLogger.Info("Step 2: Retrieve Gateway logs")
-		// Wait for logs to be written using Eventually
-		var logs string
-		Eventually(func() bool {
-			cmd := exec.CommandContext(testCtx, "kubectl", "logs",
-				"-n", gatewayNamespace,
-				"-l", "app=gateway",
-				"--tail=100",
-				"--kubeconfig", kubeconfigPath)
-			output, err := cmd.Output()
-			if err != nil {
-				testLogger.Info("Could not retrieve Gateway logs", "error", err)
-				return false
-			}
-			logs = string(output)
-			// Check if logs contain our unique marker
-			return len(logs) > 0
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
+	testLogger.Info("Step 2: Retrieve Gateway logs")
+	// Wait for logs to be written using Eventually
+	var logs string
+	Eventually(func() bool {
+		// Use fresh context for kubectl (not testCtx which may be expired in parallel execution)
+		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cmdCancel()
+
+		cmd := exec.CommandContext(cmdCtx, "kubectl", "logs",
+			"-n", gatewayNamespace,
+			"-l", "app=gateway",
+			"--tail=100",
+			"--kubeconfig", kubeconfigPath)
+		output, err := cmd.Output()
+		if err != nil {
+			testLogger.Info("Could not retrieve Gateway logs", "error", err)
+			return false
+		}
+		logs = string(output)
+		// Check if logs contain our unique marker
+		return len(logs) > 0
+	}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
 
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))

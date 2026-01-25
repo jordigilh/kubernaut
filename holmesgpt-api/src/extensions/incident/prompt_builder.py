@@ -536,7 +536,7 @@ After your investigation, assess the severity of the root cause using these leve
 
 **IMPORTANT**: Your RCA severity may differ from the input signal severity. Use your analysis to determine the actual severity based on business impact.
 
-### Severity Levels:
+### Severity Levels (DD-SEVERITY-001):
 
 **critical** - Immediate remediation required
 - Production service completely unavailable
@@ -545,27 +545,24 @@ After your investigation, assess the severity of the root cause using these leve
 - SLA violation in progress
 - Revenue-impacting outage
 - Affects >50% of users
-
-**high** - Urgent remediation needed
-- Significant service degradation (>50% performance loss)
 - High error rate (>10% of requests failing)
-- Production issue escalating toward critical
+
+**warning** - Remediation needed
+- Significant service degradation (>50% performance loss)
+- Moderate error rate (1-10% of requests failing)
+- Production issue that needs attention
 - Affects 10-50% of users
 - SLA at risk
-
-**medium** - Remediation recommended
-- Minor service degradation (<50% performance loss)
-- Moderate error rate (1-10% of requests failing)
 - Non-production critical issues
-- Affects <10% of users
-- Staging/development critical issues
 
-**low** - Remediation optional
-- Informational issues
+**info** - Remediation recommended or informational
+- Minor service degradation (<50% performance loss)
+- Low error rate (<1% of requests failing)
+- Development/staging environment issues
+- Affects <10% of users
 - Optimization opportunities
-- Development environment issues
-- No user impact
 - Capacity planning alerts
+- No immediate user impact
 
 ## MCP Workflow Search Guidance
 

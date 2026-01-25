@@ -204,7 +204,7 @@ LESSON: Test business outcomes, not implementation details
 ```
 ✅ Test 1: Global timeout enforcement (PASSING)
 ✅ Test 2: Timeout threshold validation (PASSING)
-⏸️  Test 3: Per-RR timeout override (PENDING - needs spec.timeoutConfig)
+⏸️  Test 3: Per-RR timeout override (PENDING - needs status.timeoutConfig)
 ⏸️  Test 4: Per-phase timeout (PENDING - needs configuration design)
 ⏸️  Test 5: Timeout notification (PENDING - needs notification creation logic)
 
@@ -213,7 +213,7 @@ Progress: 50% complete for BR-ORCH-027/028
 ```
 
 **Blocking Issues for Pending Tests**:
-1. **Test 3**: Requires CRD schema update (`spec.timeoutConfig` field)
+1. **Test 3**: Requires CRD schema update (`status.timeoutConfig` field)
 2. **Test 4**: Requires phase timeout configuration approach decision
 3. **Test 5**: Depends on Tests 1-2 (now unblocked, can be implemented next)
 
@@ -300,7 +300,7 @@ Remaining: 24 tests (22 hours estimated)
 
 ### **1. Test 3-4 Blocked by Schema/Configuration**:
 ```
-ISSUE: spec.timeoutConfig field doesn't exist in CRD
+ISSUE: status.timeoutConfig field doesn't exist in CRD
 BLOCKER: Requires CRD schema update
 ACTION NEEDED: Team discussion on timeout configuration approach
 IMPACT: 2 tests pending until decision made
@@ -397,7 +397,7 @@ Files:
 
 Steps:
   1. Team discussion on timeout configuration approach
-  2. Update CRD schema (spec.timeoutConfig)
+  2. Update CRD schema (status.timeoutConfig)
   3. Generate CRD manifests
   4. Activate Tests 3-4
   5. Implement controller logic
@@ -600,7 +600,7 @@ make test-integration-remediationorchestrator
 4. ✅ **Controller timeout detection working** (uses status.StartTime)
 
 ### **What's Blocked**:
-1. ⏸️  **Test 3**: Needs `spec.timeoutConfig` CRD field
+1. ⏸️  **Test 3**: Needs `status.timeoutConfig` CRD field
 2. ⏸️  **Test 4**: Needs phase timeout configuration design
 3. ⏸️  **Test 5**: Ready to implement (depends on Tests 1-2, now complete)
 

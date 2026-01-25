@@ -85,7 +85,8 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 			Build()
 
 		// Create status updater (NEW component for DD-GATEWAY-011)
-		updater = processing.NewStatusUpdater(k8sClient)
+		// DD-STATUS-001: Pass k8sClient as both client and apiReader (tests use fake client, already uncached)
+		updater = processing.NewStatusUpdater(k8sClient, k8sClient)
 	})
 
 	// ========================================

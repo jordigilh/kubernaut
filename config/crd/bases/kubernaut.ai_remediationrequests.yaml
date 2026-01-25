@@ -38,7 +38,21 @@ spec:
           metadata:
             type: object
           spec:
-            description: RemediationRequestSpec defines the desired state of RemediationRequest.
+            description: |-
+              RemediationRequestSpec defines the desired state of RemediationRequest.
+
+              ADR-001: Spec Immutability
+              RemediationRequest represents an immutable event (signal received, remediation required).
+              Once created (by Gateway or external source), spec cannot be modified to ensure:
+              - Audit trail integrity (remediation matches original signal)
+              - No signal metadata tampering during remediation lifecycle
+              - Consistent signal data across all child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution)
+
+              Cancellation: Delete the RemediationRequest CRD (Kubernetes-native pattern).
+              Status updates: Controllers update .status fields (not affected by spec immutability).
+
+              Note: Individual field immutability (e.g., signalFingerprint) is redundant with full spec immutability,
+              but retained for explicit documentation of critical fields.
             properties:
               affectedResources:
                 description: |-
@@ -124,11 +138,11 @@ spec:
               severity:
                 description: |-
                   Signal Classification
-                  Severity level: "critical", "warning", "info"
-                enum:
-                - critical
-                - warning
-                - info
+                  Severity level (external value from signal provider)
+                  Examples: "Sev1", "P0", "critical", "HIGH", "warning"
+                  SignalProcessing will normalize via Rego policy (DD-SEVERITY-001)
+                maxLength: 50
+                minLength: 1
                 type: string
               signalAnnotations:
                 additionalProperties:
@@ -213,41 +227,6 @@ spec:
                 - gcp
                 - datadog
                 type: string
-              timeoutConfig:
-                description: |-
-                  TimeoutConfig provides fine-grained timeout configuration for this remediation.
-                  Overrides controller-level defaults when specified.
-                  Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
-                properties:
-                  analyzing:
-                    description: |-
-                      Analyzing phase timeout (AIAnalysis investigation).
-                      Overrides controller-level default (10 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                  executing:
-                    description: |-
-                      Executing phase timeout (WorkflowExecution remediation).
-                      Overrides controller-level default (30 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                  global:
-                    description: |-
-                      Global timeout for entire remediation workflow.
-                      Overrides controller-level default (1 hour).
-                      Reference: BR-ORCH-027, AC-027-4
-                    format: duration
-                    type: string
-                  processing:
-                    description: |-
-                      Processing phase timeout (SignalProcessing enrichment).
-                      Overrides controller-level default (5 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                type: object
             required:
             - firingTime
             - receivedTime
@@ -258,6 +237,9 @@ spec:
             - targetResource
             - targetType
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
           status:
             description: RemediationRequestStatus defines the observed state of RemediationRequest.
             properties:
@@ -533,6 +515,52 @@ spec:
                   Reference: BR-ORCH-028
                 format: date-time
                 type: string
+              executionRef:
+                description: |-
+                  ExecutionRef references the WorkflowExecution CRD for this remediation.
+                  Populated from workflowexecution.execution.started audit event.
+                  Reference: BR-AUDIT-005 Gap #6 (Execution Reference)
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               failurePhase:
                 description: |-
                   FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")
@@ -542,6 +570,18 @@ spec:
                 description: |-
                   FailureReason provides a human-readable reason for the failure
                   Only set when OverallPhase = "failed"
+                type: string
+              lastModifiedAt:
+                description: |-
+                  LastModifiedAt tracks when the last status modification occurred.
+                  Populated by RemediationRequest mutating webhook.
+                format: date-time
+                type: string
+              lastModifiedBy:
+                description: |-
+                  LastModifiedBy tracks the last operator who modified this RR's status.
+                  Populated by RemediationRequest mutating webhook.
+                  Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
                 type: string
               message:
                 description: Human-readable message describing current status
@@ -735,6 +775,31 @@ spec:
                   cleaned up (24 hours after completion)
                 format: date-time
                 type: string
+              selectedWorkflowRef:
+                description: |-
+                  SelectedWorkflowRef captures the workflow selected by AI for this remediation.
+                  Populated from workflowexecution.selection.completed audit event.
+                  Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
+                properties:
+                  containerDigest:
+                    description: ContainerDigest for audit trail and reproducibility
+                    type: string
+                  containerImage:
+                    description: |-
+                      ContainerImage resolved from workflow catalog
+                      OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  version:
+                    description: Version of the workflow
+                    type: string
+                  workflowId:
+                    description: WorkflowID is the catalog lookup key
+                    type: string
+                required:
+                - containerImage
+                - version
+                - workflowId
+                type: object
               signalProcessingRef:
                 description: References to downstream CRDs
                 properties:
@@ -804,6 +869,43 @@ spec:
                 description: Timestamps
                 format: date-time
                 type: string
+              timeoutConfig:
+                description: |-
+                  TimeoutConfig provides operational timeout overrides for this remediation.
+                  OWNER: Remediation Orchestrator (sets defaults on first reconcile)
+                  MUTABLE BY: Operators (can adjust mid-remediation via kubectl edit)
+                  Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
+                  Gap #8: Moved from spec to status to enable operator mutability + audit trail
+                properties:
+                  analyzing:
+                    description: |-
+                      Analyzing phase timeout (AIAnalysis investigation).
+                      Overrides controller-level default (10 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                  executing:
+                    description: |-
+                      Executing phase timeout (WorkflowExecution remediation).
+                      Overrides controller-level default (30 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                  global:
+                    description: |-
+                      Global timeout for entire remediation workflow.
+                      Overrides controller-level default (1 hour).
+                      Reference: BR-ORCH-027, AC-027-4
+                    format: duration
+                    type: string
+                  processing:
+                    description: |-
+                      Processing phase timeout (SignalProcessing enrichment).
+                      Overrides controller-level default (5 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                type: object
               timeoutPhase:
                 description: |-
                   TimeoutPhase indicates which phase timed out

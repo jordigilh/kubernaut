@@ -32,9 +32,10 @@
   - Implementation: `pkg/aianalysis/handlers/investigating.go:316-384`
   - Test Coverage: Unit + Integration + E2E
 
-- ✅ **BR-AI-002**: Support Multiple Analysis Types
-  - Implementation: HolmesGPT-API determines analysis type
-  - Test Coverage: Integration tests with various alert types
+- ⏸️ **BR-AI-002**: Support Multiple Analysis Types → **DEFERRED TO v2.0**
+  - See [DD-AIANALYSIS-005](../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md)
+  - v1.x: Single analysis type only (feature not implemented)
+  - Jan 2026: Deferred pending business requirement validation
 
 - ✅ **BR-AI-003**: Structured Analysis Results with Confidence Scoring
   - Implementation: `status.selectedWorkflow.confidence` (0.0-1.0)

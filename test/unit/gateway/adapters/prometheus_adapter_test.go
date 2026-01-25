@@ -334,4 +334,94 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"Parse() must use GetSourceType() method")
 		})
 	})
+
+	// GW-UNIT-ADP-007: BR-GATEWAY-001 Prometheus Long Annotations Handling
+	Context("BR-GATEWAY-001: Long Annotation Handling", func() {
+		It("[GW-UNIT-ADP-007] should preserve annotations under reasonable length limits", func() {
+			// BR-GATEWAY-001: Annotations must be preserved for audit trail
+			// BUSINESS LOGIC: Normal-length annotations should be preserved completely
+			// Unit Test: Tests data preservation for typical use cases
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"namespace": "production"
+					},
+					"annotations": {
+						"summary": "Pod memory usage critical",
+						"description": "The pod api-server-1 in production namespace has memory usage at 95%. This requires immediate attention."
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: Normal annotations should be preserved completely
+			Expect(signal.Annotations["summary"]).To(Equal("Pod memory usage critical"),
+				"Summary annotation should be preserved")
+			Expect(signal.Annotations["description"]).To(ContainSubstring("immediate attention"),
+				"Description annotation should be preserved")
+		})
+
+		It("[GW-UNIT-ADP-007] should handle very long annotations gracefully", func() {
+			// BR-GATEWAY-001: Extremely long annotations should not cause failures
+			// BUSINESS LOGIC: System should handle edge cases without crashing
+			// Unit Test: Tests resilience with unrealistic but possible inputs
+
+			// Create 10KB annotation (unrealistic but possible from misconfigured alerts)
+			longDescription := string(make([]byte, 10000))
+			for i := range longDescription {
+				longDescription = string(append([]byte(longDescription[:i]), 'x'))
+			}
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "Test",
+						"namespace": "test"
+					},
+					"annotations": {
+						"description": "` + longDescription[:1000] + `"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+
+			// BUSINESS RULE: Long annotations should not cause parsing failure
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-GATEWAY-001: System must handle long annotations gracefully")
+			Expect(signal).NotTo(BeNil())
+			Expect(signal.Annotations).NotTo(BeNil())
+
+			// BUSINESS RULE: Annotation should be present (truncated or full)
+			desc, exists := signal.Annotations["description"]
+			Expect(exists).To(BeTrue(), "Annotation should exist even if long")
+			Expect(len(desc)).To(BeNumerically(">", 0), "Annotation should have content")
+		})
+
+		It("[GW-UNIT-ADP-007] should handle empty annotations without error", func() {
+			// BR-GATEWAY-001: Empty annotations are valid (not all alerts have annotations)
+			// BUSINESS LOGIC: System should handle minimal alerts gracefully
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "MinimalAlert",
+						"namespace": "prod"
+					},
+					"annotations": {}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: Empty annotations should result in empty map (not nil)
+			Expect(signal.Annotations).NotTo(BeNil(),
+				"Annotations should be empty map, not nil")
+		})
+	})
 })

@@ -33,13 +33,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
+	"net/http"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,10 +49,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -73,8 +72,10 @@ import (
 
 	// Import audit infrastructure (ADR-032)
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
 	// Real controller testing happens in:
 	//   - Service integration tests (test/integration/{service}/)
@@ -83,8 +84,12 @@ import (
 
 // Test constants for timeout and polling intervals
 const (
-	timeout  = 60 * time.Second // Longer timeout for RO orchestration
+	timeout  = 120 * time.Second // Increased for CI environment (resource contention can slow reconciliation)
 	interval = 250 * time.Millisecond
+
+	// ROIntegrationDataStoragePort is the DataStorage API port for RO integration tests
+	// Per DD-TEST-001 v2.2: Each service gets a unique port to enable parallel test execution
+	ROIntegrationDataStoragePort = 18140
 )
 
 // Package-level variables for test environment
@@ -96,6 +101,11 @@ var (
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
+	dsClient   *ogenclient.Client // OpenAPI client for DataStorage queries
+
+	// dataStorageBaseURL is the base URL for DataStorage API calls
+	// Uses ROIntegrationDataStoragePort to avoid brittle hardcoded ports (DD-TEST-001 v2.2)
+	dataStorageBaseURL = fmt.Sprintf("http://127.0.0.1:%d", ROIntegrationDataStoragePort)
 )
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {
@@ -104,48 +114,82 @@ func TestRemediationOrchestratorIntegration(t *testing.T) {
 }
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
-// Pattern: AIAnalysis (Programmatic podman-compose + parallel-safe)
-// Authority: docs/handoff/TRIAGE_RO_INFRASTRUCTURE_BOOTSTRAP_COMPARISON.md
+// DD-TEST-010 Pattern: Multi-Controller (per-process controller isolation)
+// Phase 1: Infrastructure ONLY (shared across all processes)
+// Phase 2: Per-process controller setup (isolated envtest + controller instances)
 var _ = SynchronizedBeforeSuite(func() []byte {
-	// This runs ONCE on process 1 only - creates shared infrastructure
+	// ======================================================================
+	// PHASE 1: INFRASTRUCTURE SETUP (ONCE - GLOBAL)
+	// ======================================================================
+	// Runs ONCE on process 1 only
+	// Starts shared infrastructure (PostgreSQL, Redis, DataStorage)
+	// Does NOT start controllers (moved to Phase 2 for per-process isolation)
+	//
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// ======================================================================
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("RemediationOrchestrator Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("PHASE 1: Infrastructure Setup (DD-TEST-010)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("Creating test infrastructure...")
-	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("Starting shared infrastructure...")
 	GinkgoWriter.Println("  • PostgreSQL (port 15435)")
 	GinkgoWriter.Println("  • Redis (port 16381)")
 	GinkgoWriter.Println("  • Data Storage API (port 18140)")
-	GinkgoWriter.Println("  • Pattern: AIAnalysis (Programmatic podman-compose)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
 
-	By("Cleaning up stale containers from previous runs (DD-TEST-001 v1.1)")
-	// Stop any existing containers from failed previous runs
-	// Use manual cleanup to match manual startup (DD-TEST-002 Sequential Pattern)
-	cleanupErr := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
-	if cleanupErr != nil {
-		GinkgoWriter.Printf("⚠️  Cleanup of stale containers failed (may not exist): %v\n", cleanupErr)
-	} else {
-		GinkgoWriter.Println("✅ Stale containers cleaned up")
-	}
-
-	By("Starting RO integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage
-	// Per DD-TEST-001: Ports 15435, 16381, 18140
-	err = infrastructure.StartROIntegrationInfrastructure(GinkgoWriter)
+	By("Starting RO integration infrastructure (DD-TEST-002)")
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "remediationorchestrator",
+		PostgresPort:    15435,
+		RedisPort:       16381,
+		DataStoragePort: ROIntegrationDataStoragePort,
+		MetricsPort:     19140,
+		ConfigDir:       "test/integration/remediationorchestrator/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All external services started and healthy")
+
+	DeferCleanup(func() {
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
+
+	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// DD-TEST-010: Phase 1 returns empty - no controller state to share
+	return []byte{}
+}, func(data []byte) {
+	// ======================================================================
+	// PHASE 2: PER-PROCESS CONTROLLER SETUP (ISOLATED)
+	// ======================================================================
+	// Runs on ALL parallel processes (including process 1)
+	// Each process gets its own:
+	// - envtest (isolated K8s API server)
+	// - k8sManager (isolated controller instance)
+	// - Controller reconciler (isolated event handlers)
+	//
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// ======================================================================
+
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("PHASE 2: Per-Process Controller Setup (DD-TEST-010)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Create per-process context for controller lifecycle
+	ctx, cancel = context.WithCancel(context.Background())
 
 	By("Registering ALL CRD schemes for RO orchestration")
 
 	// RemediationRequest and RemediationApprovalRequest (RO owns these)
-	err = remediationv1.AddToScheme(scheme.Scheme)
+	err := remediationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// SignalProcessing (RO creates these)
@@ -164,16 +208,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = notificationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping envtest with ALL CRDs")
+	By("Bootstrapping per-process envtest with ALL CRDs")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -218,22 +258,30 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Setting up the RemediationOrchestrator controller")
 	// Create RO reconciler with manager client, scheme, and audit store
 	// Per ADR-032 §1: Audit is MANDATORY for P0 services (RO is P0)
-	// Integration tests use real DataStorage API at http://127.0.0.1:18140
+	// Integration tests use real DataStorage API at dataStorageBaseURL (DD-TEST-001 v2.2)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
 	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter("http://127.0.0.1:18140", 5*time.Second)
+	mockTransport := testauth.NewMockUserTransport("test-remediationorchestrator@integration.test")
+	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageBaseURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 
+	// Create OpenAPI client for direct DataStorage queries in tests
+	// Uses same mock transport for consistency with audit store
+	httpClient := &http.Client{Transport: mockTransport, Timeout: 5 * time.Second}
+	dsClient, err = ogenclient.NewClient(dataStorageBaseURL, ogenclient.WithClient(httpClient))
+	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI DataStorage client for queries")
+
 	auditLogger := ctrl.Log.WithName("audit")
-	auditConfig := audit.Config{
-		FlushInterval: 1 * time.Second, // Fast flush for tests
-		BufferSize:    10,
-		BatchSize:     5,
-		MaxRetries:    3,
-	}
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 1 * time.Second // Fast flush for tests (override default)
 	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create audit store - ensure DataStorage is running at http://localhost:18140")
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to create audit store - ensure DataStorage is running at %s", dataStorageBaseURL))
 
 	By("Initializing RemediationOrchestrator metrics (DD-METRICS-001)")
 	// Per DD-METRICS-001: Metrics must be initialized and injected for integration tests
@@ -242,8 +290,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ RO metrics initialized and registered")
 
 	// Create routing engine for blocking logic (BR-ORCH-042)
+	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
 	routingEngine := routing.NewRoutingEngine(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(), // Cache-bypassed reader for fresh routing decisions
 		"", // No namespace filter - all namespaces
 		routing.Config{
 			ConsecutiveFailureThreshold: 3,
@@ -256,6 +306,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		k8sManager.GetScheme(),
 		auditStore,                 // Real audit store for ADR-032 compliance
 		nil,                        // No EventRecorder for integration tests
@@ -356,119 +407,70 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • REAL services available:")
 	GinkgoWriter.Println("    - PostgreSQL: localhost:15435")
 	GinkgoWriter.Println("    - Redis: localhost:16381")
-	GinkgoWriter.Println("    - Data Storage: http://localhost:18140")
+	GinkgoWriter.Printf("    - Data Storage: %s\n", dataStorageBaseURL)
 	GinkgoWriter.Println("")
-
-	// Serialize REST config to pass to all processes
-	// Each process needs to create its own k8s client
-	configBytes, err := json.Marshal(struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}{
-		Host:     cfg.Host,
-		CAData:   cfg.CAData,
-		CertData: cfg.CertData,
-		KeyData:  cfg.KeyData,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	return configBytes
-}, func(data []byte) {
-	// This runs on ALL parallel processes (including process 1)
-	// Each process creates its own k8s client and context
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	// Deserialize REST config from process 1
-	var configData struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}
-	err := json.Unmarshal(data, &configData)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register ALL CRD schemes (MUST be done before creating client)
-	err = remediationv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = signalprocessingv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = aianalysisv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = workflowexecutionv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = notificationv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create per-process REST config
-	cfg = &rest.Config{
-		Host: configData.Host,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   configData.CAData,
-			CertData: configData.CertData,
-			KeyData:  configData.KeyData,
-		},
-	}
-
-	// Create per-process k8s client
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
-
-	// Create per-process context ONLY if not already set (process 1 has it from first function)
-	// Process 1: ctx already set and used by controller manager - don't overwrite!
-	// Processes 2-4: Need ctx for test operations
-	if ctx == nil {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
+	GinkgoWriter.Println("✅ Phase 2 complete - per-process controller ready")
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution
+// DD-TEST-010: Per-process cleanup (Phase 1) + shared infrastructure cleanup (Phase 2)
 var _ = SynchronizedAfterSuite(func() {
-	// This runs on ALL parallel processes - no cleanup needed per process
-}, func() {
-	// This runs ONCE on the last parallel process - cleanup shared infrastructure
-	By("Tearing down the test environment")
+	// ======================================================================
+	// PHASE 1: PER-PROCESS CLEANUP (RUNS ON ALL PROCESSES)
+	// ======================================================================
+	// Each parallel process cleans up its own controller and envtest instance
+	//
+	// DD-TEST-010: Multi-Controller Pattern Cleanup
+	// ======================================================================
+	By("Tearing down per-process test environment")
 
-	// RO-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
-	// This prevents "connection refused" errors during cleanup when the
-	// background writer tries to flush buffered events after DataStorage is stopped.
-	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
-	By("Flushing audit store before infrastructure shutdown")
-
-	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer flushCancel()
-
-	err := auditStore.Flush(flushCtx)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	// Stop controller manager (graceful shutdown)
+	if cancel != nil {
+		cancel()
 	}
 
-	err = auditStore.Close()
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store closed")
-	}
-
-	cancel()
-
+	// Stop per-process envtest
 	if testEnv != nil {
 		err := testEnv.Stop()
-		Expect(err).NotTo(HaveOccurred())
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to stop envtest: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Per-process envtest stopped")
+		}
 	}
 
-	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	By("Stopping RO integration infrastructure")
-	err = infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).NotTo(HaveOccurred())
+	// Close per-process audit store
+	if auditStore != nil {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer flushCancel()
 
-	By("Cleaning up infrastructure images to prevent disk space issues (DD-TEST-001 v1.1)")
-	// Prune ONLY infrastructure images for RemediationOrchestrator
+		_ = auditStore.Flush(flushCtx) // Best effort
+		_ = auditStore.Close()         // Best effort
+	}
+}, func() {
+	// ======================================================================
+	// PHASE 2: SHARED INFRASTRUCTURE CLEANUP (RUNS ONCE)
+	// ======================================================================
+	// Runs ONCE on the last parallel process to cleanup shared infrastructure
+	//
+	// DD-TEST-010: Infrastructure cleanup after all controllers stopped
+	// ======================================================================
+	By("Cleaning up shared infrastructure")
+
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("remediationorchestrator", []string{
+		"remediationorchestrator_datastorage_test",
+		"remediationorchestrator_postgres_test",
+		"remediationorchestrator_redis_test",
+	}, GinkgoWriter)
+
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
+	// No action needed here - DeferCleanup will stop PostgreSQL, Redis, DataStorage
+
+	By("Cleaning up infrastructure images (DD-TEST-001 v1.1)")
 	pruneCmd := exec.Command("podman", "image", "prune", "-f",
 		"--filter", "label=io.podman.compose.project=remediationorchestrator-integration")
 	pruneOutput, pruneErr := pruneCmd.CombinedOutput()
@@ -478,36 +480,17 @@ var _ = SynchronizedAfterSuite(func() {
 		GinkgoWriter.Println("✅ Infrastructure images pruned")
 	}
 
-	GinkgoWriter.Println("✅ Cleanup complete - all services stopped")
+	GinkgoWriter.Println("✅ Cleanup complete - all per-process controllers stopped, shared infrastructure cleaned")
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
-
 // ============================================================================
 // TEST HELPER FUNCTIONS (for parallel execution isolation)
 // ============================================================================
 
 // createTestNamespace creates a unique namespace for test isolation in parallel execution.
 // MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
+// Using UUID for guaranteed uniqueness in parallel execution (12 procs)
 func createTestNamespace(prefix string) string {
-	ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:13])
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ns,
@@ -520,7 +503,7 @@ func createTestNamespace(prefix string) string {
 
 // deleteTestNamespace initiates namespace cleanup without blocking.
 // Namespace deletion happens asynchronously - no need to wait since:
-// 1. Each test uses unique namespace name (time.Now().UnixNano())
+// 1. Each test uses unique namespace name (UUID-based)
 // 2. Cluster teardown (SynchronizedAfterSuite) handles final cleanup
 // 3. No cross-test namespace conflicts due to unique naming
 func deleteTestNamespace(ns string) {
@@ -537,33 +520,6 @@ func deleteTestNamespace(ns string) {
 
 	GinkgoWriter.Printf("🗑️  Initiated async deletion for namespace: %s (cleanup continues in background)\n", ns)
 }
-
-// waitForRRPhase waits for a RemediationRequest to reach a specific phase.
-func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error { //nolint:unused
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
-		rr := &remediationv1.RemediationRequest{}
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr)
-		if err != nil {
-			return false, err
-		}
-		return string(rr.Status.OverallPhase) == expectedPhase, nil
-	})
-}
-
-// waitForChildCRD waits for a child CRD to be created by RO.
-func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error { //nolint:unused
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil // Keep waiting
-			}
-			return false, err
-		}
-		return true, nil
-	})
-}
-
 // createRemediationRequest creates a RemediationRequest for testing.
 func createRemediationRequest(namespace, name string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
@@ -575,7 +531,11 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 		Spec: remediationv1.RemediationRequestSpec{
 			// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
 			// UNIQUE per test to avoid routing deduplication (DD-RO-002)
-			SignalFingerprint: fmt.Sprintf("%064x", time.Now().UnixNano()),
+			// Using SHA256(UUID) for guaranteed uniqueness in parallel execution (12 procs)
+			SignalFingerprint: func() string {
+				h := sha256.Sum256([]byte(uuid.New().String()))
+				return hex.EncodeToString(h[:])
+			}(),
 			SignalName:        "TestHighMemoryAlert",
 			Severity:          "critical",
 			SignalType:        "prometheus",
@@ -598,28 +558,10 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s\n", namespace, name)
 	return rr
 }
-
-// updateAIAnalysisStatus updates the AIAnalysis status to simulate completion.
-func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error { //nolint:unused
-	ai := &aianalysisv1.AIAnalysis{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, ai); err != nil {
-		return err
-	}
-
-	ai.Status.Phase = phase
-	ai.Status.SelectedWorkflow = workflow
-	if phase == "Completed" {
-		now := metav1.Now()
-		ai.Status.CompletedAt = &now
-	}
-
-	return k8sClient.Status().Update(ctx, ai)
-}
-
 // updateSPStatus updates the SignalProcessing status to simulate completion.
-func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase) error {
+func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
+	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
 		return err
 	}
 
@@ -627,6 +569,14 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 	if phase == signalprocessingv1.PhaseCompleted {
 		now := metav1.Now()
 		sp.Status.CompletionTime = &now
+		// DD-SEVERITY-001: Set normalized severity for downstream services (AIAnalysis, RO)
+		// This simulates what SignalProcessing Rego policy would do in real environment
+		// Default to "critical" if not specified, or use provided severity
+		severityValue := "critical" // Default normalized severity
+		if len(severity) > 0 && severity[0] != "" {
+			severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
+		}
+		sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
 		// Set environment classification for downstream use
 		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
@@ -646,153 +596,6 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 	return k8sClient.Status().Update(ctx, sp)
 }
-
-// ========================================
-// Phase 1 Integration Test Helper Functions
-// ========================================
-// These helpers manually create child CRDs with proper owner references.
-// In Phase 1 integration tests, only the RO controller runs - child
-// controllers (SP, AA, WE) are NOT started. Tests manually control
-// child CRD phases to validate RO's orchestration logic in isolation.
-//
-// Reference: RO_PHASE1_INTEGRATION_STRATEGY_IMPLEMENTED_DEC_19_2025.md
-
-// createSignalProcessingCRD manually creates a SignalProcessing CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing { //nolint:unused
-	return &signalprocessingv1.SignalProcessing{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sp-" + rr.Name,
-			Namespace: namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "signal-processing",
-			},
-		},
-		Spec: signalprocessingv1.SignalProcessingSpec{
-			RemediationRequestRef: signalprocessingv1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        string(rr.UID),
-			},
-			Signal: signalprocessingv1.SignalData{
-				Fingerprint: rr.Spec.SignalFingerprint,
-				Name:        rr.Spec.SignalName,
-				Severity:    rr.Spec.Severity,
-				Type:        rr.Spec.SignalType,
-				TargetType:  rr.Spec.TargetType,
-				TargetResource: signalprocessingv1.ResourceIdentifier{
-					Kind:      rr.Spec.TargetResource.Kind,
-					Name:      rr.Spec.TargetResource.Name,
-					Namespace: rr.Spec.TargetResource.Namespace,
-				},
-				ReceivedTime: metav1.Now(),
-			},
-		},
-	}
-}
-
-// createAIAnalysisCRD manually creates an AIAnalysis CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis { //nolint:unused
-	return &aianalysisv1.AIAnalysis{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-" + rr.Name,
-			Namespace: namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "ai-analysis",
-			},
-		},
-		Spec: aianalysisv1.AIAnalysisSpec{
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        rr.UID,
-			},
-			RemediationID: string(rr.UID),
-			AnalysisRequest: aianalysisv1.AnalysisRequest{
-				SignalContext: aianalysisv1.SignalContextInput{
-					Fingerprint:      rr.Spec.SignalFingerprint,
-					Severity:         rr.Spec.Severity,
-					SignalType:       rr.Spec.SignalType,
-					BusinessPriority: "P1",   // Required: business priority
-					Environment:      "test", // Required: environment classification
-				},
-				AnalysisTypes: []string{"recommendation"}, // Required: type of analysis
-			},
-			IsRecoveryAttempt: false,
-		},
-	}
-}
-
-// createWorkflowExecutionCRD manually creates a WorkflowExecution CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution { //nolint:unused
-	return &workflowexecutionv1.WorkflowExecution{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "wfe-" + rr.Name + "-",
-			Namespace:    namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "workflow-execution",
-			},
-		},
-		Spec: workflowexecutionv1.WorkflowExecutionSpec{
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        rr.UID,
-			},
-			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:     workflowID,
-				Version:        "v1",
-				ContainerImage: "test/" + workflowID + ":v1",
-			},
-			TargetResource: fmt.Sprintf("%s/%s/%s", rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
-			Parameters:     map[string]string{},
-			Confidence:     0.9,
-			Rationale:      "Test workflow for integration testing",
-		},
-	}
-}
-
 // GenerateTestFingerprint creates a unique 64-character fingerprint for tests.
 // This prevents test pollution where multiple tests using the same hardcoded fingerprint
 // cause the routing engine to see failures from other tests (BR-ORCH-042, DD-RO-002).

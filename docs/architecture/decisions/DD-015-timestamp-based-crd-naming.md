@@ -1,9 +1,14 @@
 # DD-015: Timestamp-Based CRD Naming for Unique Occurrences
 
+> ⚠️ **DEPRECATED** (2026-01-17)
+> **Superseded By**: [DD-AUDIT-CORRELATION-002](./DD-AUDIT-CORRELATION-002-universal-correlation-id-standard.md)
+> **Reason**: UUID-based naming provides better guarantees (zero collision risk + human-readable correlation IDs)
+> **Migration**: Gateway now uses `rr-{fingerprint}-{uuid}` format instead of `rr-{fingerprint}-{timestamp}`
+
 ## Status
-**✅ APPROVED** (2025-11-17)
-**Last Reviewed**: 2025-11-17
-**Confidence**: 95%
+**⚠️ DEPRECATED** (2026-01-17) - Superseded by DD-AUDIT-CORRELATION-002
+**Originally Approved**: 2025-11-17
+**Confidence**: 95% (historical)
 
 ## Context & Problem
 
@@ -341,5 +346,34 @@ spec:
 
 ---
 
-**Priority**: CRITICAL - Fixes production issue where recurring problems don't trigger new remediations
+## Deprecation Notice (2026-01-17)
+
+### Why DD-015 Was Superseded
+
+**DD-AUDIT-CORRELATION-002** supersedes this decision with UUID-based naming for the following reasons:
+
+1. **Zero Collision Risk**: UUID guarantees uniqueness (2^122 bits of randomness) vs timestamp (collision possible at same Unix second)
+2. **Human-Readable Correlation IDs**: `"rr-pod-crash-f8a3b9c2"` vs `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+3. **Universal Audit Standard**: All 6 services now use `rr.Name` as correlation_id (timestamps not traceable across services)
+4. **Better Debugging**: UUID suffix provides uniqueness while fingerprint prefix provides context
+
+### Migration Path
+
+**Old Format** (DD-015):
+```
+rr-bd773c9f25ac-1731868032  (fingerprint + Unix timestamp)
+```
+
+**New Format** (DD-AUDIT-CORRELATION-002):
+```
+rr-bd773c9f25ac-f8a3b9c2  (fingerprint + UUID suffix)
+```
+
+**Impact**: No breaking changes - both formats coexist during transition. New RRs use UUID format.
+
+**See**: [DD-AUDIT-CORRELATION-002-universal-correlation-id-standard.md](./DD-AUDIT-CORRELATION-002-universal-correlation-id-standard.md)
+
+---
+
+**Priority**: ⚠️ DEPRECATED - Replaced by DD-AUDIT-CORRELATION-002 (UUID-based naming)
 

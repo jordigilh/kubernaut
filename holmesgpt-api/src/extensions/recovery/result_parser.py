@@ -26,10 +26,11 @@ including extraction of strategies, warnings, and recovery-specific fields.
 
 import re
 import json
+import ast
 import logging
 from typing import Dict, Any, List, Optional
 from holmes.core.models import InvestigationResult
-from src.models.recovery_models import RecoveryStrategy
+from src.models.recovery_models import RecoveryStrategy, RecoveryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -97,26 +98,159 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     incident_id = request_data.get("incident_id")
     recovery_attempt_number = request_data.get("recovery_attempt_number", 1)
 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # DEBUG: Parser Input Inspection (Option A: Understand SDK format)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    logger.info({
+        "event": "parser_input_debug",
+        "incident_id": incident_id,
+        "analysis_text_length": len(analysis_text) if analysis_text else 0,
+        "analysis_text_preview": analysis_text[:300] if analysis_text else "",
+        "has_json_codeblock": "```json" in analysis_text if analysis_text else False,
+        "has_section_headers": "# selected_workflow" in analysis_text if analysis_text else False,
+        "has_root_cause_header": "# root_cause_analysis" in analysis_text if analysis_text else False,
+        "text_type": type(analysis_text).__name__,
+    })
+
     # Try to extract structured JSON from response
+    # Pattern 1: JSON code block (standard format)
     json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
+
+    logger.info({
+        "event": "parser_pattern1_result",
+        "incident_id": incident_id,
+        "pattern": "json_codeblock",
+        "matched": json_match is not None,
+    })
+
+    # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
+    # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
+    if not json_match and ('# selected_workflow' in analysis_text or '# root_cause_analysis' in analysis_text):
+        # Extract the dict portions and combine them
+        parts = {}
+
+        # Extract root_cause_analysis
+        # Match from { to the last } before the next section or end
+        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, re.DOTALL)
+        if rca_match:
+            parts['root_cause_analysis'] = rca_match.group(1)
+
+        # Extract selected_workflow
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis_text, re.DOTALL)
+        if wf_match:
+            parts['selected_workflow'] = wf_match.group(1)
+
+        if parts:
+            # Combine into a single dict string
+            combined_dict = '{'
+            for key, value in parts.items():
+                combined_dict += f'"{key}": {value}, '
+            combined_dict = combined_dict.rstrip(', ') + '}'
+
+            # Create a fake match object
+            class FakeMatch:
+                def __init__(self, text):
+                    self._text = text
+                    self.lastindex = None  # Add lastindex attribute
+                def group(self, n):
+                    return self._text  # Always return the full text
+
+            json_match = FakeMatch(combined_dict)
+
+            logger.info({
+                "event": "parser_pattern2_result",
+                "incident_id": incident_id,
+                "pattern": "section_headers",
+                "matched": True,
+                "parts_found": list(parts.keys()),
+                "combined_dict_preview": combined_dict[:200] if combined_dict else "",
+            })
+
     if not json_match:
-        # Try to find JSON object directly
+        logger.info({
+            "event": "parser_pattern2_result",
+            "incident_id": incident_id,
+            "pattern": "section_headers",
+            "matched": False,
+            "reason": "no_parts_extracted",
+        })
+
+    # Pattern 3: Direct JSON object (fallback)
+    if not json_match:
         json_match = re.search(r'\{.*"recovery_analysis".*\}', analysis_text, re.DOTALL)
+
+        logger.info({
+            "event": "parser_pattern3_result",
+            "incident_id": incident_id,
+            "pattern": "direct_json",
+            "matched": json_match is not None,
+        })
+
         if not json_match:
+            logger.warning({
+                "event": "parser_no_match",
+                "incident_id": incident_id,
+                "message": "No pattern matched - returning None",
+            })
             return None
 
     try:
         json_text = json_match.group(1) if hasattr(json_match, 'group') and json_match.lastindex else json_match.group(0)
-        structured = json.loads(json_text)
+
+        # Try parsing as JSON first
+        try:
+            structured = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Fallback: Try parsing as Python dict literal (handles single quotes from SDK)
+            # BR-HAPI-001: Handle HolmesGPT SDK Python repr() format
+            try:
+                structured = ast.literal_eval(json_text)
+                logger.info("Successfully parsed recovery response using ast.literal_eval() fallback")
+            except (ValueError, SyntaxError) as ast_err:
+                logger.warning(f"Failed to parse as both JSON and Python literal: {ast_err}")
+                raise
 
         # Extract recovery-specific fields if present
         recovery_analysis = structured.get("recovery_analysis", {})
         recovery_strategy = structured.get("recovery_strategy", {})
         selected_workflow = structured.get("selected_workflow")
+        
+        # BR-AI-081: If this is a recovery request but LLM didn't return recovery_analysis,
+        # construct it from the RCA (LLM may not have been configured to return it)
+        is_recovery = request_data.get("is_recovery_attempt", False)
+        if is_recovery and not recovery_analysis:
+            # Extract RCA fields to populate recovery_analysis
+            rca = structured.get("root_cause_analysis", {})
+            recovery_analysis = {
+                "previous_attempt_assessment": {
+                    "failure_understood": True,
+                    "failure_reason_analysis": rca.get("summary", "Previous workflow execution failed"),
+                    "state_changed": False,
+                    "current_signal_type": rca.get("signal_type", request_data.get("signal_type", "Unknown"))
+                }
+            }
+            logger.info({
+                "event": "recovery_analysis_constructed",
+                "incident_id": incident_id,
+                "reason": "LLM response did not include recovery_analysis field",
+            })
 
         # Build recovery response
         can_recover = selected_workflow is not None
         confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+
+        # BR-HAPI-197: Determine human review requirement based on confidence threshold
+        # Authority: .cursor/rules/04-ai-ml-guidelines.mdc
+        CONFIDENCE_THRESHOLD = 0.5
+        needs_human_review = False
+        human_review_reason = None
+
+        if not selected_workflow:
+            needs_human_review = True
+            human_review_reason = "no_matching_workflows"
+        elif confidence < CONFIDENCE_THRESHOLD:
+            needs_human_review = True
+            human_review_reason = "low_confidence"
 
         # Convert to standard RecoveryResponse format
         strategies = []
@@ -149,6 +283,9 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             "recovery_strategy": recovery_strategy,
             "selected_workflow": selected_workflow,
             "raw_analysis": analysis_text,
+            # BR-HAPI-197: Human review fields for recovery
+            "needs_human_review": needs_human_review,
+            "human_review_reason": human_review_reason,
         }
 
         logger.info(f"Successfully parsed recovery-specific response for incident {incident_id}")
@@ -179,7 +316,15 @@ def _extract_strategies_from_analysis(analysis_text: str) -> List[RecoveryStrate
             json_text = json_match.group(0) if json_match else None
 
         if json_text:
-            parsed = json.loads(json_text)
+            # Try parsing as JSON first, fallback to Python dict literal
+            try:
+                parsed = json.loads(json_text)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(json_text)
+                    logger.debug("Parsed strategies using ast.literal_eval() fallback")
+                except (ValueError, SyntaxError):
+                    parsed = {}
 
             # Extract strategies from structured output
             for strategy_data in parsed.get("strategies", []):
@@ -249,7 +394,16 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
             json_text = json_match.group(0) if json_match else None
 
         if json_text:
-            parsed = json.loads(json_text)
+            # Try parsing as JSON first, fallback to Python dict literal
+            try:
+                parsed = json.loads(json_text)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(json_text)
+                    logger.debug("Parsed warnings using ast.literal_eval() fallback")
+                except (ValueError, SyntaxError):
+                    parsed = {}
+
             extracted_warnings = parsed.get("warnings", [])
             if extracted_warnings:
                 logger.info(f"Successfully parsed {len(extracted_warnings)} warnings from structured JSON")

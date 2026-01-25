@@ -40,8 +40,15 @@ done
 # Internal implementation: CONFIG_FILE env var (Python/uvicorn constraint)
 export CONFIG_FILE="$CONFIG_PATH"
 
+# DD-AUTH-006: Port configuration for oauth-proxy integration
+# Default: 8080 (backward compatible)
+# With oauth-proxy: 8081 (oauth-proxy listens on 8080, proxies to 8081)
+API_PORT="${API_PORT:-8080}"
+
 echo "Starting HolmesGPT-API with config: $CONFIG_PATH"
+echo "Listening on port: $API_PORT"
 
 # Start uvicorn server (cannot pass custom flags - uses CONFIG_FILE env var)
 # CRITICAL: Use python3.12 explicitly (UBI9 python-312 image defaults to python3.9)
-exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 4
+# DD-AUTH-006: Port is configurable via API_PORT environment variable
+exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 4

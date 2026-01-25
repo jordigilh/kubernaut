@@ -1,4 +1,4 @@
-package middleware_test
+package middleware
 
 import (
 	"encoding/json"
@@ -10,8 +10,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
+	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 )
 
 // ============================================================================
@@ -125,11 +125,11 @@ var _ = Describe("BR-GATEWAY-074, BR-GATEWAY-075: Timestamp Security", func() {
 			// MITIGATION: Gateway rejects non-numeric and invalid timestamp formats
 
 			malformedTimestamps := []string{
-				"not-a-timestamp",  // Non-numeric
-				"-1",               // Negative
-				"1234567890.5",     // Fractional seconds
-				"123abc456",        // Special characters
-				"",                 // Empty
+				"not-a-timestamp", // Non-numeric
+				"-1",              // Negative
+				"1234567890.5",    // Fractional seconds
+				"123abc456",       // Special characters
+				"",                // Empty
 			}
 
 			for _, malformed := range malformedTimestamps {
@@ -152,9 +152,9 @@ var _ = Describe("BR-GATEWAY-074, BR-GATEWAY-075: Timestamp Security", func() {
 			// Valid timestamps allow normal business operations (alert ingestion, remediation)
 
 			validTimestamps := []time.Duration{
-				-1 * time.Second,      // Very recent
-				-30 * time.Second,     // 30 seconds ago
-				-2 * time.Minute,      // 2 minutes ago (well within 5min tolerance)
+				-1 * time.Second,                // Very recent
+				-30 * time.Second,               // 30 seconds ago
+				-2 * time.Minute,                // 2 minutes ago (well within 5min tolerance)
 				-4*time.Minute - 59*time.Second, // Edge of tolerance (4:59)
 			}
 

@@ -283,25 +283,25 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 		It("should fail and report validation errors", func() {
 			cfg := &config.Config{
 				Controller: config.ControllerConfig{
-					MetricsAddr:       "", // Invalid!
-					HealthProbeAddr:   "", // Invalid!
-					LeaderElection:    false,
-					LeaderElectionID:  "", // Invalid!
+					MetricsAddr:      "", // Invalid!
+					HealthProbeAddr:  "", // Invalid!
+					LeaderElection:   false,
+					LeaderElectionID: "", // Invalid!
 				},
 				Execution: config.ExecutionConfig{
-					Namespace:      "", // Invalid!
+					Namespace:      "",               // Invalid!
 					CooldownPeriod: -1 * time.Minute, // Invalid!
-					ServiceAccount: "", // Invalid!
+					ServiceAccount: "",               // Invalid!
 				},
 				Backoff: config.BackoffConfig{
-					BaseCooldown:           0, // Invalid!
-					MaxCooldown:            0, // Invalid!
-					MaxExponent:            0, // Invalid!
+					BaseCooldown:           0,  // Invalid!
+					MaxCooldown:            0,  // Invalid!
+					MaxExponent:            0,  // Invalid!
 					MaxConsecutiveFailures: -1, // Invalid!
 				},
 				Audit: config.AuditConfig{
 					DataStorageURL: "", // Invalid!
-					Timeout:        0, // Invalid!
+					Timeout:        0,  // Invalid!
 				},
 			}
 
@@ -312,6 +312,3 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 		})
 	})
 })
-
-
-

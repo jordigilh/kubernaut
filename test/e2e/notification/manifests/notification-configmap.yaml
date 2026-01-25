@@ -24,7 +24,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: notification-controller-config
-  namespace: notification-e2e
+  # NOTE: Namespace omitted - uses kubectl apply -n flag for dynamic namespace
+  # This allows E2E tests to use any namespace (notification-e2e, test-*, etc.)
 data:
   config.yaml: |
     # ========================================
@@ -87,7 +88,8 @@ data:
       # Data Storage service URL (REQUIRED by ADR-032 for audit)
       # Used for audit event emission and persistent storage
       # Format: http://{service}.{namespace}.svc.cluster.local:{port}
-      data_storage_url: "http://datastorage.notification-e2e.svc.cluster.local:8080"
+      # NOTE: ${NAMESPACE} is substituted by envsubst during deployment
+      data_storage_url: "http://datastorage.${NAMESPACE}.svc.cluster.local:8080"
 
 # ========================================
 # Deployment Integration (ADR-030 Pattern)

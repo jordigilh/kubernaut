@@ -1,0 +1,91 @@
+---
+# ========================================
+# DataStorage Service Signing Certificate
+# Authority: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md - Day 9.1
+# ========================================
+#
+# Managed by cert-manager, used for signing audit exports.
+#
+# SOC2 Requirements:
+# - CC8.1: Digital signatures for audit exports
+# - AU-9: Protection of Audit Information (tamper-evident)
+#
+# Certificate Properties:
+# - Type: Self-signed (via selfsigned-issuer ClusterIssuer)
+# - Key Size: 2048-bit RSA
+# - Validity: 1 year (8760 hours)
+# - Auto-renewal: 30 days before expiry (720 hours)
+# - Usage: Digital signature, key encipherment
+#
+# Secret Format (cert-manager compatible):
+# datastorage-signing-cert/
+#   ├── tls.crt  (PEM certificate)
+#   ├── tls.key  (PEM private key)
+#   └── ca.crt   (optional, PEM CA cert)
+#
+# Application Integration:
+# DataStorage deployment mounts this Secret at /etc/certs/
+# Application code loads from:
+#   - /etc/certs/tls.crt
+#   - /etc/certs/tls.key
+#
+# Future Upgrade Path:
+# To upgrade to CA-signed certificates:
+# 1. Create internal CA or configure Vault
+# 2. Update issuerRef to point to CA issuer
+# 3. No application code changes required
+#
+# ========================================
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-signing-cert
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: data-storage
+    app.kubernetes.io/component: audit-export
+    app.kubernetes.io/managed-by: cert-manager
+spec:
+  # Secret name - mounted by DataStorage deployment
+  secretName: datastorage-signing-cert
+
+  # Issuer reference - self-signed for now
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+  # Certificate identity
+  commonName: data-storage-service
+
+  # Subject Alternative Names (SANs)
+  dnsNames:
+    - data-storage-service
+    - data-storage-service.kubernaut-system
+    - data-storage-service.kubernaut-system.svc
+    - data-storage-service.kubernaut-system.svc.cluster.local
+
+  # Certificate validity
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # Renew 30 days before expiry
+
+  # Key properties
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS1  # Standard RSA key format
+    rotationPolicy: Always  # Rotate on renewal
+
+  # Usage flags (SOC2 CC8.1)
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+
+  # Subject fields
+  subject:
+    organizations:
+      - Kubernaut
+
+

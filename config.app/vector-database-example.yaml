@@ -13,7 +13,7 @@ database:
   database: "prometheus_alerts"
   username: "alerts_user"
   password: "secure_password"
-  ssl_mode: "require"
+  sslMode: "require"
 
 # Vector Database Configuration
 vectordb:

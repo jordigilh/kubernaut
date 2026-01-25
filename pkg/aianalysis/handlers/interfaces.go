@@ -59,6 +59,10 @@ type HolmesGPTClientInterface interface {
 type AuditClientInterface interface {
 	RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
+	// BR-AUDIT-005 Gap #7: Record analysis failures with standardized ErrorDetails
+	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
+	// BR-HAPI-200: Record analysis completion (for problem_resolved path)
+	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 }
 
 // AnalyzingAuditClientInterface defines audit methods for the Analyzing phase.
@@ -75,6 +79,8 @@ type AnalyzingAuditClientInterface interface {
 	RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string)
 	RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string)
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
+	// DD-AUDIT-003: Record analysis failure events
+	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
 }
 
 // ========================================

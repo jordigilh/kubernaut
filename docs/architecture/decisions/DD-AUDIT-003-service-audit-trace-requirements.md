@@ -2,12 +2,37 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: December 17, 2025
-**Version**: 1.2
+**Last Reviewed**: January 6, 2026
+**Version**: 1.5
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 11 services
 
-**Recent Changes** (v1.2):
+**Recent Changes** (v1.5 - January 6, 2026):
+- **ALL ERROR EVENTS**: Enhanced with standardized `error_details` field per BR-AUDIT-005 Gap #7
+- **AI Analysis**: Added `aianalysis.analysis.failed` event for Holmes API failures (broader than `ai-analysis.llm.request_failed`)
+- **Workflow Execution**: Enhanced `workflow.failed` event with Tekton pipeline error details
+- **Gateway**: Enhanced `gateway.crd.creation_failed` event with K8s error details
+- **Remediation Orchestrator**: Enhanced `orchestrator.lifecycle.completed` (failure) with orchestration error details
+- **ErrorDetails Structure**: `{message, code, component, retry_possible, stack_trace?}` - see DD-ERROR-001
+- **Error Code Taxonomy**: `ERR_INVALID_*`, `ERR_K8S_*`, `ERR_UPSTREAM_*`, `ERR_INTERNAL_*`, `ERR_LIMIT_*`, `ERR_TIMEOUT_*`
+- **Rationale**: SOC2 Type II compliance requires standardized error capture for RR reconstruction
+- **Expected Volume**: No change in event count, enhanced event data only
+- **Authority**: BR-AUDIT-005 v2.0 Gap #7, DD-ERROR-001 (Error Details Standardization)
+
+**Recent Changes** (v1.4 - January 4, 2026):
+- **Workflow Execution**: Added `workflowexecution.block.cleared` event for SOC2 CC8.1 (operator attribution)
+- **Notification Service**: Added `notification.request.cancelled` event for SOC2 CC8.1 (operator attribution)
+- **Rationale**: SOC2 Type II compliance requires operator attribution for all critical manual actions
+- **Expected Volume**: +50 events/day (operator action tracking)
+- **Authority**: BR-WE-013 (block clearance audit), DD-WEBHOOK-001 (webhook requirements)
+
+**Recent Changes** (v1.3 - January 4, 2026):
+- **AI Analysis**: Added `aianalysis.analysis.completed` event for SOC2 compliance (BR-AUDIT-005 v2.0)
+- **Workflow Execution**: Added `workflow.selection.completed` event for RR reconstruction (DD-AUDIT-004)
+- **Rationale**: 100% RR CRD reconstruction from audit traces (enterprise compliance)
+- **Expected Volume**: +300 events/day (workflow selection tracking)
+
+**Recent Changes** (v1.2 - December 17, 2025):
 - **Gateway**: Removed deprecated `gateway.signal.storm_detected` event (storm detection feature removed per DD-GATEWAY-015)
 - **Remediation Orchestrator**: Added `orchestrator.routing.blocked` event (routing decisions audit coverage)
 - **Remediation Orchestrator**: Added approval lifecycle events (requested, approved, rejected, expired)
@@ -173,10 +198,57 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | `ai-analysis.recommendation.generated` | Remediation recommendation generated | P0 |
 | `ai-analysis.crd.updated` | AIAnalysis CRD updated | P0 |
 | `ai-analysis.llm.request_failed` | LLM API request failed | P0 |
+| `aianalysis.analysis.completed` | AI analysis completed with full Holmes response (SOC2) | **P0** |
+| `aianalysis.analysis.failed` | AI analysis failed (Holmes API timeout, invalid response, etc.) | **P0** |
+
+**SOC2 Compliance Event** (v1.3 - January 2026):
+- **Event**: `aianalysis.analysis.completed`
+- **Purpose**: Single event capturing complete `provider_data` for RR reconstruction (DD-AUDIT-004)
+- **Distinction**: Complements existing granular `ai-analysis.*` events for operational visibility
+- **Naming**: No hyphen (`aianalysis` not `ai-analysis`) to match SOC2 test plan convention
+- **Required By**: BR-AUDIT-005 v2.0 (100% RR CRD reconstruction accuracy)
+- **Event Data Fields**:
+  ```json
+  {
+    "provider_data": {
+      "provider": "HolmesGPT",
+      "analysis_id": "holmes-abc123",
+      "recommendations": [...],
+      "confidence_score": 0.95
+    }
+  }
+  ```
+
+**Error Event & Standardized Error Details** (v1.5 - January 2026):
+- **Event**: `aianalysis.analysis.failed`
+- **Purpose**: Captures all AI analysis failures (broader than `ai-analysis.llm.request_failed`)
+- **Distinction**: `aianalysis.analysis.failed` covers Holmes API timeouts, invalid responses, and generic upstream failures, while `ai-analysis.llm.request_failed` is specific to LLM API request errors
+- **Naming**: Consistent with `aianalysis.analysis.completed` (no hyphen)
+- **Required By**: BR-AUDIT-005 v2.0 Gap #7 (standardized error details for RR reconstruction)
+- **ErrorDetails Structure** (applies to ALL error events):
+  ```json
+  {
+    "event_data": {
+      "analysis_name": "aianalysis-abc123",
+      "error_details": {
+        "message": "Holmes API timeout after 30s",
+        "code": "ERR_UPSTREAM_TIMEOUT",
+        "component": "aianalysis",
+        "retry_possible": true,
+        "stack_trace": ["..."] // Optional, for internal errors
+      }
+    }
+  }
+  ```
+- **Error Code Examples**:
+  - `ERR_UPSTREAM_TIMEOUT`: Holmes API timeout (retry=true)
+  - `ERR_UPSTREAM_INVALID_RESPONSE`: Invalid JSON/schema from Holmes (retry=false)
+  - `ERR_UPSTREAM_FAILURE`: Generic Holmes API error (retry=true)
+- **Compliance**: DD-ERROR-001 (Error Details Standardization), SOC2 Type II RR reconstruction requirements
 
 **Industry Precedent**: OpenAI API logs, Anthropic Claude logs, AWS Bedrock audit logs
 
-**Expected Volume**: 500 events/day, 15 MB/month
+**Expected Volume**: 500 events/day (success), 50 events/day (failures), 16.5 MB/month total
 
 ---
 
@@ -196,15 +268,45 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | Event Type | Description | Priority |
 |------------|-------------|----------|
 | `execution.workflow.started` | Tekton workflow started | P0 |
+| `workflow.selection.completed` | Workflow selected for remediation (SOC2) | **P0** |
+| `workflowexecution.block.cleared` | Operator clears execution block (SOC2 CC8.1) | **P0** |
 | `execution.action.executed` | Kubernetes action executed | P0 |
 | `execution.action.succeeded` | Action succeeded | P0 |
 | `execution.action.failed` | Action failed | P0 |
 | `execution.workflow.completed` | Workflow completed | P0 |
 | `execution.rollback.triggered` | Rollback triggered | P0 |
 
+**SOC2 Compliance Events**:
+
+**v1.3 (January 2026)**:
+- **Event**: `workflow.selection.completed`
+- **Purpose**: Captures which workflow was chosen for execution (DD-AUDIT-004)
+- **Data**: `selected_workflow_ref` (workflow catalog reference)
+
+**v1.4 (January 2026)**:
+- **Event**: `workflowexecution.block.cleared`
+- **Purpose**: Captures operator identity when clearing execution blocks (BR-WE-013)
+- **Data**: `cleared_by` (operator identity), `clear_reason`, `block_duration`
+- **Compliance**: SOC2 CC8.1 (Attribution requirement)
+- **Distinction**: New event type (no existing equivalent)
+- **RR Field**: Maps to `.status.selectedWorkflowRef` in RR CRD
+- **Required By**: BR-AUDIT-005 v2.0 (100% RR CRD reconstruction accuracy)
+- **Event Data Fields**:
+  ```json
+  {
+    "selected_workflow_ref": {
+      "name": "restart-pod-workflow",
+      "version": "v1.2.3",
+      "namespace": "kubernaut-system"
+    },
+    "selection_reason": "Best match for OOMKill incident",
+    "alternatives_considered": 3
+  }
+  ```
+
 **Industry Precedent**: Kubernetes Audit Logs, Argo Workflows audit, Tekton Pipelines logs
 
-**Expected Volume**: 2,000 events/day, 60 MB/month
+**Expected Volume**: 2,300 events/day, 69 MB/month (updated for workflow selection tracking)
 
 ---
 
@@ -226,11 +328,19 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | `notification.message.sent` | Notification sent to external channel | P0 |
 | `notification.message.delivered` | Notification delivered successfully | P0 |
 | `notification.message.failed` | Notification delivery failed | P0 |
+| `notification.request.cancelled` | Operator cancels notification (SOC2 CC8.1) | **P0** |
 | `notification.crd.updated` | Notification CRD status updated | P1 |
+
+**SOC2 Compliance Event** (v1.4 - January 2026):
+- **Event**: `notification.request.cancelled`
+- **Purpose**: Captures operator identity when cancelling notifications (SOC2 CC8.1)
+- **Data**: `cancelled_by` (operator identity), `cancellation_reason`, `notification_id`
+- **Compliance**: SOC2 CC8.1 (Attribution requirement)
+- **Authority**: DD-WEBHOOK-001 (NotificationRequest webhook requirement)
 
 **Industry Precedent**: PagerDuty audit logs, Slack audit logs, SendGrid event webhooks
 
-**Expected Volume**: 500 events/day, 15 MB/month
+**Expected Volume**: 550 events/day, 16.5 MB/month (+50 events/day for operator cancellations)
 
 ---
 
@@ -577,15 +687,15 @@ context_api:
 |---------|-----------|--------------|---------------|
 | **Gateway Service** | 1,000 | 30,000 | 30 MB |
 | **AI Analysis Controller** | 500 | 15,000 | 15 MB |
-| **Remediation Execution Controller** | 2,000 | 60,000 | 60 MB |
-| **Notification Service** | 500 | 15,000 | 15 MB |
+| **Remediation Execution Controller** | 2,310 | 69,300 | 69.3 MB |
+| **Notification Service** | 550 | 16,500 | 16.5 MB |
 | **Data Storage Service** | 5,000 | 150,000 | 150 MB |
 | **Effectiveness Monitor Service** | 500 | 15,000 | 15 MB |
 | **Signal Processing Controller** | 1,000 | 30,000 | 30 MB |
 | **Remediation Orchestrator Controller** | 1,200 | 36,000 | 36 MB |
-| **TOTAL** | **11,700** | **351,000** | **351 MB** |
+| **TOTAL** | **12,060** | **361,800** | **361.8 MB** |
 
-**Storage Cost**: ~$0.35/month (PostgreSQL storage at $0.10/GB, 351 MB ≈ 0.35 GB)
+**Storage Cost**: ~$0.36/month (PostgreSQL storage at $0.10/GB, 361.8 MB ≈ 0.36 GB)
 
 **Retention**: 90 days (default), 7 years (compliance)
 

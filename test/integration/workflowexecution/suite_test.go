@@ -19,7 +19,6 @@ package workflowexecution
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -51,6 +50,7 @@ import (
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure" // Shared infrastructure (PostgreSQL + Redis + DS)
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
 )
@@ -116,9 +116,23 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
-	err := infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
+	// Use shared DSBootstrap infrastructure (replaces custom StartWEIntegrationInfrastructure)
+	// Per DD-TEST-001 v2.6: WE uses PostgreSQL=15441, Redis=16388, DS=18097
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "workflowexecution",
+		PostgresPort:    15441, // DD-TEST-001 v2.2
+		RedisPort:       16388, // DD-TEST-001 v2.2 (unique, resolved conflict with HAPI)
+		DataStoragePort: 18097, // DD-TEST-001 v2.2
+		MetricsPort:     19097,
+		ConfigDir:       "test/integration/workflowexecution/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	return []byte{} // No data to share between processes
 }, func(data []byte) {
@@ -147,11 +161,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		},
 		ErrorIfCRDPathMissing: true, // FAIL if CRDs not found - no silent fallback
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -196,7 +206,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating REAL audit store with DataStorage OpenAPI client (DD-API-001)")
 	// Create OpenAPI DataStorage client (DD-API-001 compliant)
-	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageBaseURL, 5*time.Second)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
+	mockTransport := testauth.NewMockUserTransport("test-workflowexecution@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageBaseURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage client: %v", err))
 	}
@@ -272,8 +288,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
+var _ = SynchronizedAfterSuite(func() {
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	By("Tearing down per-process test environment")
 
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
 	// WE-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
@@ -304,36 +321,24 @@ var _ = AfterSuite(func() {
 	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Stopping DataStorage infrastructure (DD-TEST-002)")
-	// Stop infrastructure services (postgres, redis, datastorage)
-	// DD-TEST-001: MANDATORY infrastructure cleanup after integration tests
-	// WE-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	err = infrastructure.StopWEIntegrationInfrastructure(GinkgoWriter)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️  Warning: Failed to stop infrastructure: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ DataStorage infrastructure stopped (postgres, redis, datastorage)")
-	}
+	GinkgoWriter.Println("✅ Per-process cleanup complete")
+}, func() {
+	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
+	// WE-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("workflowexecution", []string{
+		"workflowexecution_datastorage_test",
+		"workflowexecution_postgres_test",
+		"workflowexecution_redis_test",
+	}, GinkgoWriter)
+
+	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
-
 // ========================================
 // Test Helpers - Parallel-Safe (4 procs)
 // ========================================
@@ -468,14 +473,6 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 		return false, nil
 	})
 }
-
-// getPipelineRun gets a PipelineRun by name
-func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
-	pr := &tektonv1.PipelineRun{}
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, pr)
-	return pr, err
-}
-
 // cleanupWFE cleans up a WFE and its associated PipelineRun
 func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 	// Delete WFE (will cascade to PipelineRun via owner reference)
@@ -491,20 +488,14 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 		}
 	}
 }
+// flushAuditBuffer flushes the buffered audit store to ensure all events are written to DataStorage
+// MANDATORY before querying audit events to prevent flaky tests due to buffering
+func flushAuditBuffer() {
+	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer flushCancel()
 
-// completePipelineRun simulates a PipelineRun completing successfully or failing
-func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error { //nolint:unused
-	return simulatePipelineRunCompletion(pr, succeeded)
-}
-
-// failPipelineRunWithReason simulates a PipelineRun failing with a specific reason and message
-func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error { //nolint:unused
-	pr.Status.InitializeConditions(testClock)
-	pr.Status.SetCondition(&apis.Condition{
-		Type:    apis.ConditionSucceeded,
-		Status:  corev1.ConditionFalse,
-		Reason:  reason,
-		Message: message,
-	})
-	return k8sClient.Status().Update(ctx, pr)
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit buffer: %v\n", err)
+	}
 }

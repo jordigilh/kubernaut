@@ -57,7 +57,9 @@ import (
 // - signalprocessing_enrichment_errors_total{error_type}
 // ========================================
 
-var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
+// DD-TEST-010: Multi-Controller Pattern - Metrics tests now run in parallel
+// Each process has its own controller with isolated Prometheus registry
+var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
 	var (
 		ctx context.Context
 	)
@@ -181,7 +183,7 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 				Name:      "metrics-test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("metrics-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["metrics-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("metrics-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["metrics-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// 3. Create SignalProcessing CR (triggers business logic)
@@ -201,12 +203,12 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 				return updated.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		// 5. Verify processing metrics were emitted as side effects
-		Eventually(func() float64 {
-			return getCounterValue("signalprocessing_processing_total",
-				map[string]string{"phase": "enriching", "result": "success"})
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Controller should emit enriching phase metrics during reconciliation")
+			// 5. Verify processing metrics were emitted as side effects
+			Eventually(func() float64 {
+				return getCounterValue("signalprocessing_processing_total",
+					map[string]string{"phase": "enriching", "result": "success"})
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Controller should emit enriching phase metrics during reconciliation")
 
 			Eventually(func() float64 {
 				return getCounterValue("signalprocessing_processing_total",
@@ -243,7 +245,7 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 				Name:      "enrichment-test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("enrich-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["enrich-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("enrich-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["enrich-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			sp := CreateTestSignalProcessingWithParent(fmt.Sprintf("enrich-sp-%s", uuid.New().String()[:8]), ns, rr, ValidTestFingerprints["enrich-001"], targetResource)
@@ -295,7 +297,7 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 				Name:      "nonexistent-pod", // Pod doesn't exist
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("error-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["error-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("error-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["error-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			sp := CreateTestSignalProcessingWithParent(fmt.Sprintf("error-sp-%s", uuid.New().String()[:8]), ns, rr, ValidTestFingerprints["error-001"], targetResource)

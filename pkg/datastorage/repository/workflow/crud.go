@@ -241,6 +241,13 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 
 	// Apply filters if provided
 	if filters != nil {
+		// Metadata filters (exact match on workflow columns)
+		// Authority: DD-API-001 (OpenAPI client mandatory - workflow_name filter added Jan 2026)
+		if filters.WorkflowName != "" {
+			builder.Where("workflow_name = ?", filters.WorkflowName)
+		}
+
+		// Label filters (JSONB queries)
 		if filters.SignalType != "" {
 			builder.Where("labels->>'signal_type' = ?", filters.SignalType)
 		}

@@ -37,7 +37,7 @@ limitations under the License.
 // - BR-SP-100: Owner chain traversal
 // - BR-SP-101: Detected labels
 // - BR-SP-102: CustomLabels from Rego
-package signalprocessing_e2e
+package signalprocessing
 
 import (
 	"context"
@@ -52,8 +52,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,6 +71,7 @@ var (
 	metricsURL     string
 	coverageMode   bool   // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
 	coverDir       string // Coverage data directory
+	anyTestFailed  bool   // Track test failures for cluster cleanup decision
 )
 
 const (
@@ -167,6 +166,13 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
+
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes
 	func() {
@@ -179,8 +185,17 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Deleting Kind cluster (process 1 only)")
 
-		// Check if KEEP_CLUSTER env var is set (useful for debugging)
-		if os.Getenv("KEEP_CLUSTER") != "" {
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			By("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine test results for log export decision
+		anyFailure := setupFailed || anyTestFailed
+		preserveCluster := os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
 			By("KEEP_CLUSTER set - preserving cluster for debugging")
 			By(fmt.Sprintf("  • Cluster: %s", clusterName))
 			By(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
@@ -219,7 +234,7 @@ var _ = SynchronizedAfterSuite(
 					"-l", "app=signalprocessing-controller", "-o", "name")
 				output, _ := checkCmd.Output()
 				return len(strings.TrimSpace(string(output))) == 0
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeTrue(),
+			}).WithTimeout(60*time.Second).WithPolling(2*time.Second).Should(BeTrue(),
 				"Controller pod should terminate for coverage flush")
 
 			// Step 3: Extract coverage from Kind node
@@ -237,10 +252,11 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		// Retry cluster deletion using Eventually (NOT time.Sleep - anti-pattern)
+		// Delete cluster with must-gather log export
+		// Delete Kind cluster using infrastructure helper (with failure tracking)
 		Eventually(func() error {
-			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, GinkgoWriter)
-		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed(),
+			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
+		}).WithTimeout(30*time.Second).WithPolling(5*time.Second).Should(Succeed(),
 			"Cluster deletion should succeed (transient Podman connectivity handled via retry)")
 
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -287,45 +303,3 @@ var _ = SynchronizedAfterSuite(
 		GinkgoWriter.Println("✅ E2E cleanup complete (DD-TEST-001 v1.1 compliant)")
 	},
 )
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Test Helper Functions
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// createTestNamespace creates a uniquely named namespace for test isolation.
-func createTestNamespace(prefix string, labels map[string]string) string { //nolint:unused
-	ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
-
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   ns,
-			Labels: labels,
-		},
-	}
-
-	err := k8sClient.Create(ctx, namespace)
-	Expect(err).ToNot(HaveOccurred())
-
-	return ns
-}
-
-// deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(ns string) { //nolint:unused
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: ns},
-	}
-	_ = k8sClient.Delete(ctx, namespace)
-}
-
-// waitForSignalProcessingComplete waits for a SignalProcessing CR to reach Completed phase.
-func waitForSignalProcessingComplete(name, namespace string) *signalprocessingv1alpha1.SignalProcessing { //nolint:unused
-	sp := &signalprocessingv1alpha1.SignalProcessing{}
-	Eventually(func() string {
-		err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, sp)
-		if err != nil {
-			return ""
-		}
-		return string(sp.Status.Phase)
-	}, timeout, interval).Should(Equal("Completed"))
-	return sp
-}

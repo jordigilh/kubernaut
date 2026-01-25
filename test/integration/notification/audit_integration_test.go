@@ -63,13 +63,13 @@ package notification
 //     // 2. Wait for controller to deliver
 //     Eventually(func() Phase {
 //         var updated NotificationRequest
-//         k8sClient.Get(ctx, ..., &updated)
+//         k8sManager.GetAPIReader().Get(ctx, ..., &updated)
 //         return updated.Status.Phase
 //     }).Should(Equal(NotificationPhaseSent))
 //
 //     // 3. Verify controller emitted audit event
 //     Eventually(func() int {
-//         resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+//         resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &ogenclient.QueryAuditEventsParams{
 //             EventType:     ptr.To("notification.message.sent"),
 //             CorrelationId: &notif.Name,
 //         })

@@ -1,0 +1,7 @@
+# Mock LLM Service - Python Dependencies
+# DD-TEST-011: Self-Discovery Pattern requires HTTP client
+
+requests>=2.31.0
+pyyaml>=6.0
+pytest>=7.4.0
+pytest-cov>=4.1.0

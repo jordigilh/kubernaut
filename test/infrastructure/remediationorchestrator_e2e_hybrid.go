@@ -52,53 +52,79 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 0: Generate dynamic image tags (BEFORE building)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Generate DataStorage image tag ONCE (non-idempotent, timestamp-based)
-	// This ensures each service builds its OWN DataStorage with LATEST code
+	// PHASE 0 is now integrated into consolidated API (BuildImageForKind generates dynamic tags automatically)
 	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-	dataStorageImageName := GenerateInfraImageName("datastorage", "remediationorchestrator")
-	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
-	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
+	_, _ = fmt.Fprintln(writer, "  Note: Notification controller NOT needed - only CRD validation required")
 
-	type buildResult struct {
-		name string
-		err  error
+	type imageBuildResult struct {
+		name  string
+		image string
+		err   error
 	}
 
-	buildResults := make(chan buildResult, 2)
+	buildResults := make(chan imageBuildResult, 3)
 
-	// Build RemediationOrchestrator with coverage in parallel
+	// Build RemediationOrchestrator with coverage in parallel using consolidated API
 	go func() {
-		err := BuildROImageWithCoverage(writer)
-		buildResults <- buildResult{name: "RemediationOrchestrator (coverage)", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "remediationorchestrator-controller",
+			ImageName:        "kubernaut/remediationorchestrator-controller",
+			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",
+			BuildContextPath: "", // Will use project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
+		}
+		roImage, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
 	}()
 
-	// Build DataStorage with dynamic tag in parallel
+	// Build DataStorage in parallel using consolidated API
 	go func() {
-		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
-		buildResults <- buildResult{name: "DataStorage", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			BuildContextPath: "", // Will use project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		dsImage, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
-	// Wait for both builds to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	// Build AuthWebhook in parallel using consolidated API
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
+			BuildContextPath: "", // Will use project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		awImage, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
+	}()
+
+	// Wait for all three builds to complete and collect image names
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
+	builtImages := make(map[string]string) // name -> full image name
 	var buildErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-buildResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
 			buildErrors = append(buildErrors, result.err)
 		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.image)
+			builtImages[result.name] = result.image
 		}
 	}
 
@@ -114,18 +140,25 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
-	// Use Kind config with extraPortMappings for metrics access (DD-TEST-001)
-	kindConfigPath := filepath.Join(projectRoot, "test", "infrastructure", "kind-remediationorchestrator-config.yaml")
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", kindConfigPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	cmd.Dir = projectRoot // Set working dir so ./coverdata in config resolves correctly
+	// Create Kind cluster with coverage extraMount
+	// Use absolute paths to ensure correct mount resolution regardless of working directory
+	extraMounts := []ExtraMount{
+		// Coverage data collection (DD-TEST-007) - use absolute path from earlier calculation
+		{
+			HostPath:      coverdataPath, // Already absolute: /workspace/coverdata
+			ContainerPath: "/coverdata",
+			ReadOnly:      false,
+		},
+	}
 
-	if err := cmd.Run(); err != nil {
+	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
+	if err := CreateKindClusterWithExtraMounts(
+		clusterName,
+		kubeconfigPath,
+		kindConfigPath,
+		extraMounts,
+		writer,
+	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -164,27 +197,43 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator coverage image")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image (SOC2 CC8.1 user attribution)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
+	_, _ = fmt.Fprintln(writer, "  Note: OAuth2-Proxy pulled automatically from quay.io during deployment")
 
-	loadResults := make(chan buildResult, 2)
+	type loadResult struct {
+		name string
+		err  error
+	}
+	loadResults := make(chan loadResult, 3)
 
-	// Load RemediationOrchestrator coverage image
+	// Load RemediationOrchestrator coverage image using consolidated API
 	go func() {
-		err := LoadROCoverageImage(clusterName, writer)
-		loadResults <- buildResult{name: "RemediationOrchestrator coverage", err: err}
+		roImage := builtImages["RemediationOrchestrator (coverage)"]
+		err := LoadImageToKind(roImage, "remediationorchestrator-controller", clusterName, writer)
+		loadResults <- loadResult{name: "RemediationOrchestrator coverage", err: err}
 	}()
 
-	// Load DataStorage image with dynamic tag
+	// Load DataStorage image using consolidated API
 	go func() {
-		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
-		loadResults <- buildResult{name: "DataStorage", err: err}
+		dsImage := builtImages["DataStorage"]
+		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both loads to complete
+	// Load AuthWebhook image
+	go func() {
+		awImage := builtImages["AuthWebhook"]
+		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		loadResults <- loadResult{name: "AuthWebhook", err: err}
+	}()
+
+	// Wait for all three loads to complete
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
@@ -203,8 +252,8 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	// NOTE: Using dataStorageImageName from Phase 0 (generated BEFORE build)
-	// This ensures we deploy the SAME image we just built with latest code
+	// NOTE: Using dynamically generated image names from consolidated API (BuildImageForKind)
+	// This ensures we deploy the SAME images we just built with latest code
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
 	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
@@ -228,14 +277,16 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
-		// CRITICAL: Use the tag generated in Phase 0 (UUID-based, non-idempotent)
+		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-		// This ensures we deploy the SAME fresh-built image with latest DataStorage code
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer)
+		dsImage := builtImages["DataStorage"]
+		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar (image from quay.io)
+		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
-		err := DeployROCoverageManifest(kubeconfigPath, writer)
+		roImage := builtImages["RemediationOrchestrator (coverage)"]
+		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer)
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
 
@@ -261,6 +312,18 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	if err := waitForROServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
+
+	// PHASE 4.5: Deploy AuthWebhook manifests (using pre-built + pre-loaded image)
+	// Per DD-WEBHOOK-001: Required for RemediationApprovalRequest approval decisions
+	// Per SOC2 CC8.1: Captures WHO approved/rejected remediation requests
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	awImage := builtImages["AuthWebhook"]
+	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 user attribution enabled")
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ RemediationOrchestrator E2E Infrastructure Ready!")
@@ -361,7 +424,8 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 // DeployROCoverageManifest deploys the RemediationOrchestrator controller with coverage enabled
 // Per DD-TEST-007: Mounts coverdata directory as hostPath volume
 // Per ADR-030: Mounts audit config file for E2E audit testing
-func DeployROCoverageManifest(kubeconfigPath string, writer io.Writer) error {
+// Per consolidated API migration: Accepts dynamic image name as parameter
+func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	coverdataPath := filepath.Join(projectRoot, "coverdata")
 
@@ -381,8 +445,8 @@ data:
       timeout: 10s
       buffer:
         buffer_size: 10000
-        batch_size: 100
-        flush_interval: 1s
+        batch_size: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
+        flush_interval: 100ms  # E2E: Fast flush for test visibility (0.1s)
         max_retries: 3
     controller:
       metrics_addr: :9093
@@ -408,7 +472,7 @@ spec:
       serviceAccountName: remediationorchestrator-controller
       containers:
       - name: controller
-        image: localhost/remediationorchestrator-controller:e2e-coverage
+        image: %s
         imagePullPolicy: Never
         args:
         - --config=/etc/config/remediationorchestrator.yaml
@@ -490,13 +554,13 @@ rules:
   verbs: ["get"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["aianalyses"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["aianalyses/status"]
   verbs: ["get"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/status"]
   verbs: ["get"]
@@ -522,7 +586,7 @@ subjects:
 - kind: ServiceAccount
   name: remediationorchestrator-controller
   namespace: kubernaut-system
-`, coverdataPath)
+`, imageName, coverdataPath)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewReader([]byte(manifest))
@@ -581,71 +645,6 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "")
 
 	return fmt.Errorf("RemediationOrchestrator not ready within timeout")
-}
-
-// deployRORedis deploys Redis for DataStorage caching
-func deployRORedis(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error { //nolint:unused
-	_, _ = fmt.Fprintln(writer, "   Deploying Redis...")
-
-	manifest := `
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-spec:
-  ports:
-    - port: 6379
-  selector:
-    app: redis
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-        - name: redis
-          image: redis:7-alpine
-          ports:
-            - containerPort: 6379
-          readinessProbe:
-            exec:
-              command: ["redis-cli", "ping"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-`
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "apply", "-f", "-")
-	cmd.Stdin = bytes.NewReader([]byte(manifest))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Redis: %w", err)
-	}
-
-	// Wait for Redis to be ready with retry loop (matches PostgreSQL pattern)
-	// Give Kubernetes time to schedule the pod and pull the image
-	_, _ = fmt.Fprintln(writer, "   Waiting for Redis to be ready...")
-	deadline := time.Now().Add(2 * time.Minute)
-	for time.Now().Before(deadline) {
-		waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
-			"wait", "--for=condition=ready", "pod", "-l", "app=redis", "--timeout=10s")
-		if err := waitCmd.Run(); err == nil {
-			_, _ = fmt.Fprintln(writer, "   ✅ Redis ready")
-			return nil
-		}
-		time.Sleep(5 * time.Second)
-	}
-
-	return fmt.Errorf("Redis not ready within timeout")
 }
 
 // waitForROServicesReady waits for DataStorage and RemediationOrchestrator pods to be ready

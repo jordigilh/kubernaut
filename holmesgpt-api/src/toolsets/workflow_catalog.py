@@ -56,13 +56,13 @@ from typing import Dict, Any, List, Optional
 
 from holmes.core.tools import Tool, Toolset, StructuredToolResult, StructuredToolResultStatus, ToolParameter, ToolsetStatusEnum
 
-# OpenAPI client imports
-from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
-from src.clients.datastorage.models.workflow_search_request import WorkflowSearchRequest
-from src.clients.datastorage.models.workflow_search_filters import WorkflowSearchFilters
-from src.clients.datastorage.api_client import ApiClient
-from src.clients.datastorage.configuration import Configuration
-from src.clients.datastorage.exceptions import ApiException
+# OpenAPI client imports (datastorage package is in src/clients, added to sys.path)
+from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from datastorage.models.workflow_search_request import WorkflowSearchRequest
+from datastorage.models.workflow_search_filters import WorkflowSearchFilters
+from datastorage.api_client import ApiClient
+from datastorage.configuration import Configuration
+from datastorage.exceptions import ApiException
 
 # Import DetectedLabels for type hints
 from src.models.incident_models import DetectedLabels

@@ -78,8 +78,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				By(fmt.Sprintf("Cycle %d: Creating notification", cycle+1))
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -102,7 +102,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
 				// Wait for controller to start reconciliation (status transitions from empty)
 				Eventually(func() bool {
-					err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 					if err != nil {
 						return false
 					}
@@ -126,7 +126,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 
 				By(fmt.Sprintf("Cycle %d: Verifying deletion completed", cycle+1))
 				Eventually(func() bool {
-					err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 					return apierrors.IsNotFound(err)
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(),
 					"Notification should be deleted from Kubernetes")
@@ -158,8 +158,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				By(fmt.Sprintf("Cycle %d: Creating notification '%s'", cycle+1, notificationName))
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 						Labels: map[string]string{
 							"cycle": fmt.Sprintf("%d", cycle),
@@ -185,7 +185,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
 				// Wait for controller to complete delivery attempt (terminal state reached)
 				Eventually(func() notificationv1alpha1.NotificationPhase {
-					err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 					if err != nil {
 						return ""
 					}
@@ -207,7 +207,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				// Per TESTING_GUIDELINES.md v2.0.0: Eventually() already verifies deletion complete
 				// No additional sleep needed - IsNotFound() confirms K8s API processed deletion
 				Eventually(func() bool {
-					err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 					return apierrors.IsNotFound(err)
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(),
 					"Deletion should complete within 5 seconds (ready for next cycle)")
@@ -244,8 +244,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				notificationName := fmt.Sprintf("%s-%d", notificationBaseName, i)
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -290,7 +290,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 			By("Verifying all CRDs eventually deleted (no orphans)")
 			Eventually(func() int {
 				list := &notificationv1alpha1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, list, &client.ListOptions{Namespace: testNamespace})
+				_ = k8sManager.GetAPIReader().List(ctx, list, &client.ListOptions{Namespace: testNamespace})
 				orphanCount := 0
 				for _, n := range list.Items {
 					if n.Name == notificationBaseName ||
@@ -323,8 +323,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					notificationName := fmt.Sprintf("concurrent-rapid-%d-%s", id, uniqueSuffix)
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notificationName,
-							Namespace: testNamespace,
+							Name:       notificationName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -347,7 +347,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						// Wait for controller to start processing (status phase set) before deletion
 						processed := Eventually(func() bool {
 							var checkNotif notificationv1alpha1.NotificationRequest
-							err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &checkNotif)
+							err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &checkNotif)
 							if err != nil {
 								return false
 							}
@@ -385,7 +385,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 			By("Verifying no CRD orphans after concurrent rapid operations")
 			Eventually(func() int {
 				list := &notificationv1alpha1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, list, &client.ListOptions{Namespace: testNamespace})
+				_ = k8sManager.GetAPIReader().List(ctx, list, &client.ListOptions{Namespace: testNamespace})
 				orphanCount := 0
 				for _, n := range list.Items {
 					if len(n.Name) > len("concurrent-rapid-") &&

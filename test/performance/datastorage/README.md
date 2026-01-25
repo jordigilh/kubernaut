@@ -1,148 +1,131 @@
-# Data Storage Performance Tests
+# Data Storage Performance Smoke Tests
 
 ## Overview
 
-Performance tests for the Data Storage Service, specifically validating the hybrid weighted scoring SQL query performance at realistic scale.
+**Smoke tests** for Data Storage Service operational resilience. These are **NOT** true load tests - they detect obvious performance regressions without requiring production-scale infrastructure.
+
+## Purpose: Smoke Testing, Not Load Testing
+
+**What These Tests Do** ✅:
+- Detect **order-of-magnitude regressions** (e.g., query takes 10s instead of 100ms)
+- Validate **operational resilience** (cold start, burst handling)
+- Run on **local infrastructure** (Podman PostgreSQL)
+
+**What These Tests DON'T Do** ❌:
+- Validate production performance under realistic load
+- Simulate multi-node clusters or network latency
+- Test with production-scale data (10K+ workflows, 1M+ events)
+- Measure precise latency percentiles under load
+
+**Rationale**: True load testing requires production-like infrastructure that isn't available yet. These smoke tests catch obvious problems during development.
 
 ## Infrastructure
 
-**Local Testing Approach**: These tests reuse the integration test Podman infrastructure (PostgreSQL with pgvector). No production platform is required.
+**Local Testing Approach**: Reuses integration test Podman infrastructure (PostgreSQL with pgvector). No production platform required.
 
-**Why Local Testing**:
-- No production platform available yet
-- Sufficient for detecting performance regressions
-- Can run in CI/CD
-- Production-scale testing deferred to V1.1+
+## Smoke Test Targets (Order-of-Magnitude Checks)
 
-## Performance Targets
+**Local Smoke Test Targets**:
 
-**Local Testing Targets** (2x slower than production due to local hardware):
+| Metric | Target | Purpose |
+|--------|--------|---------|
+| Cold Start First Request | <5s | Detect startup issues |
+| Burst Writes (150 events) | No crashes | Detect buffer overflow |
+| P95 Latency | <1s | Order-of-magnitude check |
 
-| Metric | Target | Rationale |
-|--------|--------|-----------|
-| P50 Latency | <100ms | Acceptable for local testing |
-| P95 Latency | <200ms | 2x slower than production target (100ms) |
-| P99 Latency | <500ms | Conservative for local testing |
-| Concurrent Queries | 10 QPS | Limited by local resources |
+**Note**: These targets are **NOT** production SLAs. They're "sanity checks" to catch obvious regressions.
 
-**Test Scales**:
-- **1K workflows**: Typical production catalog size
-- **5K workflows**: Large production catalog (future)
-- **10K workflows**: Stress test (future)
-
-## Running Performance Tests
+## Running Smoke Tests
 
 ### Prerequisites
 
 1. **Start Integration Test Infrastructure**:
    ```bash
-   # Start Podman PostgreSQL with pgvector
+   # Start Podman PostgreSQL with pgvector + Data Storage service
    cd test/integration/datastorage
-   make start-infra  # Or equivalent command to start Podman containers
+   # Start infrastructure (assumes you have a startup script)
+   # Data Storage should be running on http://localhost:18090
    ```
 
-2. **Verify PostgreSQL is Running**:
+2. **Verify Data Storage is Running**:
    ```bash
-   psql postgresql://slm_user:test_password@localhost:5433/action_history -c "SELECT 1"
+   curl http://localhost:18090/health
    ```
 
-3. **⚠️ IMPORTANT: Avoid Port Conflicts**:
-   - If integration tests are running, they use port `5433`
-   - To avoid data corruption, use a different PostgreSQL instance for performance tests
-   - Set `PERF_TEST_PG_PORT` environment variable to specify a different port
-   - Example:
-     ```bash
-     # Use a different PostgreSQL instance on port 5434
-     PERF_TEST_PG_PORT=5434 ginkgo test/performance/datastorage/
-     ```
-
-### Run Performance Tests
+### Run Smoke Tests
 
 ```bash
-# Run all performance tests (uses default port 5433)
+# Run smoke tests (default Data Storage URL: http://localhost:18090)
 ginkgo test/performance/datastorage/
 
-# Run with custom PostgreSQL port (recommended if integration tests are running)
-PERF_TEST_PG_PORT=5434 ginkgo test/performance/datastorage/
+# Run with custom Data Storage URL
+DATASTORAGE_URL=http://localhost:8080 ginkgo test/performance/datastorage/
 
 # Run with verbose output
 ginkgo -v test/performance/datastorage/
 
-# Run specific test
-ginkgo --focus="should achieve P50 latency" test/performance/datastorage/
+# Run specific smoke test
+ginkgo --focus="Cold Start" test/performance/datastorage/
 ```
 
 ### Expected Output
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Latency Distribution Summary (1K workflows, 100 queries)
+GAP 5.3: Testing cold start performance (service restart)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Latency Metrics:
-  Min: 15ms
-  Avg: 45ms
-  P50: 42ms
-  P95: 78ms
-  P99: 120ms
-  Max: 150ms
-Performance Targets:
-  P50_target: <100ms ✅
-  P95_target: <200ms ✅
-  P99_target: <500ms ✅
+Service became healthy in 850ms
+First request completed in 1.2s
+Second request completed in 45ms
+
+✅ Cold start performance validated:
+   Startup:       850ms (target: <5s)
+   First request: 1.2s (target: <5s)
+   Second request: 45ms (target: <1s)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-## Test Coverage
+## Smoke Test Coverage
 
-### Performance Tests (1K Workflows)
+### Operational Resilience Smoke Tests
 
-1. **P50 Latency Test**
-   - Runs 100 searches
-   - Measures P50 latency
-   - Target: <100ms
+1. **Cold Start Performance** (BR-STORAGE-031)
+   - **Purpose**: Detect slow service restarts
+   - **Test**: Service health + first request latency
+   - **Target**: First request <5s (order-of-magnitude check)
+   - **Why**: Rolling updates must not cause extended downtime
 
-2. **P95 Latency Test**
-   - Runs 100 searches
-   - Measures P95 latency
-   - Target: <200ms
-
-3. **P99 Latency Test**
-   - Runs 100 searches
-   - Measures P99 latency
-   - Target: <500ms
-
-4. **Concurrent Query Test**
-   - Runs 10 concurrent searches
-   - Measures QPS
-   - Target: ≥10 QPS
-
-5. **Latency Distribution Summary**
-   - Comprehensive latency analysis
-   - Reports Min, Avg, P50, P95, P99, Max
-   - Validates all targets
+2. **Write Burst Handling** (BR-STORAGE-028)
+   - **Purpose**: Detect buffer overflow on incident storms
+   - **Test**: 150 audit events in 1 second
+   - **Target**: No crashes, all events accepted
+   - **Why**: Real incidents create write storms (50 pods × 3 events)
 
 ## CI/CD Integration
 
-### GitHub Actions Workflow
+### GitHub Actions Workflow (Optional)
+
+**Note**: These smoke tests can run in CI/CD, but they're primarily for local development regression detection.
 
 ```yaml
-name: Performance Tests
+name: Performance Smoke Tests
 
 on:
   pull_request:
     paths:
-      - 'pkg/datastorage/repository/**'
-      - 'pkg/datastorage/models/**'
-      - 'migrations/**'
+      - 'pkg/datastorage/**'
+      - 'test/performance/datastorage/**'
 
 jobs:
-  performance-test:
+  smoke-test:
     runs-on: ubuntu-latest
     services:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: slm_user
+          POSTGRES_DB: action_history
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -157,100 +140,100 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Run performance tests
+      - name: Start Data Storage service
+        run: |
+          # Start Data Storage in background
+          make run-datastorage &
+          sleep 5  # Wait for startup
+
+      - name: Run smoke tests
         run: |
           ginkgo test/performance/datastorage/
 
-      - name: Check performance regression
+      - name: Check for obvious regressions
         run: |
-          # Parse test output and fail if P95 > 200ms
-          # Implementation depends on test output format
+          # Fail if tests detect order-of-magnitude regressions
+          # (Tests will fail on their own if targets not met)
 ```
 
 ## Troubleshooting
 
-### Test Failures
+### Smoke Test Failures
 
-**Issue**: Tests fail with "PostgreSQL not available"
+**Issue**: "Data Storage not available"
 ```
-Solution: Start integration test infrastructure first
-```
-
-**Issue**: Tests fail with "pgvector extension not available"
-```
-Solution: Ensure PostgreSQL image has pgvector extension
+Solution: Ensure Data Storage service is running on http://localhost:18090
+Check: curl http://localhost:18090/health
 ```
 
-**Issue**: Performance targets not met
+**Issue**: "Cold start test fails - first request >5s"
 ```
-Solution:
-1. Check local system load
-2. Verify no other heavy processes running
-3. Check PostgreSQL configuration
-4. Review SQL query execution plan
+Interpretation: Likely a real problem - investigate service startup
+NOT a flaky test - cold start should be fast even locally
 ```
 
-### Performance Debugging
-
-**Analyze SQL Query Performance**:
-```sql
--- Run EXPLAIN ANALYZE on hybrid scoring query
-EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-SELECT
-    *,
-    (1 - (embedding <=> $1)) AS base_similarity,
-    -- ... (boost/penalty calculations) ...
-FROM remediation_workflow_catalog
-WHERE status = 'active'
-  AND labels->>'signal_type' = 'OOMKilled'
-  AND labels->>'severity' = 'critical'
-ORDER BY final_score DESC
-LIMIT 10;
+**Issue**: "Burst write test fails - events dropped"
+```
+Interpretation: Buffer overflow issue - investigate BufferedAuditStore
+NOT a resource constraint - 150 events should succeed locally
 ```
 
-**Check Index Usage**:
-```sql
--- Verify GIN index on labels
-SELECT indexname, indexdef
-FROM pg_indexes
-WHERE tablename = 'remediation_workflow_catalog'
-  AND indexname LIKE '%labels%';
-
--- Verify HNSW index on embedding
-SELECT indexname, indexdef
-FROM pg_indexes
-WHERE tablename = 'remediation_workflow_catalog'
-  AND indexname LIKE '%embedding%';
+**Issue**: Tests pass but seem slow
+```
+Interpretation: This is expected for local testing
+Smoke tests have generous targets to avoid false positives
+Only fail if order-of-magnitude regression (e.g., 10x slower)
 ```
 
-## Future Enhancements
+### When to Ignore Smoke Test Failures
 
-### V1.1+ (Production-Scale Testing)
+**Local Environment Issues** (can ignore):
+- System under heavy load
+- Disk I/O contention
+- Network issues (if running remote DB)
 
-1. **Large-Scale Tests**
-   - 10K workflows
-   - 100K workflows
-   - 1M workflows
+**Real Problems** (DO NOT ignore):
+- Service crashes during test
+- Connection pool exhaustion
+- Buffer overflow errors
+- Order-of-magnitude latency increases (e.g., 100ms → 10s)
 
-2. **High Concurrency Tests**
-   - 100 QPS
-   - 1000 QPS
-   - Load testing
+## When to Do REAL Load Testing (V1.1+)
 
-3. **Production Infrastructure**
-   - Multi-node PostgreSQL cluster
-   - Network latency simulation
-   - Production-like hardware
+**Current Status**: These smoke tests are sufficient for **development regression detection**.
 
-4. **Advanced Metrics**
-   - Query planning time analysis
-   - Index scan efficiency
-   - Memory usage profiling
-   - Connection pool performance
+**True Load Testing Required When**:
+- Deploying to production
+- Significant architectural changes
+- Performance-critical features
+- Production incidents suggest performance issues
+
+### V1.1+ Production Load Testing Requirements
+
+1. **Infrastructure Prerequisites**
+   - Multi-node PostgreSQL cluster (3+ nodes)
+   - Distributed Data Storage instances (3+ replicas)
+   - Production-like network topology
+   - Realistic data scale (100K+ workflows, 10M+ audit events)
+
+2. **Test Scenarios**
+   - Sustained high concurrency (100+ QPS)
+   - Multi-tenant workload simulation
+   - Realistic AI query patterns from HolmesGPT
+   - Multiple simultaneous incident storms
+   - Chaos engineering (node failures, network partitions)
+
+3. **Metrics to Measure**
+   - True P50/P95/P99 latencies under load
+   - Query planning time at scale
+   - Index scan efficiency with large datasets
+   - Memory usage patterns
+   - Connection pool behavior under contention
+
+**Defer Until**: Production infrastructure available and performance becomes critical path
 
 ## References
 
-- **Implementation Plan**: `docs/services/stateless/data-storage/SEMANTIC_SEARCH_HYBRID_SCORING_IMPLEMENTATION.md`
-- **Design Decision**: `docs/architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md`
-- **Business Requirement**: BR-STORAGE-013 (Semantic search with hybrid weighted scoring)
+- **Smoke Test Design**: This README
+- **Business Requirements**: BR-STORAGE-028 (burst handling), BR-STORAGE-031 (cold start)
 

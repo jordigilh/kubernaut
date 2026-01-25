@@ -82,7 +82,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 | BR ID | Description | V1.0 | Implementation Notes |
 |-------|-------------|------|---------------------|
 | **BR-AI-001** | Contextual analysis of K8s alerts and system state | ✅ | HolmesGPT-API `/incident/analyze` |
-| **BR-AI-002** | Support multiple analysis types (diagnostic, predictive) | ✅ | Via `analysisTypes` in spec |
+| **BR-AI-002** | Support multiple analysis types (diagnostic, predictive) | ⏸️ Deferred v2.0 | Single type only (DD-AIANALYSIS-005) |
 | **BR-AI-003** | Generate structured analysis results with confidence scoring | ✅ | `status.confidence`, `status.rootCause` |
 | **BR-AI-006** | Generate actionable remediation recommendations | ✅ | `status.selectedWorkflow` |
 | **BR-AI-007** | Rank recommendations by effectiveness probability | ✅ | Confidence score from HolmesGPT |

@@ -33,11 +33,11 @@ import json
 import os
 
 # DD-API-001: OpenAPI client imports for Data Storage API
-from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
-from src.clients.datastorage.models.workflow_search_request import WorkflowSearchRequest
-from src.clients.datastorage.models.workflow_search_filters import WorkflowSearchFilters
-from src.clients.datastorage.api_client import ApiClient
-from src.clients.datastorage.configuration import Configuration
+from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from datastorage.models.workflow_search_request import WorkflowSearchRequest
+from datastorage.models.workflow_search_filters import WorkflowSearchFilters
+from datastorage.api_client import ApiClient
+from datastorage.configuration import Configuration
 
 # Note: Uses fixtures from tests/e2e/conftest.py (V1.0 Go infrastructure)
 # DATA_STORAGE_URL is provided via data_storage_stack fixture

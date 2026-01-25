@@ -43,11 +43,9 @@ nodes:
   - containerPort: 30284
     hostPort: 8183
     protocol: TCP
-  # Extra mounts for coverage data collection (DD-TEST-007)
-  extraMounts:
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false
+  # Extra mounts for coverage data collection (DD-TEST-007) and notification output
+  # Note: ALL extraMounts are added programmatically in SetupROInfrastructureHybridWithCoverage
+  # based on OS (macOS vs Linux) to handle path differences between environments
   # Increase API server rate limits for parallel integration testing
   kubeadmConfigPatches:
   - |
@@ -62,11 +60,3 @@ nodes:
         # Increase controller manager QPS for CRD operations
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-  extraMounts:
-  # Mount coverage directory from host to Kind node for E2E coverage collection
-  # Per DD-TEST-007: E2E Coverage Capture Standard
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false
-

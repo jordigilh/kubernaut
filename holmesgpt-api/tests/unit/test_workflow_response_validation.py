@@ -39,7 +39,7 @@ from typing import Dict, Any, List
 #     WorkflowResponseValidator,
 #     ValidationResult,
 # )
-# from src.clients.datastorage.models import (
+# from datastorage.models import (
 #     RemediationWorkflow,
 #     ParameterSchema,
 #     WorkflowParameterDef,
@@ -47,12 +47,12 @@ from typing import Dict, Any, List
 
 
 # =============================================================================
-# PHASE 1: Data Storage Client - get_workflow_by_uuid() Tests
+# PHASE 1: Data Storage Client - get_workflow_by_id() Tests
 # =============================================================================
 
 class TestDataStorageClientGetWorkflowByUUID:
     """
-    Tests for Data Storage Client get_workflow_by_uuid() method.
+    Tests for Data Storage Client get_workflow_by_id() method.
 
     Business Requirement: BR-AI-023 (Hallucination Detection)
     Design Decision: DD-HAPI-002 v1.2 Step 1
@@ -106,7 +106,7 @@ class TestDataStorageClientGetWorkflowByUUID:
             "created_at": "2025-12-01T00:00:00Z"
         }
 
-    # NOTE: Removed obsolete test_get_workflow_by_uuid_* tests
+    # NOTE: Removed obsolete test_get_workflow_by_id_* tests
     # These tests were for an obsolete DataStorageClient wrapper.
     # The OpenAPI client (WorkflowCatalogAPIApi) is tested via integration tests.
     # See: tests/integration/test_workflow_catalog_data_storage_integration.py
@@ -153,7 +153,7 @@ class TestWorkflowExistenceValidation:
         Then: Returns ValidationResult with is_valid=False and error message
         """
         # Arrange
-        mock_ds_client.get_workflow_by_uuid.return_value = None
+        mock_ds_client.get_workflow_by_id.return_value = None
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -181,7 +181,7 @@ class TestWorkflowExistenceValidation:
         Then: Does NOT return "not found" error
         """
         # Arrange
-        mock_ds_client.get_workflow_by_uuid.return_value = mock_workflow
+        mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -235,7 +235,7 @@ class TestContainerImageConsistencyValidation:
         Then: No "mismatch" error
         """
         # Arrange
-        mock_ds_client.get_workflow_by_uuid.return_value = mock_workflow
+        mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -261,7 +261,7 @@ class TestContainerImageConsistencyValidation:
         Then: Returns validated_container_image from catalog
         """
         # Arrange
-        mock_ds_client.get_workflow_by_uuid.return_value = mock_workflow
+        mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -288,7 +288,7 @@ class TestContainerImageConsistencyValidation:
         Then: Returns error with both images mentioned
         """
         # Arrange
-        mock_ds_client.get_workflow_by_uuid.return_value = mock_workflow
+        mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -355,7 +355,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "namespace", "type": "string", "required": True}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -386,7 +386,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "delay", "type": "int", "required": False}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -417,7 +417,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "namespace", "type": "string", "required": True}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -447,7 +447,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "replicas", "type": "int", "required": True}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -480,7 +480,7 @@ class TestParameterSchemaValidation:
             {"name": "enabled", "type": "bool", "required": True},
             {"name": "threshold", "type": "float", "required": True}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -516,7 +516,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "namespace", "type": "string", "required": True, "min_length": 3}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -546,7 +546,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "namespace", "type": "string", "required": True, "max_length": 63}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -578,7 +578,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "replicas", "type": "int", "required": True, "minimum": 1}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -608,7 +608,7 @@ class TestParameterSchemaValidation:
         workflow = self.create_workflow_with_params([
             {"name": "replicas", "type": "int", "required": True, "maximum": 100}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -641,7 +641,7 @@ class TestParameterSchemaValidation:
             {"name": "strategy", "type": "string", "required": True,
              "enum": ["RollingUpdate", "Recreate"]}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -672,7 +672,7 @@ class TestParameterSchemaValidation:
             {"name": "strategy", "type": "string", "required": True,
              "enum": ["RollingUpdate", "Recreate"]}
         ])
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -726,7 +726,7 @@ class TestCompleteValidationFlow:
                 ]
             }
         }
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -767,7 +767,7 @@ class TestCompleteValidationFlow:
                 ]
             }
         }
-        mock_ds_client.get_workflow_by_uuid.return_value = workflow
+        mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 

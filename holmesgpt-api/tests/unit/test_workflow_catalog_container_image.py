@@ -262,14 +262,14 @@ class TestWorkflowCatalogContainerImage:
         # ARRANGE
         tool = SearchWorkflowCatalogTool(data_storage_url="http://localhost:8080")
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"),
+                workflow_id=str(UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d")),
                 title="OOM Remediation",
                 description="Remediate OOMKilled pods",
                 signal_type="OOMKilled",
@@ -325,14 +325,14 @@ class TestWorkflowCatalogContainerImage:
         # ARRANGE
         tool = SearchWorkflowCatalogTool(data_storage_url="http://localhost:8080")
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e"),
+                workflow_id=str(UUID("2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e")),
                 title="CrashLoop Fix",
                 description="Fix CrashLoopBackOff issues",
                 signal_type="CrashLoopBackOff",

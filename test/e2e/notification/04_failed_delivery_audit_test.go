@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -76,7 +76,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		testCtx          context.Context
 		testCancel       context.CancelFunc
 		notification     *notificationv1alpha1.NotificationRequest
-		dsClient         *dsgen.ClientWithResponses
+		dsClient         *ogenclient.Client
 		dataStorageURL   string
 		notificationName string
 		notificationNS   string
@@ -97,7 +97,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create NotificationRequest that will FAIL delivery
@@ -191,7 +191,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Controller calls auditMessageFailed() which creates notification.message.failed event
 		// BufferedStore flushes to Data Storage → PostgreSQL
 		Eventually(func() int {
-			count := queryAuditEventCount(dsClient, correlationID, "notification.message.failed")
+			count := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Found %d failed audit events for correlation_id=%s\n", count, correlationID)
 			return count
 		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
@@ -204,9 +204,9 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(events).ToNot(BeEmpty(), "Should have at least one audit event")
 
 		// Find the failed event
-		var failedEvent *dsgen.AuditEvent
+		var failedEvent *ogenclient.AuditEvent
 		for i := range events {
-			if events[i].EventType == "notification.message.failed" {
+			if events[i].EventType == string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData) {
 				failedEvent = &events[i]
 				break
 			}
@@ -220,20 +220,20 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"Event action should be 'sent' (attempted delivery)")
 		Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
 			"Event outcome should be 'failure'")
-		Expect(failedEvent.ActorType).ToNot(BeNil(), "Actor type should be set")
-		Expect(*failedEvent.ActorType).To(Equal("service"),
+		Expect(failedEvent.ActorType.IsSet()).To(BeTrue(), "Actor type should be set")
+		Expect(failedEvent.ActorType.Value).To(Equal("service"),
 			"Actor type should be 'service'")
 		// NT-TEST-001 Fix: Expect actual service name from controller
-		Expect(failedEvent.ActorId).ToNot(BeNil(), "Actor ID should be set")
-		Expect(*failedEvent.ActorId).To(Equal("notification-controller"),
+		Expect(failedEvent.ActorID.IsSet()).To(BeTrue(), "Actor ID should be set")
+		Expect(failedEvent.ActorID.Value).To(Equal("notification-controller"),
 			"Actor ID should be 'notification-controller' (service name)")
-		Expect(failedEvent.ResourceType).ToNot(BeNil(), "Resource type should be set")
-		Expect(*failedEvent.ResourceType).To(Equal("NotificationRequest"),
+		Expect(failedEvent.ResourceType.IsSet()).To(BeTrue(), "Resource type should be set")
+		Expect(failedEvent.ResourceType.Value).To(Equal("NotificationRequest"),
 			"Resource type should be 'NotificationRequest'")
-		Expect(failedEvent.ResourceId).ToNot(BeNil(), "Resource ID should be set")
-		Expect(*failedEvent.ResourceId).To(Equal(notificationName),
+		Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
 			"Resource ID should match notification name")
-		Expect(failedEvent.CorrelationId).To(Equal(correlationID),
+		Expect(failedEvent.CorrelationID).To(Equal(correlationID),
 			"Correlation ID should match for workflow tracing")
 
 		// Validate error details in event_data
@@ -309,7 +309,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"Should be able to trace all events by correlation_id")
 
 		for _, event := range allEvents {
-			Expect(event.CorrelationId).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"All events should share same correlation_id for workflow tracing")
 		}
 
@@ -384,8 +384,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// Should have 1 sent event (console) + 1 failed event (email)
 		Eventually(func() bool {
-			sentCount := queryAuditEventCount(dsClient, correlationID, "notification.message.sent")
-			failedCount := queryAuditEventCount(dsClient, correlationID, "notification.message.failed")
+			sentCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageSentPayloadAuditEventEventData))
+			failedCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Partial failure - sent=%d, failed=%d\n", sentCount, failedCount)
 			return sentCount >= 1 && failedCount >= 1
 		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
@@ -396,11 +396,11 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(allEvents).To(HaveLen(2), "Should have exactly 2 events (1 success, 1 failure)")
 
 		// Validate channel-specific event_data and field matching
-		var sentEvent, failedEvent *dsgen.AuditEvent
+		var sentEvent, failedEvent *ogenclient.AuditEvent
 		for i := range allEvents {
-			if allEvents[i].EventType == "notification.message.sent" {
+			if allEvents[i].EventType == string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) {
 				sentEvent = &allEvents[i]
-			} else if allEvents[i].EventType == "notification.message.failed" {
+			} else if allEvents[i].EventType == string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData) {
 				failedEvent = &allEvents[i]
 			}
 		}
@@ -426,8 +426,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Success event priority should match notification spec")
 		Expect(string(sentEvent.EventOutcome)).To(Equal("success"),
 			"FIELD MATCH: Success event outcome should be success")
-		Expect(sentEvent.ResourceId).ToNot(BeNil(), "Resource ID should be set")
-		Expect(*sentEvent.ResourceId).To(Equal(notificationName),
+		Expect(sentEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(sentEvent.ResourceID.Value).To(Equal(notificationName),
 			"FIELD MATCH: Success event resource_id should match notification name")
 
 		// FIELD MATCHING VALIDATION: Failed event
@@ -450,8 +450,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Failed event should contain error details")
 		Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
 			"FIELD MATCH: Failed event outcome should be failure")
-		Expect(failedEvent.ResourceId).ToNot(BeNil(), "Resource ID should be set")
-		Expect(*failedEvent.ResourceId).To(Equal(notificationName),
+		Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
 			"FIELD MATCH: Failed event resource_id should match notification name")
 
 		GinkgoWriter.Printf("✅ Partial failure audit validation complete:\n")

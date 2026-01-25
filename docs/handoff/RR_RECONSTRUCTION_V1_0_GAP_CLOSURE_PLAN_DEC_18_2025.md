@@ -1,11 +1,16 @@
 # 🎯 RemediationRequest Reconstruction from Audit Traces - V1.0 Gap Closure Plan
 
 **Date**: December 18, 2025, 17:30 UTC
-**Status**: 🚀 **APPROVED FOR V1.0** - User Decision (100% Coverage)
+**Status**: ⚠️ **SUPERSEDED** - Timeline outdated due to SOC2 work (see V1.1 plan)
+**Original Approval**: ✅ User Decision (100% Coverage) - December 18, 2025
 **Business Requirement**: **BR-AUDIT-005 v2.0** (Enterprise-Grade Audit Integrity and Compliance - RR Reconstruction)
 **Priority**: **P0** - Must-have for V1.0 release
 **Goal**: Enable exact RR CRD reconstruction from audit traces (excluding user-modified status fields)
 **Current Coverage**: 70% → **Target Coverage**: 100% (ALL 8 GAPS CLOSED)
+
+**⚠️ SUPERSEDED BY**: [RR_RECONSTRUCTION_V1_1_IMPLEMENTATION_PLAN_JAN10.md](../development/SOC2/RR_RECONSTRUCTION_V1_1_IMPLEMENTATION_PLAN_JAN10.md)
+
+**Why Superseded**: SOC2 compliance work (December 20 - January 8, 2026) completed 60% of the infrastructure identified in this plan, reducing the 6.5-day estimate to 3 days. See [RR_RECONSTRUCTION_SOC2_OVERLAP_TRIAGE_JAN09.md](./RR_RECONSTRUCTION_SOC2_OVERLAP_TRIAGE_JAN09.md) for details.
 
 **Authority**: This plan implements the "RR CRD Reconstruction" component of [BR-AUDIT-005 v2.0](../requirements/11_SECURITY_ACCESS_CONTROL.md)
 

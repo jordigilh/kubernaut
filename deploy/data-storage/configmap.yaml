@@ -4,38 +4,37 @@ metadata:
   name: data-storage-config
   namespace: kubernaut-system
 data:
-  # Server Configuration
-  HTTP_PORT: "8080"
-  METRICS_PORT: "9090"
-  LOG_LEVEL: "info"
-  LOG_FORMAT: "json"
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      read_timeout: "30s"
+      write_timeout: "30s"
 
-  # Database Configuration (non-sensitive)
-  DB_HOST: "postgres.kubernaut-system.svc.cluster.local"
-  DB_PORT: "5432"
-  DB_NAME: "action_history"
-  DB_USER: "db_user"
-  DB_MAX_CONNECTIONS: "50"
-  DB_SSL_MODE: "disable"
+    logging:
+      level: "info"
+      format: "json"
 
-  # Vector DB Configuration (optional)
-  VECTOR_DB_ENABLED: "false"
-  VECTOR_DB_HOST: "vector-db-service"
-  VECTOR_DB_PORT: "8080"
+    database:
+      host: "postgresql.kubernaut-system.svc.cluster.local"
+      port: 5432
+      name: "action_history"
+      user: "db_user"
+      sslMode: "disable"
+      maxOpenConns: 50
+      maxIdleConns: 25
+      connMaxLifetime: "15m"
+      connMaxIdleTime: "10m"
+      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+      usernameKey: "username"
+      passwordKey: "password"
 
-  # Embedding Configuration (optional)
-  EMBEDDING_ENABLED: "false"
-  EMBEDDING_MODEL: "text-embedding-ada-002"
-
-  # Cache Configuration (optional)
-  CACHE_ENABLED: "false"
-  CACHE_TYPE: "redis"
-  CACHE_HOST: "redis-service"
-  CACHE_PORT: "6379"
-  CACHE_TTL: "5m"
-
-  # Performance Tuning
-  QUERY_TIMEOUT: "30s"
-  WRITE_TIMEOUT: "10s"
-  CONTEXT_TIMEOUT: "60s"
+    redis:
+      addr: "redis.kubernaut-system.svc.cluster.local:6379"
+      db: 0
+      dlqStreamName: "audit:dlq:production"
+      dlqMaxLen: 10000
+      dlqConsumerGroup: "datastorage-dlq-consumers"
+      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      passwordKey: "password"
 

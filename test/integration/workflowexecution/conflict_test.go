@@ -264,9 +264,9 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(pr1Name).To(Equal(pr2Name),
 				"Deterministic naming ensures same target resource → same PipelineRun name")
 
-		By("Verifying name follows expected format")
-		Expect(pr1Name).To(HavePrefix("wfe-"),
-			"PipelineRun name should follow wfe-* pattern (WorkflowExecution prefix)")
+			By("Verifying name follows expected format")
+			Expect(pr1Name).To(HavePrefix("wfe-"),
+				"PipelineRun name should follow wfe-* pattern (WorkflowExecution prefix)")
 
 			By("Verifying name is deterministic via PipelineRunName()")
 			expectedName := workflowexecution.PipelineRunName(targetResource)
@@ -287,4 +287,3 @@ func findCondition(conditions []metav1.Condition, conditionType string) *metav1.
 	}
 	return nil
 }
-

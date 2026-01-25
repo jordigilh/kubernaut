@@ -28,21 +28,20 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "security-headers")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -50,16 +49,9 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger.Info("Test 20: Security Headers & Observability - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("security-headers")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
-
-		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
+	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
@@ -83,17 +75,14 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		_ = k8sClient.Delete(testCtx, ns)
+	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
+	if testCancel != nil {
+		testCancel()
+	}
+	testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -285,29 +274,29 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			}, 5*time.Second, 200*time.Millisecond).Should(BeTrue(),
 				"HTTP request duration metric should appear in /metrics within 5 seconds")
 
-		testLogger.Info("Step 4: Validate HTTP metrics present")
+			testLogger.Info("Step 4: Validate HTTP metrics present")
 
-		// gateway_http_request_duration_seconds (histogram with _bucket, _sum, _count)
-		// Per metrics-slos.md: Histogram metric for HTTP request duration (BR-GATEWAY-067, BR-GATEWAY-079)
-		hasRequestDuration := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds")
-		testLogger.Info("Checking gateway_http_request_duration_seconds", "present", hasRequestDuration)
-		Expect(hasRequestDuration).To(BeTrue(),
-			"HTTP request duration metric should be present in /metrics (per specification)")
+			// gateway_http_request_duration_seconds (histogram with _bucket, _sum, _count)
+			// Per metrics-slos.md: Histogram metric for HTTP request duration (BR-GATEWAY-067, BR-GATEWAY-079)
+			hasRequestDuration := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds")
+			testLogger.Info("Checking gateway_http_request_duration_seconds", "present", hasRequestDuration)
+			Expect(hasRequestDuration).To(BeTrue(),
+				"HTTP request duration metric should be present in /metrics (per specification)")
 
-		// Verify histogram components (_bucket, _sum, _count)
-		hasHistogramBucket := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_bucket")
-		hasHistogramSum := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_sum")
-		hasHistogramCount := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_count")
-		testLogger.Info("Histogram components", "bucket", hasHistogramBucket, "sum", hasHistogramSum, "count", hasHistogramCount)
-		Expect(hasHistogramBucket).To(BeTrue(), "Histogram bucket metric should be present")
-		Expect(hasHistogramSum).To(BeTrue(), "Histogram sum metric should be present")
-		Expect(hasHistogramCount).To(BeTrue(), "Histogram count metric should be present")
+			// Verify histogram components (_bucket, _sum, _count)
+			hasHistogramBucket := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_bucket")
+			hasHistogramSum := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_sum")
+			hasHistogramCount := strings.Contains(updatedMetricsStr, "gateway_http_request_duration_seconds_count")
+			testLogger.Info("Histogram components", "bucket", hasHistogramBucket, "sum", hasHistogramSum, "count", hasHistogramCount)
+			Expect(hasHistogramBucket).To(BeTrue(), "Histogram bucket metric should be present")
+			Expect(hasHistogramSum).To(BeTrue(), "Histogram sum metric should be present")
+			Expect(hasHistogramCount).To(BeTrue(), "Histogram count metric should be present")
 
-		testLogger.Info("✅ HTTP metrics validated")
-		testLogger.Info("  ✓ gateway_http_request_duration_seconds: present")
-		testLogger.Info("  ✓ gateway_http_request_duration_seconds_bucket: present")
-		testLogger.Info("  ✓ gateway_http_request_duration_seconds_sum: present")
-		testLogger.Info("  ✓ gateway_http_request_duration_seconds_count: present")
+			testLogger.Info("✅ HTTP metrics validated")
+			testLogger.Info("  ✓ gateway_http_request_duration_seconds: present")
+			testLogger.Info("  ✓ gateway_http_request_duration_seconds_bucket: present")
+			testLogger.Info("  ✓ gateway_http_request_duration_seconds_sum: present")
+			testLogger.Info("  ✓ gateway_http_request_duration_seconds_count: present")
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Test 20c PASSED: HTTP Metrics Recorded")
@@ -330,4 +319,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

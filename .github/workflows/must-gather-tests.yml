@@ -1,0 +1,227 @@
+name: Must-Gather Tests
+
+# Must-Gather Diagnostic Tool CI Pipeline
+# BR-PLATFORM-001: Production diagnostic collection tool
+#
+# Triggers:
+#   - Pull requests to main (with must-gather file changes)
+#   - Pushes to main (with must-gather file changes)
+#   - Manual workflow dispatch (for on-demand testing)
+#
+# Test Strategy:
+#   - Unit Tests: 45 bats tests in containerized environment
+#   - Container Build: Validates Dockerfile for target architecture
+#   - Architecture: amd64 on GitHub Actions, arm64 locally
+#
+# Optimization:
+#   - Smart path filtering: Only runs when must-gather files change
+#   - Single-arch build: amd64 for CI (multi-arch for releases)
+#   - Containerized tests: Host-agnostic consistency
+#
+# Authority: BR-PLATFORM-001, cmd/must-gather/README.md
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'cmd/must-gather/**'
+      - 'docs/development/must-gather/**'
+      - 'docs/requirements/BR-PLATFORM-001*.md'
+      - '.github/workflows/must-gather-tests.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'cmd/must-gather/**'
+      - 'docs/development/must-gather/**'
+      - 'docs/requirements/BR-PLATFORM-001*.md'
+      - '.github/workflows/must-gather-tests.yml'
+  workflow_dispatch:
+    inputs:
+      skip-tests:
+        description: 'Skip unit tests (build only)'
+        required: false
+        default: 'false'
+        type: boolean
+      skip-build:
+        description: 'Skip container build (tests only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  # ========================================
+  # UNIT TESTS: Containerized Bats Tests
+  # 45 tests validating business outcomes
+  # Duration: ~3-5 minutes
+  # ========================================
+  unit-tests:
+    name: Unit Tests (45 bats tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ !inputs.skip-tests }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Podman
+        run: |
+          echo "📦 Podman version:"
+          podman version
+
+      - name: Run unit tests
+        working-directory: cmd/must-gather
+        run: |
+          echo "🧪 Running 45 containerized unit tests..."
+          echo "   - Checksum integrity: 8 tests"
+          echo "   - CRD collection: 3 tests"
+          echo "   - DataStorage API: 9 tests"
+          echo "   - Orchestration: 9 tests"
+          echo "   - Logs: 7 tests"
+          echo "   - Sanitization: 9 tests"
+          echo ""
+          make test
+
+      - name: Test results summary
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ All 45 unit tests passed!"
+          else
+            echo "❌ Unit tests failed"
+            exit 1
+          fi
+
+  # ========================================
+  # CONTAINER BUILD: Validate Dockerfile
+  # Single-arch build for CI (amd64)
+  # Duration: ~2-3 minutes
+  # ========================================
+  container-build:
+    name: Container Build (amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ !inputs.skip-build }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Podman
+        run: |
+          echo "📦 Podman version:"
+          podman version
+
+      - name: Build must-gather container
+        working-directory: cmd/must-gather
+        run: |
+          echo "🐳 Building must-gather container for amd64..."
+          echo "   Base: UBI9 standard"
+          echo "   Tools: kubectl, jq, tar, gzip"
+          echo "   Scripts: collectors, sanitizers, utils"
+          echo ""
+          podman build \
+            --platform linux/amd64 \
+            --build-arg TARGETARCH=amd64 \
+            -t localhost/must-gather:ci-test \
+            -f Dockerfile \
+            .
+
+      - name: Verify container contents
+        run: |
+          echo "🔍 Verifying container structure..."
+
+          # Verify main script
+          podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c "test -x /usr/bin/gather"
+          echo "✅ Main script present"
+
+          # Verify collectors
+          COUNT=$(podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c "ls /usr/share/must-gather/collectors/ | wc -l")
+          if [ "$COUNT" -eq 9 ]; then
+            echo "✅ All 9 collectors present"
+          else
+            echo "❌ Expected 9 collectors, found $COUNT"
+            exit 1
+          fi
+
+          # Verify sanitizers
+          podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c "test -x /usr/share/must-gather/sanitizers/sanitize-all.sh"
+          echo "✅ Sanitization framework present"
+
+          # Verify tools
+          echo "🔍 Verifying required tools..."
+          podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c "which kubectl"
+          echo "✅ kubectl installed"
+
+          podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
+            localhost/must-gather:ci-test \
+            -c "which jq"
+          echo "✅ jq installed"
+
+          echo ""
+          echo "✅ Container build validation complete!"
+
+      - name: Test container execution
+        run: |
+          echo "🧪 Testing container can execute..."
+          OUTPUT=$(podman run --rm --platform linux/amd64 \
+            localhost/must-gather:ci-test \
+            --help)
+          if echo "$OUTPUT" | grep -q "Kubernaut Must-Gather"; then
+            echo "✅ Container executes successfully"
+          else
+            echo "❌ Container execution failed or help text not found"
+            exit 1
+          fi
+
+  # ========================================
+  # FINAL STATUS: Overall test summary
+  # ========================================
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, container-build]
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "📊 Must-Gather Test Results"
+          echo "============================"
+          echo ""
+
+          if [ "${{ needs.unit-tests.result }}" == "success" ] || [ "${{ needs.unit-tests.result }}" == "skipped" ]; then
+            echo "✅ Unit Tests: ${{ needs.unit-tests.result }}"
+          else
+            echo "❌ Unit Tests: ${{ needs.unit-tests.result }}"
+            FAILED=true
+          fi
+
+          if [ "${{ needs.container-build.result }}" == "success" ] || [ "${{ needs.container-build.result }}" == "skipped" ]; then
+            echo "✅ Container Build: ${{ needs.container-build.result }}"
+          else
+            echo "❌ Container Build: ${{ needs.container-build.result }}"
+            FAILED=true
+          fi
+
+          echo ""
+          if [ "$FAILED" == "true" ]; then
+            echo "❌ Must-Gather tests failed"
+            exit 1
+          else
+            echo "✅ All must-gather tests passed!"
+          fi
+

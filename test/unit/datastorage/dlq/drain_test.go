@@ -50,13 +50,13 @@ import (
 
 var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 	var (
-		ctx          context.Context
-		cancel       context.CancelFunc
-		miniRedis    *miniredis.Miniredis
-		redisClient  *redis.Client
-		dlqClient    *dlq.Client
-		logger       logr.Logger
-		mockNotifRepo *MockNotificationRepository
+		ctx            context.Context
+		cancel         context.CancelFunc
+		miniRedis      *miniredis.Miniredis
+		redisClient    *redis.Client
+		dlqClient      *dlq.Client
+		logger         logr.Logger
+		mockNotifRepo  *MockNotificationRepository
 		mockEventsRepo *MockEventsRepository
 	)
 
@@ -91,12 +91,12 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 	AfterEach(func() {
 		cancel()
-	if redisClient != nil {
-		_ = redisClient.Close()
-	}
-	if miniRedis != nil {
-		miniRedis.Close()
-	}
+		if redisClient != nil {
+			_ = redisClient.Close()
+		}
+		if miniRedis != nil {
+			miniRedis.Close()
+		}
 	})
 
 	Context("DrainWithTimeout method", func() {
@@ -299,79 +299,79 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, mockEventsRepo)
 
-		// ASSERT: Completes successfully with zero messages processed
-		Expect(err).ToNot(HaveOccurred())
-		Expect(stats).ToNot(BeNil())
-		Expect(stats.TotalProcessed).To(Equal(0))
-		Expect(stats.TimedOut).To(BeFalse())
-	})
+			// ASSERT: Completes successfully with zero messages processed
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stats).ToNot(BeNil())
+			Expect(stats.TotalProcessed).To(Equal(0))
+			Expect(stats.TimedOut).To(BeFalse())
+		})
 
-	// TDD RED PHASE: This test validates the CORRECT interface usage
-	// Test will FAIL until we fix the DLQ client code to use repository.AuditEvent
-	It("should write event messages to database using repository.AuditEvent type", func() {
-		// BR-AUDIT-001: Audit events from DLQ must persist to database during shutdown
-		// Bug Fix: DLQ client must use repository.AuditEvent type, not audit.AuditEvent
+		// TDD RED PHASE: This test validates the CORRECT interface usage
+		// Test will FAIL until we fix the DLQ client code to use repository.AuditEvent
+		It("should write event messages to database using repository.AuditEvent type", func() {
+			// BR-AUDIT-001: Audit events from DLQ must persist to database during shutdown
+			// Bug Fix: DLQ client must use repository.AuditEvent type, not audit.AuditEvent
 
-		// ARRANGE: Create mock repository that implements CORRECT interface
-		mockRepoEvents := &MockRepositoryEventsRepository{
-			createdEvents: []*repository.AuditEvent{},
-		}
+			// ARRANGE: Create mock repository that implements CORRECT interface
+			mockRepoEvents := &MockRepositoryEventsRepository{
+				createdEvents: []*repository.AuditEvent{},
+			}
 
-		// Add event messages to DLQ (stored as audit.AuditEvent)
-		event1 := &audit.AuditEvent{
-			EventID:        uuid.New(),
-			EventVersion:   "1.0",
-			EventType:      "workflow.execution.started",
-			EventCategory:  "workflow",
-			EventAction:    "started",
-			EventOutcome:   "success",
-			EventTimestamp: time.Now(),
-			CorrelationID:  "test-drain-repo-1",
-			ActorType:      "service",
-			ActorID:        "workflow-service",
-			ResourceType:   "workflow",
-			ResourceID:     "workflow-123",
-			EventData:      []byte(`{"workflow_id": "workflow-123", "step": "start"}`),
-		}
+			// Add event messages to DLQ (stored as audit.AuditEvent)
+			event1 := &audit.AuditEvent{
+				EventID:        uuid.New(),
+				EventVersion:   "1.0",
+				EventType:      "workflow.execution.started",
+				EventCategory:  "workflow",
+				EventAction:    "started",
+				EventOutcome:   "success",
+				EventTimestamp: time.Now(),
+				CorrelationID:  "test-drain-repo-1",
+				ActorType:      "service",
+				ActorID:        "workflow-service",
+				ResourceType:   "workflow",
+				ResourceID:     "workflow-123",
+				EventData:      []byte(`{"workflow_id": "workflow-123", "step": "start"}`),
+			}
 
-		err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("simulated DB error"))
-		Expect(err).ToNot(HaveOccurred())
+			err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("simulated DB error"))
+			Expect(err).ToNot(HaveOccurred())
 
-		// Verify message is in DLQ
-		depth, err := dlqClient.GetDLQDepth(ctx, "events")
-		Expect(err).ToNot(HaveOccurred())
-		Expect(depth).To(Equal(int64(1)))
+			// Verify message is in DLQ
+			depth, err := dlqClient.GetDLQDepth(ctx, "events")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(depth).To(Equal(int64(1)))
 
-		// ACT: Drain DLQ with repository that expects repository.AuditEvent
-		drainCtx, drainCancel := context.WithTimeout(ctx, 5*time.Second)
-		defer drainCancel()
+			// ACT: Drain DLQ with repository that expects repository.AuditEvent
+			drainCtx, drainCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer drainCancel()
 
-		stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, mockRepoEvents)
+			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, mockRepoEvents)
 
-		// ASSERT: Drain completes successfully
-		Expect(err).ToNot(HaveOccurred())
-		Expect(stats).ToNot(BeNil())
-		Expect(stats.EventsProcessed).To(Equal(1), "should process 1 event message")
-		Expect(stats.TotalProcessed).To(Equal(1))
-		Expect(stats.TimedOut).To(BeFalse())
+			// ASSERT: Drain completes successfully
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stats).ToNot(BeNil())
+			Expect(stats.EventsProcessed).To(Equal(1), "should process 1 event message")
+			Expect(stats.TotalProcessed).To(Equal(1))
+			Expect(stats.TimedOut).To(BeFalse())
 
-		// ASSERT: Event was written to database using repository.AuditEvent type
-		Expect(mockRepoEvents.createdEvents).To(HaveLen(1), "event should be persisted to database")
-		persistedEvent := mockRepoEvents.createdEvents[0]
-		Expect(persistedEvent.EventType).To(Equal("workflow.execution.started"))
-		Expect(persistedEvent.EventCategory).To(Equal("workflow"))
-		Expect(persistedEvent.CorrelationID).To(Equal("test-drain-repo-1"))
-		Expect(persistedEvent.Version).To(Equal("1.0"), "EventVersion should map to Version")
+			// ASSERT: Event was written to database using repository.AuditEvent type
+			Expect(mockRepoEvents.createdEvents).To(HaveLen(1), "event should be persisted to database")
+			persistedEvent := mockRepoEvents.createdEvents[0]
+			Expect(persistedEvent.EventType).To(Equal("workflow.execution.started"))
+			Expect(persistedEvent.EventCategory).To(Equal("workflow"))
+			Expect(persistedEvent.CorrelationID).To(Equal("test-drain-repo-1"))
+			Expect(persistedEvent.Version).To(Equal("1.0"), "EventVersion should map to Version")
 
-		// ASSERT: EventData was converted from []byte to map[string]interface{}
-		Expect(persistedEvent.EventData).To(HaveKey("workflow_id"))
-		Expect(persistedEvent.EventData["workflow_id"]).To(Equal("workflow-123"))
+			// ASSERT: EventData was converted from []byte to map[string]interface{}
+			Expect(persistedEvent.EventData).To(HaveKey("workflow_id"))
+			Expect(persistedEvent.EventData["workflow_id"]).To(Equal("workflow-123"))
 
-		// ASSERT: DLQ is empty after drain
-		finalDepth, err := dlqClient.GetDLQDepth(ctx, "events")
-		Expect(err).ToNot(HaveOccurred())
-		Expect(finalDepth).To(Equal(int64(0)), "DLQ should be empty after successful drain")
-	})
+			// ASSERT: DLQ is empty after drain
+			finalDepth, err := dlqClient.GetDLQDepth(ctx, "events")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(finalDepth).To(Equal(int64(0)), "DLQ should be empty after successful drain")
+		})
 	})
 })
 
@@ -396,7 +396,7 @@ func (m *MockNotificationRepository) Create(ctx context.Context, audit *models.N
 // MockEventsRepository mocks events repository for testing
 // This now implements the CORRECT interface: repository.AuditEventsRepository.Create()
 type MockEventsRepository struct {
-	createdEvents []audit.AuditEvent  // Keep tracking as audit.AuditEvent for test assertions
+	createdEvents []audit.AuditEvent // Keep tracking as audit.AuditEvent for test assertions
 	createError   error
 }
 
@@ -437,4 +437,3 @@ func (m *MockRepositoryEventsRepository) Create(ctx context.Context, event *repo
 	m.createdEvents = append(m.createdEvents, event)
 	return event, nil
 }
-

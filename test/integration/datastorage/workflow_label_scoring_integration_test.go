@@ -59,16 +59,15 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
+var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string
 	)
 
 	BeforeEach(func() {
-		// CRITICAL: Use public schema FIRST before any cleanup/operations
-		// remediation_workflow_catalog is NOT schema-isolated - shared by ALL test processes
-		usePublicSchema()
+		// NOTE: remediation_workflow_catalog IS schema-isolated per process (test_process_N)
+		// No need to call usePublicSchema() - each parallel process has its own copy
 
 		// Create repository with real database
 		workflowRepo = workflow.NewRepository(db, logger)
@@ -178,36 +177,36 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-			// DS-FLAKY-004 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
-			// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
-			var response *models.WorkflowSearchResponse
-			var gitopsResult, manualResult *models.WorkflowSearchResult
-			Eventually(func() bool {
-				var err error
-				response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
-				if err != nil {
-					return false
-				}
-
-				// Filter to find OUR test workflows (by name which includes testID)
-				gitopsResult = nil
-				manualResult = nil
-				for i := range response.Workflows {
-					if response.Workflows[i].Title == gitopsWorkflow.Name {
-						gitopsResult = &response.Workflows[i]
+				// DS-FLAKY-004 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
+				var response *models.WorkflowSearchResponse
+				var gitopsResult, manualResult *models.WorkflowSearchResult
+				Eventually(func() bool {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return false
 					}
-					if response.Workflows[i].Title == manualWorkflow.Name {
-						manualResult = &response.Workflows[i]
+
+					// Filter to find OUR test workflows (by name which includes testID)
+					gitopsResult = nil
+					manualResult = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == gitopsWorkflow.Name {
+							gitopsResult = &response.Workflows[i]
+						}
+						if response.Workflows[i].Title == manualWorkflow.Name {
+							manualResult = &response.Workflows[i]
+						}
 					}
-				}
 
-				// Success when both our workflows are found
-				return gitopsResult != nil && manualResult != nil
-			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
+					// Success when both our workflows are found
+					return gitopsResult != nil && manualResult != nil
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
-			// ASSERT: Found both our test workflows
-			Expect(gitopsResult).ToNot(BeNil(), "GitOps workflow should be in results")
-			Expect(manualResult).ToNot(BeNil(), "Manual workflow should be in results")
+				// ASSERT: Found both our test workflows
+				Expect(gitopsResult).ToNot(BeNil(), "GitOps workflow should be in results")
+				Expect(manualResult).ToNot(BeNil(), "Manual workflow should be in results")
 
 				// BUSINESS VALUE ASSERTIONS:
 				// 1. GitOps workflow should have higher LabelBoost
@@ -531,36 +530,36 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-			// DS-FLAKY-005 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
-			// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
-			var response *models.WorkflowSearchResponse
-			var twoLabelsResult, oneLabelsResult *models.WorkflowSearchResult
-			Eventually(func() bool {
-				var err error
-				response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
-				if err != nil {
-					return false
-				}
-
-				// Filter to find OUR test workflows (by name which includes testID)
-				twoLabelsResult = nil
-				oneLabelsResult = nil
-				for i := range response.Workflows {
-					if response.Workflows[i].Title == twoLabelsWorkflow.Name {
-						twoLabelsResult = &response.Workflows[i]
+				// DS-FLAKY-005 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
+				var response *models.WorkflowSearchResponse
+				var twoLabelsResult, oneLabelsResult *models.WorkflowSearchResult
+				Eventually(func() bool {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return false
 					}
-					if response.Workflows[i].Title == oneLabelsWorkflow.Name {
-						oneLabelsResult = &response.Workflows[i]
+
+					// Filter to find OUR test workflows (by name which includes testID)
+					twoLabelsResult = nil
+					oneLabelsResult = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == twoLabelsWorkflow.Name {
+							twoLabelsResult = &response.Workflows[i]
+						}
+						if response.Workflows[i].Title == oneLabelsWorkflow.Name {
+							oneLabelsResult = &response.Workflows[i]
+						}
 					}
-				}
 
-				// Success when both our workflows are found
-				return twoLabelsResult != nil && oneLabelsResult != nil
-			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
+					// Success when both our workflows are found
+					return twoLabelsResult != nil && oneLabelsResult != nil
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
-			// ASSERT: Found both our test workflows
-			Expect(twoLabelsResult).ToNot(BeNil(), "Workflow with 2 custom labels should be found")
-			Expect(oneLabelsResult).ToNot(BeNil(), "Workflow with 1 custom label should be found")
+				// ASSERT: Found both our test workflows
+				Expect(twoLabelsResult).ToNot(BeNil(), "Workflow with 2 custom labels should be found")
+				Expect(oneLabelsResult).ToNot(BeNil(), "Workflow with 1 custom label should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				// Workflow with 2 matching custom label keys should have 0.10 boost (2 * 0.05)

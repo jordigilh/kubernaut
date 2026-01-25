@@ -18,9 +18,11 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -33,7 +35,9 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -64,6 +68,7 @@ type Server struct {
 	validator  *validation.NotificationAuditValidator
 
 	// BR-STORAGE-033: Unified audit events API (ADR-034)
+	// SOC2 Gap #9: PostgreSQL-based with custom hash chains for tamper detection
 	auditEventsRepo *repository.AuditEventsRepository
 
 	// BR-STORAGE-012: Self-auditing (DD-STORAGE-012)
@@ -72,6 +77,10 @@ type Server struct {
 
 	// BR-STORAGE-019: Prometheus metrics (GAP-10)
 	metrics *dsmetrics.Metrics
+
+	// SOC2 Day 9.1: Digital signature for audit exports
+	// BR-AUDIT-007: Signed exports for tamper detection
+	signer *cert.Signer
 }
 
 // DD-007 + DD-008 graceful shutdown constants
@@ -92,19 +101,23 @@ const (
 // NewServer creates a new Data Storage HTTP server
 // BR-STORAGE-021: REST API Gateway for database access
 // BR-STORAGE-001 to BR-STORAGE-020: Audit write API
+// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 //
 // Parameters:
 // - dbConnStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
 // - redisAddr: Redis address for DLQ (format: "localhost:6379")
+// - redisPassword: Redis password (from mounted secret)
 // - logger: Structured logger
-// - cfg: Server configuration
+// - appCfg: Full application configuration (includes database pool settings)
+// - serverCfg: Server-specific configuration (port, timeouts)
 // - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
 func NewServer(
 	dbConnStr string,
 	redisAddr string,
 	redisPassword string,
 	logger logr.Logger,
-	cfg *Config,
+	appCfg *config.Config,
+	serverCfg *Config,
 	dlqMaxLen int64,
 ) (*Server, error) {
 	// Connect to PostgreSQL using pgx driver (DD-010)
@@ -119,15 +132,33 @@ func NewServer(
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	// Configure connection pool for production
-	db.SetMaxOpenConns(25)                  // Maximum connections
-	db.SetMaxIdleConns(5)                   // Idle connections
-	db.SetConnMaxLifetime(5 * time.Minute)  // Connection lifetime
-	db.SetConnMaxIdleTime(10 * time.Minute) // Idle connection timeout
+	// Configure connection pool from config (not hardcoded)
+	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
+	// Issue discovered: 2026-01-14 - Integration tests with 12 parallel processes
+	// were bottlenecked by hardcoded max_open_conns=25
+	db.SetMaxOpenConns(appCfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(appCfg.Database.MaxIdleConns)
+
+	// Parse duration strings from config
+	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("invalid connMaxLifetime: %w", err)
+	}
+	db.SetConnMaxLifetime(connMaxLifetime)
+
+	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("invalid connMaxIdleTime: %w", err)
+	}
+	db.SetConnMaxIdleTime(connMaxIdleTime)
 
 	logger.Info("PostgreSQL connection established",
-		"max_open_conns", 25,
-		"max_idle_conns", 5,
+		"maxOpenConns", appCfg.Database.MaxOpenConns,
+		"maxIdleConns", appCfg.Database.MaxIdleConns,
+		"connMaxLifetime", appCfg.Database.ConnMaxLifetime,
+		"connMaxIdleTime", appCfg.Database.ConnMaxIdleTime,
 	)
 
 	// Connect to Redis for DLQ (DD-009)
@@ -169,9 +200,10 @@ func NewServer(
 		"action_trace_repo_nil", actionTraceRepo == nil)
 
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
-	logger.V(1).Info("Creating ADR-034 unified audit events repository...")
+	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
+	logger.V(1).Info("Creating ADR-034 unified audit events repository (PostgreSQL)...")
 	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
-	logger.V(1).Info("ADR-034 audit events repository created",
+	logger.V(1).Info("ADR-034 audit events repository created (PostgreSQL-backed, SOC2 Gap #9)",
 		"audit_events_repo_nil", auditEventsRepo == nil)
 
 	// Create BR-STORAGE-012: Self-auditing audit store (DD-STORAGE-012)
@@ -183,8 +215,8 @@ func NewServer(
 	auditStore, err := audit.NewBufferedStore(
 		internalClient,
 		audit.RecommendedConfig("datastorage"), // DD-AUDIT-004: HIGH tier (50K buffer)
-		"datastorage", // service name
-		logger,        // Use logr.Logger directly (DD-005 v2.0)
+		"datastorage",                          // service name
+		logger,                                 // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -224,11 +256,25 @@ func NewServer(
 
 	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
 	// V1.0: Embedding service removed (label-only search)
+	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
-		WithAuditStore(auditStore))
+		WithAuditStore(auditStore),
+		WithSQLDB(db))
+
+	// SOC2 Day 9.1: Load signing certificate for audit exports
+	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
+	logger.V(1).Info("Loading signing certificate from /etc/certs...")
+	signer, err := loadSigningCertificate(logger)
+	if err != nil {
+		_ = db.Close() // Clean up DB connection
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+	}
+	logger.Info("Signing certificate loaded successfully",
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint())
 
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
@@ -238,9 +284,9 @@ func NewServer(
 		db:      db,
 		logger:  logger,
 		httpServer: &http.Server{
-			Addr:         fmt.Sprintf(":%d", cfg.Port),
-			ReadTimeout:  cfg.ReadTimeout,
-			WriteTimeout: cfg.WriteTimeout,
+			Addr:         fmt.Sprintf(":%d", serverCfg.Port),
+			ReadTimeout:  serverCfg.ReadTimeout,
+			WriteTimeout: serverCfg.WriteTimeout,
 		},
 		repository:      repo,
 		dlqClient:       dlqClient,
@@ -248,6 +294,7 @@ func NewServer(
 		auditEventsRepo: auditEventsRepo,
 		auditStore:      auditStore,
 		metrics:         metrics,
+		signer:          signer,
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -348,6 +395,28 @@ func (s *Server) Handler() http.Handler {
 		// BR-AUDIT-001: Complete audit trail with no data loss
 		s.logger.V(1).Info("Registering /api/v1/audit/events/batch handler (DD-AUDIT-002)")
 		r.Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
+
+		// SOC2 Gap #9: Tamper detection verification API (PostgreSQL-based)
+		// BR-AUDIT-005: Enterprise-Grade Audit Integrity
+		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
+		r.Post("/audit/verify-chain", s.HandleVerifyChain)
+
+		// SOC2 Gap #8: Legal Hold & Retention Policies
+		// BR-AUDIT-006: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8)")
+		r.Post("/audit/legal-hold", s.HandlePlaceLegalHold)
+		r.Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
+		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
+
+		// SOC2 Day 9: Signed Audit Export
+		// BR-AUDIT-007: Audit export with digital signatures for compliance verification
+		s.logger.V(1).Info("Registering /api/v1/audit/export handler (SOC2 Day 9)")
+		r.Get("/audit/export", s.HandleExportAuditEvents)
+
+		// BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
+		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
+		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
@@ -554,4 +623,96 @@ func (s *Server) shutdownStep5CloseResources() error {
 // This allows integration tests to verify DD-008 DLQ drain behavior
 func (s *Server) GetDLQClient() *dlq.Client {
 	return s.dlqClient
+}
+
+// loadSigningCertificate loads the signing certificate from cert-manager managed Secret
+// SOC2 Day 9.1: Digital signatures for audit exports
+// BR-AUDIT-007: Tamper-evident audit logs
+//
+// Certificate Location: /etc/certs/ (mounted from datastorage-signing-cert Secret)
+// - /etc/certs/tls.crt (PEM certificate)
+// - /etc/certs/tls.key (PEM private key)
+//
+// cert-manager Compatibility:
+// - Managed by Certificate CRD (deploy/data-storage/certificate.yaml)
+// - Auto-rotates 30 days before expiry
+// - Self-signed via selfsigned-issuer ClusterIssuer
+//
+// Fallback: If cert-manager not available, generate self-signed cert
+func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
+	certFile := "/etc/certs/tls.crt"
+	keyFile := "/etc/certs/tls.key"
+
+	// Check if cert-manager provided certificate exists
+	_, statErr := os.Stat(certFile)
+	if os.IsNotExist(statErr) {
+		logger.Info("cert-manager certificate not found, generating self-signed certificate",
+			"cert_file", certFile)
+		return generateFallbackCertificate(logger)
+	}
+
+	// Check if key file exists
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		logger.Info("cert-manager key file not found, generating self-signed certificate",
+			"key_file", keyFile)
+		return generateFallbackCertificate(logger)
+	}
+
+	// Load certificate from cert-manager Secret
+	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		// Fallback to self-signed if cert-manager cert is invalid/corrupt
+		logger.Info("cert-manager certificate invalid or corrupt, generating self-signed certificate",
+			"cert_file", certFile,
+			"key_file", keyFile,
+			"load_error", err.Error())
+		return generateFallbackCertificate(logger)
+	}
+
+	// Create signer from TLS certificate
+	signer, err := cert.NewSignerFromTLSCertificate(&tlsCert)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer from certificate: %w", err)
+	}
+
+	logger.V(1).Info("Loaded signing certificate from cert-manager",
+		"cert_file", certFile,
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint())
+
+	return signer, nil
+}
+
+// generateFallbackCertificate generates a self-signed certificate if cert-manager is unavailable
+// Used in development or when cert-manager is not yet installed
+func generateFallbackCertificate(logger logr.Logger) (*cert.Signer, error) {
+	logger.Info("Generating fallback self-signed certificate",
+		"validity", "1 year",
+		"key_size", "2048-bit RSA")
+
+	// Generate self-signed certificate
+	certPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "data-storage-service",
+		Organization:     "Kubernaut",
+		DNSNames:         []string{"data-storage-service", "data-storage-service.kubernaut-system.svc.cluster.local"},
+		ValidityDuration: 8760 * time.Hour, // 1 year (cert-manager default)
+		KeySize:          2048,             // cert-manager default
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate fallback certificate: %w", err)
+	}
+
+	// Create signer from generated certificate
+	signer, err := cert.NewSignerFromPEM(certPair.CertPEM, certPair.KeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer from generated certificate: %w", err)
+	}
+
+	logger.Info("Fallback certificate generated successfully",
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint(),
+		"not_before", certPair.NotBefore,
+		"not_after", certPair.NotAfter)
+
+	return signer, nil
 }

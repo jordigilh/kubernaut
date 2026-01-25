@@ -178,9 +178,11 @@ var _ = Describe("Controller Shutdown", func() {
 			// Parent context (manager level)
 			parentCtx, parentCancel := context.WithCancel(context.Background())
 
-			// Child contexts (controller level)
-			childCtx1, _ := context.WithCancel(parentCtx)
-			childCtx2, _ := context.WithCancel(parentCtx)
+		// Child contexts (controller level)
+		childCtx1, cancelChild1 := context.WithCancel(parentCtx)
+		defer cancelChild1()
+		childCtx2, cancelChild2 := context.WithCancel(parentCtx)
+		defer cancelChild2()
 
 			// Verify children are initially active
 			Expect(childCtx1.Err()).To(BeNil())

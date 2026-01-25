@@ -56,7 +56,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("Recovery Endpoint Integration", Serial, Label("integration", "recovery", "hapi"), func() {
+var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery", "hapi"), func() {
 	var (
 		hapiClient *client.HolmesGPTClient
 		hapiURL    string
@@ -164,7 +164,7 @@ var _ = Describe("Recovery Endpoint Integration", Serial, Label("integration", "
 
 				// Optional signal context
 				SignalType:        client.NewOptNilString("CrashLoopBackOff"),
-				Severity:          client.NewOptNilString("warning"),
+				Severity:          client.NewOptNilString("medium"), // DD-SEVERITY-001: Use normalized severity enum
 				ResourceNamespace: client.NewOptNilString("test-ns"),
 				ResourceKind:      client.NewOptNilString("Deployment"),
 				ResourceName:      client.NewOptNilString("test-app"),

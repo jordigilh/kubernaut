@@ -204,7 +204,7 @@ Create **"RR Reconstruction Field Mapping Matrix"** document:
 | `.status.selectedWorkflowRef` | `event_data.selected_workflow_ref` | Workflow Engine | `workflow.selection.completed` | Yes |
 | `.status.executionRef` | `event_data.execution_ref` | Execution | `execution.started` | Yes |
 | `.status.error` | `event_data.error_details` | All services | `*.failure` | Optional |
-| `.spec.timeoutConfig` | `event_data.timeout_config` | Orchestrator | `orchestration.remediation.created` | Optional |
+| `.status.timeoutConfig` | `event_data.timeout_config` | Orchestrator | `orchestration.remediation.created` | Optional |
 
 **Effort**: +0.5 days (documentation)
 

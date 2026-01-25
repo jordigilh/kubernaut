@@ -25,11 +25,9 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 2: DLQ Fallback - Service Outage Response (P0)
@@ -37,27 +35,34 @@ import (
 // Business Requirements:
 // - BR-STORAGE-007: Dead Letter Queue (DLQ) fallback
 //
-// Business Value: Verify audit events fallback to DLQ during service outages
+// Business Value: Verify audit events fallback to DLQ during network outages
 //
 // Test Flow:
-// 1. Deploy Data Storage Service in isolated namespace
+// 1. Use shared Data Storage Service infrastructure
 // 2. Write audit event successfully (baseline - verify 201 Created)
-// 3. Simulate PostgreSQL outage (scale to 0 replicas)
+// 3. Simulate PostgreSQL network partition (NetworkPolicy blocks DataStorage → PostgreSQL)
 // 4. Attempt to write audit event → should fallback to DLQ (Redis)
 // 5. Verify service returns 202 Accepted (DLQ fallback response)
+// 6. Restore network connectivity (delete NetworkPolicy)
 //
 // Expected Results:
 // - First event: Direct write to PostgreSQL (201 Created)
-// - Second event: Fallback to DLQ (202 Accepted)
-// - Service handles outage gracefully without errors
+// - Second event: Fallback to DLQ (202 Accepted) during network partition
+// - Service handles network outage gracefully without errors
 //
 // Note: DLQ write mechanics are tested in integration tier (dlq_test.go)
-// E2E focuses ONLY on end-to-end HTTP response behavior during outages
+// E2E focuses ONLY on end-to-end HTTP response behavior during network failures
+//
+// Outage Simulation: NetworkPolicy-based network partition (not pod termination)
+// - Simulates network failure between DataStorage and PostgreSQL
+// - PostgreSQL stays healthy (HA scenario in production)
+// - Tests realistic cross-AZ failure / network partition scenario
+// - Error type: "i/o timeout" (vs "connection refused" for pod crash)
 //
 // Parallel Execution: ✅ ENABLED
-// - Each test gets unique namespace (datastorage-e2e-p{N}-{timestamp})
-// - Complete infrastructure isolation
-// - No impact from other tests
+// - Uses NetworkPolicy for isolation (doesn't affect shared PostgreSQL)
+// - No infrastructure disruption for other parallel tests
+// - No data loss or migration re-application needed
 
 var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outage", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
@@ -126,40 +131,6 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 	AfterAll(func() {
 		testLogger.Info("🧹 Cleaning up DLQ test resources...")
 
-		// CRITICAL: Restore PostgreSQL to 1 replica before cleanup
-		// This test scales PostgreSQL to 0 to simulate outage, but since we use
-		// shared infrastructure, we MUST restore it for subsequent tests.
-		testLogger.Info("🔄 Restoring PostgreSQL to 1 replica (shared infrastructure)...")
-		if err := scalePod(testNamespace, "postgresql", kubeconfigPath, 1); err != nil {
-			testLogger.Error(err, "Failed to restore PostgreSQL - subsequent tests may fail!",
-				"namespace", testNamespace)
-		} else {
-			testLogger.Info("✅ PostgreSQL restored to 1 replica")
-
-			// Wait for PostgreSQL to be ready before continuing
-			testLogger.Info("⏳ Waiting for PostgreSQL to be ready...")
-			Eventually(func() error {
-				// Create a new connection to test PostgreSQL availability
-				connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable") // Per DD-TEST-001
-				testDB, err := sql.Open("pgx", connStr)
-				if err != nil {
-					return err
-				}
-				defer func() { _ = testDB.Close() }()
-				return testDB.Ping()
-			}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL should be ready after restore")
-			testLogger.Info("✅ PostgreSQL is ready")
-
-			// CRITICAL: Re-apply migrations after PostgreSQL restart
-			// PostgreSQL uses EmptyDir volume, so data is lost when pod restarts
-			testLogger.Info("📋 Re-applying migrations after PostgreSQL restart...")
-			if err := infrastructure.ApplyMigrations(ctx, testNamespace, kubeconfigPath, GinkgoWriter); err != nil {
-				testLogger.Error(err, "Failed to re-apply migrations - subsequent tests may fail!")
-			} else {
-				testLogger.Info("✅ Migrations re-applied successfully")
-			}
-		}
-
 		// Close database connection
 		if db != nil {
 			if err := db.Close(); err != nil {
@@ -170,40 +141,35 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			testCancel()
 		}
 
+		// NOTE: NetworkPolicy cleanup is handled within the test itself
 		// NOTE: Do NOT cleanup the shared namespace - it's used by other tests
 		// The namespace cleanup is handled by SynchronizedAfterSuite
 		testLogger.Info("✅ DLQ test cleanup complete (shared namespace preserved)")
 	})
 
-	It("should preserve audit events during PostgreSQL outage using DLQ", func() {
+	It("should preserve audit events during PostgreSQL network partition using DLQ", func() {
+		var err error
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("Test: DLQ Fallback and Recovery")
+		testLogger.Info("Test: DLQ Fallback During Network Partition")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Step 1: Write event successfully (baseline)
 		testLogger.Info("✅ Step 1: Write baseline event to PostgreSQL...")
-		baselineEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("PodCrashLooping").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
-		baselineEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_action":    "baseline_write",
-			"event_data":      baselineEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		baselineEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventAction:    "baseline_write",
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
-		resp := postAuditEvent(httpClient, serviceURL, baselineEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Baseline event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
 		// Verify baseline event in database
@@ -213,58 +179,60 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		Expect(count).To(Equal(1), "Should have 1 baseline event in database")
 		testLogger.Info("✅ Baseline event verified in database")
 
-		// Step 2: Simulate PostgreSQL outage (scale to 0 replicas)
-		testLogger.Info("💥 Step 2: Simulating PostgreSQL outage (scale to 0)...")
-		err = scalePod(testNamespace, "postgresql", kubeconfigPath, 0)
+		// Step 2: Simulate PostgreSQL network partition (NetworkPolicy blocks DataStorage → PostgreSQL)
+		testLogger.Info("💥 Step 2: Creating NetworkPolicy to simulate network partition...")
+		testLogger.Info("   This simulates cross-AZ failure / network partition (HA PostgreSQL scenario)")
+		err = createPostgresNetworkPartition(testNamespace, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
+		testLogger.Info("✅ NetworkPolicy applied - DataStorage → PostgreSQL traffic blocked")
 
-		// Wait for PostgreSQL to be unavailable
-		testLogger.Info("⏳ Waiting for PostgreSQL to be unavailable...")
-		Eventually(func() error {
-			return db.Ping()
-		}, 30*time.Second, 2*time.Second).ShouldNot(Succeed(), "PostgreSQL should be unavailable")
-		testLogger.Info("✅ PostgreSQL is unavailable")
+		// Ensure NetworkPolicy is deleted even if test fails
+		defer func() {
+			testLogger.Info("🔄 Restoring network connectivity (deleting NetworkPolicy)...")
+			if err := deletePostgresNetworkPartition(testNamespace, kubeconfigPath); err != nil {
+				testLogger.Error(err, "Failed to delete NetworkPolicy")
+			} else {
+				testLogger.Info("✅ Network connectivity restored")
+			}
+		}()
 
-		// Step 3: Attempt to write event during outage → should fallback to DLQ
-		testLogger.Info("📨 Step 3: Writing event during outage (should fallback to DLQ)...")
-		outageEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("NodeNotReady").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
+		// Give NetworkPolicy time to take effect
+		testLogger.Info("⏳ Waiting for network partition to take effect...")
+		time.Sleep(2 * time.Second)
 
-		outageEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_action":    "outage_write",
-			"event_data":      outageEventData,
+		// Step 3: Attempt to write event during network partition → should fallback to DLQ
+		testLogger.Info("📨 Step 3: Writing event during network partition (should fallback to DLQ)...")
+
+		// DD-API-001: Use typed OpenAPI struct
+		outageEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventAction:    "network_partition_write",
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "NodeNotReady"),
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, outageEvent)
-		// During outage, the service should accept the event (202 Accepted) and queue it
-		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"Event should be accepted during outage (DLQ fallback)")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
-		testLogger.Info("✅ Event accepted during outage (DLQ fallback)")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
+		// During network partition, the service should accept the event (DLQ fallback)
+		Expect(eventID).ToNot(BeEmpty(), "Event should be accepted during network partition (DLQ fallback)")
+		testLogger.Info("✅ Event accepted during network partition (DLQ fallback)")
 
 		// Step 4: Verify DLQ fallback behavior
 		testLogger.Info("🔍 Step 4: Verifying DLQ fallback succeeded...")
 		testLogger.Info("✅ DLQ fallback test complete:")
 		testLogger.Info("   • Baseline event written successfully (201 Created)")
-		testLogger.Info("   • Outage event accepted for DLQ processing (202 Accepted)")
-		testLogger.Info("   • Service handled database outage gracefully")
+		testLogger.Info("   • Network partition event accepted for DLQ processing (202 Accepted)")
+		testLogger.Info("   • Service handled network failure gracefully (i/o timeout)")
+		testLogger.Info("   • PostgreSQL stayed healthy (HA scenario)")
 		testLogger.Info("")
 		testLogger.Info("⚠️  Note: Automatic DLQ recovery (DD-009) is tested in integration tier")
-		testLogger.Info("   This E2E test focuses on end-to-end outage response behavior")
+		testLogger.Info("   This E2E test focuses on end-to-end network failure response behavior")
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("✅ Scenario 2: DLQ Fallback - PASSED")
+		testLogger.Info("✅ Scenario 2: DLQ Fallback (Network Partition) - PASSED")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })

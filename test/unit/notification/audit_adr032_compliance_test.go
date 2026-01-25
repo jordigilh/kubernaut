@@ -22,11 +22,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	notificationcontroller "github.com/jordigilh/kubernaut/internal/controller/notification"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 )
 
 // ========================================
@@ -66,11 +68,15 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-notification",
 				Namespace: "default",
-				Labels: map[string]string{
-					"holmes.robusta.dev/remediation-id": "test-remediation-123",
-				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// BR-NOT-064: Correlation ID from RemediationRequestRef (proper design)
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "remediation.kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "test-remediation-123",
+					Namespace:  "default",
+				},
 				Subject:  "Test Notification",
 				Body:     "Test body",
 				Priority: "critical",
@@ -89,7 +95,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditStore
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   nil, // ❌ VIOLATION SCENARIO
-				AuditHelpers: notificationcontroller.NewAuditHelpers("test-service"),
+				AuditManager: notificationaudit.NewManager("test-service"),
 			}
 
 			// WHEN: Attempting to audit message sent
@@ -107,7 +113,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditHelpers
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   &mockAuditStore{}, // Store exists
-				AuditHelpers: nil,               // ❌ VIOLATION SCENARIO
+				AuditManager: nil,               // ❌ VIOLATION SCENARIO
 			}
 
 			// WHEN: Attempting to audit message sent
@@ -128,7 +134,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditStore
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   nil, // ❌ VIOLATION SCENARIO
-				AuditHelpers: notificationcontroller.NewAuditHelpers("test-service"),
+				AuditManager: notificationaudit.NewManager("test-service"),
 			}
 
 			deliveryErr := fmt.Errorf("simulated delivery failure")
@@ -148,7 +154,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditHelpers
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   &mockAuditStore{}, // Store exists
-				AuditHelpers: nil,               // ❌ VIOLATION SCENARIO
+				AuditManager: nil,               // ❌ VIOLATION SCENARIO
 			}
 
 			deliveryErr := fmt.Errorf("simulated delivery failure")
@@ -171,7 +177,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditStore
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   nil, // ❌ VIOLATION SCENARIO
-				AuditHelpers: notificationcontroller.NewAuditHelpers("test-service"),
+				AuditManager: notificationaudit.NewManager("test-service"),
 			}
 
 			// WHEN: Attempting to audit message acknowledged
@@ -187,7 +193,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditHelpers
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   &mockAuditStore{}, // Store exists
-				AuditHelpers: nil,               // ❌ VIOLATION SCENARIO
+				AuditManager: nil,               // ❌ VIOLATION SCENARIO
 			}
 
 			// WHEN: Attempting to audit message acknowledged
@@ -208,7 +214,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditStore
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   nil, // ❌ VIOLATION SCENARIO
-				AuditHelpers: notificationcontroller.NewAuditHelpers("test-service"),
+				AuditManager: notificationaudit.NewManager("test-service"),
 			}
 
 			// WHEN: Attempting to audit message escalated
@@ -224,7 +230,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with nil AuditHelpers
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   &mockAuditStore{}, // Store exists
-				AuditHelpers: nil,               // ❌ VIOLATION SCENARIO
+				AuditManager: nil,               // ❌ VIOLATION SCENARIO
 			}
 
 			// WHEN: Attempting to audit message escalated
@@ -245,7 +251,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 			// GIVEN: Reconciler with valid AuditStore and AuditHelpers
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				AuditStore:   &mockAuditStore{}, // ✅ Valid store
-				AuditHelpers: notificationcontroller.NewAuditHelpers("test-service"),
+				AuditManager: notificationaudit.NewManager("test-service"),
 			}
 
 			// WHEN: Attempting to audit message sent
@@ -265,7 +271,7 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 
 type mockAuditStore struct{}
 
-func (m *mockAuditStore) StoreAudit(_ context.Context, _ *dsgen.AuditEventRequest) error {
+func (m *mockAuditStore) StoreAudit(_ context.Context, _ *ogenclient.AuditEventRequest) error {
 	return nil // Success case for positive tests
 }
 

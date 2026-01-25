@@ -25,12 +25,17 @@ WORKDIR /opt/app-root/src
 # NOTE: No trailing slash on source - copies directory itself, not just contents
 COPY --chown=1001:0 dependencies ../dependencies
 
+# Copy DataStorage OpenAPI client (referenced in requirements-e2e.txt)
+# Destination must match path in requirements: src/clients/datastorage/
+COPY --chown=1001:0 holmesgpt-api/src/clients/datastorage ./src/clients/datastorage
+
 # Copy E2E requirements (minimal - no google-cloud-aiplatform 1.5GB)
 COPY --chown=1001:0 holmesgpt-api/requirements-e2e.txt ./requirements.txt
 
 # Upgrade pip and install Python dependencies
 # Remove unnecessary files after installation to reduce layer size
 RUN pip install --no-cache-dir --upgrade pip && \
+	pip install --no-cache-dir ./src/clients/datastorage && \
 	pip install --no-cache-dir -r requirements.txt && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
@@ -73,13 +78,12 @@ USER 1001
 
 # Environment variables
 # CRITICAL: PYTHONPATH ensures Python 3.12 finds packages in /opt/app-root/lib/python3.12/site-packages
-# MOCK_LLM_MODE: Enable mock LLM responses for E2E tests (BR-HAPI-212)
+# V2.0 (Mock LLM Migration - January 2026): MOCK_LLM_MODE removed, now uses standalone Mock LLM service
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \
 	PYTHONPATH="/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
-	HOME=/opt/app-root \
-	MOCK_LLM_MODE=true
+	HOME=/opt/app-root
 
 # Expose port
 EXPOSE 8080

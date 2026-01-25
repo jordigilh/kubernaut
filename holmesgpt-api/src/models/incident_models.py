@@ -37,7 +37,7 @@ class HumanReviewReason(str, Enum):
     """
     Structured reason for needs_human_review=true.
 
-    Business Requirements: BR-HAPI-197, BR-HAPI-200
+    Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-HAPI-212
     Design Decision: DD-HAPI-002 v1.2
 
     AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
@@ -51,6 +51,9 @@ class HumanReviewReason(str, Enum):
     # BR-HAPI-200: LLM investigation did not yield conclusive results
     # Use when LLM couldn't determine root cause or current state
     INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
+    # BR-HAPI-212: RCA is incomplete - workflow selected but affectedResource missing
+    # Use when selected_workflow is not None but affectedResource is missing from root_cause_analysis
+    RCA_INCOMPLETE = "rca_incomplete"
 
 
 # ========================================

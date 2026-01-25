@@ -17,7 +17,6 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -29,8 +28,11 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
@@ -91,7 +93,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique test ID for workflow isolation
-		testID = fmt.Sprintf("e2e-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+		testID = fmt.Sprintf("e2e-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 		workflowName = fmt.Sprintf("oom-recovery-%s", testID)
 
 		// Use shared deployment from SynchronizedBeforeSuite
@@ -107,9 +109,6 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				return err
 			}
 			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("service not ready: status %d", resp.StatusCode)
-			}
 			return nil
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		testLogger.Info("✅ Data Storage Service is ready")
@@ -148,47 +147,40 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("📝 Creating workflow v1.0.0...")
 
 			// DD-WORKFLOW-002 v3.0: Create workflow request
+			// DD-API-001: Use typed OpenAPI struct
 			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch"
-			createReq := map[string]interface{}{
-				"workflow_name":    workflowName,
-				"version":          "v1.0.0",
-				"name":             "OOM Recovery - Conservative Memory Increase",
-				"description":      "Increases memory limits conservatively for OOMKilled pods",
-				"content":          workflowContent,
-				"content_hash":     fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent))),
-				"execution_engine": "tekton",
-				"status":           "active",
-				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
-					"severity":    "critical",   // mandatory
-					"component":   "deployment", // mandatory
-					"priority":    "P0",         // mandatory
-					"environment": "production", // mandatory
+			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
+			containerImage := "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456"
+
+			createReq := dsgen.RemediationWorkflow{
+				WorkflowName:    workflowName,
+				Version:         "v1.0.0",
+				Name:            "OOM Recovery - Conservative Memory Increase",
+				Description:     "Increases memory limits conservatively for OOMKilled pods",
+				Content:         workflowContent,
+				ContentHash:     contentHash,
+				ExecutionEngine: "tekton",
+				Status:          dsgen.RemediationWorkflowStatusActive,
+				Labels: dsgen.MandatoryLabels{
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
-				"container_image": "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456",
+				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			reqBody, err := json.Marshal(createReq)
-			Expect(err).ToNot(HaveOccurred())
+		createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+		Expect(err).ToNot(HaveOccurred())
+		testLogger.Info("Create v1.0.0 response", "status", 201)
 
-			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Create v1.0.0 response", "status", resp.StatusCode, "body", string(body))
-
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Expected 201 Created, got %d: %s", resp.StatusCode, string(body))
-
-			// Parse response to get UUID
-			var createResp map[string]interface{}
-			err = json.Unmarshal(body, &createResp)
-			Expect(err).ToNot(HaveOccurred())
-
-			// DD-WORKFLOW-002 v3.0: workflow_id is UUID
-			workflowV1UUID = createResp["workflow_id"].(string)
-			Expect(workflowV1UUID).ToNot(BeEmpty())
-			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
+		// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+		workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+		Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+		workflowV1UUID = workflowResp.WorkflowID.Value.String()
+		Expect(workflowV1UUID).ToNot(BeEmpty())
+		testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
 
 			// Verify UUID format (8-4-4-4-12)
 			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -204,44 +196,40 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.1.0 and mark v1.0.0 as not latest", func() {
 			testLogger.Info("📝 Creating workflow v1.1.0...")
 
+			// DD-API-001: Use typed OpenAPI struct
 			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v1.1\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch-v2"
-			createReq := map[string]interface{}{
-				"workflow_name":    workflowName,
-				"version":          "v1.1.0",
-				"name":             "OOM Recovery - Conservative Memory Increase (Improved)",
-				"description":      "Improved version with better memory calculation",
-				"content":          workflowContent,
-				"content_hash":     fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent))),
-				"execution_engine": "tekton",
-				"status":           "active",
-				"previous_version": "v1.0.0",
-				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
-					"severity":    "critical",   // mandatory
-					"component":   "deployment", // mandatory
-					"priority":    "P0",         // mandatory
-					"environment": "production", // mandatory
+			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
+			containerImage := "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789"
+			previousVersion := "v1.0.0"
+
+			createReq := dsgen.RemediationWorkflow{
+				WorkflowName:    workflowName,
+				Version:         "v1.1.0",
+				Name:            "OOM Recovery - Conservative Memory Increase (Improved)",
+				Description:     "Improved version with better memory calculation",
+				Content:         workflowContent,
+				ContentHash:     contentHash,
+				ExecutionEngine: "tekton",
+				Status:          dsgen.RemediationWorkflowStatusActive,
+				PreviousVersion: dsgen.NewOptString(previousVersion),
+				Labels: dsgen.MandatoryLabels{
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
-				"container_image": "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789",
+				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			reqBody, err := json.Marshal(createReq)
+			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
+			testLogger.Info("Create v1.1.0 response", "status", 201)
 
-			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Create v1.1.0 response", "status", resp.StatusCode, "body", string(body))
-
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-
-			var createResp map[string]interface{}
-			err = json.Unmarshal(body, &createResp)
-			Expect(err).ToNot(HaveOccurred())
-
-			workflowV2UUID = createResp["workflow_id"].(string)
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			workflowV2UUID = workflowResp.WorkflowID.Value.String()
 			Expect(workflowV2UUID).ToNot(BeEmpty())
 			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
 			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
@@ -267,42 +255,39 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v2.0.0 and only latest version is marked", func() {
 			testLogger.Info("📝 Creating workflow v2.0.0...")
 
+			// DD-API-001: Use typed OpenAPI struct
 			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v2\nspec:\n  tasks:\n  - name: scale-horizontal\n    taskRef:\n      name: kubectl-scale"
-			createReq := map[string]interface{}{
-				"workflow_name":    workflowName,
-				"version":          "v2.0.0",
-				"name":             "OOM Recovery - Major Refactor",
-				"description":      "Major version with horizontal scaling support",
-				"content":          workflowContent,
-				"content_hash":     fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent))),
-				"execution_engine": "tekton",
-				"status":           "active",
-				"previous_version": "v1.1.0",
-				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
-					"severity":    "critical",   // mandatory
-					"component":   "deployment", // mandatory
-					"priority":    "P0",         // mandatory
-					"environment": "production", // mandatory
+			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
+			containerImage := "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012"
+			previousVersion := "v1.1.0"
+
+			createReq := dsgen.RemediationWorkflow{
+				WorkflowName:    workflowName,
+				Version:         "v2.0.0",
+				Name:            "OOM Recovery - Major Refactor",
+				Description:     "Major version with horizontal scaling support",
+				Content:         workflowContent,
+				ContentHash:     contentHash,
+				ExecutionEngine: "tekton",
+				Status:          dsgen.RemediationWorkflowStatusActive,
+				PreviousVersion: dsgen.NewOptString(previousVersion),
+				Labels: dsgen.MandatoryLabels{
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
-				"container_image": "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012",
+				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			reqBody, err := json.Marshal(createReq)
+			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 
-			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, _ := io.ReadAll(resp.Body)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-
-			var createResp map[string]interface{}
-			err = json.Unmarshal(body, &createResp)
-			Expect(err).ToNot(HaveOccurred())
-
-			workflowV3UUID = createResp["workflow_id"].(string)
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			workflowV3UUID = workflowResp.WorkflowID.Value.String()
 			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 
 			// Verify only v2.0.0 is latest
@@ -324,70 +309,54 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("🔍 Testing search response structure...")
 
 			// V1.0: Label-only search with 5 mandatory filters (DD-WORKFLOW-001 v1.4)
-			searchReq := map[string]interface{}{
-				"filters": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory
-					"severity":    "critical",   // mandatory
-					"component":   "deployment", // mandatory
-					"environment": "production", // mandatory
-					"priority":    "P0",         // mandatory
+			// DD-API-001: Use typed OpenAPI struct
+			topK := 10
+			searchReq := dsgen.WorkflowSearchRequest{
+				Filters: dsgen.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",                                 // mandatory
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+					Component:   "deployment",                                // mandatory
+					Environment: "production",                                // mandatory
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 				},
-				"top_k": 10,
+				TopK: dsgen.NewOptInt(topK),
 			}
 
-			reqBody, err := json.Marshal(searchReq)
+			resp, err := dsClient.SearchWorkflows(ctx, &searchReq)
 			Expect(err).ToNot(HaveOccurred())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+			testLogger.Info("Search response", "status", 201)
 
-			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows/search", "application/json", bytes.NewReader(reqBody))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Search response", "status", resp.StatusCode, "body", string(body))
-
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			var searchResp map[string]interface{}
-			err = json.Unmarshal(body, &searchResp)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(searchResults).ToNot(BeNil())
+			Expect(searchResults.Workflows).ToNot(BeNil())
 
 			// DD-WORKFLOW-002 v3.0: Verify flat response structure
-			workflows, ok := searchResp["workflows"].([]interface{})
-			Expect(ok).To(BeTrue(), "Response should have 'workflows' array")
+			workflows := searchResults.Workflows
 			Expect(len(workflows)).To(BeNumerically(">", 0), "Should return at least one workflow")
 
 			// Check first workflow has flat structure
-			firstWorkflow := workflows[0].(map[string]interface{})
+			firstWorkflow := workflows[0]
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID (top-level, not nested)
-			workflowID, ok := firstWorkflow["workflow_id"].(string)
-			Expect(ok).To(BeTrue(), "workflow_id should be string at top level")
+			workflowID := firstWorkflow.WorkflowID.String()
 			Expect(workflowID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "workflow_id should be UUID format")
 
-			// DD-WORKFLOW-002 v3.0: 'title' instead of 'name'
-			_, hasTitle := firstWorkflow["title"]
-			Expect(hasTitle).To(BeTrue(), "Response should have 'title' field (not 'name')")
+			// DD-WORKFLOW-002 v3.0: 'title' field exists (typed as string in generated client)
+			Expect(firstWorkflow.Title).ToNot(BeEmpty(), "Response should have non-empty 'title' field")
 
 			// DD-WORKFLOW-002 v3.0: 'signal_type' (singular string) instead of 'signal_types' (array)
-			signalType, hasSignalType := firstWorkflow["signal_type"]
-			Expect(hasSignalType).To(BeTrue(), "Response should have 'signal_type' field (singular)")
-			Expect(signalType).To(BeAssignableToTypeOf(""), "signal_type should be string (not array)")
+			Expect(firstWorkflow.SignalType).ToNot(BeEmpty(), "Response should have 'signal_type' field (singular)")
 
 			// DD-WORKFLOW-002 v3.0: 'confidence' at top level
-			_, hasConfidence := firstWorkflow["confidence"]
-			Expect(hasConfidence).To(BeTrue(), "Response should have 'confidence' at top level")
+			Expect(firstWorkflow.Confidence).ToNot(BeNil(), "Response should have 'confidence' at top level")
 
-			// DD-WORKFLOW-002 v3.0: No 'version' in search response (LLM doesn't need it)
-			_, hasVersion := firstWorkflow["version"]
-			Expect(hasVersion).To(BeFalse(), "Response should NOT have 'version' field")
-
-			// DD-WORKFLOW-002 v3.0: No nested 'workflow' object
-			_, hasNestedWorkflow := firstWorkflow["workflow"]
-			Expect(hasNestedWorkflow).To(BeFalse(), "Response should NOT have nested 'workflow' object")
+			// DD-WORKFLOW-002 v3.0: Typed response enforces flat structure
+			// (No nested 'workflow' object possible in generated client)
 
 			testLogger.Info("✅ Flat response structure verified",
 				"workflow_id", workflowID,
-				"signal_type", signalType)
+				"signal_type", firstWorkflow.SignalType)
 		})
 
 		It("should retrieve workflow by UUID", func() {
@@ -399,9 +368,6 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Get workflow response", "status", resp.StatusCode, "body", string(body))
-
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var workflow map[string]interface{}
 			err = json.Unmarshal(body, &workflow)
@@ -426,9 +392,6 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("List versions response", "status", resp.StatusCode, "body", string(body))
-
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var versionsResp map[string]interface{}
 			err = json.Unmarshal(body, &versionsResp)

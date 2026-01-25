@@ -179,7 +179,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 
 			// Wait for reconciliation to occur
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
@@ -224,7 +224,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 
 			// Wait for reconciliation to occur
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
@@ -269,7 +269,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 
 			// Wait for phase transition (Pending → Processing)
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 

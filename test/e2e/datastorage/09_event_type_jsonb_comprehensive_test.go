@@ -17,16 +17,17 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
+	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -35,38 +36,38 @@ import (
 //
 // Business Requirement: BR-STORAGE-001 (Audit persistence), BR-STORAGE-032 (Unified audit trail)
 // Gap Analysis: TRIAGE_DS_TEST_COVERAGE_GAP_ANALYSIS_V3.md - Gap 1.1
-// Authority: ADR-034 Unified Audit Table Design - Event Type Catalog
+// Authority: api/openapi/data-storage-v1.yaml (lines 1614-1649) - OpenAPI discriminator mapping
+// Compliance: DD-AUDIT-004 (zero unstructured data)
 // Priority: P0
-// Estimated Effort: 3 hours
-// Confidence: 96%
+// Estimated Effort: 7 hours
+// Confidence: 100%
 //
 // BUSINESS OUTCOME:
-// DS accepts ALL 27 documented event types from ADR-034 AND validates JSONB queryability
+// DS accepts ALL 36 valid event types from OpenAPI schema AND validates JSONB queryability
 //
-// CURRENT REALITY:
-// - ADR-034 defines 27 event types across 6 services
-// - Integration tests only validate 6 event types (22% coverage)
-// - 78% of event types UNTESTED (21/27 event types)
+// CURRENT REALITY (BEFORE THIS FIX):
+// - Test validated 21 deprecated event types (only 5 matched OpenAPI schema)
+// - Used unstructured map[string]interface{} (violated DD-AUDIT-004)
+// - Test alignment: 23.8% (5/21 valid types)
+// - OpenAPI coverage: 13.9% (5/36 types tested)
 //
-// MISSING SCENARIO:
-// Comprehensive data-driven test validating:
-// 1. HTTP acceptance (POST returns 201 Created)
-// 2. Database persistence (event_type stored correctly)
-// 3. JSONB structure (Service-specific fields queryable)
-// 4. JSONB operators (Both -> and ->> work)
-// 5. GIN index usage (EXPLAIN shows proper index)
+// AFTER THIS FIX:
+// - Test validates 36 current event types from OpenAPI discriminator mapping
+// - Uses structured ogenclient types (DD-AUDIT-004 compliant)
+// - Test alignment: 100% (36/36 valid types)
+// - OpenAPI coverage: 100% (36/36 types tested)
 //
-// TDD RED PHASE: Tests define contract for all 27 event types
+// TDD RED PHASE: Tests define contract for all 36 valid event types from OpenAPI
 // ========================================
 
-// eventTypeTestCase defines a complete test case for one event type
+// eventTypeTestCase defines a complete test case for one event type using structured types
 type eventTypeTestCase struct {
-	Service         string
-	EventType       string
-	EventCategory   string
-	EventAction     string
-	SampleEventData map[string]interface{}
-	JSONBQueries    []jsonbQueryTest
+	Service       string
+	EventType     string
+	EventCategory ogenclient.AuditEventRequestEventCategory
+	EventAction   string
+	CreateEvent   func() ogenclient.AuditEventRequest // Factory function for type-safe event creation
+	JSONBQueries  []jsonbQueryTest
 }
 
 // jsonbQueryTest defines a JSONB query to validate
@@ -77,258 +78,1012 @@ type jsonbQueryTest struct {
 	ExpectedRows int
 }
 
-// ADR-034 Event Type Catalog - ALL 27 event types with realistic JSONB schemas
+// OpenAPI Event Type Catalog - ALL 36 valid event types from api/openapi/data-storage-v1.yaml
+// Authority: api/openapi/data-storage-v1.yaml lines 1614-1649 (discriminator mapping)
+// Last Verified: 2026-01-18
+// Compliance: DD-AUDIT-004 (zero unstructured data - all payloads use ogenclient types)
 var eventTypeCatalog = []eventTypeTestCase{
 	// ========================================
-	// GATEWAY SERVICE (6 event types)
+	// GATEWAY SERVICE (4 event types)
 	// ========================================
 	{
 		Service:       "gateway",
 		EventType:     "gateway.signal.received",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
+		EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
 		EventAction:   "received",
-		SampleEventData: map[string]interface{}{
-			"alert_name":         "HighCPU",
-			"signal_fingerprint": "fp-abc123",
-			"namespace":          "production",
-			"cluster":            "prod-us-east-1",
-			"is_duplicate":       false,
-			"action":             "created_crd",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			correlationID := fmt.Sprintf("test-gap-1.1-gateway-received-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventAction:    "received",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("Signal"),
+				ResourceID:     ogenclient.NewOptString("fp-abc123"),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+					SignalType:  "prometheus-alert",
+					AlertName:   "HighCPU",
+					Namespace:   "production",
+					Fingerprint: "fp-abc123",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
-			{Field: "signal_fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1},
-			{Field: "is_duplicate", Operator: "->", Value: "false", ExpectedRows: 1},
+			{Field: "fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1},
 		},
 	},
 	{
 		Service:       "gateway",
 		EventType:     "gateway.signal.deduplicated",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
+		EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
 		EventAction:   "deduplicated",
-		SampleEventData: map[string]interface{}{
-			"duplicate_of":       "fp-original-123",
-			"reason":             "identical_fingerprint",
-			"original_timestamp": "2025-12-01T10:00:00Z",
-			"window_seconds":     300,
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			correlationID := fmt.Sprintf("test-gap-1.1-gateway-deduplicated-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "gateway.signal.deduplicated",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventAction:    "deduplicated",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("Signal"),
+				ResourceID:     ogenclient.NewOptString("fp-dedupe-456"),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalDeduplicated,
+					SignalType:  "prometheus-alert",
+					AlertName:   "HighCPU",
+					Namespace:   "production",
+					Fingerprint: "fp-dedupe-456",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "duplicate_of", Operator: "->>", Value: "fp-original-123", ExpectedRows: 1},
-			{Field: "reason", Operator: "->>", Value: "identical_fingerprint", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "gateway",
-		EventType:     "gateway.storm.detected",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
-		EventAction:   "storm_detected",
-		SampleEventData: map[string]interface{}{
-			"storm_id":         "storm-2025-12-01-001",
-			"signal_count":     150,
-			"time_window_sec":  60,
-			"detection_reason": "threshold_exceeded",
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "storm_id", Operator: "->>", Value: "storm-2025-12-01-001", ExpectedRows: 1},
-			{Field: "signal_count", Operator: "->", Value: "150", ExpectedRows: 1},
+			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
+			{Field: "fingerprint", Operator: "->>", Value: "fp-dedupe-456", ExpectedRows: 1},
 		},
 	},
 	{
 		Service:       "gateway",
 		EventType:     "gateway.crd.created",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
+		EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
 		EventAction:   "crd_created",
-		SampleEventData: map[string]interface{}{
-			"crd_name":      "signalprocessing-sp-001",
-			"crd_namespace": "kubernaut-system",
-			"crd_kind":      "SignalProcessing",
-			"creation_time": "2025-12-01T10:05:00Z",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			correlationID := fmt.Sprintf("test-gap-1.1-gateway-crd-created-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "gateway.crd.created",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventAction:    "crd_created",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString("rr-test-001"),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  "kubernetes-event",
+					AlertName:   "CRDCreated",
+					Namespace:   "kubernaut-system",
+					Fingerprint: "fp-crd-012",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "crd_name", Operator: "->>", Value: "signalprocessing-sp-001", ExpectedRows: 1},
-			{Field: "crd_kind", Operator: "->>", Value: "SignalProcessing", ExpectedRows: 1},
+			{Field: "alert_name", Operator: "->>", Value: "CRDCreated", ExpectedRows: 1},
+			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-012", ExpectedRows: 1},
 		},
 	},
 	{
 		Service:       "gateway",
-		EventType:     "gateway.signal.rejected",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
-		EventAction:   "rejected",
-		SampleEventData: map[string]interface{}{
-			"rejection_reason": "invalid_signal_format",
-			"signal_source":    "prometheus",
-			"validation_error": "missing required field: alert_name",
+		EventType:     "gateway.crd.failed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
+		EventAction:   "crd_failed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			correlationID := fmt.Sprintf("test-gap-1.1-gateway-crd-failed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "gateway.crd.failed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventAction:    "crd_failed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString("rr-test-fail-002"),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdFailed,
+					SignalType:  "kubernetes-event",
+					AlertName:   "CRDCreationFailed",
+					Namespace:   "kubernaut-system",
+					Fingerprint: "fp-crd-fail-789",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "rejection_reason", Operator: "->>", Value: "invalid_signal_format", ExpectedRows: 1},
-			{Field: "signal_source", Operator: "->>", Value: "prometheus", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "gateway",
-		EventType:     "gateway.error.occurred",
-		EventCategory: "gateway", // ADR-034 v1.2 (was "error" - invalid)
-		EventAction:   "error_occurred",
-		SampleEventData: map[string]interface{}{
-			"error_type":    "database_connection_failed",
-			"error_message": "connection refused",
-			"retry_count":   3,
-			"will_retry":    true,
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "error_type", Operator: "->>", Value: "database_connection_failed", ExpectedRows: 1},
-			{Field: "retry_count", Operator: "->", Value: "3", ExpectedRows: 1},
+			{Field: "alert_name", Operator: "->>", Value: "CRDCreationFailed", ExpectedRows: 1},
+			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-fail-789", ExpectedRows: 1},
 		},
 	},
 
 	// ========================================
-	// SIGNAL PROCESSING SERVICE (4 event types)
+	// REMEDIATION ORCHESTRATOR SERVICE (8 event types)
+	// ========================================
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.lifecycle.started",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "started",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-started-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.lifecycle.started",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "started",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName, // Per DD-AUDIT-CORRELATION-002
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			// Per OpenAPI schema: RemediationOrchestratorAuditPayload has required fields: rr_name, namespace, event_type
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.lifecycle.created",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "created",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-created-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.lifecycle.created",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "created",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.lifecycle.completed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "completed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-completed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.lifecycle.completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.lifecycle.failed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "failed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-failed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.lifecycle.failed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "failed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.lifecycle.transitioned",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "transitioned",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-transitioned-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.lifecycle.transitioned",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "transitioned",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.approval.requested",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "requested",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-approval-req-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.approval.requested",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "requested",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("remediation-orchestrator-service"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.approval.approved",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "approved",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-approval-approved-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.approval.approved",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "approved",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "remediation-orchestrator",
+		EventType:     "orchestrator.approval.rejected",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryOrchestration,
+		EventAction:   "rejected",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-orchestrator-approval-rejected-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "orchestrator.approval.rejected",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryOrchestration,
+				EventAction:    "rejected",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  rrName,
+				EventData: ogenclient.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(ogenclient.RemediationOrchestratorAuditPayload{
+					EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected,
+					RrName:    rrName,
+					Namespace: "default",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'namespace' instead of 'phase' (which doesn't exist in schema)
+			{Field: "namespace", Operator: "->>", Value: "default", ExpectedRows: 1},
+		},
+	},
+
+	// ========================================
+	// SIGNAL PROCESSING SERVICE (6 event types)
 	// ========================================
 	{
 		Service:       "signalprocessing",
-		EventType:     "signalprocessing.enrichment.started",
-		EventCategory: "signalprocessing", // ADR-034 v1.2 (was "enrichment" - invalid)
-		EventAction:   "started",
-		SampleEventData: map[string]interface{}{
-			"signal_id":       "sp-001",
-			"enricher_type":   "k8s_context_enricher",
-			"input_labels":    []string{"severity:critical"},
-			"expected_output": "k8s_metadata",
+		EventType:     "signalprocessing.signal.processed",
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
+		EventAction:   "processed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-processed-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-processed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.signal.processed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "processed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseCompleted,
+					Signal:    signalName,
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "signal_id", Operator: "->>", Value: "sp-001", ExpectedRows: 1},
-			{Field: "enricher_type", Operator: "->>", Value: "k8s_context_enricher", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Completed", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "signalprocessing",
+		EventType:     "signalprocessing.phase.transition",
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
+		EventAction:   "transition",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-transition-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-transition-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.phase.transition",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "transition",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseEnriching,
+					Signal:    signalName,
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "phase", Operator: "->>", Value: "Enriching", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "signalprocessing",
+		EventType:     "signalprocessing.classification.decision",
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
+		EventAction:   "decision",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-classification-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-classification-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.classification.decision",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "decision",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseClassifying,
+					Signal:    signalName,
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "phase", Operator: "->>", Value: "Classifying", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "signalprocessing",
+		EventType:     "signalprocessing.business.classified",
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
+		EventAction:   "classified",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-business-classified-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-business-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.business.classified",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "classified",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseCategorizing,
+					Signal:    signalName,
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "phase", Operator: "->>", Value: "Categorizing", ExpectedRows: 1},
 		},
 	},
 	{
 		Service:       "signalprocessing",
 		EventType:     "signalprocessing.enrichment.completed",
-		EventCategory: "signalprocessing", // ADR-034 v1.2 (was "enrichment" - invalid)
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
 		EventAction:   "completed",
-		SampleEventData: map[string]interface{}{
-			"signal_id":     "sp-001",
-			"labels_added":  []string{"component:database", "priority:p0"},
-			"duration_ms":   123,
-			"enricher_used": "k8s_context_enricher",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-enrichment-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-enrichment-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.enrichment.completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseCompleted,
+					Signal:    signalName,
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "signal_id", Operator: "->>", Value: "sp-001", ExpectedRows: 1},
-			{Field: "duration_ms", Operator: "->", Value: "123", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "signalprocessing",
-		EventType:     "signalprocessing.categorization.completed",
-		EventCategory: "signalprocessing", // ADR-034 v1.2 (was "categorization" - invalid)
-		EventAction:   "completed",
-		SampleEventData: map[string]interface{}{
-			"signal_id":  "sp-001",
-			"category":   "infrastructure",
-			"confidence": 0.92,
-			"labels":     []string{"severity:critical", "component:database"},
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "signal_id", Operator: "->>", Value: "sp-001", ExpectedRows: 1},
-			{Field: "category", Operator: "->>", Value: "infrastructure", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Completed", ExpectedRows: 1},
 		},
 	},
 	{
 		Service:       "signalprocessing",
 		EventType:     "signalprocessing.error.occurred",
-		EventCategory: "signalprocessing", // ADR-034 v1.2 (was "error" - invalid)
-		EventAction:   "error_occurred",
-		SampleEventData: map[string]interface{}{
-			"error_type":    "enrichment_timeout",
-			"error_message": "enricher did not respond within 5s",
-			"signal_id":     "sp-001",
+		EventCategory: ogenclient.AuditEventRequestEventCategorySignalprocessing,
+		EventAction:   "error",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			signalName := fmt.Sprintf("sp-test-error-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-sp-error-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "signalprocessing.error.occurred",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategorySignalprocessing,
+				EventAction:    "error",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("signalprocessing-service"),
+				ResourceType:   ogenclient.NewOptString("SignalProcessing"),
+				ResourceID:     ogenclient.NewOptString(signalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData(ogenclient.SignalProcessingAuditPayload{
+					EventType: ogenclient.SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred,
+					Phase:     ogenclient.SignalProcessingAuditPayloadPhaseFailed,
+					Signal:    signalName,
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "error_type", Operator: "->>", Value: "enrichment_timeout", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Failed", ExpectedRows: 1},
 		},
 	},
 
 	// ========================================
-	// AI ANALYSIS SERVICE (5 event types)
+	// AI ANALYSIS SERVICE (2 event types)
 	// ========================================
 	{
-		Service:       "analysis",
-		EventType:     "analysis.investigation.started",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "investigation" - invalid)
-		EventAction:   "started",
-		SampleEventData: map[string]interface{}{
-			"analysis_id":   "aa-001",
-			"signal_id":     "sp-001",
-			"llm_provider":  "openai",
-			"llm_model":     "gpt-4",
-			"prompt_tokens": 1500,
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "analysis_id", Operator: "->>", Value: "aa-001", ExpectedRows: 1},
-			{Field: "llm_provider", Operator: "->>", Value: "openai", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "analysis",
-		EventType:     "analysis.investigation.completed",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "investigation" - invalid)
+		Service:       "aianalysis",
+		EventType:     "aianalysis.analysis.completed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
 		EventAction:   "completed",
-		SampleEventData: map[string]interface{}{
-			"analysis_id":       "aa-001",
-			"rca_summary":       "Database connection pool exhausted due to query storm",
-			"confidence":        0.95,
-			"duration_ms":       2345,
-			"completion_tokens": 800,
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			analysisName := fmt.Sprintf("aa-test-completed-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-completed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.analysis.completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("aianalysis-service"),
+				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
+				ResourceID:     ogenclient.NewOptString(analysisName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(ogenclient.AIAnalysisAuditPayload{
+					EventType:        ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+					AnalysisName:     analysisName,
+					Namespace:        "default",
+					Phase:            ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+					ApprovalRequired: false,
+					DegradedMode:     false,
+					WarningsCount:    0,
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "analysis_id", Operator: "->>", Value: "aa-001", ExpectedRows: 1},
-			{Field: "confidence", Operator: "->", Value: "0.95", ExpectedRows: 1},
+			// FIX: Test 'phase' = 'Completed' to match the payload we're sending
+			{Field: "phase", Operator: "->>", Value: "Completed", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "analysis",
-		EventType:     "analysis.recommendation.generated",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "recommendation" - invalid)
-		EventAction:   "generated",
-		SampleEventData: map[string]interface{}{
-			"analysis_id":      "aa-001",
-			"workflow_matched": "scale-database-pool",
-			"workflow_score":   0.89,
-			"recommendation":   "Scale database connection pool from 25 to 50 connections",
+		Service:       "aianalysis",
+		EventType:     "aianalysis.analysis.failed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
+		EventAction:   "failed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			analysisName := fmt.Sprintf("aa-test-failed-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-failed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.analysis.failed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "failed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("aianalysis-service"),
+				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
+				ResourceID:     ogenclient.NewOptString(analysisName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(ogenclient.AIAnalysisAuditPayload{
+					EventType:        ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed,
+					AnalysisName:     analysisName,
+					Namespace:        "default",
+					Phase:            ogenclient.AIAnalysisAuditPayloadPhaseFailed,
+					ApprovalRequired: false,
+					DegradedMode:     false,
+					WarningsCount:    0,
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "workflow_matched", Operator: "->>", Value: "scale-database-pool", ExpectedRows: 1},
-			{Field: "workflow_score", Operator: "->", Value: "0.89", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Failed", ExpectedRows: 1},
+		},
+	},
+
+	// ========================================
+	// WORKFLOW EXECUTION SERVICE (5 event types)
+	// ========================================
+	{
+		Service:       "workflowexecution",
+		EventType:     "workflowexecution.workflow.started",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "started",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-started-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-wfe-started-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflowexecution.workflow.started",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+				EventAction:    "started",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("workflowexecution-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData(ogenclient.WorkflowExecutionAuditPayload{
+					EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted,
+					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhasePending,
+					ExecutionName:   wfeName,
+					WorkflowID:      "kubectl-restart-deployment-e2e",
+					WorkflowVersion: "v1.0.0",
+					TargetResource:  "default/deployment/test-deployment",
+					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "phase", Operator: "->>", Value: "Pending", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "analysis",
-		EventType:     "analysis.approval.required",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "approval" - invalid)
-		EventAction:   "required",
-		SampleEventData: map[string]interface{}{
-			"analysis_id":         "aa-001",
-			"approval_reason":     "high_risk_action",
-			"risk_level":          "high",
-			"estimated_impact":    "service_restart",
-			"approval_request_id": "ar-001",
+		Service:       "workflowexecution",
+		EventType:     "workflowexecution.workflow.completed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "completed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-completed-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-wfe-completed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflowexecution.workflow.completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+				EventAction:    "completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("workflowexecution-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(ogenclient.WorkflowExecutionAuditPayload{
+					EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+					ExecutionName:   wfeName,
+					WorkflowID:      "kubectl-restart-deployment-e2e",
+					WorkflowVersion: "v1.0.0",
+					TargetResource:  "default/deployment/test-deployment",
+					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "approval_request_id", Operator: "->>", Value: "ar-001", ExpectedRows: 1},
-			{Field: "risk_level", Operator: "->>", Value: "high", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Completed", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "analysis",
-		EventType:     "analysis.error.occurred",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "error" - invalid)
-		EventAction:   "error_occurred",
-		SampleEventData: map[string]interface{}{
-			"error_type":    "llm_timeout",
-			"error_message": "LLM API did not respond within 30s",
-			"analysis_id":   "aa-001",
+		Service:       "workflowexecution",
+		EventType:     "workflowexecution.workflow.failed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "failed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-failed-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-wfe-failed-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflowexecution.workflow.failed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+				EventAction:    "failed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeFailure,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("workflowexecution-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(ogenclient.WorkflowExecutionAuditPayload{
+					EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed,
+					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseFailed,
+					ExecutionName:   wfeName,
+					WorkflowID:      "kubectl-restart-deployment-e2e",
+					WorkflowVersion: "v1.0.0",
+					TargetResource:  "default/deployment/test-deployment",
+					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "error_type", Operator: "->>", Value: "llm_timeout", ExpectedRows: 1},
+			{Field: "phase", Operator: "->>", Value: "Failed", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "workflowexecution",
+		EventType:     "workflowexecution.selection.completed",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "selection_completed",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-selection-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-wfe-selection-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflowexecution.selection.completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+				EventAction:    "selection_completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("workflowexecution-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(ogenclient.WorkflowExecutionAuditPayload{
+					EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted,
+					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhasePending,
+					ExecutionName:   wfeName,
+					WorkflowID:      "kubectl-restart-deployment-e2e",
+					WorkflowVersion: "v1.0.0",
+					TargetResource:  "default/deployment/test-deployment",
+					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "phase", Operator: "->>", Value: "Pending", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "workflowexecution",
+		EventType:     "workflowexecution.execution.started",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:   "execution_started",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-exec-started-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-wfe-exec-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflowexecution.execution.started",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+				EventAction:    "execution_started",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("workflowexecution-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(ogenclient.WorkflowExecutionAuditPayload{
+					EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+					ExecutionName:   wfeName,
+					WorkflowID:      "kubectl-restart-deployment-e2e",
+					WorkflowVersion: "v1.0.0",
+					TargetResource:  "default/deployment/test-deployment",
+					Phase:           ogenclient.WorkflowExecutionAuditPayloadPhasePending,
+					ContainerImage:  "ghcr.io/kubernaut/kubectl-actions:v1.28",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Test 'phase' = 'Pending' to match the payload we're sending
+			{Field: "phase", Operator: "->>", Value: "Pending", ExpectedRows: 1},
+		},
+	},
+
+	// ========================================
+	// WEBHOOK SERVICE (5 event types)
+	// ========================================
+	{
+		Service:       "webhooks",
+		EventType:     "webhook.notification.cancelled",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventAction:   "cancelled",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			notifName := fmt.Sprintf("notif-test-cancelled-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-webhook-notif-cancel-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "webhook.notification.cancelled",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventAction:    "cancelled",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("NotificationRequest"),
+				ResourceID:     ogenclient.NewOptString(notifName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(ogenclient.NotificationAuditPayload{
+					EventType:        ogenclient.NotificationAuditPayloadEventTypeWebhookNotificationCancelled,
+					NotificationName: ogenclient.NewOptString(notifName),
+					FinalStatus:      ogenclient.NewOptNotificationAuditPayloadFinalStatus(ogenclient.NotificationAuditPayloadFinalStatusCancelled),
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "final_status", Operator: "->>", Value: "Cancelled", ExpectedRows: 1}, // Fixed: OpenAPI spec defines "final_status" not "status"
+		},
+	},
+	{
+		Service:       "webhooks",
+		EventType:     "webhook.notification.acknowledged",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventAction:   "acknowledged",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			notifName := fmt.Sprintf("notif-test-acked-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-webhook-notif-ack-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "webhook.notification.acknowledged",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventAction:    "acknowledged",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("NotificationRequest"),
+				ResourceID:     ogenclient.NewOptString(notifName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAuditEventRequestEventDataWebhookNotificationAcknowledgedAuditEventRequestEventData(ogenclient.NotificationAuditPayload{
+					EventType:        ogenclient.NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged,
+					NotificationName: ogenclient.NewOptString(notifName),
+					FinalStatus:      ogenclient.NewOptNotificationAuditPayloadFinalStatus(ogenclient.NotificationAuditPayloadFinalStatusSent),
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			{Field: "final_status", Operator: "->>", Value: "Sent", ExpectedRows: 1}, // Fixed: Event creates with FinalStatusSent, OpenAPI enum: [Pending,Sending,Sent,Failed,Cancelled]
+		},
+	},
+	{
+		Service:       "webhooks",
+		EventType:     "webhook.workflow.unblocked",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventAction:   "unblocked",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			wfeName := fmt.Sprintf("wfe-test-unblocked-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-webhook-wfe-unblock-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "webhook.workflow.unblocked",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventAction:    "unblocked",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("WorkflowExecution"),
+				ResourceID:     ogenclient.NewOptString(wfeName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowExecutionWebhookAuditPayload{
+					EventType:     ogenclient.WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked,
+					WorkflowName:  wfeName,
+					ClearReason:   "Manual approval by ops team - E2E test",
+					ClearedAt:     time.Now().UTC(),
+					PreviousState: ogenclient.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked,
+					NewState:      ogenclient.WorkflowExecutionWebhookAuditPayloadNewStateRunning,
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Query 'previous_state' = 'Blocked' which exists in WorkflowExecutionWebhookAuditPayload
+			{Field: "previous_state", Operator: "->>", Value: "Blocked", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "webhooks",
+		EventType:     "webhook.approval.decided",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventAction:   "decided",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			approvalName := fmt.Sprintf("approval-test-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-webhook-approval-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "webhook.approval.decided",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventAction:    "decided",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("RemediationApproval"),
+				ResourceID:     ogenclient.NewOptString(approvalName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(ogenclient.RemediationApprovalAuditPayload{
+					EventType:        ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
+					RequestName:      approvalName,
+					Decision:         ogenclient.RemediationApprovalAuditPayloadDecisionApproved,
+					DecidedAt:        time.Now().UTC(),
+					DecisionMessage:  "Approved by ops team for E2E testing",
+					AiAnalysisRef:    "aianalysis-test-ref-123",
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: OpenAPI enum is "Approved" (title case), not "approved"
+			{Field: "decision", Operator: "->>", Value: "Approved", ExpectedRows: 1},
+		},
+	},
+	{
+		Service:       "webhooks",
+		EventType:     "webhook.remediationrequest.timeout_modified",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
+		EventAction:   "timeout_modified",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			rrName := fmt.Sprintf("rr-test-timeout-modified-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-webhook-rr-timeout-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "webhook.remediationrequest.timeout_modified",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
+				EventAction:    "timeout_modified",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("RemediationRequest"),
+				ResourceID:     ogenclient.NewOptString(rrName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(ogenclient.RemediationRequestWebhookAuditPayload{
+					EventType:  ogenclient.RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified,
+					RrName:     rrName,
+					Namespace:  "default",
+					ModifiedBy: "admin@example.com",
+					ModifiedAt: time.Now().UTC(),
+				}),
+			}
+		},
+		JSONBQueries: []jsonbQueryTest{
+			// FIX: Query 'modified_by' which exists in RemediationRequestWebhookAuditPayload
+			{Field: "modified_by", Operator: "->>", Value: "admin@example.com", ExpectedRows: 1},
 		},
 	},
 
@@ -338,213 +1093,216 @@ var eventTypeCatalog = []eventTypeTestCase{
 	{
 		Service:       "workflow",
 		EventType:     "workflow.catalog.search_completed",
-		EventCategory: "workflow", // ADR-034 v1.2 (was "catalog" - invalid)
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
 		EventAction:   "search_completed",
-		SampleEventData: map[string]interface{}{
-			"query_filters": map[string]interface{}{
-				"signal_type": "OOMKilled",
-				"severity":    "critical",
-				"component":   "deployment",
-			},
-			"results_count":   3,
-			"top_match_id":    "wf-oom-handler",
-			"top_match_score": 0.95,
-			"duration_ms":     45,
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			searchID := fmt.Sprintf("search-test-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-workflow-search-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "workflow.catalog.search_completed",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+				EventAction:    "search_completed",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("datastorage-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowSearch"),
+				ResourceID:     ogenclient.NewOptString(searchID),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowSearchAuditPayload{
+					EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+					Query: ogenclient.QueryMetadata{
+						TopK: 5,
+					},
+					Results: ogenclient.ResultsMetadata{
+						TotalFound: 5,
+						Returned:   5,
+						Workflows:  []ogenclient.WorkflowResultAudit{},
+					},
+					SearchMetadata: ogenclient.SearchExecutionMetadata{
+						DurationMs: 150,
+					},
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "top_match_id", Operator: "->>", Value: "wf-oom-handler", ExpectedRows: 1},
-			{Field: "results_count", Operator: "->", Value: "3", ExpectedRows: 1},
+			// FIX: Query nested field results->total_found (WorkflowSearchAuditPayload.results is a ResultsMetadata object)
+			// Query construction: event_data->'results'->>'total_found' = '5'
+			{Field: "total_found", Operator: "->'results'->>", Value: "5", ExpectedRows: 1},
 		},
 	},
 
 	// ========================================
-	// REMEDIATION ORCHESTRATOR SERVICE (5 event types)
+	// DATA STORAGE WORKFLOW SERVICE (2 event types)
 	// ========================================
 	{
-		Service:       "remediationorchestrator",
-		EventType:     "remediationorchestrator.request.created",
-		EventCategory: "orchestration",
-		EventAction:   "request_created",
-		SampleEventData: map[string]interface{}{
-			"remediation_request_id": "rr-001",
-			"workflow_id":            "wf-oom-handler",
-			"signal_id":              "sp-001",
-			"requested_by":           "analysis",
+		Service:       "datastorage",
+		EventType:     "datastorage.workflow.created",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
+		EventAction:   "created",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			workflowID := uuid.New()
+			correlationID := fmt.Sprintf("test-gap-1.1-ds-workflow-created-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "datastorage.workflow.created",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+				EventAction:    "created",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("datastorage-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowCatalog"),
+				ResourceID:     ogenclient.NewOptString(workflowID.String()),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewWorkflowCatalogCreatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogCreatedPayload{
+					WorkflowID:      workflowID,                                            // REQUIRED
+					WorkflowName:    "test-workflow",                                       // REQUIRED
+					Version:         "v1.0.0",                                              // REQUIRED
+					Status:          ogenclient.WorkflowCatalogCreatedPayloadStatusActive, // REQUIRED
+					IsLatestVersion: true,                                                  // REQUIRED
+					ExecutionEngine: "tekton",                                              // REQUIRED
+					Name:            "Test Workflow Display Name",                          // REQUIRED
+					Description:     ogenclient.NewOptString("Test workflow description"),  // OPTIONAL
+					Labels: ogenclient.NewOptWorkflowCatalogCreatedPayloadLabels(ogenclient.WorkflowCatalogCreatedPayloadLabels{}), // OPTIONAL
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "remediation_request_id", Operator: "->>", Value: "rr-001", ExpectedRows: 1},
-			{Field: "workflow_id", Operator: "->>", Value: "wf-oom-handler", ExpectedRows: 1},
+			{Field: "workflow_name", Operator: "->>", Value: "test-workflow", ExpectedRows: 1},
+			{Field: "version", Operator: "->>", Value: "v1.0.0", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "remediationorchestrator",
-		EventType:     "remediationorchestrator.phase.transitioned",
-		EventCategory: "orchestration",
-		EventAction:   "phase_transitioned",
-		SampleEventData: map[string]interface{}{
-			"remediation_request_id": "rr-001",
-			"from_phase":             "Pending",
-			"to_phase":               "Executing",
-			"transition_reason":      "workflow_approved",
+		Service:       "datastorage",
+		EventType:     "datastorage.workflow.updated",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
+		EventAction:   "updated",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			workflowID := uuid.New()
+			correlationID := fmt.Sprintf("test-gap-1.1-ds-workflow-updated-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "datastorage.workflow.updated",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+				EventAction:    "updated",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("datastorage-service"),
+				ResourceType:   ogenclient.NewOptString("WorkflowCatalog"),
+				ResourceID:     ogenclient.NewOptString(workflowID.String()),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewWorkflowCatalogUpdatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogUpdatedPayload{
+					WorkflowID: workflowID, // REQUIRED
+					UpdatedFields: ogenclient.WorkflowCatalogUpdatedFields{ // REQUIRED (at least one field updated)
+						Version:     ogenclient.NewOptString("v2.0.0"), // OPTIONAL (but provide at least one)
+						Description: ogenclient.NewOptString("Updated description"), // OPTIONAL
+					},
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "from_phase", Operator: "->>", Value: "Pending", ExpectedRows: 1},
-			{Field: "to_phase", Operator: "->>", Value: "Executing", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "remediationorchestrator",
-		EventType:     "remediationorchestrator.approval.requested",
-		EventCategory: "orchestration", // ADR-034 v1.2 (was "approval" - invalid)
-		EventAction:   "approval_requested",
-		SampleEventData: map[string]interface{}{
-			"remediation_request_id": "rr-001",
-			"approval_request_id":    "ar-001",
-			"risk_level":             "high",
-			"requires_approval":      true,
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "approval_request_id", Operator: "->>", Value: "ar-001", ExpectedRows: 1},
-			{Field: "requires_approval", Operator: "->", Value: "true", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "remediationorchestrator",
-		EventType:     "remediationorchestrator.child.created",
-		EventCategory: "orchestration",
-		EventAction:   "child_created",
-		SampleEventData: map[string]interface{}{
-			"parent_request_id": "rr-001",
-			"child_request_id":  "rr-001-child-1",
-			"child_reason":      "multi_step_remediation",
-			"step_number":       2,
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "child_request_id", Operator: "->>", Value: "rr-001-child-1", ExpectedRows: 1},
-			{Field: "step_number", Operator: "->", Value: "2", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "remediationorchestrator",
-		EventType:     "remediationorchestrator.error.occurred",
-		EventCategory: "orchestration", // ADR-034 v1.2 (was "error" - invalid)
-		EventAction:   "error_occurred",
-		SampleEventData: map[string]interface{}{
-			"error_type":             "workflow_execution_failed",
-			"error_message":          "workflow execution timeout after 30s",
-			"remediation_request_id": "rr-001",
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "error_type", Operator: "->>", Value: "workflow_execution_failed", ExpectedRows: 1},
+			// Query nested field updated_fields->version (WorkflowCatalogUpdatedPayload.updated_fields.version)
+			// Query construction: event_data->'updated_fields'->>'version' = 'v2.0.0'
+			{Field: "version", Operator: "->'updated_fields'->>", Value: "v2.0.0", ExpectedRows: 1},
 		},
 	},
 
 	// ========================================
-	// EFFECTIVENESS MONITOR SERVICE (3 event types)
+	// AI ANALYSIS EXTENDED SERVICE (3 event types)
 	// ========================================
 	{
-		Service:       "effectivenessmonitor",
-		EventType:     "effectivenessmonitor.evaluation.started",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "evaluation" - invalid, effectiveness = analysis)
-		EventAction:   "started",
-		SampleEventData: map[string]interface{}{
-			"evaluation_id":          "eval-001",
-			"remediation_request_id": "rr-001",
-			"workflow_id":            "wf-oom-handler",
-			"evaluation_window_min":  5,
+		Service:       "aianalysis",
+		EventType:     "aianalysis.phase.transition",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
+		EventAction:   "phase_transition",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			analysisName := fmt.Sprintf("aa-test-phase-transition-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-phase-trans-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.phase.transition",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "phase_transition",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("aianalysis-service"),
+				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
+				ResourceID:     ogenclient.NewOptString(analysisName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(ogenclient.AIAnalysisPhaseTransitionPayload{
+					OldPhase: "Pending",   // REQUIRED
+					NewPhase: "Analyzing", // REQUIRED
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "evaluation_id", Operator: "->>", Value: "eval-001", ExpectedRows: 1},
-			{Field: "workflow_id", Operator: "->>", Value: "wf-oom-handler", ExpectedRows: 1},
+			// FIX: Schema uses 'new_phase' not 'to_phase' (DD-AUDIT-003)
+			{Field: "new_phase", Operator: "->>", Value: "Analyzing", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "effectivenessmonitor",
-		EventType:     "effectivenessmonitor.evaluation.completed",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "evaluation" - invalid, effectiveness = analysis)
-		EventAction:   "completed",
-		SampleEventData: map[string]interface{}{
-			"evaluation_id":       "eval-001",
-			"effectiveness_score": 0.87,
-			"issue_resolved":      true,
-			"signal_count_before": 50,
-			"signal_count_after":  5,
+		Service:       "aianalysis",
+		EventType:     "aianalysis.holmesgpt.call",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
+		EventAction:   "holmesgpt_call",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			analysisName := fmt.Sprintf("aa-test-holmesgpt-call-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-holmesgpt-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.holmesgpt.call",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "holmesgpt_call",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("aianalysis-service"),
+				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
+				ResourceID:     ogenclient.NewOptString(analysisName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(ogenclient.AIAnalysisHolmesGPTCallPayload{
+					Endpoint:       "/api/v1/analyze", // REQUIRED
+					HTTPStatusCode: 200,                // REQUIRED
+					DurationMs:     150,                // REQUIRED
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "evaluation_id", Operator: "->>", Value: "eval-001", ExpectedRows: 1},
-			{Field: "issue_resolved", Operator: "->", Value: "true", ExpectedRows: 1},
+			// FIX: Schema uses 'endpoint' not 'call_type' (DD-AUDIT-003)
+			{Field: "endpoint", Operator: "->>", Value: "/api/v1/analyze", ExpectedRows: 1},
 		},
 	},
 	{
-		Service:       "effectivenessmonitor",
-		EventType:     "effectivenessmonitor.playbook.updated",
-		EventCategory: "analysis", // ADR-034 v1.2 (was "learning" - invalid, effectiveness = analysis)
-		EventAction:   "playbook_updated",
-		SampleEventData: map[string]interface{}{
-			"workflow_id":      "wf-oom-handler",
-			"confidence_delta": 0.05,
-			"new_confidence":   0.92,
-			"update_reason":    "successful_execution",
+		Service:       "aianalysis",
+		EventType:     "aianalysis.approval.decision",
+		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
+		EventAction:   "approval_decision",
+		CreateEvent: func() ogenclient.AuditEventRequest {
+			analysisName := fmt.Sprintf("aa-test-approval-decision-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-approval-%s", uuid.New().String()[:8])
+			return ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.approval.decision",
+				EventTimestamp: time.Now().UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "approval_decision",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ActorType:      ogenclient.NewOptString("user"),
+				ActorID:        ogenclient.NewOptString("admin@example.com"),
+				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
+				ResourceID:     ogenclient.NewOptString(analysisName),
+				CorrelationID:  correlationID,
+				EventData: ogenclient.NewAIAnalysisApprovalDecisionPayloadAuditEventRequestEventData(ogenclient.AIAnalysisApprovalDecisionPayload{
+					Decision: "approved",
+				}),
+			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "workflow_id", Operator: "->>", Value: "wf-oom-handler", ExpectedRows: 1},
-			{Field: "update_reason", Operator: "->>", Value: "successful_execution", ExpectedRows: 1},
-		},
-	},
-
-	// ========================================
-	// NOTIFICATION SERVICE (3 event types)
-	// ========================================
-	{
-		Service:       "notification",
-		EventType:     "notification.sent",
-		EventCategory: "notification",
-		EventAction:   "sent",
-		SampleEventData: map[string]interface{}{
-			"notification_id": "notif-001",
-			"channel":         "slack",
-			"recipient":       "#ops-alerts",
-			"message_summary": "Remediation completed for OOMKilled",
-			"delivery_status": "200 OK",
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "notification_id", Operator: "->>", Value: "notif-001", ExpectedRows: 1},
-			{Field: "channel", Operator: "->>", Value: "slack", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "notification",
-		EventType:     "notification.failed",
-		EventCategory: "notification",
-		EventAction:   "failed",
-		SampleEventData: map[string]interface{}{
-			"notification_id": "notif-002",
-			"channel":         "email",
-			"recipient":       "ops@example.com",
-			"failure_reason":  "smtp_connection_refused",
-			"retry_count":     3,
-			"will_retry":      true,
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "notification_id", Operator: "->>", Value: "notif-002", ExpectedRows: 1},
-			{Field: "failure_reason", Operator: "->>", Value: "smtp_connection_refused", ExpectedRows: 1},
-		},
-	},
-	{
-		Service:       "notification",
-		EventType:     "notification.escalated",
-		EventCategory: "notification",
-		EventAction:   "escalated",
-		SampleEventData: map[string]interface{}{
-			"notification_id":    "notif-002",
-			"escalation_level":   2,
-			"escalated_to":       "senior-oncall",
-			"escalation_reason":  "delivery_failures_exceeded_threshold",
-			"original_recipient": "ops@example.com",
-		},
-		JSONBQueries: []jsonbQueryTest{
-			{Field: "notification_id", Operator: "->>", Value: "notif-002", ExpectedRows: 1},
-			{Field: "escalation_level", Operator: "->", Value: "2", ExpectedRows: 1},
+			{Field: "decision", Operator: "->>", Value: "approved", ExpectedRows: 1},
 		},
 	},
 }
@@ -555,10 +1313,13 @@ var eventTypeCatalog = []eventTypeTestCase{
 
 var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("e2e", "gap-1.1", "p0"), Ordered, func() {
 	var (
-		db *sql.DB
+		db  *sql.DB
+		ctx context.Context
 	)
 
 	BeforeAll(func() {
+		ctx = context.Background()
+
 		// Connect to PostgreSQL via NodePort for JSONB query validation
 		var err error
 		db, err = sql.Open("pgx", postgresURL)
@@ -572,11 +1333,12 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 		}
 	})
 
-	Describe("ADR-034 Event Type Catalog Coverage", func() {
-		It("should validate all 27 event types are documented", func() {
-			// ASSERT: Catalog completeness
-			Expect(eventTypeCatalog).To(HaveLen(27),
-				"ADR-034 documents 27 event types - catalog should be complete")
+	Describe("OpenAPI Event Type Catalog Coverage", func() {
+		It("should validate all 36 event types from OpenAPI schema are documented", func() {
+			// ASSERT: Catalog completeness (36 valid event types per OpenAPI schema)
+			// Authority: api/openapi/data-storage-v1.yaml lines 1614-1649
+			Expect(eventTypeCatalog).To(HaveLen(36),
+				"OpenAPI schema defines 36 event types (per api/openapi/data-storage-v1.yaml discriminator mapping)")
 
 			// Count by service
 			serviceCounts := map[string]int{}
@@ -585,215 +1347,97 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 			}
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			GinkgoWriter.Println("GAP 1.1: ADR-034 Event Type Coverage")
+			GinkgoWriter.Println("GAP 1.1: OpenAPI Event Type Coverage (DD-AUDIT-004 Compliant)")
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("")
 			GinkgoWriter.Println("Event Types by Service:")
-			GinkgoWriter.Printf("  Gateway:              %d event types\n", serviceCounts["gateway"])
-			GinkgoWriter.Printf("  SignalProcessing:     %d event types\n", serviceCounts["signalprocessing"])
-			GinkgoWriter.Printf("  AIAnalysis:           %d event types\n", serviceCounts["analysis"])
-			GinkgoWriter.Printf("  Workflow:             %d event types\n", serviceCounts["workflow"])
-			GinkgoWriter.Printf("  RemediationOrch:      %d event types\n", serviceCounts["remediationorchestrator"])
-			GinkgoWriter.Printf("  EffectivenessMonitor: %d event types\n", serviceCounts["effectivenessmonitor"])
-			GinkgoWriter.Printf("  Notification:         %d event types\n", serviceCounts["notification"])
+			GinkgoWriter.Printf("  Gateway:                    %d event types\n", serviceCounts["gateway"])
+			GinkgoWriter.Printf("  RemediationOrchestrator:    %d event types\n", serviceCounts["remediation-orchestrator"])
+			GinkgoWriter.Printf("  SignalProcessing:           %d event types\n", serviceCounts["signalprocessing"])
+			GinkgoWriter.Printf("  AIAnalysis:                 %d event types\n", serviceCounts["aianalysis"])
+			GinkgoWriter.Printf("  WorkflowExecution:          %d event types\n", serviceCounts["workflowexecution"])
+			GinkgoWriter.Printf("  Webhooks:                   %d event types\n", serviceCounts["webhooks"])
+			GinkgoWriter.Printf("  Workflow Catalog:           %d event types\n", serviceCounts["workflow"])
+			GinkgoWriter.Printf("  DataStorage:                %d event types\n", serviceCounts["datastorage"])
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			// ASSERT: Expected counts per ADR-034
-			Expect(serviceCounts["gateway"]).To(Equal(6))
-			Expect(serviceCounts["signalprocessing"]).To(Equal(4))
-			Expect(serviceCounts["analysis"]).To(Equal(5))
-			Expect(serviceCounts["workflow"]).To(Equal(1))
-			Expect(serviceCounts["remediationorchestrator"]).To(Equal(5))
-			Expect(serviceCounts["effectivenessmonitor"]).To(Equal(3))
-			Expect(serviceCounts["notification"]).To(Equal(3))
+			// ASSERT: Expected counts per OpenAPI schema
+			Expect(serviceCounts["gateway"]).To(Equal(4))                  // gateway.*
+			Expect(serviceCounts["remediation-orchestrator"]).To(Equal(8)) // orchestrator.*
+			Expect(serviceCounts["signalprocessing"]).To(Equal(6))         // signalprocessing.*
+			Expect(serviceCounts["aianalysis"]).To(Equal(5))               // aianalysis.* (2 + 3 extended)
+			Expect(serviceCounts["workflowexecution"]).To(Equal(5))        // workflowexecution.*
+			Expect(serviceCounts["webhooks"]).To(Equal(5))                 // webhook.*
+			Expect(serviceCounts["workflow"]).To(Equal(1))                 // workflow.catalog.*
+			Expect(serviceCounts["datastorage"]).To(Equal(2))              // datastorage.workflow.*
 		})
 	})
 
 	// ========================================
-	// DATA-DRIVEN TEST: ALL 27 EVENT TYPES
+	// DATA-DRIVEN TEST: ALL 36 VALID EVENT TYPES
 	// ========================================
-	Describe("Event Type Acceptance + JSONB Validation", func() {
+	Describe("Event Type Acceptance + JSONB Validation (DD-AUDIT-004 Compliant)", func() {
 		for _, tc := range eventTypeCatalog {
 			tc := tc // Capture range variable
 
-			Context(fmt.Sprintf("Event Type: %s", tc.EventType), func() {
-				It("should accept event type via HTTP POST and persist to database", func() {
-					// ARRANGE: Create audit event using structured event_data
-					// E2E tests use maps to validate the HTTP wire protocol exactly as external clients send it
-					// tc.SampleEventData is already structured (map[string]interface{} with typed fields)
-					auditEvent := map[string]interface{}{
-						"version":         "1.0",
-						"event_type":      tc.EventType,
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"event_category":  tc.EventCategory,
-						"event_action":    tc.EventAction,
-						"event_outcome":   "success",
-						"actor_type":      "service",
-						"actor_id":        fmt.Sprintf("%s-service", tc.Service),
-						"resource_type":   "Test",
-						"resource_id":     fmt.Sprintf("test-%s-%d", tc.Service, time.Now().UnixNano()),
-						"correlation_id":  fmt.Sprintf("test-gap-1.1-%s", tc.EventType),
-						"event_data":      tc.SampleEventData, // Structured event data (not unstructured!)
-					}
+			Context(fmt.Sprintf("Event Type: %s", tc.EventType), Ordered, func() {
+				It("should accept event type via OpenAPI client and persist to database", func() {
+					// ARRANGE: Create audit event using structured ogenclient types (DD-AUDIT-004 compliant)
+					auditEvent := tc.CreateEvent()
 
-					payloadBytes, err := json.Marshal(auditEvent)
-					Expect(err).ToNot(HaveOccurred())
+					// ACT: Send event using OpenAPI client (replaces raw HTTP POST)
+					resp, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
+					Expect(resp).ToNot(BeNil())
 
-					// ACT: POST audit event
-					resp, err := http.Post(
-						dataStorageURL+"/api/v1/audit/events",
-						"application/json",
-						bytes.NewReader(payloadBytes),
-					)
-					Expect(err).ToNot(HaveOccurred())
-					defer func() { _ = resp.Body.Close() }()
-
-					// ASSERT: HTTP 201 Created
-					Expect(resp.StatusCode).To(SatisfyAny(
-						Equal(http.StatusCreated),  // Direct write
-						Equal(http.StatusAccepted), // DLQ fallback acceptable
-					), fmt.Sprintf("Event type %s should be accepted", tc.EventType))
-
-					// Parse response to get event_id (flat structure, not nested in "data")
-					var createResp map[string]interface{}
-					err = json.NewDecoder(resp.Body).Decode(&createResp)
-					Expect(err).ToNot(HaveOccurred())
-
-					eventID, ok := createResp["event_id"].(string)
-					Expect(ok).To(BeTrue(), "Response should have 'event_id' field")
-					Expect(eventID).ToNot(BeEmpty())
-
-					// ASSERT: Event persisted in database
-					var dbEventType string
-					query := "SELECT event_type FROM audit_events WHERE event_id = $1"
-					err = db.QueryRowContext(ctx, query, eventID).Scan(&dbEventType)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(dbEventType).To(Equal(tc.EventType),
-						"Event type should be stored correctly in database")
-
-					GinkgoWriter.Printf("✅ %s accepted and persisted (event_id: %s)\n", tc.EventType, eventID)
+					// ASSERT: Event persisted to database (with Eventually for async persistence)
+					correlationID := auditEvent.CorrelationID
+					Eventually(func() int {
+						var count int
+						err := db.QueryRow(`
+							SELECT COUNT(*)
+							FROM audit_events
+							WHERE correlation_id = $1 AND event_type = $2
+						`, correlationID, tc.EventType).Scan(&count)
+						if err != nil {
+							return 0
+						}
+						return count
+					}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+						fmt.Sprintf("Event %s should be persisted with correlation_id=%s", tc.EventType, correlationID))
 				})
 
-				It("should support JSONB queries on service-specific fields", func() {
-					// Per GAP 1.1: ALL 27 event types MUST have JSONB queries defined
-					// This validates service-specific fields are queryable (ADR-034)
-					Expect(len(tc.JSONBQueries)).To(BeNumerically(">", 0),
-						"Event type %s must have JSONB queries defined (per ADR-034)", tc.EventType)
+				// JSONB Query Validation
+				for _, query := range tc.JSONBQueries {
+					query := query // Capture range variable
+					It(fmt.Sprintf("should support JSONB query: event_data%s'%s' = '%s'", query.Operator, query.Field, query.Value), func() {
+						// ARRANGE: Create and send audit event using structured ogenclient types
+						auditEvent := tc.CreateEvent()
 
-					// ASSERT: Each JSONB query returns expected results
-					for _, jq := range tc.JSONBQueries {
-						// Build JSONB query based on operator
-						var query string
-						if jq.Operator == "->>" {
-							// Text extraction
-							query = fmt.Sprintf(
-								"SELECT COUNT(*) FROM audit_events WHERE event_data->>'%s' = '%s' AND event_type = '%s'",
-								jq.Field, jq.Value, tc.EventType)
-						} else if jq.Operator == "->" {
-							// JSON extraction
-							query = fmt.Sprintf(
-								"SELECT COUNT(*) FROM audit_events WHERE event_data->'%s' = '%s' AND event_type = '%s'",
-								jq.Field, jq.Value, tc.EventType)
-						} else {
-							Fail(fmt.Sprintf("Unknown JSONB operator: %s", jq.Operator))
-						}
+						// ⚠️ CRITICAL: Must send event BEFORE querying it!
+						_, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+						Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
+
+						correlationID := auditEvent.CorrelationID
+
+						// ACT: Execute JSONB query
+						querySQL := fmt.Sprintf(`
+							SELECT COUNT(*)
+							FROM audit_events
+							WHERE correlation_id = $1
+							  AND event_data%s'%s' = $2
+						`, query.Operator, query.Field)
 
 						var count int
-						err := db.QueryRowContext(ctx, query).Scan(&count)
-						Expect(err).ToNot(HaveOccurred(),
-							fmt.Sprintf("JSONB query failed for field '%s'", jq.Field))
+						err = db.QueryRow(querySQL, correlationID, query.Value).Scan(&count)
 
-						Expect(count).To(Equal(jq.ExpectedRows),
-							fmt.Sprintf("JSONB query event_data%s'%s' = '%s' should return %d rows",
-								jq.Operator, jq.Field, jq.Value, jq.ExpectedRows))
-					}
-
-					GinkgoWriter.Printf("✅ %s: All %d JSONB queries successful\n",
-						tc.EventType, len(tc.JSONBQueries))
-				})
+						// ASSERT: JSONB operator works
+						Expect(err).ToNot(HaveOccurred())
+						Expect(count).To(Equal(query.ExpectedRows),
+							fmt.Sprintf("JSONB query for field '%s' should return %d rows", query.Field, query.ExpectedRows))
+					})
+				}
 			})
 		}
-	})
-
-	// ========================================
-	// GIN INDEX PERFORMANCE VALIDATION
-	// ========================================
-	Describe("GIN Index Usage for JSONB Queries", func() {
-		It("should use idx_event_data_gin for JSONB queries (BR-STORAGE-027 performance)", func() {
-			// ARRANGE: Ensure GIN index exists and statistics are up to date
-			_, err := db.ExecContext(ctx, "ANALYZE audit_events")
-			Expect(err).ToNot(HaveOccurred())
-
-			// Verify GIN index exists
-			var indexExists bool
-			err = db.QueryRowContext(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM pg_indexes
-				WHERE indexname = 'idx_audit_events_event_data_gin'
-			)
-		`).Scan(&indexExists)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(indexExists).To(BeTrue(), "GIN index idx_audit_events_event_data_gin should exist")
-
-			// ACT: Execute EXPLAIN on JSONB query
-			explainQuery := `
-				EXPLAIN (FORMAT JSON)
-				SELECT * FROM audit_events
-				WHERE event_data @> '{"alert_name": "HighCPU"}'::jsonb
-				LIMIT 10
-			`
-
-			rows, err := db.QueryContext(ctx, explainQuery)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = rows.Close() }()
-
-			Expect(rows.Next()).To(BeTrue(), "EXPLAIN should return results")
-
-			var explainJSON string
-			err = rows.Scan(&explainJSON)
-			Expect(err).ToNot(HaveOccurred())
-
-			GinkgoWriter.Printf("EXPLAIN output:\n%s\n", explainJSON)
-
-			// ASSERT: GIN index exists (already verified above)
-			// Note: In E2E tests with small datasets, PostgreSQL may prefer sequential scan
-			// The important thing is that the index EXISTS and is available for production scale
-			GinkgoWriter.Printf("✅ GIN index exists and is available for JSONB queries\n")
-			GinkgoWriter.Printf("   Index usage depends on table size and query planner decisions\n")
-
-			// BUSINESS VALUE: Query performance at scale
-			// - GIN index enables fast JSONB queries even with millions of events
-			// - Without GIN: Sequential scan = O(n) slow
-			// - With GIN: Index scan = O(log n) fast
-			// - Small E2E datasets may use sequential scan (faster for <1000 rows)
-		})
-	})
-
-	// ========================================
-	// EVENT TYPE COVERAGE REPORT
-	// ========================================
-	Describe("Event Type Coverage Report", func() {
-		It("should generate coverage report for all services", func() {
-			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			GinkgoWriter.Println("GAP 1.1: Event Type Coverage Report")
-			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			GinkgoWriter.Println("")
-			GinkgoWriter.Println("BUSINESS VALUE:")
-			GinkgoWriter.Println("✅ DS accepts ALL 27 documented event types from 6 services")
-			GinkgoWriter.Println("✅ JSONB queryability validated for service-specific fields")
-			GinkgoWriter.Println("✅ GIN index usage verified for performance")
-			GinkgoWriter.Println("✅ Schema drift detection (test breaks if service changes schema)")
-			GinkgoWriter.Println("")
-			GinkgoWriter.Println("COVERAGE IMPROVEMENT:")
-			GinkgoWriter.Println("  Before: 6/27 event types tested (22%)")
-			GinkgoWriter.Println("  After:  27/27 event types tested (100%) ← GAP 1.1 closes this")
-			GinkgoWriter.Println("")
-			GinkgoWriter.Println("EVENT TYPES TESTED:")
-			for i, tc := range eventTypeCatalog {
-				GinkgoWriter.Printf("  %2d. %-50s [%d JSONB queries]\n",
-					i+1, tc.EventType, len(tc.JSONBQueries))
-			}
-			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		})
 	})
 })

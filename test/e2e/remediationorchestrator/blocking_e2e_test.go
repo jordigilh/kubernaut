@@ -42,9 +42,6 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking E2E Tests", Label("e
 	Describe("Consecutive Failure Detection (BR-ORCH-042.1)", func() {
 
 		It("should count consecutive Failed RRs for same fingerprint using field index", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO. " +
-				"Full test implementation available in test/integration/remediationorchestrator/blocking_integration_test.go:58")
-
 			// Test validates:
 			// - Field index on spec.signalFingerprint works (AC-042-1-4, AC-042-1-5)
 			// - Consecutive failure counting across RRs (AC-042-1-1, AC-042-1-2, AC-042-1-3)
@@ -56,4 +53,3 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking E2E Tests", Label("e
 		})
 	})
 })
-

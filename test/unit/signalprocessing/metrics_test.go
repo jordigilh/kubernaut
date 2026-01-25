@@ -41,9 +41,9 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 
 	BeforeEach(func() {
 		// Create fresh registry for each test to avoid cross-test pollution
-	// Per TESTING_GUIDELINES.md: Unit tests should use "Fresh Prometheus registry"
-	registry = prometheus.NewRegistry()
-	m = metrics.NewMetricsWithRegistry(registry)
+		// Per TESTING_GUIDELINES.md: Unit tests should use "Fresh Prometheus registry"
+		registry = prometheus.NewRegistry()
+		m = metrics.NewMetricsWithRegistry(registry)
 	})
 
 	// ========================================

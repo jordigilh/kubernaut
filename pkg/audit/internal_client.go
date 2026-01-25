@@ -21,9 +21,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	"time"
+
+	"github.com/google/uuid"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -88,7 +89,7 @@ func NewInternalAuditClient(db *sql.DB) DataStorageClient {
 //   - Single transaction: All events inserted in one transaction
 //   - Rollback on error: Transaction rolled back if any insert fails
 //   - Context cancellation: Respects context cancellation
-func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
+func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -129,22 +130,22 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*dsgen.Au
 			return fmt.Errorf("failed to marshal event_data: %w", err)
 		}
 
-		// Extract optional pointer fields (use empty string if nil)
+		// Extract optional fields (ogen uses OptString, not *string)
 		actorType := ""
-		if event.ActorType != nil {
-			actorType = *event.ActorType
+		if event.ActorType.IsSet() {
+			actorType = event.ActorType.Value
 		}
 		actorID := ""
-		if event.ActorId != nil {
-			actorID = *event.ActorId
+		if event.ActorID.IsSet() {
+			actorID = event.ActorID.Value
 		}
 		resourceType := ""
-		if event.ResourceType != nil {
-			resourceType = *event.ResourceType
+		if event.ResourceType.IsSet() {
+			resourceType = event.ResourceType.Value
 		}
 		resourceID := ""
-		if event.ResourceId != nil {
-			resourceID = *event.ResourceId
+		if event.ResourceID.IsSet() {
+			resourceID = event.ResourceID.Value
 		}
 
 		// DD-AUDIT-002 V2.0: Hardcoded defaults (OpenAPI spec doesn't have these fields)
@@ -165,7 +166,7 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*dsgen.Au
 			actorID,                    // actor_id (optional)
 			resourceType,               // resource_type (optional)
 			resourceID,                 // resource_id (optional)
-			event.CorrelationId,        // correlation_id (OpenAPI field)
+			event.CorrelationID,        // correlation_id (OpenAPI field)
 			eventDataJSON,              // event_data (JSONB)
 			defaultRetentionDays,       // retention_days (hardcoded default)
 			defaultIsSensitive,         // is_sensitive (hardcoded default)

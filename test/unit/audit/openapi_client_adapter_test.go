@@ -26,14 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
-
-// Helper function to create string pointers
-func strPtr(s string) *string {
-	return &s
-}
-
 var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "audit", "dd-api-001"), func() {
 	var (
 		ctx    context.Context
@@ -44,11 +38,11 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		ctx = context.Background()
 	})
 
-AfterEach(func() {
-	if server != nil {
-		server.Close()
-	}
-})
+	AfterEach(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
 
 	Describe("NewOpenAPIClientAdapter", func() {
 		It("should create adapter with valid parameters", func() {
@@ -100,26 +94,42 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test events using ogen union constructors (ogen migration)
+				payload1 := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert-1",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint-1",
+				}
+				payload2 := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert-2",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint-2",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event.type",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("TestResource"),
-						ResourceId:    strPtr("test-123"),
-						CorrelationId: "corr-456",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{"key": "value"},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("TestResource"),
+						ResourceID:    ogenclient.NewOptString("test-123"),
+						CorrelationID: "corr-456",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload1),
 					},
 					{
 						EventType:     "test.event.type2",
 						EventAction:   "test.action2",
-						EventCategory: "test",
-						ResourceType:  strPtr("TestResource"),
-						ResourceId:    strPtr("test-456"),
-						CorrelationId: "corr-789",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{"key2": "value2"},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("TestResource"),
+						ResourceID:    ogenclient.NewOptString("test-456"),
+						CorrelationID: "corr-789",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload2),
 					},
 				}
 
@@ -136,7 +146,7 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				err = client.StoreBatch(ctx, []*dsgen.AuditEventRequest{})
+				err = client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{})
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
@@ -147,16 +157,25 @@ AfterEach(func() {
 				client, err := audit.NewOpenAPIClientAdapter("http://localhost:1", 100*time.Millisecond)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -174,16 +193,25 @@ AfterEach(func() {
 				client, err := audit.NewOpenAPIClientAdapter(server.URL, 50*time.Millisecond)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -196,6 +224,7 @@ AfterEach(func() {
 		Context("Error Cases - HTTP 4xx (NOT Retryable)", func() {
 			It("should return HTTPError for 400 Bad Request", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
 					w.WriteHeader(http.StatusBadRequest)
 					_, _ = w.Write([]byte(`{"message": "Invalid event data"}`))
 				}))
@@ -204,16 +233,25 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -225,6 +263,7 @@ AfterEach(func() {
 
 			It("should return HTTPError for 422 Unprocessable Entity", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
 					w.WriteHeader(http.StatusUnprocessableEntity)
 					_, _ = w.Write([]byte(`{"message": "Validation failed"}`))
 				}))
@@ -233,16 +272,25 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -256,6 +304,7 @@ AfterEach(func() {
 		Context("Error Cases - HTTP 5xx (Retryable)", func() {
 			It("should return HTTPError for 500 Internal Server Error", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
 					w.WriteHeader(http.StatusInternalServerError)
 					_, _ = w.Write([]byte(`{"message": "Database connection failed"}`))
 				}))
@@ -264,16 +313,25 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -285,6 +343,7 @@ AfterEach(func() {
 
 			It("should return HTTPError for 503 Service Unavailable", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
 				}))
@@ -293,16 +352,25 @@ AfterEach(func() {
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				events := []*dsgen.AuditEventRequest{
+				// Create test event using ogen union constructor (ogen migration)
+				payload := ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+					AlertName:   "test-alert",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				}
+
+				events := []*ogenclient.AuditEventRequest{
 					{
 						EventType:     "test.event",
 						EventAction:   "test.action",
-						EventCategory: "test",
-						ResourceType:  strPtr("Test"),
-						ResourceId:    strPtr("test-1"),
-						CorrelationId: "corr-1",
-						EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-						EventData:     map[string]interface{}{},
+						EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+						ResourceType:  ogenclient.NewOptString("Test"),
+						ResourceID:    ogenclient.NewOptString("test-1"),
+						CorrelationID: "corr-1",
+						EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 					},
 				}
 
@@ -328,6 +396,7 @@ AfterEach(func() {
 				// Verify request body is valid JSON array (per OpenAPI spec)
 				Expect(r.Body).ToNot(BeNil())
 
+				w.Header().Set("Content-Type", "application/json") // Required for ogen client
 				w.WriteHeader(http.StatusCreated)
 				_, _ = w.Write([]byte(`{"message": "Success", "events_created": 1}`))
 			}))
@@ -335,16 +404,25 @@ AfterEach(func() {
 			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			events := []*dsgen.AuditEventRequest{
+			// Create test event using ogen union constructor (ogen migration - DD-API-001 compliance)
+			payload := ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+				AlertName:   "dd-api-001-compliance-test",
+				Namespace:   "default",
+				Fingerprint: "compliance-fingerprint",
+			}
+
+			events := []*ogenclient.AuditEventRequest{
 				{
 					EventType:     "dd.api.001.compliance.test",
 					EventAction:   "compliance.test",
-					EventCategory: "test",
-					ResourceType:  strPtr("ComplianceTest"),
-					ResourceId:    strPtr("test-123"),
-					CorrelationId: "corr-456",
-					EventOutcome:  dsgen.AuditEventRequestEventOutcomeSuccess,
-					EventData:     map[string]interface{}{"compliance": "DD-API-001"},
+					EventCategory: "gateway", // DD-TESTING-001: Use valid event_category from OpenAPI enum
+					ResourceType:  ogenclient.NewOptString("ComplianceTest"),
+					ResourceID:    ogenclient.NewOptString("test-123"),
+					CorrelationID: "corr-456",
+					EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventData:     ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload),
 				},
 			}
 

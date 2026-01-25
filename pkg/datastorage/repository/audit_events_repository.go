@@ -18,7 +18,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -143,30 +145,44 @@ type AuditEvent struct {
 	// ========================================
 	// RESOURCE TRACKING (4 columns)
 	// ========================================
-	ResourceType      string `json:"resource_type"` // e.g., pod, node, deployment
-	ResourceID        string `json:"resource_id"`   // Resource identifier
-	ResourceNamespace string `json:"namespace"`     // Kubernetes namespace (DB column: namespace)
-	ClusterID         string `json:"cluster_name"`  // Cluster identifier (DB column: cluster_name)
+	ResourceType      string `json:"resource_type,omitempty"` // e.g., pod, node, deployment
+	ResourceID        string `json:"resource_id,omitempty"`   // Resource identifier
+	ResourceNamespace string `json:"namespace,omitempty"`     // Kubernetes namespace (DB column: namespace)
+	ClusterID         string `json:"cluster_name,omitempty"`  // Cluster identifier (DB column: cluster_name)
 
 	// ========================================
 	// AUDIT METADATA (ADR-034)
 	// ========================================
-	Severity     string `json:"severity"`      // 'info', 'warning', 'error', 'critical'
-	DurationMs   int    `json:"duration_ms"`   // Operation duration in milliseconds
-	ErrorCode    string `json:"error_code"`    // Specific error code
-	ErrorMessage string `json:"error_message"` // Detailed error message
+	Severity     string `json:"severity,omitempty"`      // 'info', 'warning', 'error', 'critical'
+	DurationMs   int    `json:"duration_ms,omitempty"`   // Operation duration in milliseconds
+	ErrorCode    string `json:"error_code,omitempty"`    // Specific error code
+	ErrorMessage string `json:"error_message,omitempty"` // Detailed error message
 
 	// ========================================
 	// ACTOR INFORMATION (ADR-034)
 	// ========================================
-	ActorID   string `json:"actor_id"`   // User, service account, or system
-	ActorType string `json:"actor_type"` // e.g., user, service_account, system
+	ActorID   string `json:"actor_id,omitempty"`   // User, service account, or system
+	ActorType string `json:"actor_type,omitempty"` // e.g., user, service_account, system
 
 	// ========================================
 	// COMPLIANCE (ADR-034)
 	// ========================================
 	RetentionDays int  `json:"retention_days"` // Default: 2555 (7 years)
 	IsSensitive   bool `json:"is_sensitive"`   // Flag for sensitive data (GDPR, PII)
+
+	// ========================================
+	// SOC2 Gap #9: Tamper-Evidence (Hash Chain)
+	// ========================================
+	EventHash         string `json:"event_hash"`          // SHA256 hash of (previous_event_hash + event_json)
+	PreviousEventHash string `json:"previous_event_hash"` // Hash of the previous event in the chain
+
+	// ========================================
+	// SOC2 Gap #8: Legal Hold & Retention
+	// ========================================
+	LegalHold         bool       `json:"legal_hold"`           // Legal hold flag prevents deletion
+	LegalHoldReason   string     `json:"legal_hold_reason"`    // Reason for legal hold
+	LegalHoldPlacedBy string     `json:"legal_hold_placed_by"` // User who placed legal hold
+	LegalHoldPlacedAt *time.Time `json:"legal_hold_placed_at"` // Timestamp when hold was placed
 
 	// ========================================
 	// FLEXIBLE EVENT DATA (ADR-034)
@@ -188,9 +204,90 @@ func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsReposi
 	}
 }
 
-// Create inserts a new audit event into the unified audit_events table
+// ========================================
+// GAP #9: HASH CHAIN IMPLEMENTATION (Tamper-Evidence)
+// Authority: AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md - Day 7
+// SOC2 Requirement: Tamper-evident audit logs (SOC 2 Type II, NIST 800-53, Sarbanes-Oxley)
+// ========================================
+
+// calculateEventHash computes SHA256 hash for blockchain-style chain
+// Hash = SHA256(previous_event_hash + event_json)
+// This creates an immutable chain where tampering with ANY event breaks the chain
+func calculateEventHash(previousHash string, event *AuditEvent) (string, error) {
+	// CRITICAL: This MUST match calculateEventHashForVerification() in audit_export.go
+	// We must exclude fields that are:
+	// 1. The hash fields themselves (EventHash, PreviousEventHash) - not yet calculated
+	// 2. DB-generated date field (EventDate) - derived from EventTimestamp
+	// 3. Legal hold fields (LegalHold*) - can change AFTER event creation (SOC2 Gap #8)
+	// Note: EventTimestamp IS included in hash (set before calculation at line 291-292)
+	eventForHashing := *event // Create a copy
+	eventForHashing.EventHash = ""
+	eventForHashing.PreviousEventHash = ""
+	eventForHashing.EventDate = DateOnly{} // Clear derived field only
+
+	// SOC2 Gap #8: Legal hold fields can change after event creation
+	// They are NOT part of the immutable audit event hash
+	eventForHashing.LegalHold = false
+	eventForHashing.LegalHoldReason = ""
+	eventForHashing.LegalHoldPlacedBy = ""
+	eventForHashing.LegalHoldPlacedAt = nil
+
+	// Serialize event to JSON (canonical form for consistent hashing)
+	eventJSON, err := json.Marshal(eventForHashing)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
+	}
+
+	// Compute hash: SHA256(previous_hash + event_json)
+	hasher := sha256.New()
+	hasher.Write([]byte(previousHash))
+	hasher.Write(eventJSON)
+	hashBytes := hasher.Sum(nil)
+
+	return hex.EncodeToString(hashBytes), nil
+}
+
+// getPreviousEventHash retrieves the hash of the most recent event for a given correlation_id
+// Returns empty string if no previous event exists (first event in chain)
+// Uses advisory lock to prevent race conditions during concurrent inserts
+func (r *AuditEventsRepository) getPreviousEventHash(ctx context.Context, tx *sql.Tx, correlationID string) (string, error) {
+	// Step 1: Acquire advisory lock for this correlation_id (prevents race conditions)
+	// Uses PostgreSQL function audit_event_lock_id() from migration 023
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(audit_event_lock_id($1))", correlationID)
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire advisory lock: %w", err)
+	}
+
+	// Step 2: Query last event hash for this correlation_id
+	var previousHash sql.NullString
+	query := `
+		SELECT event_hash
+		FROM audit_events
+		WHERE correlation_id = $1
+		  AND event_hash IS NOT NULL
+		ORDER BY event_timestamp DESC, event_id DESC
+		LIMIT 1
+	`
+
+	err = tx.QueryRowContext(ctx, query, correlationID).Scan(&previousHash)
+	if err == sql.ErrNoRows {
+		// First event in chain - no previous hash (return empty string)
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query previous event hash: %w", err)
+	}
+
+	return previousHash.String, nil
+}
+
+// ========================================
+// END GAP #9 HASH CHAIN FUNCTIONS
+// ========================================
+
+// Create inserts a new audit event into the unified audit_events table with hash chain
 // Returns the created event with event_id and created_at populated
-// This implements the minimal functionality to pass TDD tests
+// SOC2 Gap #9: Implements blockchain-style hash chain for tamper detection
 func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (*AuditEvent, error) {
 	// Generate UUID if not provided
 	if event.EventID == uuid.Nil {
@@ -202,6 +299,16 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		event.EventTimestamp = time.Now().UTC()
 	}
 
+	// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
+	// PostgreSQL stores timestamps with microsecond precision (6 decimal places).
+	// Go's time.Time has nanosecond precision (9 decimal places).
+	// If we calculate the hash with nanosecond precision but PostgreSQL stores microseconds,
+	// verification will fail because the JSON will have different timestamps:
+	//   Creation:     "2026-01-24T10:30:45.123456789Z" (9 digits)
+	//   Verification: "2026-01-24T10:30:45.123456Z"    (6 digits)
+	// This causes different JSON → different hash → broken chain.
+	event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
+
 	// Set event_date from event_timestamp (for partitioning)
 	event.EventDate = DateOnly(time.Date(
 		event.EventTimestamp.Year(),
@@ -211,9 +318,27 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	))
 
 	// Marshal event_data to JSONB
+	// CRITICAL: Normalize event_data through JSON round-trip to ensure hash consistency
+	// PostgreSQL JSONB stores and returns JSON with normalized number types (all numbers become float64 in Go).
+	// To ensure the hash calculated during INSERT matches the hash during VERIFICATION,
+	// we must normalize event_data by round-tripping through JSON before hashing.
 	eventDataJSON, err := json.Marshal(event.EventData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
+	}
+
+	// Normalize: unmarshal and remarshal to match PostgreSQL's representation
+	var normalizedEventData map[string]interface{}
+	if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+		if err := json.Unmarshal(eventDataJSON, &normalizedEventData); err != nil {
+			return nil, fmt.Errorf("failed to normalize event_data: %w", err)
+		}
+		event.EventData = normalizedEventData // Replace with normalized version for hash calculation
+		// Re-marshal for database storage
+		eventDataJSON, err = json.Marshal(normalizedEventData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remarshal normalized event_data: %w", err)
+		}
 	}
 
 	// Prepare SQL statement (28 columns - added event_version, parent_event_date for FK constraint)
@@ -227,6 +352,44 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		version = "1.0"
 	}
 
+	// CRITICAL: Set default retention days BEFORE hash calculation
+	// This ensures the hash includes the correct retention_days value (2555)
+	// instead of 0, matching what will be read back from the DB during verification.
+	if event.RetentionDays == 0 {
+		event.RetentionDays = 2555
+	}
+
+	// ========================================
+	// SOC2 Gap #9: Hash Chain Integration
+	// ========================================
+	// Start transaction to ensure advisory lock and insert are atomic
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// Get previous event hash (with advisory lock)
+	previousHash, err := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous event hash: %w", err)
+	}
+
+	// Calculate current event hash
+	eventHash, err := calculateEventHash(previousHash, event)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate event hash: %w", err)
+	}
+
+	// Store hashes in event struct
+	event.EventHash = eventHash
+	event.PreviousEventHash = previousHash
+	// ========================================
+
 	query := `
 		INSERT INTO audit_events (
 			event_id, event_version, event_timestamp, event_date, event_type,
@@ -235,7 +398,9 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			resource_type, resource_id, namespace, cluster_name,
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data
+			retention_days, is_sensitive, event_data,
+			event_hash, previous_event_hash,
+			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
@@ -243,7 +408,9 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			$12, $13, $14, $15,
 			$16, $17,
 			$18, $19, $20, $21,
-			$22, $23, $24
+			$22, $23, $24,
+			$25, $26,
+			$27, $28, $29, $30
 		)
 		RETURNING event_timestamp
 	`
@@ -269,15 +436,15 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 	}
 
-	// Set default retention days if not specified (ADR-034: 7 years = 2555 days)
+	// Note: event.RetentionDays is already defaulted to 2555 above (before hash calculation)
+	// so we can use it directly here
 	retentionDays := event.RetentionDays
-	if retentionDays == 0 {
-		retentionDays = 2555
-	}
 
-	// Execute query (ADR-034 schema - 24 parameters)
-	var returnedTimestamp time.Time
-	err = r.db.QueryRowContext(ctx, query,
+	// Execute query (ADR-034 schema + Gap #9 hash chain + Gap #8 legal hold - 30 parameters)
+	// Note: We ignore the RETURNING event_timestamp because we already have the timestamp
+	// that was used for hash calculation (modifying it would break hash verification)
+	var ignoredTimestamp time.Time // DB-returned timestamp (not used to preserve hash integrity)
+	err = tx.QueryRowContext(ctx, query,
 		event.EventID,
 		version, // event_version
 		event.EventTimestamp,
@@ -302,20 +469,35 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		retentionDays,
 		event.IsSensitive,
 		eventDataJSON,
-	).Scan(&returnedTimestamp)
+		event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
+		event.PreviousEventHash, // Gap #9: Hash of previous event in chain
+		event.LegalHold,         // Gap #8: legal hold flag
+		sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
+		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
+		sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
+	).Scan(&ignoredTimestamp)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert audit event: %w", err)
 	}
 
-	// Populate returned timestamp
-	event.EventTimestamp = returnedTimestamp
+	// Commit transaction (releases advisory lock)
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
 
-	r.logger.V(1).Info("Audit event created",
+	// NOTE: We do NOT overwrite event.EventTimestamp with returnedTimestamp
+	// because the hash was calculated using the original timestamp.
+	// Changing it would break hash verification.
+	// The DB should store exactly what we sent (event.EventTimestamp at line 403)
+
+	r.logger.V(1).Info("Audit event created with hash chain",
 		"event_id", event.EventID.String(),
 		"event_type", event.EventType,
 		"event_category", event.EventCategory,
 		"correlation_id", event.CorrelationID,
+		"event_hash", event.EventHash[:16]+"...", // Log first 16 chars for debugging
+		"has_previous_hash", event.PreviousEventHash != "",
 	)
 
 	return event, nil
@@ -343,7 +525,19 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 
 	createdEvents := make([]*AuditEvent, 0, len(events))
 
-	// Prepare batch insert statement
+	// ========================================
+	// SOC2 Gap #9: Hash Chain Integration
+	// Group events by correlation_id to maintain hash chains
+	// ========================================
+	eventsByCorrelation := make(map[string][]*AuditEvent)
+	for _, event := range events {
+		eventsByCorrelation[event.CorrelationID] = append(eventsByCorrelation[event.CorrelationID], event)
+	}
+
+	// Track last hash for each correlation_id within this batch
+	lastHashByCorrelation := make(map[string]string)
+
+	// Prepare batch insert statement (includes hash chain columns)
 	query := `
 		INSERT INTO audit_events (
 			event_id, event_timestamp, event_date, event_type,
@@ -352,7 +546,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			resource_type, resource_id, namespace, cluster_name,
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data
+			retention_days, is_sensitive, event_data,
+			event_hash, previous_event_hash,
+			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7,
@@ -360,7 +556,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			$11, $12, $13, $14,
 			$15, $16,
 			$17, $18, $19, $20,
-			$21, $22, $23
+			$21, $22, $23,
+			$24, $25,
+			$26, $27, $28, $29
 		)
 		RETURNING event_timestamp
 	`
@@ -371,96 +569,138 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	}
 	defer func() { _ = stmt.Close() }()
 
-	for _, event := range events {
-		// Generate UUID if not provided
-		if event.EventID == uuid.Nil {
-			event.EventID = uuid.New()
-		}
-
-		// Set event_timestamp if not provided
-		if event.EventTimestamp.IsZero() {
-			event.EventTimestamp = time.Now().UTC()
-		}
-
-		// Set event_date from event_timestamp (for partitioning)
-		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
-		event.EventDate = DateOnly(eventDate)
-
-		// Marshal event_data to JSONB
-		eventDataJSON, marshalErr := json.Marshal(event.EventData)
-		if marshalErr != nil {
-			err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
+	// Process each correlation_id group sequentially to maintain chain
+	for correlationID, correlationEvents := range eventsByCorrelation {
+		// Get previous hash for this correlation_id (with advisory lock)
+		previousHash, hashErr := r.getPreviousEventHash(ctx, tx, correlationID)
+		if hashErr != nil {
+			err = fmt.Errorf("failed to get previous event hash for correlation_id %s: %w", correlationID, hashErr)
 			return nil, err
 		}
 
-		// Handle optional fields with sql.Null* types
-		// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
-		parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
-		parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
+		lastHashByCorrelation[correlationID] = previousHash
 
-		// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
-		namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-		clusterName := sqlutil.ToNullStringValue(event.ClusterID)
-		errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
-		errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
-		severity := sqlutil.ToNullStringValue(event.Severity)
+		// Process events in this correlation sequentially
+		for _, event := range correlationEvents {
+			// Generate UUID if not provided
+			if event.EventID == uuid.Nil {
+				event.EventID = uuid.New()
+			}
 
-		// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
-		var durationMs sql.NullInt32
-		if event.DurationMs != 0 {
-			durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+			// Set event_timestamp if not provided
+			if event.EventTimestamp.IsZero() {
+				event.EventTimestamp = time.Now().UTC()
+			}
+
+			// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
+			// (see Create() function for detailed explanation)
+			event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
+
+			// Set event_date from event_timestamp (for partitioning)
+			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+			event.EventDate = DateOnly(eventDate)
+
+			// Marshal event_data to JSONB
+			eventDataJSON, marshalErr := json.Marshal(event.EventData)
+			if marshalErr != nil {
+				err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
+				return nil, err
+			}
+
+			// Handle optional fields with sql.Null* types
+			// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
+			parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
+			parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
+
+			// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
+			namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
+			clusterName := sqlutil.ToNullStringValue(event.ClusterID)
+			errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
+			errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
+			severity := sqlutil.ToNullStringValue(event.Severity)
+
+			// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
+			var durationMs sql.NullInt32
+			if event.DurationMs != 0 {
+				durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+			}
+
+			// Set default retention days
+			retentionDays := event.RetentionDays
+			if retentionDays == 0 {
+				retentionDays = 2555
+			}
+
+			// ========================================
+			// SOC2 Gap #9: Calculate hash chain for this event
+			// ========================================
+			previousHash := lastHashByCorrelation[event.CorrelationID]
+
+			eventHash, hashErr := calculateEventHash(previousHash, event)
+			if hashErr != nil {
+				err = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
+				return nil, err
+			}
+
+			event.EventHash = eventHash
+			event.PreviousEventHash = previousHash
+
+			// Update last hash for this correlation_id
+			lastHashByCorrelation[event.CorrelationID] = eventHash
+			// ========================================
+
+			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 29 parameters)
+			var returnedTimestamp time.Time
+			execErr := stmt.QueryRowContext(ctx,
+				event.EventID,
+				event.EventTimestamp,
+				eventDate,
+				event.EventType,
+				event.EventCategory,
+				event.EventAction,
+				event.EventOutcome,
+				event.CorrelationID,
+				parentEventID,
+				parentEventDate,
+				event.ResourceType,
+				event.ResourceID,
+				namespace,
+				clusterName,
+				event.ActorID,
+				event.ActorType,
+				severity,
+				durationMs,
+				errorCode,
+				errorMessage,
+				retentionDays,
+				event.IsSensitive,
+				eventDataJSON,
+				event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
+				event.PreviousEventHash, // Gap #9: Hash of previous event in chain
+				event.LegalHold,         // Gap #8: legal hold flag
+				sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
+				sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
+				sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
+			).Scan(&returnedTimestamp)
+
+			if execErr != nil {
+				err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
+				return nil, err
+			}
+
+			event.EventTimestamp = returnedTimestamp
+			createdEvents = append(createdEvents, event)
 		}
-
-		// Set default retention days
-		retentionDays := event.RetentionDays
-		if retentionDays == 0 {
-			retentionDays = 2555
-		}
-
-		// Execute insert
-		var returnedTimestamp time.Time
-		execErr := stmt.QueryRowContext(ctx,
-			event.EventID,
-			event.EventTimestamp,
-			eventDate,
-			event.EventType,
-			event.EventCategory,
-			event.EventAction,
-			event.EventOutcome,
-			event.CorrelationID,
-			parentEventID,
-			parentEventDate,
-			event.ResourceType,
-			event.ResourceID,
-			namespace,
-			clusterName,
-			event.ActorID,
-			event.ActorType,
-			severity,
-			durationMs,
-			errorCode,
-			errorMessage,
-			retentionDays,
-			event.IsSensitive,
-			eventDataJSON,
-		).Scan(&returnedTimestamp)
-
-		if execErr != nil {
-			err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
-			return nil, err
-		}
-
-		event.EventTimestamp = returnedTimestamp
-		createdEvents = append(createdEvents, event)
 	}
 
-	// Commit transaction
+	// Commit transaction (releases all advisory locks)
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
 	}
 
-	r.logger.Info("Batch audit events created",
+	r.logger.Info("Batch audit events created with hash chains",
 		"count", len(createdEvents),
+		"correlation_ids", len(eventsByCorrelation),
 	)
 
 	return createdEvents, nil
@@ -483,7 +723,13 @@ type PaginationMetadata struct {
 func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, countSQL string, args []interface{}) ([]*AuditEvent, *PaginationMetadata, error) {
 	// Execute count query for pagination metadata
 	var total int
-	err := r.db.QueryRowContext(ctx, countSQL, args[:len(args)-2]...).Scan(&total) // Exclude limit and offset
+	// Safely exclude limit and offset from count query args
+	// Fix: Prevent panic if args has fewer than 2 elements
+	countArgs := args
+	if len(args) >= 2 {
+		countArgs = args[:len(args)-2] // Exclude limit and offset for count query
+	}
+	err := r.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to count audit events: %w", err)
 	}
@@ -503,6 +749,8 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		var parentEventID sql.NullString
 		var actorID, actorType, resourceType, resourceID sql.NullString
 		var severity, namespace, clusterName sql.NullString
+		var errorCode, errorMessage sql.NullString // DD-TESTING-001: Error fields
+		var durationMs sql.NullInt64                // DD-TESTING-001: Performance tracking (BR-SP-090)
 
 		err := rows.Scan(
 			&event.EventID,
@@ -523,6 +771,9 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 			&event.EventDate,
 			&namespace,
 			&clusterName,
+			&durationMs,   // DD-TESTING-001: Added for top-level field validation
+			&errorCode,    // DD-TESTING-001: Added for error validation
+			&errorMessage, // DD-TESTING-001: Added for error validation
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to scan audit event: %w", err)
@@ -556,6 +807,16 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		if clusterName.Valid {
 			event.ClusterID = clusterName.String
 		}
+		// DD-TESTING-001: Handle optional fields for comprehensive audit validation
+		if durationMs.Valid {
+			event.DurationMs = int(durationMs.Int64) // BR-SP-090: Performance tracking
+		}
+		if errorCode.Valid {
+			event.ErrorCode = errorCode.String
+		}
+		if errorMessage.Valid {
+			event.ErrorMessage = errorMessage.String
+		}
 
 		// Unmarshal event_data JSONB
 		if len(eventDataJSON) > 0 {
@@ -572,8 +833,15 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 	}
 
 	// Build pagination metadata
-	limit := int(args[len(args)-2].(int))
-	offset := int(args[len(args)-1].(int))
+	// Safely extract limit and offset from args (default to 0 if not present)
+	limit := 0
+	offset := 0
+	if len(args) >= 2 {
+		limit = int(args[len(args)-2].(int))
+		offset = int(args[len(args)-1].(int))
+	} else if len(args) == 1 {
+		limit = int(args[0].(int))
+	}
 	pagination := &PaginationMetadata{
 		Limit:   limit,
 		Offset:  offset,

@@ -343,11 +343,11 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 			})
 
-		It("should track workflow usage across multiple incident types (TC-ADR033-06)", FlakeAttempts(3), func() {
-			workflowID := "test-universal-recovery"
-			workflowVersion := "v1.0"
+			It("should track workflow usage across multiple incident types (TC-ADR033-06)", FlakeAttempts(3), func() {
+				workflowID := "test-universal-recovery"
+				workflowVersion := "v1.0"
 
-			// Setup: Same workflow used for 3 different incident types
+				// Setup: Same workflow used for 3 different incident types
 				// Incident 1: 5 executions
 				for i := 0; i < 5; i++ {
 					insertActionTrace(fmt.Sprintf("test-incident-a-%s", testID), "completed", workflowID, workflowVersion, true, false)

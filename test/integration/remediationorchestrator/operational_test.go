@@ -116,7 +116,7 @@ var _ = Describe("Operational Visibility (Priority 3)", func() {
 			// Then: All RRs should start processing (not rate limited)
 			Eventually(func() int {
 				rrList := &remediationv1.RemediationRequestList{}
-				if err := k8sClient.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+				if err := k8sManager.GetAPIReader().List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 					return 0
 				}
 
@@ -133,7 +133,7 @@ var _ = Describe("Operational Visibility (Priority 3)", func() {
 			// Then: All RRs should have SignalProcessing created
 			Eventually(func() int {
 				spList := &signalprocessingv1.SignalProcessingList{}
-				if err := k8sClient.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				if err := k8sManager.GetAPIReader().List(ctx, spList, client.InNamespace(namespace)); err != nil {
 					return 0
 				}
 				return len(spList.Items)

@@ -279,9 +279,9 @@ default result := {"environment": "", "source": "unclassified"}
 		// BR-SP-052: Partial match namespace name (should NOT match)
 		// Plan: "production-like-test" should return "unknown" to avoid false positive
 		It("BR-SP-052: should return unknown for partial match namespace name", func() {
-		policyPath := createPolicy(standardPolicy)
+			policyPath := createPolicy(standardPolicy)
 
-		var err error
+			var err error
 			envClassifier, err = classifier.NewEnvironmentClassifier(ctx, policyPath, logger)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -496,10 +496,10 @@ package signalprocessing.environment
 result = { this is not valid rego syntax
 `
 			policyPath := createPolicy(invalidPolicy)
-		// Constructor should fail with syntax error
-		_, err := classifier.NewEnvironmentClassifier(ctx, policyPath, logger)
+			// Constructor should fail with syntax error
+			_, err := classifier.NewEnvironmentClassifier(ctx, policyPath, logger)
 
-		// Should return error at construction time
+			// Should return error at construction time
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -548,9 +548,9 @@ result := {"environment": "production", "source": "never-match"} if {
 
 		// BR-SP-071: Policy file not found
 		It("BR-SP-071: should return error when policy file not found", func() {
-		_, err := classifier.NewEnvironmentClassifier(ctx, "/nonexistent/path/policy.rego", logger)
+			_, err := classifier.NewEnvironmentClassifier(ctx, "/nonexistent/path/policy.rego", logger)
 
-		Expect(err).To(HaveOccurred())
+			Expect(err).To(HaveOccurred())
 		})
 
 		// BR-SP-052: ConfigMap fallback - ConfigMap not found

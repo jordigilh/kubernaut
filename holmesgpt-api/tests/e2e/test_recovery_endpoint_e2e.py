@@ -487,7 +487,7 @@ class TestRecoveryEndpointE2EEndToEndFlow:
     """
 
     def test_complete_incident_to_recovery_flow_e2e(
-        self, incidents_api, recovery_api
+        self, incidents_api, recovery_api, test_workflows_bootstrapped
     ):
         """
         E2E: Complete flow from incident analysis to recovery attempt
@@ -496,6 +496,8 @@ class TestRecoveryEndpointE2EEndToEndFlow:
         1. Incident analyzed
         2. Workflow executed (simulated failure)
         3. Recovery analyzed
+
+        Note: test_workflows_bootstrapped fixture ensures OOMKilled workflows exist
         """
         # Step 1: Analyze initial incident
         incident_request = IncidentRequest(
@@ -534,7 +536,11 @@ class TestRecoveryEndpointE2EEndToEndFlow:
             "selected_workflow": {
                 "workflow_id": initial_workflow_id,
                 "version": "v1.0.0",
-                "container_image": incident_response.selected_workflow.get('container_image') or incident_response.selected_workflow.get('containerImage'),
+                "container_image": (
+                    incident_response.selected_workflow.get('container_image') or 
+                    incident_response.selected_workflow.get('containerImage') or 
+                    "quay.io/default-workflow:v1.0.0"  # Fallback for E2E test
+                ),
                 "parameters": incident_response.selected_workflow.get('parameters'),
                 "rationale": incident_response.selected_workflow.get('rationale')
             },

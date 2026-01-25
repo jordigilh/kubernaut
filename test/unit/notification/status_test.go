@@ -50,7 +50,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			WithStatusSubresource(&notificationv1alpha1.NotificationRequest{}).
 			Build()
 
-		statusManager = status.NewManager(fakeClient)
+		statusManager = status.NewManager(fakeClient, fakeClient)
 	})
 
 	Context("DeliveryAttempts tracking", func() {
@@ -130,17 +130,19 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// Verify all attempts recorded
-			updated := &notificationv1alpha1.NotificationRequest{}
-			err := fakeClient.Get(ctx, types.NamespacedName{
-				Name:      "retry-test",
-				Namespace: "kubernaut-notifications",
-			}, updated)
-			Expect(err).ToNot(HaveOccurred())
+		// Verify all attempts recorded
+		updated := &notificationv1alpha1.NotificationRequest{}
+		err := fakeClient.Get(ctx, types.NamespacedName{
+			Name:      "retry-test",
+			Namespace: "kubernaut-notifications",
+		}, updated)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(updated.Status.DeliveryAttempts).To(HaveLen(3))
-			Expect(updated.Status.TotalAttempts).To(Equal(3))
-			Expect(updated.Status.FailedDeliveries).To(Equal(3))
+		Expect(updated.Status.DeliveryAttempts).To(HaveLen(3))
+		Expect(updated.Status.TotalAttempts).To(Equal(3))
+		// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+		// DD-E2E-003: 3 attempts for same channel = 1 failed channel
+		Expect(updated.Status.FailedDeliveries).To(Equal(1))
 		})
 	})
 

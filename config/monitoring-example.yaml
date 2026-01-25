@@ -52,10 +52,10 @@ database:
   database: "prometheus_alerts_slm"
   username: "slm_user"
   password: "${DATABASE_PASSWORD}"
-  ssl_mode: "disable"
-  max_open_conns: 10
-  max_idle_conns: 5
-  conn_max_lifetime_minutes: 5
+  sslMode: "disable"               # CORRECTED: camelCase to match Go struct tag
+  maxOpenConns: 10                 # CORRECTED: camelCase to match Go struct tag (was max_open_conns)
+  maxIdleConns: 5                  # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
+  connMaxLifetime: "5m"            # CORRECTED: camelCase + proper duration format (was conn_max_lifetime_minutes: 5)
 
 # Vector Database Configuration (for pattern learning and analytics)
 vectordb:

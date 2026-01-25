@@ -378,7 +378,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 	})
 })
 
-var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization", func() {
+var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)", func() {
 	var (
 		adapter *adapters.KubernetesEventAdapter
 		ctx     context.Context
@@ -389,14 +389,15 @@ var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization
 		ctx = context.Background()
 	})
 
-	Context("BR-GATEWAY-002: Severity Classification (Remediation Prioritization)", func() {
-		It("maps OOMKilled to critical for immediate remediation", func() {
-			// BUSINESS OUTCOME: OOMKilled requires immediate action
-			// RO prioritizes critical > warning > info
+	Context("BR-GATEWAY-181: Event Type Pass-Through (No Reason Mapping)", func() {
+		It("passes through 'Warning' event type as-is (no OOMKilled mapping)", func() {
+			// BUSINESS OUTCOME: Gateway passes through raw K8s event type
+			// SignalProcessing Rego policies determine severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := map[string]interface{}{
-				"reason":  "OOMKilled", // Critical reason
+				"reason":  "OOMKilled", // Reason NOT used for severity
 				"message": "Container killed due to memory limit",
-				"type":    "Warning", // Event type (overridden by critical reason)
+				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
 					"kind":      "Pod",
 					"name":      "memory-hog",
@@ -409,17 +410,17 @@ var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"OOMKilled mapped to critical - requires immediate memory adjustment")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (no reason-based mapping)")
 		})
 
-		It("maps NodeNotReady to critical for cluster stability", func() {
-			// BUSINESS OUTCOME: Node failures affect entire cluster
-			// Critical severity ensures immediate node recovery workflow
+		It("passes through 'Error' event type as-is (no NodeNotReady mapping)", func() {
+			// BUSINESS OUTCOME: Gateway does NOT determine severity policy
+			// Event type passed through → SignalProcessing determines normalized severity
 			payload := map[string]interface{}{
-				"reason":  "NodeNotReady", // Critical cluster issue
+				"reason":  "NodeNotReady", // Reason NOT used for severity
 				"message": "Node is not ready",
-				"type":    "Warning",
+				"type":    "Error", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
 					"kind": "Node",
 					"name": "worker-node-1",
@@ -431,62 +432,65 @@ var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"NodeNotReady critical - node failures impact cluster capacity")
+			Expect(signal.Severity).To(Equal("Error"),
+				"BR-GATEWAY-181: Event Type 'Error' passed through (no cluster-aware mapping)")
 		})
 
-		It("maps FailedScheduling to critical for workload placement", func() {
-			// BUSINESS OUTCOME: Pods can't start - critical for application availability
+	It("passes through 'Warning' event type regardless of reason (FailedScheduling)", func() {
+		// BUSINESS OUTCOME: Gateway does NOT apply business rules for severity
+		// FailedScheduling is serious, but SignalProcessing Rego determines final severity
+		// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+		payload := map[string]interface{}{
+			"reason":  "FailedScheduling", // Reason does NOT override event type
+			"message": "0/3 nodes available: insufficient memory",
+			"type":    "Warning", // Type passed through as-is
+			"involvedObject": map[string]interface{}{
+				"kind":      "Pod",
+				"name":      "payment-api",
+				"namespace": "production",
+			},
+			"firstTimestamp": time.Now().Format(time.RFC3339),
+		}
+
+		payloadBytes, _ := json.Marshal(payload)
+		signal, err := adapter.Parse(ctx, payloadBytes)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(signal.Severity).To(Equal("Warning"),
+			"BR-GATEWAY-181: Event Type 'Warning' passed through (reason does NOT determine severity)")
+	})
+
+	It("passes through 'Error' event type as-is (generic errors)", func() {
+		// BUSINESS OUTCOME: Gateway passes through K8s event type without interpretation
+		// SignalProcessing Rego policies map 'Error' → normalized severity downstream
+		payload := map[string]interface{}{
+			"reason":  "GenericError", // Generic error reason
+			"message": "An error occurred",
+			"type":    "Error", // Type passed through as-is
+			"involvedObject": map[string]interface{}{
+				"kind":      "Pod",
+				"name":      "test-pod",
+				"namespace": "default",
+			},
+			"firstTimestamp": time.Now().Format(time.RFC3339),
+		}
+
+		payloadBytes, _ := json.Marshal(payload)
+		signal, err := adapter.Parse(ctx, payloadBytes)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(signal.Severity).To(Equal("Error"),
+			"BR-GATEWAY-181: Event Type 'Error' passed through (no default mapping)")
+	})
+
+		It("passes through 'Warning' event type as-is (BackOff reason ignored)", func() {
+			// BUSINESS OUTCOME: Gateway passes through raw K8s event type
+			// SignalProcessing Rego policies determine if BackOff is transient vs persistent
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := map[string]interface{}{
-				"reason":  "FailedScheduling", // Critical scheduling issue
-				"message": "0/3 nodes available: insufficient memory",
-				"type":    "Warning",
-				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "payment-api",
-					"namespace": "production",
-				},
-				"firstTimestamp": time.Now().Format(time.RFC3339),
-			}
-
-			payloadBytes, _ := json.Marshal(payload)
-			signal, err := adapter.Parse(ctx, payloadBytes)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"FailedScheduling critical - pods cannot start, application unavailable")
-		})
-
-		It("maps generic Error events to critical", func() {
-			// BUSINESS OUTCOME: K8s Error events indicate serious issues
-			// Even without specific reason, Error type = critical
-			payload := map[string]interface{}{
-				"reason":  "GenericError", // Generic error
-				"message": "An error occurred",
-				"type":    "Error", // Error event type
-				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "test-pod",
-					"namespace": "default",
-				},
-				"firstTimestamp": time.Now().Format(time.RFC3339),
-			}
-
-			payloadBytes, _ := json.Marshal(payload)
-			signal, err := adapter.Parse(ctx, payloadBytes)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"Error event type defaults to critical severity")
-		})
-
-		It("maps BackOff to warning for non-critical issues", func() {
-			// BUSINESS OUTCOME: BackOff indicates retryable failures
-			// Warning severity - monitor but not immediate action
-			payload := map[string]interface{}{
-				"reason":  "BackOff", // Non-critical reason
+				"reason":  "BackOff", // Reason NOT used for severity
 				"message": "Back-off restarting failed container",
-				"type":    "Warning",
+				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
 					"kind":      "Pod",
 					"name":      "flaky-app",
@@ -499,17 +503,18 @@ var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("warning"),
-				"BackOff mapped to warning - retryable failures don't require immediate action")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (BackOff reason not mapped)")
 		})
 
-		It("maps generic Warning events to warning", func() {
-			// BUSINESS OUTCOME: Generic warnings are informational
-			// Warning severity - log and monitor
+		It("passes through 'Warning' event type as-is (any reason)", func() {
+			// BUSINESS OUTCOME: Gateway extracts raw event type, no reason-based mapping
+			// SignalProcessing Rego policies handle ALL severity determination
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := map[string]interface{}{
-				"reason":  "ImagePullBackOff",
+				"reason":  "ImagePullBackOff", // Reason ignored
 				"message": "Back-off pulling image",
-				"type":    "Warning",
+				"type":    "Warning", // Type passed through
 				"involvedObject": map[string]interface{}{
 					"kind":      "Pod",
 					"name":      "test-pod",
@@ -522,8 +527,8 @@ var _ = Describe("Kubernetes Event Adapter - Severity Mapping for Prioritization
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("warning"),
-				"Non-critical warnings mapped to warning severity for monitoring")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (no reason-based mapping)")
 		})
 	})
 })

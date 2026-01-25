@@ -1237,7 +1237,7 @@ func (r *AlertRemediationReconciler) orchestratePhase(
         }
 
         // Check timeout
-        if r.isPhaseTimedOut(&alertProcessing, remediation.Spec.TimeoutConfig) {
+        if r.isPhaseTimedOut(&alertProcessing, remediation.Status.TimeoutConfig) {
             return r.handleTimeout(ctx, remediation, "alert_processing")
         }
 
@@ -1264,7 +1264,7 @@ func (r *AlertRemediationReconciler) orchestratePhase(
         }
 
         // Check timeout
-        if r.isPhaseTimedOut(&aiAnalysis, remediation.Spec.TimeoutConfig) {
+        if r.isPhaseTimedOut(&aiAnalysis, remediation.Status.TimeoutConfig) {
             return r.handleTimeout(ctx, remediation, "ai_analysis")
         }
 
@@ -1291,7 +1291,7 @@ func (r *AlertRemediationReconciler) orchestratePhase(
         }
 
         // Check timeout
-        if r.isPhaseTimedOut(&workflowExecution, remediation.Spec.TimeoutConfig) {
+        if r.isPhaseTimedOut(&workflowExecution, remediation.Status.TimeoutConfig) {
             return r.handleTimeout(ctx, remediation, "workflow_execution")
         }
 

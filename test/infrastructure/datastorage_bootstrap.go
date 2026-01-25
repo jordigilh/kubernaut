@@ -1,10 +1,10 @@
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -83,6 +83,55 @@ type DSBootstrapInfra struct {
 	Config DSBootstrapConfig // Original configuration (for reference)
 }
 
+// BuildDataStorageImage builds the DataStorage Docker image for integration tests.
+// This function is extracted to enable parallel image builds (build can happen in parallel,
+// while deployment must remain sequential due to workflow seeding dependencies).
+//
+// Returns:
+// - string: Full image name with tag (e.g., "kubernaut/datastorage:aianalysis-a1b2c3d4")
+// - error: Any errors during image build
+//
+// Per DD-TEST-004: Generates unique image tag per service to prevent collisions
+func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+	projectRoot := getProjectRoot()
+
+	// Generate DD-TEST-001 v1.3 compliant image tag
+	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
+	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
+
+	// Check if image already exists (cache hit)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
+	if checkCmd.Run() == nil {
+		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image already exists: %s\n", imageName)
+		return imageName, nil
+	}
+
+	// Build the image
+	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image (tag: %s)...\n", imageTag)
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+		"-t", imageName,
+		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
+		projectRoot,
+	)
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
+
+	if err := buildCmd.Run(); err != nil {
+		// Check if image was actually built despite error (podman cleanup issue)
+		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		if checkAgain.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
+			return imageName, nil
+		}
+		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
+	return imageName, nil
+}
+
 // StartDSBootstrap starts DataStorage infrastructure using DD-TEST-002 sequential pattern
 //
 // Sequential Startup Order (eliminates race conditions):
@@ -122,6 +171,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	_, _ = fmt.Fprintf(writer, "  DataStorage:    %s\n", infra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
+	// Step 0: Build DataStorage image (can be parallelized in test suites)
+	_, _ = fmt.Fprintf(writer, "🔨 Building DataStorage image...\n")
+	imageName, err := BuildDataStorageImage(context.Background(), cfg.ServiceName, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+	infra.DataStorageImageName = imageName
+	_, _ = fmt.Fprintf(writer, "\n")
+
 	// Step 1: Cleanup
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
 	cleanupDSBootstrapContainers(infra, writer)
@@ -140,11 +198,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := waitForDSBootstrapPostgresReady(infra, writer); err != nil {
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready (two-phase: connection + queryability)...\n")
+	// CRITICAL: Use two-phase health check to prevent "database system is starting up" errors
+	// Phase 1: pg_isready (connection check)
+	// Phase 2: SELECT 1 (queryability check)
+	// Per DD-TEST-002: This prevents race condition in migrations
+	if err := WaitForPostgreSQLReady(infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
 		return nil, fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready and queryable\n\n")
 
 	// Step 4: Migrations
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
@@ -167,11 +229,9 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 6: DataStorage
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	imageName, err := startDSBootstrapService(infra, projectRoot, writer)
-	if err != nil {
+	if err := startDSBootstrapService(infra, imageName, projectRoot, writer); err != nil {
 		return nil, fmt.Errorf("failed to start DataStorage: %w", err)
 	}
-	infra.DataStorageImageName = imageName
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := waitForDSBootstrapHTTPHealth(infra, 30*time.Second, writer); err != nil {
@@ -306,24 +366,6 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 	return cmd.Run()
 }
 
-// waitForDSBootstrapPostgresReady waits for PostgreSQL to be ready
-func waitForDSBootstrapPostgresReady(infra *DSBootstrapInfra, writer io.Writer) error {
-	for i := 1; i <= 30; i++ {
-		cmd := exec.Command("podman", "exec", infra.PostgresContainer,
-			"pg_isready", "-U", defaultPostgresUser, "-d", defaultPostgresDB)
-		if cmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   PostgreSQL ready (attempt %d/30)\n", i)
-			return nil
-		}
-		if i == 30 {
-			return fmt.Errorf("PostgreSQL failed to become ready after 30 seconds")
-		}
-		_, _ = fmt.Fprintf(writer, "   Waiting... (attempt %d/30)\n", i)
-		time.Sleep(1 * time.Second)
-	}
-	return nil
-}
-
 // runDSBootstrapMigrations applies database migrations
 // Migrations are always located at {project_root}/migrations (universal location)
 func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
@@ -395,44 +437,11 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 	return nil
 }
 
-// startDSBootstrapService starts the DataStorage container
-// Returns the full image name for cleanup purposes
-func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) (string, error) {
+// startDSBootstrapService starts the DataStorage container using a pre-built image
+// The image should be built using BuildDataStorageImage() before calling this function
+func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
-
-	// Generate DD-TEST-001 v1.3 compliant image tag
-	// Format: datastorage-{consumer}-{timestamp}
-	// Example: datastorage-gateway-1734278400
-	imageTag := generateInfrastructureImageTag("datastorage", cfg.ServiceName)
-	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
-
-	// Check if DataStorage image exists, build if not
-	checkCmd := exec.Command("podman", "image", "exists", imageName)
-	if checkCmd.Run() != nil {
-	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
-	buildCmd := exec.Command("podman", "build",
-	"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-
-		"-t", imageName,
-		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot,
-	)
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			// Check if image was actually built despite error (podman cleanup issue)
-			checkAgain := exec.Command("podman", "image", "exists", imageName)
-			if checkAgain.Run() == nil {
-				_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
-			} else {
-				return "", fmt.Errorf("failed to build DataStorage image: %w", err)
-			}
-		} else {
-			_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
-		}
-	}
 
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.DataStorageContainer,
@@ -446,6 +455,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
+		"-e", "CONN_MAX_LIFETIME=30m", // Fix for Notification/WorkflowExecution BeforeSuite failures
 		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", infra.RedisContainer),
 		"-e", "PORT=8080",
 		imageName,
@@ -453,9 +463,9 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return "", err
+		return err
 	}
-	return imageName, nil
+	return nil
 }
 
 // waitForDSBootstrapHTTPHealth waits for DataStorage /health endpoint to respond with 200 OK
@@ -483,426 +493,3 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 
 	return fmt.Errorf("timeout waiting for %s/health to become healthy after %v", infra.ServiceURL, timeout)
 }
-
-// ============================================================================
-// Generic Container Abstraction (Reusable for Any Service)
-// ============================================================================
-
-// GenericContainerConfig defines configuration for starting any container
-// This abstraction allows services to bootstrap custom dependencies (e.g., HAPI for AIAnalysis)
-// while reusing the proven sequential startup pattern from DD-TEST-002.
-//
-// Image Naming (DD-TEST-001 v1.3):
-//
-//	Use GenerateInfraImageName() helper for consistent tag generation:
-//	Image: infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis")
-//	→ "holmesgpt-api:holmesgpt-api-aianalysis-1734278400-a1b2c3d4"
-//
-// Example Usage (AIAnalysis starting HAPI):
-//
-//	hapiConfig := infrastructure.GenericContainerConfig{
-//	    Name:    "aianalysis_hapi_test",
-//	    Image:   infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis"), // DD-TEST-001 v1.3
-//	    Network: "aianalysis_test_network",
-//	    Ports:   map[int]int{18120: 8080}, // host:container
-//	    Env: map[string]string{
-//	        "LLM_PROVIDER": "mock",
-//	        "MOCK_LLM":     "true",
-//	    },
-//	    BuildContext:    ".",                     // Optional: build if needed
-//	    BuildDockerfile: "holmesgpt-api/Dockerfile",
-//	    HealthCheck: &HealthCheckConfig{
-//	        URL:     "http://127.0.0.1:18120/health",
-//	        Timeout: 30 * time.Second,
-//	    },
-//	}
-//	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, writer)
-type GenericContainerConfig struct {
-	// Container Configuration
-	Name    string            // Container name (e.g., "aianalysis_hapi_test")
-	Image   string            // Container image (e.g., "robusta-dev/holmesgpt:latest")
-	Network string            // Network to attach to (e.g., "aianalysis_test_network")
-	Ports   map[int]int       // Port mappings: host_port -> container_port
-	Env     map[string]string // Environment variables
-	Volumes map[string]string // Volume mounts: host_path -> container_path
-
-	// Build Configuration (optional, if image needs to be built)
-	BuildContext    string            // Build context directory (e.g., project root)
-	BuildDockerfile string            // Path to Dockerfile (relative to BuildContext)
-	BuildArgs       map[string]string // Build arguments
-
-	// Health Check Configuration (optional)
-	HealthCheck *HealthCheckConfig
-}
-
-// HealthCheckConfig defines how to verify container health
-type HealthCheckConfig struct {
-	URL     string        // HTTP endpoint to check (e.g., "http://127.0.0.1:8080/health")
-	Timeout time.Duration // Maximum time to wait for health check to pass
-}
-
-// ContainerInstance holds runtime information about a started container
-type ContainerInstance struct {
-	Name   string                 // Container name
-	ID     string                 // Container ID from podman
-	Ports  map[int]int            // Port mappings (host -> container)
-	Config GenericContainerConfig // Original configuration
-}
-
-// StartGenericContainer starts a container using DD-TEST-002 sequential pattern
-//
-// Process:
-// 1. Check if image exists, build if necessary (and BuildContext provided)
-// 2. Stop and remove existing container with same name
-// 3. Start container with specified configuration
-// 4. Wait for health check to pass (if HealthCheck provided)
-//
-// Returns:
-// - *ContainerInstance: Runtime information about started container
-// - error: Any errors during container startup
-func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*ContainerInstance, error) {
-	_, _ = fmt.Fprintf(writer, "🚀 Starting container: %s\n", cfg.Name)
-
-	// Step 1: Build image if needed
-	if cfg.BuildContext != "" && cfg.BuildDockerfile != "" {
-		checkCmd := exec.Command("podman", "image", "exists", cfg.Image)
-		if checkCmd.Run() != nil {
-			_, _ = fmt.Fprintf(writer, "   📦 Building image: %s\n", cfg.Image)
-			if err := buildContainerImage(cfg, writer); err != nil {
-				return nil, fmt.Errorf("failed to build image: %w", err)
-			}
-			_, _ = fmt.Fprintf(writer, "   ✅ Image built: %s\n", cfg.Image)
-		}
-	}
-
-	// Step 2: Cleanup existing container
-	_, _ = fmt.Fprintf(writer, "   🧹 Cleaning up existing container (if any)...\n")
-	stopCmd := exec.Command("podman", "stop", cfg.Name)
-	_ = stopCmd.Run() // Ignore errors
-
-	rmCmd := exec.Command("podman", "rm", cfg.Name)
-	_ = rmCmd.Run() // Ignore errors
-
-	// Step 3: Build podman run command
-	args := []string{"run", "-d", "--name", cfg.Name}
-
-	// Add network
-	if cfg.Network != "" {
-		args = append(args, "--network", cfg.Network)
-	}
-
-	// Add port mappings
-	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
-	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	for containerPort, hostPort := range cfg.Ports {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
-	}
-
-	// Add environment variables
-	for key, value := range cfg.Env {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// Add volumes
-	for hostPath, containerPath := range cfg.Volumes {
-		args = append(args, "-v", fmt.Sprintf("%s:%s", hostPath, containerPath))
-	}
-
-	// Add image
-	args = append(args, cfg.Image)
-
-	// Start container
-	_, _ = fmt.Fprintf(writer, "   🐳 Starting container with image: %s\n", cfg.Image)
-	cmd := exec.Command("podman", args...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to start container: %w", err)
-	}
-
-	// Get container ID
-	inspectCmd := exec.Command("podman", "inspect", "--format", "{{.Id}}", cfg.Name)
-	idBytes, err := inspectCmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get container ID: %w", err)
-	}
-	containerID := strings.TrimSpace(string(idBytes))
-
-	instance := &ContainerInstance{
-		Name:   cfg.Name,
-		ID:     containerID,
-		Ports:  cfg.Ports,
-		Config: cfg,
-	}
-
-	// Step 4: Health check
-	if cfg.HealthCheck != nil {
-		_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for health check: %s\n", cfg.HealthCheck.URL)
-		if err := waitForContainerHealth(cfg.HealthCheck, writer); err != nil {
-			// Print container logs for debugging
-			_, _ = fmt.Fprintf(writer, "\n⚠️  Container failed health check. Logs:\n")
-			logsCmd := exec.Command("podman", "logs", cfg.Name)
-			logsCmd.Stdout = writer
-			logsCmd.Stderr = writer
-			_ = logsCmd.Run()
-			return nil, fmt.Errorf("container health check failed: %w", err)
-		}
-		_, _ = fmt.Fprintf(writer, "   ✅ Health check passed\n")
-	}
-
-	_, _ = fmt.Fprintf(writer, "✅ Container ready: %s (ID: %s)\n\n", cfg.Name, containerID[:12])
-	return instance, nil
-}
-
-// StopGenericContainer stops and removes a container
-func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "🛑 Stopping container: %s\n", instance.Name)
-
-	stopCmd := exec.Command("podman", "stop", instance.Name)
-	stopCmd.Stdout = writer
-	stopCmd.Stderr = writer
-	_ = stopCmd.Run() // Ignore errors
-
-	rmCmd := exec.Command("podman", "rm", instance.Name)
-	rmCmd.Stdout = writer
-	rmCmd.Stderr = writer
-	_ = rmCmd.Run() // Ignore errors
-
-	_, _ = fmt.Fprintf(writer, "✅ Container stopped: %s\n", instance.Name)
-	return nil
-}
-
-// buildContainerImage builds a container image using podman build
-func buildContainerImage(cfg GenericContainerConfig, writer io.Writer) error {
-	args := []string{"build", "-t", cfg.Image, "--force-rm=false"}
-
-	// Add build args
-	for key, value := range cfg.BuildArgs {
-		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// Add dockerfile and context
-	// BuildDockerfile can be relative to BuildContext or absolute
-	dockerfilePath := cfg.BuildDockerfile
-	if !filepath.IsAbs(dockerfilePath) {
-		// Make it absolute by joining with BuildContext
-		dockerfilePath = filepath.Join(cfg.BuildContext, dockerfilePath)
-	}
-	args = append(args, "-f", dockerfilePath, cfg.BuildContext)
-
-	cmd := exec.Command("podman", args...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		// Check if image was actually built despite error (podman cleanup issue)
-		checkCmd := exec.Command("podman", "image", "exists", cfg.Image)
-		if checkCmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", cfg.Image)
-			return nil // Image exists, treat as success
-		}
-		return err // Image doesn't exist, real failure
-	}
-	return nil
-}
-
-// waitForContainerHealth waits for HTTP health check to pass
-func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
-	deadline := time.Now().Add(check.Timeout)
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(check.URL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			_ = resp.Body.Close()
-			return nil
-		}
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-
-		// Log progress every 5 seconds
-		elapsed := check.Timeout - time.Until(deadline)
-		if elapsed.Seconds() > 0 && int(elapsed.Seconds())%5 == 0 {
-			_, _ = fmt.Fprintf(writer, "   Still waiting for %s... (%.0fs elapsed)\n", check.URL, elapsed.Seconds())
-		}
-
-		time.Sleep(2 * time.Second)
-	}
-
-	return fmt.Errorf("timeout waiting for %s after %v", check.URL, check.Timeout)
-}
-
-// ============================================================================
-// E2E Test Abstractions (Build + Load to Kind + Cleanup)
-// ============================================================================
-
-// E2EImageConfig configures image building and loading for E2E tests
-type E2EImageConfig struct {
-	ServiceName      string // Service name (e.g., "gateway", "aianalysis")
-	ImageName        string // Base image name (e.g., "kubernaut/datastorage")
-	DockerfilePath   string // Relative to project root (e.g., "docker/data-storage.Dockerfile")
-	KindClusterName  string // Kind cluster name to load image into
-	BuildContextPath string // Build context path, default: "." (project root)
-	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
-}
-
-// BuildAndLoadImageToKind builds a service image and loads it into Kind cluster
-// This abstracts the common E2E pattern: build → tag → load → cleanup tracking
-//
-// Returns:
-//   - Full image name with tag for cleanup purposes
-//   - error: Any errors during build or load
-//
-// Example:
-//
-//	imageConfig := infrastructure.E2EImageConfig{
-//	    ServiceName:      "gateway",
-//	    ImageName:        "kubernaut/gateway",
-//	    DockerfilePath:   "cmd/gateway/Dockerfile",
-//	    KindClusterName:  "gateway-e2e",
-//	}
-//	imageName, err := infrastructure.BuildAndLoadImageToKind(imageConfig, GinkgoWriter)
-//	// Image built, tagged, and loaded to Kind
-//	// Later: infrastructure.CleanupE2EImage(imageName, GinkgoWriter)
-func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
-	projectRoot := getProjectRoot()
-
-	if cfg.BuildContextPath == "" {
-		cfg.BuildContextPath = projectRoot
-	}
-
-	// Generate DD-TEST-001 v1.3 compliant tag
-	// Use ServiceName for infrastructure field (not full ImageName with repo prefix)
-	// to avoid "/" in tags which Docker/Podman rejects
-	imageTag := generateInfrastructureImageTag(cfg.ServiceName, cfg.ServiceName)
-	fullImageName := fmt.Sprintf("%s:%s", cfg.ImageName, imageTag)
-
-	// Podman automatically prefixes images with "localhost/" if no registry is specified
-	// We need to use the same name for both build and load operations
-	localImageName := fmt.Sprintf("localhost/%s", fullImageName)
-
-	_, _ = fmt.Fprintf(writer, "🔨 Building E2E image: %s\n", fullImageName)
-
-	// Build image with optional coverage instrumentation
-	buildArgs := []string{"build", "-t", localImageName}
-
-	// DD-TEST-007: E2E Coverage Collection
-	// Support coverage instrumentation when E2E_COVERAGE=true or EnableCoverage flag is set
-	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == "true" {
-		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		_, _ = fmt.Fprintf(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
-	}
-
-	buildArgs = append(buildArgs, "-f", filepath.Join(projectRoot, cfg.DockerfilePath), cfg.BuildContextPath)
-
-	buildCmd := exec.Command("podman", buildArgs...)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to build E2E image: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Image built: %s\n", localImageName)
-
-	// Load to Kind via image archive (more reliable with podman)
-	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster via archive: %s\n", cfg.KindClusterName)
-
-	// Create temporary tar file
-	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", cfg.ServiceName, imageTag)
-	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to: %s\n", tmpFile)
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, localImageName)
-	saveCmd.Stdout = writer
-	saveCmd.Stderr = writer
-	if err := saveCmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to export image: %w", err)
-	}
-
-	// Load tar file into Kind
-	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", cfg.KindClusterName)
-	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-	if err := loadCmd.Run(); err != nil {
-		// Clean up tar file on error
-		_ = os.Remove(tmpFile)
-		return "", fmt.Errorf("failed to load image to Kind: %w", err)
-	}
-
-	// Clean up tar file
-	if err := os.Remove(tmpFile); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove temp file %s: %v\n", tmpFile, err)
-	}
-
-	// CRITICAL: Delete Podman image immediately after Kind load to free disk space
-	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
-	// Solution: Once in Kind, we don't need the Podman copy anymore
-	_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", localImageName)
-	rmiCmd.Stdout = writer
-	rmiCmd.Stderr = writer
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
-	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", localImageName)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
-
-	return localImageName, nil
-}
-
-// CleanupE2EImage removes a service image built for E2E tests
-// Per DD-TEST-001 v1.3: Only kubernaut-built images are cleaned, not base images
-//
-// This should be called in AfterSuite to prevent disk space exhaustion.
-//
-// Example:
-//
-//	var _ = AfterSuite(func() {
-//	    if e2eImageName != "" {
-//	        _ = infrastructure.CleanupE2EImage(e2eImageName, GinkgoWriter)
-//	    }
-//	})
-func CleanupE2EImage(imageName string, writer io.Writer) error {
-	if imageName == "" {
-		return nil
-	}
-
-	_, _ = fmt.Fprintf(writer, "🗑️  Removing E2E image: %s\n", imageName)
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
-		return err
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ E2E image removed\n")
-	return nil
-}
-
-// CleanupE2EImages removes multiple service images (batch cleanup)
-// Useful when multiple images were built for a test run.
-//
-// Example:
-//
-//	var _ = AfterSuite(func() {
-//	    images := []string{gatewayImage, dataStorageImage, hapiImage}
-//	    _ = infrastructure.CleanupE2EImages(images, GinkgoWriter)
-//	})
-func CleanupE2EImages(imageNames []string, writer io.Writer) error {
-	var errs []error
-	for _, imageName := range imageNames {
-		if err := CleanupE2EImage(imageName, writer); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to cleanup %d images", len(errs))
-	}
-	return nil
-}
-
-// ============================================================================
-// Shared Utility Functions
-// ============================================================================
-
-// getProjectRoot is defined in aianalysis.go (shared across infrastructure package)

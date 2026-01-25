@@ -75,8 +75,18 @@ func (h *AnalyzingHandler) Name() string {
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
 
-	// Track phase for audit logging
+	// Track phase for audit logging (used for idempotency check)
 	oldPhase := analysis.Status.Phase
+
+	// AA-BUG-009: Idempotency check #1 - Per RO pattern (RO_AUDIT_DUPLICATION_RISK_ANALYSIS_JAN_01_2026.md - Option C)
+	// Skip if we're ALREADY in Completed state for this generation
+	// This prevents duplicate processing and audit events when controller reconciles due to annotation/label changes
+	if analysis.Status.ObservedGeneration == analysis.Generation && oldPhase == aianalysis.PhaseCompleted {
+		h.log.Info("Already in Completed phase for this generation, skipping",
+			"generation", analysis.Generation,
+			"phase", oldPhase)
+		return ctrl.Result{}, nil
+	}
 
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
 	if analysis.Status.SelectedWorkflow == nil {
@@ -88,6 +98,12 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 		// BR-HAPI-197: Track failure metrics
 		h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
+
+		// DD-AUDIT-003: Record analysis failure audit event
+		failureErr := fmt.Errorf("no workflow selected from investigation")
+		if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+		}
 
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
@@ -105,6 +121,11 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	result, err := h.evaluator.Evaluate(ctx, input)
 	regoDuration := metav1.Now().Sub(regoStartTime.Time).Milliseconds()
 
+	// Ensure minimum duration of 1ms for audit trail (evaluation time may round to 0)
+	if regoDuration == 0 {
+		regoDuration = 1
+	}
+
 	if err != nil {
 		// This shouldn't happen - evaluator should handle errors gracefully
 		// But if it does, use safe defaults
@@ -121,11 +142,16 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
 		analysis.Status.Reason = "RegoEvaluationError"
 
-		// BR-HAPI-197: Track failure metrics
-		h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
+	// BR-HAPI-197: Track failure metrics
+	h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
 
-		// Set AnalysisComplete=False condition
-		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
+	// DD-AUDIT-003: Record analysis failure audit event
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Set AnalysisComplete=False condition
+	aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 
 		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
 		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)

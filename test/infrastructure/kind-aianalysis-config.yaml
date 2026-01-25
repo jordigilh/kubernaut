@@ -56,5 +56,3 @@ nodes:
         # Increase controller manager QPS for CRD operations
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-

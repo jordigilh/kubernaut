@@ -37,9 +37,9 @@ Implement 26 missing RO integration tests identified in triage, following strict
    - Status: RED phase (test validates normal progression)
    - Confidence: 95%
 
-⏸️  Test 3: "should respect per-remediation timeout override (spec.timeoutConfig)"
+⏸️  Test 3: "should respect per-remediation timeout override (status.timeoutConfig)"
    - BR: BR-ORCH-028 (P1 HIGH)
-   - Status: PENDING - Requires CRD schema update (spec.timeoutConfig field)
+   - Status: PENDING - Requires CRD schema update (status.timeoutConfig field)
    - Marked with: PIt() per TESTING_GUIDELINES.md
    - Priority: P1 but blocked by schema change
    - Estimated Time: 1 hour after schema available
@@ -169,7 +169,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 ```
 BLOCKER: Requires CRD schema update
 File:    api/remediation/v1alpha1/remediationrequest_types.go
-Change:  Add spec.timeoutConfig field
+Change:  Add status.timeoutConfig field
 
 type RemediationRequestSpec struct {
     // ... existing fields ...
@@ -197,7 +197,7 @@ BLOCKER: Requires configuration approach decision
 Options:
   A) ConfigMap with phase timeout rules
   B) Hardcoded per-phase timeouts in controller
-  C) CRD spec field (spec.timeoutConfig.phaseTimeouts)
+  C) CRD spec field (status.timeoutConfig.phaseTimeouts)
 
 Recommendation: Option A (ConfigMap) for flexibility without CRD changes
 ```
@@ -320,7 +320,7 @@ Result: Unblocks Tests 3-4
 ### **Files for Future Schema Changes** (Blocked):
 ```
 1. api/remediation/v1alpha1/remediationrequest_types.go
-   - Add spec.timeoutConfig field (Test 3)
+   - Add status.timeoutConfig field (Test 3)
    - Requires team approval
 ```
 

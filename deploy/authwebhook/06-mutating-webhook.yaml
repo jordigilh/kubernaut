@@ -1,0 +1,104 @@
+# MutatingWebhookConfiguration for WorkflowExecution, RemediationApprovalRequest, and RemediationRequest
+#
+# Purpose: Intercept CRD status updates to inject user attribution for SOC2 compliance
+#
+# SOC2 CC8.1 Requirement:
+# - Track who initiated remediation actions
+# - Track who approved/rejected remediation requests
+# - Capture authenticated user identity in audit trail
+#
+# Webhook Flow:
+# 1. User/Service updates CRD status (e.g., WorkflowExecution.status.state = "approved")
+# 2. Kubernetes API server calls authwebhook mutating endpoint
+# 3. Webhook extracts user identity from AdmissionReview.request.userInfo
+# 4. Webhook injects user identity into status field (e.g., approvedBy, initiatedBy)
+# 5. Kubernetes API server persists mutated CRD with user attribution
+# 6. Workflow controllers detect status change and create audit events
+#
+# Security: mTLS authentication via cert-manager managed certificate
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: authwebhook-mutating
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+  annotations:
+    # cert-manager will inject CA bundle automatically
+    cert-manager.io/inject-ca-from: kubernaut-system/authwebhook-tls
+webhooks:
+  - name: workflowexecution.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: kubernaut-system
+        path: /mutate-workflowexecution
+        port: 443
+      # CA bundle injected by cert-manager
+      caBundle: ""
+    failurePolicy: Fail  # Block operations if webhook is unavailable (SOC2 requirement)
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernaut.ai/audit-enabled: "true"  # Only audit in labeled namespaces
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["workflowexecutions/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+
+  - name: remediationapprovalrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: kubernaut-system
+        path: /mutate-remediationapprovalrequest
+        port: 443
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernaut.ai/audit-enabled: "true"
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: kubernaut-system
+        path: /mutate-remediationrequest
+        port: 443
+      caBundle: ""
+    failurePolicy: Fail  # Block operations if webhook is unavailable (SOC2 requirement)
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernaut.ai/audit-enabled: "true"  # Only audit in labeled namespaces
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+
+

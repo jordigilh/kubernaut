@@ -191,7 +191,7 @@ rr := &remediationv1.RemediationRequest{
 - Integration tests focus on infrastructure interaction, not time-based logic
 
 **Option B: Use Very Short Timeouts**
-- Change test to use 5-second timeout (override via `spec.timeoutConfig.global`)
+- Change test to use 5-second timeout (override via `status.timeoutConfig.global`)
 - Actually wait 5+ seconds in the test
 - **Downside**: Makes tests slower, still testing same logic as unit tests
 

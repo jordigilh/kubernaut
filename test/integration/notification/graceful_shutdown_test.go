@@ -79,8 +79,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -103,7 +103,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			// Wait for delivery to start (Pending → Sending)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -123,7 +123,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			// BEHAVIOR VALIDATION: Delivery completes to terminal state
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -160,8 +160,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -184,7 +184,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 			// BEHAVIOR VALIDATION: In normal operation, delivery proceeds
 			// (In real shutdown with SIGTERM, new CRDs would stay Pending)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -221,8 +221,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -244,7 +244,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			// Wait for delivery completion
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -288,8 +288,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -313,7 +313,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			// BEHAVIOR VALIDATION: Operation completes within reasonable time
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

@@ -9,8 +9,8 @@
 server:
   port: 18090  # Host network uses direct port
   host: "0.0.0.0"
-  read_timeout: "30s"
-  write_timeout: "30s"
+  readTimeout: "30s"
+  writeTimeout: "30s"
 
 logging:
   level: "info"
@@ -24,11 +24,11 @@ database:
   # ADR-030 Section 6: Secrets loaded from mounted files
   secretsFile: "/app/secrets/database-credentials.yaml"
   passwordKey: "password"
-  sslmode: "disable"
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: "5m"
-  conn_max_idle_time: "5m"
+  sslMode: "disable"
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
+  connMaxIdleTime: "5m"
 
 redis:
   addr: "localhost:6379"  # Host network

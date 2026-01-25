@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -69,7 +70,7 @@ type NotificationPhase string
 const (
 	NotificationPhasePending       NotificationPhase = "Pending"
 	NotificationPhaseSending       NotificationPhase = "Sending"
-	NotificationPhaseRetrying      NotificationPhase = "Retrying"      // Partial failure with retries remaining (non-terminal)
+	NotificationPhaseRetrying      NotificationPhase = "Retrying" // Partial failure with retries remaining (non-terminal)
 	NotificationPhaseSent          NotificationPhase = "Sent"
 	NotificationPhasePartiallySent NotificationPhase = "PartiallySent"
 	NotificationPhaseFailed        NotificationPhase = "Failed"
@@ -127,24 +128,6 @@ type RetryPolicy struct {
 	MaxBackoffSeconds int `json:"maxBackoffSeconds,omitempty"`
 }
 
-// FileDeliveryConfig defines file-based delivery configuration
-// Used when ChannelFile is specified in Channels array
-// Enables audit trails and compliance logging (BR-NOT-034)
-type FileDeliveryConfig struct {
-	// Output directory for notification files
-	// Required when ChannelFile is specified
-	// Directory must exist and be writable by the controller
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	OutputDirectory string `json:"outputDirectory"`
-
-	// File format (json, yaml)
-	// +kubebuilder:default=json
-	// +kubebuilder:validation:Enum=json;yaml
-	// +optional
-	Format string `json:"format,omitempty"`
-}
-
 // ActionLink represents an external service action link
 type ActionLink struct {
 	// Service name (github, grafana, prometheus, kubernetes-dashboard, etc.)
@@ -172,6 +155,12 @@ type ActionLink struct {
 //
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (DD-NOT-005)"
 type NotificationRequestSpec struct {
+	// Reference to parent RemediationRequest (if applicable)
+	// Used for audit correlation and lineage tracking (BR-NOT-064)
+	// Optional: NotificationRequest can be standalone (e.g., system-generated alerts)
+	// +optional
+	RemediationRequestRef *corev1.ObjectReference `json:"remediationRequestRef,omitempty"`
+
 	// Type of notification (escalation, simple, status-update)
 	// +kubebuilder:validation:Required
 	Type NotificationType `json:"type"`
@@ -218,13 +207,6 @@ type NotificationRequestSpec struct {
 	// Retry policy for delivery
 	// +optional
 	RetryPolicy *RetryPolicy `json:"retryPolicy,omitempty"`
-
-	// File delivery configuration
-	// Required when ChannelFile is specified in Channels array
-	// Specifies output directory and format for file-based notifications
-	// Used for audit trails and compliance logging (BR-NOT-034)
-	// +optional
-	FileDeliveryConfig *FileDeliveryConfig `json:"fileDeliveryConfig,omitempty"`
 
 	// Retention period in days after completion
 	// +kubebuilder:default=7

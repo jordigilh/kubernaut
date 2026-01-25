@@ -1,0 +1,37 @@
+# Kind cluster configuration for AuthWebhook E2E tests
+# Per DD-TEST-001: Port Allocation Strategy
+#
+# Port Mappings (AuthWebhook E2E):
+# - PostgreSQL: 25442 (host) -> 30442 (NodePort) -> 5432 (container)
+# - Redis: 26386 (host) -> 30386 (NodePort) -> 6379 (container)
+# - Data Storage: 28099 (host) -> 30099 (NodePort) -> 8080 (container)
+# - AuthWebhook: 30443 (NodePort) -> 9443 (container)
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      # Mount for coverage data collection (DD-TEST-007)
+      # Using relative path for podman compatibility (like datastorage)
+      - hostPath: ./coverdata
+        containerPath: /coverdata
+        readOnly: false
+    extraPortMappings:
+      # PostgreSQL NodePort mapping (per DD-TEST-001 line 203-208)
+      - containerPort: 30442
+        hostPort: 25442
+        protocol: TCP
+      # Redis NodePort mapping (per DD-TEST-001 line 209-214)
+      - containerPort: 30386
+        hostPort: 26386
+        protocol: TCP
+      # Data Storage NodePort mapping (per DD-TEST-001 line 219-224)
+      - containerPort: 30099
+        hostPort: 28099
+        protocol: TCP
+      # AuthWebhook NodePort mapping (per DD-TEST-001 line 216-218)
+      - containerPort: 30443
+        hostPort: 30443
+        protocol: TCP
+

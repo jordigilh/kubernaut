@@ -399,6 +399,47 @@ Per-CRD Immutability Decisions:
   Each CRD controller team decides immutability based on business semantics.
 ```
 
+**Implementation Status** (Updated: 2026-01-19):
+
+| CRD | Spec Immutable? | Implementation | Rationale | Status |
+|-----|----------------|----------------|-----------|--------|
+| **NotificationRequest** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (notification delivery) | ✅ Complete |
+| **RemediationApprovalRequest** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (approval decision) | ✅ Complete |
+| **WorkflowExecution** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (workflow execution attempt) | ✅ Complete (2026-01-19) |
+| **SignalProcessing** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (signal enrichment) | ✅ Complete (2026-01-19) |
+| **AIAnalysis** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (AI investigation) | ✅ Complete (2026-01-19) |
+| **RemediationRequest** | ✅ **YES** | `+kubebuilder:validation:XValidation` | Immutable event (signal received, remediation required) | ✅ Complete (2026-01-19) |
+
+**Security Impact - ALL RESOLVED** ✅:
+- ✅ **WorkflowExecution**: Spec immutability prevents tampering with `targetResource` or `parameters` post-approval
+  - Protection: Cannot execute workflows on unmanaged resources
+  - Protection: SOC2 audit trail integrity (executed spec = approved spec)
+  - Status: ✅ RESOLVED (2026-01-19)
+
+- ✅ **SignalProcessing**: Spec immutability prevents signal data modification during processing
+  - Protection: Signal enrichment cannot be bypassed or corrupted
+  - Protection: Consistent context passed to AIAnalysis
+  - Status: ✅ RESOLVED (2026-01-19)
+
+- ✅ **AIAnalysis**: Spec immutability prevents RCA target or HAPI response tampering
+  - Protection: AI recommendations cannot be changed post-HAPI validation
+  - Protection: Workflow selection integrity
+  - Status: ✅ RESOLVED (2026-01-19)
+
+- ✅ **RemediationRequest**: Full spec immutability prevents signal metadata modification
+  - Protection: Signal data consistent across all child CRDs
+  - Protection: Audit trail integrity for entire remediation lifecycle
+  - Status: ✅ RESOLVED (2026-01-19)
+
+**Implementation Complete**: All Kubernaut CRDs now enforce spec immutability per ADR-001 design principle.
+
+**Benefits Achieved**:
+- ✅ Zero race conditions during reconciliation
+- ✅ Status-spec consistency guaranteed
+- ✅ Complete audit trail (spec matches what was executed)
+- ✅ Simplified controller logic (no observedGeneration tracking needed)
+- ✅ SOC2 compliance (immutability requirement satisfied)
+
 ---
 
 ### **Negative Consequences**
