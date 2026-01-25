@@ -32,7 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("SignalProcessingCreator", func() {
@@ -67,7 +67,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 				// Arrange - use testutil factory
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
-				rr := testutil.NewRemediationRequest("test-remediation", "default")
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
 
 				// Act
 				name, err := spCreator.Create(ctx, rr)
@@ -87,7 +87,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 				}
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingSP).Build()
 				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
-				rr := testutil.NewRemediationRequest("test-remediation", "default")
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
 
 				// Act
 				name, err := spCreator.Create(ctx, rr)
@@ -101,7 +101,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 				// Arrange - use testutil factory with custom options
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
-				rr := testutil.NewRemediationRequest("test-remediation", "default", testutil.RemediationRequestOpts{
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
 					Severity:    "critical",
 					Priority:    "P0",
 					Environment: "production",
@@ -147,7 +147,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 				// Arrange - use testutil factory
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
-				rr := testutil.NewRemediationRequest("test-remediation", "default")
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
 
 				// Act
 				name, err := spCreator.Create(ctx, rr)
@@ -175,7 +175,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 					fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 						WithInterceptorFuncs(interceptFunc).Build()
 					spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
-					rr := testutil.NewRemediationRequest("test-remediation", "default")
+					rr := helpers.NewRemediationRequest("test-remediation", "default")
 
 					// Act
 					_, err := spCreator.Create(ctx, rr)

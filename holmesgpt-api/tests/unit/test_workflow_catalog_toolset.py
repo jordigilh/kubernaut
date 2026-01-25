@@ -55,8 +55,8 @@ from src.toolsets.workflow_catalog import (
     WorkflowCatalogToolset
 )
 from holmes.core.tools import StructuredToolResultStatus
-from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+from datastorage.models.workflow_search_response import WorkflowSearchResponse
+from datastorage.models.workflow_search_result import WorkflowSearchResult
 
 
 class TestWorkflowCatalogToolset:
@@ -205,7 +205,7 @@ class TestWorkflowCatalogDataStorageIntegration:
     4. Error handling: HTTP failures, timeouts, invalid responses
     """
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_http_client_integration_br_storage_013(self, mock_search):
         """
         BR-STORAGE-013: Tool must call Data Storage Service REST API via OpenAPI client
@@ -217,7 +217,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         """
         # Setup mock OpenAPI response
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"),
+            workflow_id=str(UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d")),
             title="OOMKill Remediation - Increase Memory Limits",
             description="Increases memory limits for pods experiencing OOMKilled.",
             signal_type="OOMKilled",
@@ -259,7 +259,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         assert result.status == StructuredToolResultStatus.SUCCESS, \
             "BR-STORAGE-013: Tool must return SUCCESS for valid API response"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_query_transformation_dd_llm_001(self, mock_search):
         """
         DD-LLM-001: Transform LLM query into WorkflowSearchRequest format via OpenAPI client
@@ -271,7 +271,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         """
         # Setup mock OpenAPI response
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"),
+            workflow_id=str(UUID("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d")),
             title="OOMKill Remediation",
             description="Test",
             signal_type="OOMKilled",
@@ -310,7 +310,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         assert filters.severity == "critical", \
             "DD-LLM-001: severity must be second word of query"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_response_transformation_dd_workflow_004(self, mock_search):
         """
         DD-WORKFLOW-004: Transform WorkflowSearchResponse into tool result via OpenAPI client
@@ -327,7 +327,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         """
         # Setup mock OpenAPI response with DD-WORKFLOW-002 v3.0 flat format
         mock_workflow = WorkflowSearchResult(
-            workflow_id=UUID("2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e"),
+            workflow_id=str(UUID("2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e")),
             title="OOMKill Remediation",
             description="Increases memory limits",
             signal_type="OOMKilled",
@@ -371,7 +371,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         assert "label_boost" not in workflow, \
             "DD-WORKFLOW-002 v2.2: label_boost is internal, not exposed to LLM"
 
-    @patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
+    @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_http_error_handling_br_storage_013(self, mock_search):
         """
         BR-STORAGE-013: Handle Data Storage Service errors gracefully via OpenAPI client
@@ -382,7 +382,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         🔄 PRODUCTION: Robust error handling for API integration using OpenAPI client
         """
         # Setup mock to raise API error
-        from src.clients.datastorage.exceptions import ApiException
+        from datastorage.exceptions import ApiException
         mock_search.side_effect = ApiException(status=0, reason="Connection refused")
 
         toolset = WorkflowCatalogToolset()

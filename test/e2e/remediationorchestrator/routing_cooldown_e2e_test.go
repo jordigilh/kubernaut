@@ -42,9 +42,6 @@ var _ = Describe("Routing Workflow Cooldown E2E Tests", Label("e2e", "routing", 
 	Describe("Workflow Cooldown Blocking (RecentlyRemediated)", func() {
 
 		It("should block RR when same workflow+target executed within cooldown period", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO. " +
-				"Full test implementation available in test/integration/remediationorchestrator/routing_integration_test.go:74")
-
 			// Test validates:
 			// - First RR completes successfully with WorkflowExecution
 			// - Second RR with same workflow+target transitions to Blocked
@@ -59,4 +56,3 @@ var _ = Describe("Routing Workflow Cooldown E2E Tests", Label("e2e", "routing", 
 		})
 	})
 })
-

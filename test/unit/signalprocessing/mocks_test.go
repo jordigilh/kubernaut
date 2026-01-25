@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -177,4 +177,3 @@ func newDefaultMockK8sEnricher() *mockK8sEnricher {
 func newMockK8sEnricherWithClient(c client.Client) *mockK8sEnricher {
 	return &mockK8sEnricher{Client: c}
 }
-

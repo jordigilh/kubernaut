@@ -1,14 +1,15 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.5
-**Last Updated**: 2025-12-07
+**Version**: v1.6
+**Last Updated**: 2026-01-09
 **Status**: ✅ APPROVED
 **Owner**: Gateway Team
-**Total BRs**: 74 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
+**Total BRs**: 75 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
 
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-111**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
 > | v1.5 | 2025-12-07 | BR-GATEWAY-038: Rate limiting code REMOVED (middleware + tests). Proxy delegation complete. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
 > | v1.4 | 2025-12-07 | BR-GATEWAY-038 (Rate Limiting): Delegated to Ingress/Route proxy. Gateway middleware DEPRECATED. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
 > | v1.3 | 2025-12-06 | Classification code REMOVED from Gateway (not placeholder). Updated BR-007, BR-014-017 to reflect file deletions. | [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md) |
@@ -62,11 +63,21 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: `test/unit/gateway/deduplication_test.go`
 
 ### **BR-GATEWAY-005: Signal Metadata Extraction**
-**Description**: Gateway must extract namespace, pod, severity, and other metadata from signals
+**Description**: Gateway must extract severity, namespace, and resource metadata from external signals **without transformation or interpretation**
 **Priority**: P0 (Critical)
+**Status**: ✅ Complete (Updated 2026-01-16 - Pass-through architecture per DD-SEVERITY-001)
 **Test Coverage**: ✅ Unit + Integration
-**Implementation**: `pkg/gateway/adapters/*/adapter.go`
-**Tests**: `test/unit/gateway/adapters/*_test.go`
+**Implementation**: `pkg/gateway/adapters/prometheus_adapter.go`, `pkg/gateway/adapters/kubernetes_event_adapter.go`
+**Tests**: `test/integration/gateway/custom_severity_test.go`, `test/unit/gateway/adapters/*_test.go`
+
+**Clarification** (2026-01-16 per DD-SEVERITY-001): Gateway acts as a "dumb pipe" - extracts and preserves values, never determines policy-based classifications. Severity determination is owned by SignalProcessing via Rego policy (BR-SP-105).
+
+**Examples**:
+- Prometheus alert with `labels.severity="Sev1"` → `RR.Spec.Severity="Sev1"` (preserved)
+- K8s event with `Type="Warning"` → `RR.Spec.Severity="Warning"` (preserved)
+- Missing severity → `RR.Spec.Severity="unknown"` (default, not policy)
+
+**Authority**: [DD-SEVERITY-001](../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), BR-GATEWAY-111
 
 ### **BR-GATEWAY-006: Signal Timestamp Validation**
 **Description**: Gateway must validate signal timestamps and reject stale signals
@@ -75,8 +86,14 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/middleware/timestamp_validation.go`
 **Tests**: `test/unit/gateway/middleware/timestamp_validation_test.go`
 
-### **BR-GATEWAY-007: Signal Priority Classification** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
-**Description**: ~~Gateway must classify signals into P0/P1/P2/P3 priorities based on severity~~ **REMOVED**: Priority classification completely removed from Gateway (2025-12-06). Signal Processing Service now owns this functionality.
+### **BR-GATEWAY-007: Signal Priority Classification** ⛔ **DEPRECATED (2026-01-16)**
+**Status**: ⛔ **DEPRECATED** (2026-01-16 per DD-SEVERITY-001)
+**Reason**: Priority determination moved to SignalProcessing Rego (BR-SP-070)
+**Replacement**: Gateway passes through raw priority hints (if present in labels), SignalProcessing determines final priority
+**Migration**: Removed priority determination logic from Gateway adapters (2025-12-06)
+**Authority**: [DD-SEVERITY-001](../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md)
+
+**Description**: ~~Gateway must classify signals into P0/P1/P2/P3 priorities based on severity~~ **REMOVED**: Priority classification completely removed from Gateway. Signal Processing Service now owns this functionality via Rego policy (BR-SP-070).
 **Priority**: P0 (Critical)
 **Test Coverage**: ❌ N/A - Code removed from Gateway
 **Implementation**: ~~`pkg/gateway/processing/priority_classification.go`~~ **DELETED** (2025-12-06)
@@ -701,74 +718,47 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: None
 **Tests**: None
 
----
+### **BR-GATEWAY-181: Signal Pass-Through Architecture** 🆕
+**Description**: Gateway MUST normalize external signals to CRD format WITHOUT interpreting or transforming semantic values (severity, environment, priority). Gateway acts as a "dumb pipe" that extracts and preserves values, never determines policy-based classifications.
 
-## 📊 **BR Coverage Summary**
+**Priority**: P0 (Critical - Blocks customer onboarding)
+**Status**: ✅ **COMPLETE** (2026-01-16 - Week 3 from DD-SEVERITY-001)
+**Category**: Signal Normalization
+**Test Coverage**: 🟡 **Partial** (Adapter refactoring complete, tests pending)
 
-### **Total BRs**: 74 identified BRs
+**Acceptance Criteria**:
+- [x] Extract severity label from external source → `Spec.Severity` (preserve EXACT value, no transformation) ✅ **COMPLETE**
+- [ ] Extract environment label from external source → `Spec.Environment` (preserve EXACT value or empty string, no default) ⏳ **Pending Week 1 CRD changes**
+- [ ] Extract priority label from external source → `Spec.Priority` (preserve EXACT value or empty string, no default) ⏳ **Pending Week 1 CRD changes**
+- [x] NO hardcoded severity mappings (e.g., `"Sev1"` → `"warning"`) ✅ **COMPLETE**
+- [x] NO default fallback values for non-empty strings (e.g., unknown severity → `"warning"`) ✅ **COMPLETE**
+- [x] NO transformation logic based on business rules ✅ **COMPLETE**
+- [ ] CRD validation MUST accept any string value (not enum-restricted) ⏳ **Waiting on Week 1 CRD schema changes**
+- [ ] Audit trail MUST log external→CRD field mappings for debugging ⏳ **Planned**
 
-### **By Priority**:
-- **P0 (Critical)**: 25 BRs
-- **P1 (High)**: 30 BRs
-- **P2 (Medium)**: 15 BRs
-- **P3 (Low)**: 1 BR
-- **N/A**: 3 BRs
+**Rationale**:
+- **Separation of Concerns**: Policy logic (severity/environment/priority determination) belongs in SignalProcessing where full Kubernetes context is available
+- **Operator Control**: Severity/environment mappings are operator-defined via SignalProcessing Rego policies, not hardcoded in Gateway
+- **Customer Extensibility**: Customers can use ANY severity scheme (Sev1-4, P0-P4, Critical/High/Medium/Low) without Gateway code changes
+- **Architectural Consistency**: Matches DD-CATEGORIZATION-001 pattern where Gateway ingests, SignalProcessing categorizes
 
-### **By Test Coverage**:
-- ✅ **Covered**: 35 BRs (47%)
-- ❌ **Missing**: 38 BRs (51%)
-- ⏳ **Planned**: 1 BR (1%)
+**Implementation**:
+- ✅ `pkg/gateway/adapters/prometheus_adapter.go`: Removed `determineSeverity()` hardcoded switch (**COMPLETE 2026-01-16**)
+- ✅ `pkg/gateway/adapters/kubernetes_event_adapter.go`: Removed `mapSeverity()` hardcoded logic (**COMPLETE 2026-01-16**)
+- ⏳ `api/remediation/v1alpha1/remediationrequest_types.go`: Remove `+kubebuilder:validation:Enum` from `Spec.Severity` (**Waiting on Week 1**)
 
-### **By Test Tier**:
-- **Unit Tests**: ~30-35 BRs (41-47%)
-- **Integration Tests**: ~25-30 BRs (34-41%)
-- **E2E Tests**: ~5 BRs (7%)
+**Tests**:
+- ⏳ `test/unit/gateway/adapters/prometheus_adapter_test.go`: Verify pass-through (input "Sev1" → output "Sev1") (**Pending creation**)
+- ⏳ `test/integration/gateway/custom_severity_test.go`: End-to-end with non-standard severity values (**Pending creation**)
 
----
+**Related BRs**:
+- BR-SP-105 (SignalProcessing Severity Determination via Rego) - **Unblocked by this BR**
+- BR-GATEWAY-005 (Signal Metadata Extraction - updated to clarify pass-through)
+- BR-GATEWAY-007 (Priority Assignment - deprecated per DD-SEVERITY-001)
 
-## 🎯 **Priority Actions**
+**Decision Reference**:
+- [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) (Environment/Priority consolidation)
+- [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) v1.1 (Severity refactoring plan)
 
-### **High Priority Missing BRs** (P0/P1):
-1. BR-GATEWAY-014: Signal Enrichment
-2. BR-GATEWAY-022-023: Adapter Registration
-3. BR-GATEWAY-036-037: Authentication & RBAC
-4. BR-GATEWAY-038-043: Security Features
-5. BR-GATEWAY-050-054: Security & Secrets
-6. BR-GATEWAY-066-070: Observability Metrics
-7. BR-GATEWAY-078-079: Error & Performance Metrics
-8. BR-GATEWAY-090-091: Redis Resilience
-9. BR-GATEWAY-093: Circuit Breaker
-10. BR-GATEWAY-101-110: Error Handling & Resilience
-
-**Total Missing P0/P1 BRs**: ~30 BRs
-
----
-
-## 📝 **Confidence Assessment**
-
-**Confidence**: 85%
-
-**Justification**:
-- ✅ Comprehensive BR list created from codebase analysis
-- ✅ 74 unique BRs identified and documented
-- ✅ Test coverage status mapped for each BR
-- ✅ Priority levels assigned based on criticality
-- ⚠️ Risk: Some BR descriptions may be incomplete or inaccurate
-- ⚠️ Risk: Some BRs may be missing from codebase
-
-**Risk Mitigation**:
-- Review BR descriptions with stakeholders
-- Add missing BRs as they are discovered
-- Update test coverage status as tests are added
-- Prioritize P0/P1 missing BRs for test coverage
-
----
-
-## 📚 **Related Documents**
-
-- [API Specification](api-specification.md) - Gateway API endpoints and contracts
-- [Implementation Plan v2.28](implementation/IMPLEMENTATION_PLAN_V2.28.md) - Implementation roadmap
-- [Test Coverage Analysis](../../../GATEWAY_TEST_COVERAGE_BY_BR_TRIAGE.md) - Test distribution analysis
-- [Missing BR Analysis](../../../GATEWAY_MISSING_BR_ANALYSIS.md) - Gap analysis
-
+**Authority**: [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) v1.1, Week 3
 

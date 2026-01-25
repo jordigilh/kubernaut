@@ -69,7 +69,10 @@ func updateLabelsPolicyFile(policyContent string) {
 
 // BR-SP-072 hot-reload using ConfigMap watching (fsnotify-based).
 // Uses shared pkg/shared/hotreload/FileWatcher component per DD-INFRA-001.
-// Serial: Hot-reload tests manipulate shared policy files and cannot run in parallel
+//
+// ⚠️  Serial: Hot-reload tests manipulate shared policy files on disk
+// This is a LEGITIMATE shared resource constraint (not a metrics/controller issue)
+// DD-TEST-010: This is one of the few valid reasons to keep Serial
 var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 	// Original policy content to restore after each test
 	const originalLabelPolicy = `package signalprocessing.labels
@@ -125,7 +128,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-file-watch-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-01"],
 				Name:        "HRFileWatchTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -162,7 +165,7 @@ labels := result if {
 			sp2 := createSignalProcessingCR(ns, "hr-file-watch-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-02"],
 				Name:        "HRFileWatchTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -212,7 +215,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-reload-valid-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-01"],
 				Name:        "HRReloadValidTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -249,7 +252,7 @@ labels := result if {
 			sp2 := createSignalProcessingCR(ns, "hr-reload-valid-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-02"],
 				Name:        "HRReloadValidTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -299,7 +302,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-graceful-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-01"],
 				Name:        "HRGracefulTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -337,7 +340,7 @@ labels["broken" := ["syntax"  // Missing bracket
 			sp2 := createSignalProcessingCR(ns, "hr-graceful-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-02"],
 				Name:        "HRGracefulTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

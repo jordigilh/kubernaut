@@ -1,9 +1,34 @@
+# ========================================
+# DD-AUTH-006: HolmesGPT API Service with OAuth-Proxy
+# ========================================
+#
+# Service routes external requests to oauth-proxy sidecar:
+# - External clients → Service:8080 → oauth-proxy:8080 → HAPI:8081
+#
+# Port Routing:
+# - Service port 8080 → Pod oauth-proxy container port 8080
+# - OAuth-proxy proxies to → Pod holmesgpt-api container port 8081
+#
+# Authentication Flow:
+# 1. Gateway sends request to holmesgpt-api:8080
+# 2. Service routes to oauth-proxy sidecar (pod port 8080)
+# 3. OAuth-proxy validates ServiceAccount token
+# 4. OAuth-proxy performs SAR (Subject Access Review)
+# 5. OAuth-proxy injects X-Auth-Request-User header (for logging)
+# 6. OAuth-proxy proxies to HAPI (localhost:8081)
+# 7. HAPI receives authenticated request
+#
+# User Attribution:
+# - X-Auth-Request-User header contains: system:serviceaccount:kubernaut-system:gateway-sa
+# - Used for: LLM cost tracking, audit trail, security monitoring
+# - NOT SOC2-required (read-only operations) but best practice
+# ========================================
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: holmesgpt-api
-  namespace: kubernaut-ai
+  namespace: kubernaut-system
   labels:
     app.kubernetes.io/name: holmesgpt-api
     app.kubernetes.io/component: ai-analysis
@@ -17,9 +42,11 @@ spec:
   selector:
     app.kubernetes.io/name: holmesgpt-api
   ports:
+    # DD-AUTH-006: HTTP traffic routes to oauth-proxy (port 8080)
+    # OAuth-proxy then proxies to HAPI (localhost:8081)
     - name: http
       port: 8080
-      targetPort: http
+      targetPort: proxy  # Routes to oauth-proxy container 'proxy' port (8080)
       protocol: TCP
   sessionAffinity: ClientIP
   sessionAffinityConfig:

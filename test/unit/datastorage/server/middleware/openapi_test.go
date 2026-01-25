@@ -65,16 +65,25 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 	Describe("Valid Requests", func() {
 		It("should pass validation for valid audit event", func() {
 			// Valid audit event with all required fields
+			// Use GatewayAuditPayload structure for gateway.signal.received event type
+			// NOTE: event_data.event_type is the discriminator field for the oneOf union
+			// signal_type must be "prometheus-alert" or "kubernetes-event" per schema
 			body := `{
-				"version": "1.0",
+			"version": "1.0",
+			"event_type": "gateway.signal.received",
+			"event_category": "gateway",
+			"event_action": "received",
+			"event_outcome": "success",
+			"correlation_id": "test-correlation-123",
+			"event_timestamp": "2025-12-13T12:00:00Z",
+			"event_data": {
 				"event_type": "gateway.signal.received",
-				"event_category": "gateway",
-				"event_action": "received",
-				"event_outcome": "success",
-				"correlation_id": "test-correlation-123",
-				"event_timestamp": "2025-12-13T12:00:00Z",
-				"event_data": {"test": "data"}
-			}`
+				"signal_type": "prometheus-alert",
+				"alert_name": "HighMemoryUsage",
+				"namespace": "default",
+				"fingerprint": "fp-abc123"
+			}
+		}`
 
 			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -90,25 +99,37 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 
 			handler.ServeHTTP(rr, req)
 
+			if rr.Code != http.StatusCreated {
+				GinkgoWriter.Printf("❌ Validation failed. Response: %d\nBody: %s\n", rr.Code, rr.Body.String())
+			}
 			Expect(rr.Code).To(Equal(http.StatusCreated))
 			Expect(handlerCalled).To(BeTrue(), "Handler should be called after successful validation")
 		})
 
 		It("should pass validation with optional fields", func() {
 			// Audit event with optional fields included
+			// Use GatewayAuditPayload structure with all optional fields
+			// NOTE: signal_type must be "prometheus-alert" or "kubernetes-event" per schema
 			body := `{
-				"version": "1.0",
+			"version": "1.0",
+			"event_type": "gateway.signal.received",
+			"event_category": "gateway",
+			"event_action": "received",
+			"event_outcome": "success",
+			"correlation_id": "test-correlation-123",
+			"event_timestamp": "2025-12-13T12:00:00Z",
+			"event_data": {
 				"event_type": "gateway.signal.received",
-				"event_category": "gateway",
-				"event_action": "received",
-				"event_outcome": "success",
-				"correlation_id": "test-correlation-123",
-				"event_timestamp": "2025-12-13T12:00:00Z",
-				"event_data": {},
-				"actor_type": "service",
-				"actor_id": "gateway-service",
-				"severity": "info"
-			}`
+				"signal_type": "prometheus-alert",
+				"alert_name": "HighMemoryUsage",
+				"namespace": "default",
+				"fingerprint": "fp-abc123",
+				"severity": "critical"
+			},
+			"actor_type": "service",
+			"actor_id": "gateway-service",
+			"severity": "info"
+		}`
 
 			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -121,6 +142,9 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 
 			handler.ServeHTTP(rr, req)
 
+			if rr.Code != http.StatusCreated {
+				GinkgoWriter.Printf("❌ Validation failed (optional fields test). Response: %d\nBody: %s\n", rr.Code, rr.Body.String())
+			}
 			Expect(rr.Code).To(Equal(http.StatusCreated))
 		})
 	})
@@ -322,12 +346,12 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			Expect(rr.Header().Get("Content-Type")).To(Equal("application/problem+json"))
 			Expect(rr.Header().Get("X-Request-ID")).To(Equal("test-request-id"))
 
-		// Parse response as RFC 7807 problem
-		Expect(rr.Body.String()).To(ContainSubstring("type"))
-		Expect(rr.Body.String()).To(ContainSubstring("title"))
-		Expect(rr.Body.String()).To(ContainSubstring("status"))
-		Expect(rr.Body.String()).To(ContainSubstring("detail"))
-		Expect(rr.Body.String()).To(ContainSubstring("validation-error")) // RFC 7807 type contains "validation-error" (hyphenated)
+			// Parse response as RFC 7807 problem
+			Expect(rr.Body.String()).To(ContainSubstring("type"))
+			Expect(rr.Body.String()).To(ContainSubstring("title"))
+			Expect(rr.Body.String()).To(ContainSubstring("status"))
+			Expect(rr.Body.String()).To(ContainSubstring("detail"))
+			Expect(rr.Body.String()).To(ContainSubstring("validation-error")) // RFC 7807 type contains "validation-error" (hyphenated)
 		})
 	})
 })

@@ -27,5 +27,3 @@ func TestPhase(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Notification Phase Suite")
 }
-
-

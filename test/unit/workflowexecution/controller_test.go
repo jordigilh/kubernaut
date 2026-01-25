@@ -41,7 +41,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -258,7 +258,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Initialize managers (required for HandleAlreadyExists)
 			statusManager := status.NewManager(client)
-			auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
 
 			reconciler := &workflowexecution.WorkflowExecutionReconciler{
@@ -315,7 +315,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Initialize managers (required for HandleAlreadyExists)
 			statusManager := status.NewManager(client)
-			auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
 
 			reconciler := &workflowexecution.WorkflowExecutionReconciler{
@@ -371,7 +371,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Initialize managers (required for HandleAlreadyExists)
 			statusManager := status.NewManager(client)
-			auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
 
 			reconciler := &workflowexecution.WorkflowExecutionReconciler{
@@ -842,7 +842,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Initialize managers (required for MarkCompleted)
 			statusManager := status.NewManager(fakeClient)
-			auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
 
 			reconciler = &workflowexecution.WorkflowExecutionReconciler{
@@ -952,7 +952,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Initialize managers (required for MarkFailed)
 			statusManager := status.NewManager(fakeClient)
-			auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
 
 			reconciler = &workflowexecution.WorkflowExecutionReconciler{
@@ -1022,6 +1022,42 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(recorder.Events).To(HaveLen(1))
+		})
+
+		// BR-AUDIT-005 Gap #7: Validate ErrorDetails in audit event
+		It("should emit audit event with standardized ErrorDetails structure", func() {
+			// Get the audit store before calling MarkFailed
+			auditStore := reconciler.AuditStore.(*mockAuditStore)
+
+			_, err := reconciler.MarkFailed(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify audit event was emitted
+			Expect(auditStore.events).To(HaveLen(1), "Should emit exactly 1 workflow.failed audit event")
+
+			auditEvent := auditStore.events[0]
+			Expect(auditEvent.EventType).To(Equal(audit.EventTypeFailed), "Should have correct event type")
+			Expect(string(auditEvent.EventOutcome)).To(Equal("failure"), "Should have failure outcome")
+
+			// Parse event_data to validate ErrorDetails (Gap #7)
+			eventData := parseEventData(auditEvent.EventData)
+			Expect(eventData).To(HaveKey("error_details"), "Should contain error_details field (Gap #7)")
+
+			// Validate ErrorDetails structure (DD-ERROR-001)
+			errorDetails, ok := eventData["error_details"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "error_details should be a map")
+
+			// Mandatory fields per DD-ERROR-001
+			Expect(errorDetails).To(HaveKey("code"), "Should have error code")
+			Expect(errorDetails).To(HaveKey("message"), "Should have error message")
+			Expect(errorDetails).To(HaveKey("component"), "Should have component name")
+			Expect(errorDetails).To(HaveKey("retry_possible"), "Should have retry_possible indicator")
+
+			// Validate values
+			Expect(errorDetails["component"]).To(Equal("workflowexecution"), "Should identify workflowexecution component")
+			Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
+			Expect(errorDetails["message"]).ToNot(BeEmpty(), "Error message should not be empty")
+			Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
 		})
 	})
 
@@ -2413,7 +2449,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Initialize managers (required for MarkCompleted/MarkFailed)
 				statusManager := status.NewManager(fakeClient)
-				auditStore := &mockAuditStore{events: make([]*dsgen.AuditEventRequest, 0)}
+				auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 				auditManager := audit.NewManager(auditStore, logr.Discard())
 
 				reconciler = &workflowexecution.WorkflowExecutionReconciler{
@@ -2601,7 +2637,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
 
 				// And: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.started", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
 
 				// Then: Audit store should receive the event
 				Expect(err).ToNot(HaveOccurred())
@@ -2632,7 +2668,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called for completion
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.completed", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeCompleted, "success")
 
 				// Then: Audit should be recorded
 				Expect(err).ToNot(HaveOccurred())
@@ -2666,7 +2702,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called for failure
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.failed", "failure")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeFailed, "failure")
 
 				// Then: Audit should include failure details
 				Expect(err).ToNot(HaveOccurred())
@@ -2694,7 +2730,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 
 				// When: RecordAuditEvent is called
-				err := reconcilerNoAudit.RecordAuditEvent(ctx, wfe, "workflow.started", "success")
+				err := reconcilerNoAudit.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
 
 				// Then: Should return error per ADR-032 "No Audit Loss"
 				// ADR-032: "Audit writes are MANDATORY, not best-effort"
@@ -2721,7 +2757,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 
 				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfeNoCorrelation, "workflow.started", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfeNoCorrelation, audit.EventTypeStarted, "success")
 
 				// Then: Should succeed without panic (correlation-id is derived from label)
 				// Note: RecordAuditEvent handles missing label gracefully
@@ -2744,7 +2780,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 
 				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfeNilLabels, "workflow.started", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfeNilLabels, audit.EventTypeStarted, "success")
 
 				// Then: Should succeed without panic
 				Expect(err).ToNot(HaveOccurred())
@@ -2811,7 +2847,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.started", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
 
 				// Then: All audit event fields should be correctly populated
 				Expect(err).ToNot(HaveOccurred())
@@ -2821,24 +2857,24 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Event Classification
 				Expect(event.EventType).To(Equal(audit.EventTypeStarted))
-				Expect(string(event.EventCategory)).To(Equal(audit.CategoryWorkflow)) // DD-API-001: Convert OpenAPI client type to string
+				Expect(string(event.EventCategory)).To(Equal("workflowexecution")) // Service name per naming convention (updated Jan 14, 2026)
 				Expect(event.EventAction).To(Equal(audit.ActionStarted))
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
 
 				// Actor Information
-				Expect(*event.ActorType).To(Equal("service"))
-				Expect(*event.ActorId).To(Equal("workflowexecution-controller"))
+				Expect(event.ActorType.Value).To(Equal("service"))
+				Expect(event.ActorID.Value).To(Equal("workflowexecution-controller"))
 
 				// Resource Information
-				Expect(*event.ResourceType).To(Equal("WorkflowExecution"))
-				Expect(*event.ResourceId).To(Equal("wfe-audit-validation-start"))
+				Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
+				Expect(event.ResourceID.Value).To(Equal("wfe-audit-validation-start"))
 
 				// Correlation
-				Expect(event.CorrelationId).To(Equal("corr-abc123"))
+				Expect(event.CorrelationID).To(Equal("corr-abc123"))
 
 				// Namespace context
-				Expect(event.Namespace).ToNot(BeNil())
-				Expect(*event.Namespace).To(Equal("production"))
+				Expect(event.Namespace.IsSet()).To(BeTrue())
+				Expect(event.Namespace.Value).To(Equal("production"))
 
 				// Event Identity (auto-generated)
 				// NOTE: EventID removed in OpenAPI spec (DD-AUDIT-002 V2.0.1)
@@ -2893,7 +2929,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called for failure
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.failed", "failure")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeFailed, "failure")
 
 				// Then: Audit event should include failure details
 				Expect(err).ToNot(HaveOccurred())
@@ -2906,7 +2942,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeFailure)))
 
 				// Correlation
-				Expect(event.CorrelationId).To(Equal("corr-fail456"))
+				Expect(event.CorrelationID).To(Equal("corr-fail456"))
 
 				// Event Data with timing (JSON bytes - parse and validate)
 				eventData := parseEventData(event.EventData)
@@ -2944,14 +2980,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.started", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
 
 				// Then: CorrelationID should fall back to WFE name
 				Expect(err).ToNot(HaveOccurred())
 				Expect(auditStore.events).To(HaveLen(1))
 
 				event := auditStore.events[0]
-				Expect(event.CorrelationId).To(Equal("wfe-no-correlation-label"))
+				Expect(event.CorrelationID).To(Equal("wfe-no-correlation-label"))
 			})
 
 			It("should populate timing information when available", func() {
@@ -2980,7 +3016,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
 				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, "workflow.completed", "success")
+				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeCompleted, "success")
 
 				// Then: Timing fields should be populated
 				Expect(err).ToNot(HaveOccurred())
@@ -3601,24 +3637,22 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		Context("Pre-Execution Failure Reasons", func() {
-			It("should map ImagePullBackOff from message", func() {
-				// Given: Tekton failure with ImagePullBackOff in message
-				reason := "TaskRunFailed"
-				message := "Failed to pull image: ImagePullBackOff"
+		It("should map ImagePullBackOff from message", func() {
+			// Given: Tekton failure with ImagePullBackOff in message
+			reason := "TaskRunFailed"
+			message := "Failed to pull image: ImagePullBackOff"
 
-				// When: mapTektonReasonToFailureReason is called
-				result := reconciler.ExtractFailureDetails(ctx, &tektonv1.PipelineRun{
-					Status: tektonv1.PipelineRunStatus{},
-				}, nil)
-				// Simulate by setting condition
-				pr := &tektonv1.PipelineRun{}
-				pr.Status.SetCondition(&apis.Condition{
-					Type:    apis.ConditionSucceeded,
-					Status:  corev1.ConditionFalse,
-					Reason:  reason,
-					Message: message,
-				})
-				result = reconciler.ExtractFailureDetails(ctx, pr, nil)
+		// When: mapTektonReasonToFailureReason is called
+		// (extracting failure details from PipelineRun)
+		// Simulate by setting condition
+		pr := &tektonv1.PipelineRun{}
+			pr.Status.SetCondition(&apis.Condition{
+				Type:    apis.ConditionSucceeded,
+				Status:  corev1.ConditionFalse,
+				Reason:  reason,
+				Message: message,
+			})
+			result := reconciler.ExtractFailureDetails(ctx, pr, nil)
 
 				// Then: Should map to ImagePullBackOff
 				Expect(result.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonImagePullBackOff))
@@ -4320,7 +4354,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Setup mock audit store
 			auditStore = &mockAuditStore{
-				events: make([]*dsgen.AuditEventRequest, 0),
+				events: make([]*ogenclient.AuditEventRequest, 0),
 			}
 
 			// Setup test-specific metrics registry
@@ -4590,9 +4624,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Name:      "test-audit-enum",
 						Namespace: "default",
 						UID:       types.UID("test-uid-audit-enum"),
-						Labels: map[string]string{
-							"kubernaut.ai/correlation-id": "test-correlation-123",
-						},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
@@ -4601,6 +4632,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							ContainerImage: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
+						// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: "test-correlation-123",
+						},
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -4618,12 +4653,16 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				auditEvent := auditStore.events[0]
 				Expect(auditEvent.EventType).To(Equal(audit.EventTypeFailed))
-				Expect(auditEvent.CorrelationId).To(Equal("test-correlation-123"))
+				// DD-AUDIT-CORRELATION-001: Correlation ID comes from RemediationRequestRef.Name
+				Expect(auditEvent.CorrelationID).To(Equal("test-correlation-123"))
 
-				// Verify event data contains failure reason
+				// Verify event data contains failure reason (structured payload per DD-AUDIT-004)
 				eventData := parseEventData(auditEvent.EventData)
 				Expect(eventData["failure_reason"]).To(Equal(
-					string(workflowexecutionv1alpha1.FailureReasonOOMKilled)))
+					workflowexecutionv1alpha1.FailureReasonOOMKilled))
+
+				// Verify error_details present (BR-AUDIT-005 Gap #7)
+				Expect(eventData["error_details"]).ToNot(BeNil(), "error_details should be present for SOC2 compliance")
 			})
 		})
 	})
@@ -4971,11 +5010,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 // mockAuditStore implements audit.AuditStore for testing
 type mockAuditStore struct {
-	events []*dsgen.AuditEventRequest
+	events []*ogenclient.AuditEventRequest
 	err    error
 }
 
-func (m *mockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (m *mockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	if m.err != nil {
 		return m.err
 	}

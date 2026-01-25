@@ -104,8 +104,9 @@ func (c *AIAnalysisCreator) Create(
 				Namespace:  rr.Namespace,
 				UID:        rr.UID,
 			},
-			// Remediation ID for audit correlation
-			RemediationID: string(rr.UID),
+		// DD-AUDIT-CORRELATION-001: Use RR name for consistency
+		// TODO(v2): Deprecate RemediationID field (use RemediationRequestRef.Name instead)
+		RemediationID: rr.Name,
 			// Analysis request with signal context
 			AnalysisRequest: aianalysisv1.AnalysisRequest{
 				SignalContext: c.buildSignalContext(rr, sp),
@@ -168,7 +169,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
-		Severity:         rr.Spec.Severity,
+		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
 		SignalType:       rr.Spec.SignalType,
 		Environment:      environment,
 		BusinessPriority: priority,

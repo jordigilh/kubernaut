@@ -13,8 +13,10 @@ llm:
 
 data_storage:
   url: "` + dataStorageURL + `"
+
+audit:
+  flush_interval_seconds: 0.1
+  buffer_size: 10000
+  batch_size: 50
 `
 }
-
-
-

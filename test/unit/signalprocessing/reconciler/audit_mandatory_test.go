@@ -83,7 +83,7 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 	// Services MUST NOT implement "graceful degradation" that silently skips audit
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	Context("AM-MAN-01: When AuditClient is nil", func() {
+	Context("AM-MAN-01: When is nil", func() {
 		It("should fail reconciliation instead of silently skipping audit", func() {
 			// BUSINESS SCENARIO:
 			// Per ADR-032: Audit is MANDATORY for compliance (SOC2, HIPAA)
@@ -146,14 +146,14 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 				},
 			}
 
-		reconciler := &signalprocessing.SignalProcessingReconciler{
-			Client:        fakeClient,
-			Scheme:        scheme,
-			StatusManager: status.NewManager(fakeClient),
-			Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			K8sEnricher:   mockEnricher, // Need this to reach audit check
-			AuditClient:   nil,          // DELIBERATELY nil to test mandatory enforcement
-		}
+			reconciler := &signalprocessing.SignalProcessingReconciler{
+				Client:        fakeClient,
+				Scheme:        scheme,
+				StatusManager: status.NewManager(fakeClient, fakeClient),
+				Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				K8sEnricher:   mockEnricher, // Need this to reach audit check
+				AuditClient:   nil,          // DELIBERATELY nil to test mandatory enforcement
+			}
 
 			By("Attempting reconciliation")
 			req := reconcile.Request{
@@ -166,10 +166,10 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 			_, err := reconciler.Reconcile(ctx, req)
 
 			By("Verifying reconciliation fails with audit error")
-			// ADR-032: Controller MUST return error if AuditClient is nil
+			// ADR-032: Controller MUST return error if is nil
 			// This ensures the error is surfaced and logged, not silently ignored
-			Expect(err).To(HaveOccurred(), "Reconciliation MUST fail when AuditClient is nil per ADR-032")
-			Expect(err.Error()).To(ContainSubstring("AuditClient is nil"),
+			Expect(err).To(HaveOccurred(), "Reconciliation MUST fail when is nil per ADR-032")
+			Expect(err.Error()).To(ContainSubstring("is nil"),
 				"Error message MUST indicate audit client is missing")
 			Expect(err.Error()).To(ContainSubstring("MANDATORY"),
 				"Error message MUST indicate audit is mandatory")

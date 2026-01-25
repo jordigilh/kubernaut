@@ -3,7 +3,9 @@ database:
   port: 15441
   user: slm_user
   name: action_history
-  sslmode: disable
+  sslMode: disable
+  connMaxLifetime: 30m  # Fix for integration test BeforeSuite failures
+  connMaxIdleTime: 10m  # Connection idle timeout
   secretsFile: /etc/datastorage/db-secrets.yaml
   usernameKey: username
   passwordKey: password

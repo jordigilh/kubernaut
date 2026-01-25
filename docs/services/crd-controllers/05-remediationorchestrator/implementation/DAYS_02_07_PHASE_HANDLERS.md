@@ -509,9 +509,9 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
 	// Use custom timeout if specified in RemediationRequest
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.WorkflowExecutionTimeout.Duration > 0 {
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.WorkflowExecutionTimeout.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{
-			Timeout: &rr.Spec.TimeoutConfig.WorkflowExecutionTimeout,
+			Timeout: &rr.Status.TimeoutConfig.WorkflowExecutionTimeout,
 		}
 	}
 	// Return nil to use WorkflowExecution controller defaults
@@ -1558,7 +1558,7 @@ New fields added to `RemediationRequestStatus`:
 - `ExecutingStartTime` - When WorkflowExecution phase started
 
 **Per-Remediation Override**:
-Uses existing `rr.Spec.TimeoutConfig.OverallWorkflowTimeout` (not a separate `GlobalTimeout` field).
+Uses existing `rr.Status.TimeoutConfig.OverallWorkflowTimeout` (not a separate `GlobalTimeout` field).
 
 ### Implementation
 
@@ -1624,8 +1624,8 @@ func (d *Detector) CheckGlobalTimeout(rr *remediationv1.RemediationRequest) Time
 
 	// Get global timeout from config or per-remediation override
 	globalTimeout := d.config.Timeouts.Global
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.OverallWorkflowTimeout.Duration > 0 {
-		globalTimeout = rr.Spec.TimeoutConfig.OverallWorkflowTimeout.Duration
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.OverallWorkflowTimeout.Duration > 0 {
+		globalTimeout = rr.Status.TimeoutConfig.OverallWorkflowTimeout.Duration
 	}
 
 	if elapsed > globalTimeout {
@@ -1687,19 +1687,19 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 // Reference: BR-ORCH-028
 func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase string) time.Duration {
 	// Check per-remediation override first
-	if rr.Spec.TimeoutConfig != nil {
+	if rr.Status.TimeoutConfig != nil {
 		switch phase {
 		case "Processing":
-			if rr.Spec.TimeoutConfig.RemediationProcessingTimeout.Duration > 0 {
-				return rr.Spec.TimeoutConfig.RemediationProcessingTimeout.Duration
+			if rr.Status.TimeoutConfig.RemediationProcessingTimeout.Duration > 0 {
+				return rr.Status.TimeoutConfig.RemediationProcessingTimeout.Duration
 			}
 		case "Analyzing", "AwaitingApproval":
-			if rr.Spec.TimeoutConfig.AIAnalysisTimeout.Duration > 0 {
-				return rr.Spec.TimeoutConfig.AIAnalysisTimeout.Duration
+			if rr.Status.TimeoutConfig.AIAnalysisTimeout.Duration > 0 {
+				return rr.Status.TimeoutConfig.AIAnalysisTimeout.Duration
 			}
 		case "Executing":
-			if rr.Spec.TimeoutConfig.WorkflowExecutionTimeout.Duration > 0 {
-				return rr.Spec.TimeoutConfig.WorkflowExecutionTimeout.Duration
+			if rr.Status.TimeoutConfig.WorkflowExecutionTimeout.Duration > 0 {
+				return rr.Status.TimeoutConfig.WorkflowExecutionTimeout.Duration
 			}
 		}
 	}
@@ -1757,14 +1757,14 @@ DescribeTable("BR-ORCH-028: GetPhaseTimeout returns correct timeout",
 
         rr := testutil.NewRemediationRequest("test-rr", "default")
         if rrOverride != nil {
-            rr.Spec.TimeoutConfig = &remediationv1.TimeoutConfig{}
+            rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{}
             switch phase {
             case "Processing":
-                rr.Spec.TimeoutConfig.RemediationProcessingTimeout = metav1.Duration{Duration: *rrOverride}
+                rr.Status.TimeoutConfig.RemediationProcessingTimeout = metav1.Duration{Duration: *rrOverride}
             case "Analyzing":
-                rr.Spec.TimeoutConfig.AIAnalysisTimeout = metav1.Duration{Duration: *rrOverride}
+                rr.Status.TimeoutConfig.AIAnalysisTimeout = metav1.Duration{Duration: *rrOverride}
             case "Executing":
-                rr.Spec.TimeoutConfig.WorkflowExecutionTimeout = metav1.Duration{Duration: *rrOverride}
+                rr.Status.TimeoutConfig.WorkflowExecutionTimeout = metav1.Duration{Duration: *rrOverride}
             }
         }
 

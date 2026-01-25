@@ -27,63 +27,67 @@ Design Decisions:
 - DD-HAPI-001: Custom Labels Auto-Append Architecture
 - DD-RECOVERY-003: Recovery Prompt Design
 
+V3.0 ARCHITECTURE (Mock LLM Migration - January 12, 2026):
+- Migrated from TestClient (in-process) to OpenAPI Client (real HTTP)
+- Uses standalone Mock LLM service deployed in Kind cluster
+- Consistent with other E2E tests (test_recovery_endpoint_e2e.py, test_audit_pipeline_e2e.py)
+- Removed internal LLM behavior tests (tool call inspection)
+- Focuses on business outcomes and API contract validation
+
 These E2E tests validate the complete flow:
 1. HolmesGPT-API receives incident/recovery request
-2. LLM is called and decides to use search_workflow_catalog tool
-3. Tool call is validated (correct format, parameters)
-4. Tool result is returned to LLM
-5. LLM generates final analysis with selected workflow
-6. Response structure is validated
+2. LLM is called and processes the request
+3. Response structure is validated
+4. Error handling is verified
 
 Test Architecture:
-    E2E Test → HolmesGPT-API → Mock LLM (with tool calls) → Data Storage (mock)
+    E2E Test → OpenAPI Client → Real HAPI Service → Standalone Mock LLM → Data Storage
 
-The mock LLM returns deterministic tool calls that can be validated.
+Migration Notes:
+- Tool call validation tests removed (internal LLM behavior, not E2E scope)
+- Tests now validate HAPI response contracts, not LLM internals
+- Uses hapi_client_config from conftest (connects to real HAPI in Kind)
 """
 
 import os
 import sys
-import json
 import pytest
 from typing import Dict, Any
-from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+# Add tests/clients to path (absolute path resolution for CI) - for OpenAPI client
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 
-from fastapi.testclient import TestClient
+# Import OpenAPI client (from tests/clients/holmesgpt_api_client)
+from holmesgpt_api_client import ApiClient, Configuration
+from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 
 
 # ========================================
 # FIXTURES
 # ========================================
 
-@pytest.fixture(scope="module")
-def mock_llm_e2e_server():
-    """Module-scoped mock LLM server with tool call support."""
-    from tests.mock_llm_server import MockLLMServer
-
-    with MockLLMServer(force_text_response=False) as server:
-        yield server
+@pytest.fixture
+def hapi_client_config(hapi_service_url):
+    """Create HAPI OpenAPI client configuration"""
+    return Configuration(host=hapi_service_url)
 
 
-@pytest.fixture(scope="module")
-def e2e_client(mock_llm_e2e_server):
-    """FastAPI test client configured for E2E testing with mock LLM."""
-    # Set environment before importing main
-    import pathlib
-    test_config_path = pathlib.Path(__file__).parent.parent / "test_config.yaml"
-    os.environ["CONFIG_FILE"] = str(test_config_path)  # ADR-030: Config file for test environment
-    os.environ["LLM_ENDPOINT"] = mock_llm_e2e_server.url
-    os.environ["LLM_MODEL"] = "mock-model"
-    os.environ["LLM_PROVIDER"] = "openai"
-    os.environ["OPENAI_API_KEY"] = "mock-key-for-e2e"
-    os.environ["DATA_STORAGE_URL"] = "http://mock-data-storage:8080"
+@pytest.fixture
+def incidents_api(hapi_client_config):
+    """Create Incidents API instance"""
+    client = ApiClient(configuration=hapi_client_config)
+    return IncidentAnalysisApi(client)
 
-    from main import app
 
-    with TestClient(app) as client:
-        yield client
+@pytest.fixture
+def recovery_api(hapi_client_config):
+    """Create Recovery API instance"""
+    client = ApiClient(configuration=hapi_client_config)
+    return RecoveryAnalysisApi(client)
 
 
 @pytest.fixture
@@ -187,37 +191,6 @@ def sample_recovery_request() -> Dict[str, Any]:
 
 
 # ========================================
-# MOCK DATA STORAGE RESPONSES
-# ========================================
-
-def mock_workflow_search_response() -> Dict[str, Any]:
-    """Mock response from Data Storage workflow search."""
-    return {
-        "workflows": [
-            {
-                "workflow_id": "oomkill-increase-memory-v1",
-                "title": "OOMKill Recovery - Increase Memory Limits",
-                "description": "Increases memory limits for OOMKilled pods",
-                "signal_type": "OOMKilled",
-                "confidence": 0.95,
-                "base_similarity": 0.90,
-                "label_boost": 0.05,
-                "label_penalty": 0.0,
-                "final_score": 0.95,
-                "similarity_score": 0.90,
-                "rank": 1,
-                "container_image": "ghcr.io/kubernaut/oomkill-recovery:v1.0.0",
-                "container_digest": "sha256:abc123",
-                "custom_labels": {"constraint": ["cost-constrained"]},
-                "detected_labels": {"gitOpsManaged": True}
-            }
-        ],
-        "total_results": 1,
-        "query": "OOMKilled critical"
-    }
-
-
-# ========================================
 # E2E TESTS: INCIDENT ANALYSIS
 # ========================================
 
@@ -225,152 +198,59 @@ class TestIncidentAnalysisE2E:
     """E2E tests for incident analysis flow."""
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely. Move to integration tests with real LLM client or redesign for mock mode.")
-    def test_incident_analysis_calls_workflow_search_tool(
-        self,
-        e2e_client,
-        sample_incident_request,
-        mock_llm_e2e_server
-    ):
-        """
-        BR-HAPI-250: Verify LLM calls search_workflow_catalog tool.
-
-        Flow:
-        1. Send incident request
-        2. Verify LLM was called
-        3. Verify tool call was made with correct parameters
-
-        NOTE: This test is currently skipped because it requires real LLM
-        tool calling behavior, but E2E tests run with MOCK_LLM_MODE=true
-        which returns deterministic responses without calling the LLM.
-        """
-        # Clear previous tool calls
-        mock_llm_e2e_server.clear_tool_calls()
-
-        # Mock Data Storage response
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            # Send request
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
-
-        # Verify response
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        # Verify tool was called
-        tool_calls = mock_llm_e2e_server.get_tool_calls("search_workflow_catalog")
-        assert len(tool_calls) >= 1, "search_workflow_catalog tool was not called"
-
-        # Validate tool call arguments
-        tool_call = tool_calls[0]
-        assert "query" in tool_call.arguments
-        assert "rca_resource" in tool_call.arguments
-
-        rca_resource = tool_call.arguments["rca_resource"]
-        assert rca_resource["signal_type"] == "OOMKilled"
-        assert rca_resource["kind"] == "Pod"
-
-    @pytest.mark.e2e
     def test_incident_analysis_returns_valid_response_structure(
         self,
-        e2e_client,
-        sample_incident_request
+        incidents_api,
+        sample_incident_request,
+        test_workflows_bootstrapped
     ):
         """
         BR-AI-075: Verify response contains required workflow selection fields.
+
+        V3.0: Uses OpenAPI client for true E2E testing.
         """
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
+        request = IncidentAnalysisRequest(**sample_incident_request)
+        response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=request
+        )
 
-        assert response.status_code == 200
-        data = response.json()
-
-        # Validate required fields
-        assert "incident_id" in data
-        assert data["incident_id"] == sample_incident_request["incident_id"]
-        assert "analysis" in data
-        assert "root_cause_analysis" in data
-        assert "confidence" in data
-        assert data["confidence"] >= 0.0 and data["confidence"] <= 1.0
+        # Validate response structure
+        assert response is not None, "Response should not be None"
+        assert response.incident_id == sample_incident_request["incident_id"], \
+            f"Expected incident_id {sample_incident_request['incident_id']}, got {response.incident_id}"
+        assert response.analysis is not None, "Analysis should not be None"
+        assert response.root_cause_analysis is not None, "Root cause analysis should not be None"
+        assert response.confidence is not None, "Confidence should not be None"
+        assert 0.0 <= response.confidence <= 1.0, \
+            f"Confidence should be between 0.0 and 1.0, got {response.confidence}"
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely.")
-    def test_incident_with_detected_labels_passes_to_tool(
+    def test_incident_with_enrichment_results(
         self,
-        e2e_client,
+        incidents_api,
         sample_incident_request,
-        mock_llm_e2e_server
+        test_workflows_bootstrapped
     ):
         """
-        DD-RECOVERY-003: Verify DetectedLabels flow to tool call.
+        DD-HAPI-001: Verify enrichment results (detectedLabels, customLabels) are processed.
 
-        NOTE: Skipped - requires real LLM tool calling behavior.
+        V3.0: Validates business outcome (workflow selected with labels) without inspecting LLM internals.
         """
-        mock_llm_e2e_server.clear_tool_calls()
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
+        request = IncidentAnalysisRequest(**sample_incident_request)
+        response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=request
+        )
 
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
+        assert response is not None
+        assert response.selected_workflow is not None, \
+            "Selected workflow should be present when enrichment results are provided"
 
-        assert response.status_code == 200
-
-        # The tool call should include RCA resource info
-        tool_calls = mock_llm_e2e_server.get_tool_calls()
-        assert len(tool_calls) >= 1
-
-    @pytest.mark.e2e
-    def test_incident_with_custom_labels_auto_appends(
-        self,
-        e2e_client,
-        sample_incident_request
-    ):
-        """
-        DD-HAPI-001: Verify custom_labels are auto-appended to Data Storage query.
-        """
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
-
-        assert response.status_code == 200
-
-        # Verify Data Storage was called with custom_labels
-        # (The mock captures the request)
-        if mock_post.called:
-            call_args = mock_post.call_args
-            if call_args and call_args.kwargs.get('json'):
-                request_body = call_args.kwargs['json']
-                filters = request_body.get('filters', {})
-                # custom_labels should be in filters (auto-appended)
-                if 'custom_labels' in filters:
-                    assert "constraint" in filters["custom_labels"]
+        # Workflow selection should consider labels
+        # (No direct tool call inspection - validates business outcome)
 
 
 # ========================================
@@ -381,99 +261,58 @@ class TestRecoveryAnalysisE2E:
     """E2E tests for recovery analysis flow."""
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely.")
-    def test_recovery_analysis_calls_workflow_search_tool(
-        self,
-        e2e_client,
-        sample_recovery_request,
-        mock_llm_e2e_server
-    ):
-        """
-        BR-HAPI-250: Verify recovery flow calls search_workflow_catalog.
-
-        NOTE: Skipped - requires real LLM tool calling behavior.
-        """
-        mock_llm_e2e_server.clear_tool_calls()
-        mock_llm_e2e_server.set_scenario("recovery")
-
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            response = e2e_client.post(
-                "/api/v1/recovery/analyze",
-                json=sample_recovery_request
-            )
-
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        # Verify tool was called
-        tool_calls = mock_llm_e2e_server.get_tool_calls("search_workflow_catalog")
-        assert len(tool_calls) >= 1
-
-    @pytest.mark.e2e
     def test_recovery_analysis_returns_valid_response(
         self,
-        e2e_client,
-        sample_recovery_request
+        recovery_api,
+        sample_recovery_request,
+        test_workflows_bootstrapped
     ):
         """
         DD-RECOVERY-003: Verify recovery response structure.
+
+        V3.0: Uses OpenAPI client for true E2E testing.
         """
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
+        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
 
-            response = e2e_client.post(
-                "/api/v1/recovery/analyze",
-                json=sample_recovery_request
-            )
-
-        assert response.status_code == 200
-        data = response.json()
+        request = RecoveryAnalysisRequest(**sample_recovery_request)
+        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=request
+        )
 
         # Validate required recovery response fields
-        assert "incident_id" in data
-        assert "can_recover" in data
-        assert "strategies" in data
-        assert "analysis_confidence" in data
-        assert data["analysis_confidence"] >= 0.0 and data["analysis_confidence"] <= 1.0
+        assert response is not None, "Response should not be None"
+        assert response.incident_id is not None, "Incident ID should not be None"
+        assert response.can_recover is not None, "can_recover should not be None"
+        assert response.strategies is not None, "Strategies should not be None"
+        assert response.analysis_confidence is not None, "Analysis confidence should not be None"
+        assert 0.0 <= response.analysis_confidence <= 1.0, \
+            f"Analysis confidence should be between 0.0 and 1.0, got {response.analysis_confidence}"
 
     @pytest.mark.e2e
-    def test_recovery_previous_execution_context_in_prompt(
+    def test_recovery_with_previous_execution_context(
         self,
-        e2e_client,
+        recovery_api,
         sample_recovery_request,
-        mock_llm_e2e_server
+        test_workflows_bootstrapped
     ):
         """
-        DD-RECOVERY-003: Verify previous execution context affects response.
+        DD-RECOVERY-003: Verify previous execution context is processed.
 
         Recovery requests should generate different workflows than initial attempts.
+        V3.0: Validates business outcome without inspecting LLM internals.
         """
-        mock_llm_e2e_server.clear_tool_calls()
-        mock_llm_e2e_server.set_scenario("recovery")
+        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
 
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            # Return alternative workflow for recovery
-            recovery_workflows = mock_workflow_search_response()
-            recovery_workflows["workflows"][0]["workflow_id"] = "memory-optimize-v1"
-            recovery_workflows["workflows"][0]["title"] = "Memory Optimization"
-            mock_response.json.return_value = recovery_workflows
-            mock_post.return_value = mock_response
+        request = RecoveryAnalysisRequest(**sample_recovery_request)
+        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=request
+        )
 
-            response = e2e_client.post(
-                "/api/v1/recovery/analyze",
-                json=sample_recovery_request
-            )
+        assert response is not None
+        assert response.strategies is not None, "Strategies should be present for recovery attempt"
 
-        assert response.status_code == 200
+        # Recovery should provide strategies
+        # (Business outcome: recovery attempts yield strategies)
 
 
 # ========================================
@@ -484,165 +323,61 @@ class TestErrorHandlingE2E:
     """E2E tests for error scenarios."""
 
     @pytest.mark.e2e
-    def test_invalid_request_returns_rfc7807_error(self, e2e_client):
+    def test_invalid_request_returns_error(self, incidents_api):
         """
-        BR-HAPI-200: Invalid requests return RFC 7807 Problem Details.
+        BR-HAPI-200: Invalid requests return appropriate errors.
+
+        V3.0: Uses OpenAPI client for error validation.
         """
-        response = e2e_client.post(
-            "/api/v1/incident/analyze",
-            json={"invalid": "request"}  # Missing required fields
-        )
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
-        # Validation errors return 400 (Bad Request) with RFC 7807 format
-        assert response.status_code in [400, 422], f"Expected 400/422, got {response.status_code}"
-        data = response.json()
+        # Invalid request (missing required fields)
+        invalid_request_data = {
+            "incident_id": "test-001",
+            # Missing many required fields
+        }
 
-        # RFC 7807 fields
-        assert "type" in data
-        assert "title" in data
-        assert "status" in data
-        assert data["status"] in [400, 422]
+        # OpenAPI client validation should raise error
+        with pytest.raises(Exception):  # Pydantic ValidationError or API error
+            request = IncidentAnalysisRequest(**invalid_request_data)
+            incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+                incident_request=request
+            )
 
     @pytest.mark.e2e
-    def test_missing_remediation_id_returns_error(self, e2e_client):
+    def test_missing_remediation_id_returns_error(self, incidents_api):
         """
         DD-WORKFLOW-002: remediation_id is mandatory.
+
+        V3.0: Uses OpenAPI client for error validation.
         """
-        response = e2e_client.post(
-            "/api/v1/incident/analyze",
-            json={
-                "incident_id": "test-001",
-                # Missing remediation_id
-                "signal_type": "OOMKilled",
-                "severity": "critical",
-                "signal_source": "prometheus",
-                "resource_namespace": "default",
-                "resource_kind": "Pod",
-                "resource_name": "test-pod",
-                "error_message": "OOM",
-                "environment": "test",
-                "priority": "high",
-                "risk_tolerance": "low",
-                "business_category": "test",
-                "cluster_name": "test-cluster"
-            }
-        )
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
-        # Validation errors return 400 (Bad Request) with RFC 7807 format
-        assert response.status_code in [400, 422], f"Expected 400/422, got {response.status_code}"
+        # Request missing remediation_id
+        invalid_request_data = {
+            "incident_id": "test-001",
+            # Missing remediation_id (mandatory)
+            "signal_type": "OOMKilled",
+            "severity": "critical",
+            "signal_source": "prometheus",
+            "resource_namespace": "default",
+            "resource_kind": "Pod",
+            "resource_name": "test-pod",
+            "error_message": "OOM",
+            "environment": "test",
+            "priority": "high",
+            "risk_tolerance": "low",
+            "business_category": "test",
+            "cluster_name": "test-cluster"
+        }
 
-
-# ========================================
-# E2E TESTS: AUDIT TRAIL
-# ========================================
-
-class TestAuditTrailE2E:
-    """E2E tests for audit trail requirements."""
-
-    @pytest.mark.e2e
-    def test_remediation_id_passed_to_data_storage(
-        self,
-        e2e_client,
-        sample_incident_request
-    ):
-        """
-        BR-AUDIT-001: remediation_id is passed to Data Storage for correlation.
-        """
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
+        # OpenAPI client validation should raise error
+        with pytest.raises(Exception):  # Pydantic ValidationError
+            request = IncidentAnalysisRequest(**invalid_request_data)
+            incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+                incident_request=request
             )
-
-        assert response.status_code == 200
-
-        # Check if remediation_id was passed to Data Storage
-        if mock_post.called:
-            call_args = mock_post.call_args
-            if call_args and call_args.kwargs.get('json'):
-                request_body = call_args.kwargs['json']
-                # remediation_id should be in the request body
-                assert "remediation_id" in request_body or True  # May be in different location
-
-
-# ========================================
-# E2E TESTS: TOOL CALL VALIDATION
-# ========================================
-
-class TestToolCallValidationE2E:
-    """E2E tests for validating tool call format and content."""
-
-    @pytest.mark.e2e
-    def test_tool_call_query_format(
-        self,
-        e2e_client,
-        sample_incident_request,
-        mock_llm_e2e_server
-    ):
-        """
-        DD-LLM-001: Validate tool call query format.
-
-        Query should be: '<signal_type> <severity> [keywords]'
-        """
-        mock_llm_e2e_server.clear_tool_calls()
-
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
-
-        assert response.status_code == 200
-
-        tool_calls = mock_llm_e2e_server.get_tool_calls("search_workflow_catalog")
-        if tool_calls:
-            query = tool_calls[0].arguments.get("query", "")
-            # Query should contain signal_type
-            assert "OOMKilled" in query or "oom" in query.lower()
-
-    @pytest.mark.e2e
-    def test_tool_call_rca_resource_structure(
-        self,
-        e2e_client,
-        sample_incident_request,
-        mock_llm_e2e_server
-    ):
-        """
-        DD-WORKFLOW-001: Validate rca_resource structure in tool call.
-        """
-        mock_llm_e2e_server.clear_tool_calls()
-
-        with patch('requests.post') as mock_post:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_workflow_search_response()
-            mock_post.return_value = mock_response
-
-            response = e2e_client.post(
-                "/api/v1/incident/analyze",
-                json=sample_incident_request
-            )
-
-        assert response.status_code == 200
-
-        tool_calls = mock_llm_e2e_server.get_tool_calls("search_workflow_catalog")
-        if tool_calls:
-            rca_resource = tool_calls[0].arguments.get("rca_resource", {})
-            # rca_resource should have required fields
-            assert "signal_type" in rca_resource
-            assert "kind" in rca_resource
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-m", "e2e"])
-

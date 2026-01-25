@@ -189,7 +189,7 @@
 
 ### **4. TimeoutConfig (❌ MINOR GAP - 0% Available)**
 
-**Field**: `RemediationRequestSpec.TimeoutConfig` (*TimeoutConfig, optional)
+**Field**: `RemediationRequestStatus.TimeoutConfig` (*TimeoutConfig, optional)
 
 **Purpose**: Per-remediation timeout overrides (global timeout, per-phase timeouts).
 

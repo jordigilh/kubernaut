@@ -43,6 +43,7 @@ type Engine interface {
 // Reference: DD-RO-002 (Centralized Routing Responsibility)
 type RoutingEngine struct {
 	client    client.Client
+	apiReader client.Reader // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
 	namespace string
 	config    Config
 }
@@ -86,9 +87,11 @@ type Config struct {
 }
 
 // NewRoutingEngine creates a new RoutingEngine with the given client and config.
-func NewRoutingEngine(client client.Client, namespace string, config Config) *RoutingEngine {
+// DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries
+func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config) *RoutingEngine {
 	return &RoutingEngine{
 		client:    client,
+		apiReader: apiReader,
 		namespace: namespace,
 		config:    config,
 	}
@@ -178,11 +181,14 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 ) *BlockingCondition {
 	logger := log.FromContext(ctx)
 
-	// Query for all RemediationRequests with the same fingerprint
+	// Query for all RemediationRequests with the same fingerprint in the SAME NAMESPACE
+	// BR-ORCH-042: Consecutive failure blocking MUST be namespace-scoped (multi-tenant isolation)
 	list := &remediationv1.RemediationRequestList{}
-	err := r.client.List(ctx, list, client.MatchingFields{
-		"spec.signalFingerprint": rr.Spec.SignalFingerprint,
-	})
+	err := r.client.List(ctx, list,
+		client.InNamespace(rr.Namespace), // MULTI-TENANT SAFETY: Isolate by namespace
+		client.MatchingFields{
+			"spec.signalFingerprint": rr.Spec.SignalFingerprint,
+		})
 	if err != nil {
 		// Log error but don't block on query failure
 		logger.Error(err, "Failed to query RRs by fingerprint", "fingerprint", rr.Spec.SignalFingerprint)
@@ -272,7 +278,8 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	rr *remediationv1.RemediationRequest,
 ) (*BlockingCondition, error) {
 	// Find active RR with same fingerprint (excluding self)
-	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Spec.SignalFingerprint, rr.Name)
+	// Multi-tenant isolation: Pass rr.Namespace to scope search to current namespace
+	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
@@ -500,17 +507,21 @@ func (r *RoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) t
 // Uses field index on spec.signalFingerprint for O(1) lookup (configured in Day 1).
 //
 // Reference: BR-ORCH-042 (Fingerprint Field Index)
+// Multi-Tenant Isolation: Scoped to namespace parameter for tenant isolation (BR-ORCH-042)
 func (r *RoutingEngine) FindActiveRRForFingerprint(
 	ctx context.Context,
+	namespace string,
 	fingerprint string,
 	excludeName string,
 ) (*remediationv1.RemediationRequest, error) {
 	logger := log.FromContext(ctx)
 
 	// List all RRs with matching fingerprint using field index
+	// NOTE: Must use cached client for field index queries (indexes not available on APIReader)
+	// CRITICAL: Use namespace parameter (not r.namespace) for multi-tenant isolation
 	rrList := &remediationv1.RemediationRequestList{}
 	listOpts := []client.ListOption{
-		client.InNamespace(r.namespace),
+		client.InNamespace(namespace),
 		client.MatchingFields{"spec.signalFingerprint": fingerprint},
 	}
 
@@ -519,17 +530,28 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 	}
 
 	// Find first active (non-terminal) RR, excluding self
+	// DD-STATUS-001: Refetch each candidate with APIReader to get fresh status
 	for i := range rrList.Items {
 		rr := &rrList.Items[i]
 		if rr.Name == excludeName {
 			continue // Skip self
 		}
-		if !IsTerminalPhase(rr.Status.OverallPhase) {
+
+		// Refetch with APIReader to bypass cache and get fresh status
+		// This prevents false "DuplicateInProgress" blocks due to stale status in cache
+		freshRR := &remediationv1.RemediationRequest{}
+		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), freshRR); err != nil {
+			logger.Error(err, "Failed to refetch RR status", "rr", rr.Name)
+			// Fall back to cached status if refetch fails
+			freshRR = rr
+		}
+
+		if !IsTerminalPhase(freshRR.Status.OverallPhase) {
 			logger.V(1).Info("Found active RR with fingerprint",
-				"rr", rr.Name,
+				"rr", freshRR.Name,
 				"fingerprint", fingerprint,
-				"phase", rr.Status.OverallPhase)
-			return rr, nil
+				"phase", freshRR.Status.OverallPhase)
+			return freshRR, nil
 		}
 	}
 
@@ -549,6 +571,7 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 	logger := log.FromContext(ctx)
 
 	// List all WFEs with matching target resource using field index
+	// NOTE: Must use cached client for field index queries (indexes not available on APIReader)
 	wfeList := &workflowexecutionv1.WorkflowExecutionList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(r.namespace),
@@ -560,17 +583,28 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 	}
 
 	// Find first active (non-terminal) WFE
+	// DD-STATUS-001: Refetch each candidate with APIReader to get fresh status
 	for i := range wfeList.Items {
 		wfe := &wfeList.Items[i]
+
+		// Refetch with APIReader to bypass cache and get fresh status
+		// This prevents false "ResourceBusy" blocks due to stale status in cache
+		freshWFE := &workflowexecutionv1.WorkflowExecution{}
+		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(wfe), freshWFE); err != nil {
+			logger.Error(err, "Failed to refetch WFE status", "wfe", wfe.Name)
+			// Fall back to cached status if refetch fails
+			freshWFE = wfe
+		}
+
 		// Check if phase is not terminal (Running, Pending, etc.)
 		// V1.0: Only Completed and Failed are terminal phases
-		if wfe.Status.Phase != workflowexecutionv1.PhaseCompleted &&
-			wfe.Status.Phase != workflowexecutionv1.PhaseFailed {
+		if freshWFE.Status.Phase != workflowexecutionv1.PhaseCompleted &&
+			freshWFE.Status.Phase != workflowexecutionv1.PhaseFailed {
 			logger.V(1).Info("Found active WFE for target",
-				"wfe", wfe.Name,
+				"wfe", freshWFE.Name,
 				"target", targetResource,
-				"phase", wfe.Status.Phase)
-			return wfe, nil
+				"phase", freshWFE.Status.Phase)
+			return freshWFE, nil
 		}
 	}
 

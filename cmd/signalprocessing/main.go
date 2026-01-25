@@ -50,7 +50,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
@@ -168,7 +168,7 @@ func main() {
 	}
 
 	// Create service-specific audit client (BR-SP-090)
-	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
+	auditClient := spaudit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
 	setupLog.Info("audit client configured successfully")
 
 	// ========================================
@@ -255,6 +255,41 @@ func main() {
 	setupLog.Info("business classifier configured successfully")
 
 	// ========================================
+	// SEVERITY CLASSIFIER (MANDATORY)
+	// ========================================
+	// BR-SP-105: Severity determination via Rego policy
+	// DD-SEVERITY-001: Strategy B - Policy-defined fallback (operator control)
+	severityClassifier := classifier.NewSeverityClassifier(
+		mgr.GetClient(),
+		ctrl.Log.WithName("classifier.severity"),
+	)
+	severityClassifier.SetPolicyPath("/etc/signalprocessing/policies/severity.rego")
+
+	// Load policy from file
+	severityPolicyContent, err := os.ReadFile("/etc/signalprocessing/policies/severity.rego")
+	if err != nil {
+		setupLog.Error(err, "FATAL: severity policy is mandatory but failed to load",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego",
+			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
+		os.Exit(1)
+	}
+	if err := severityClassifier.LoadRegoPolicy(string(severityPolicyContent)); err != nil {
+		setupLog.Error(err, "FATAL: severity policy validation failed",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego",
+			"hint", "Check Rego policy syntax and ensure it returns critical/warning/info")
+		os.Exit(1)
+	}
+	setupLog.Info("severity classifier configured successfully")
+
+	// BR-SP-072: Start hot-reload for severity policy
+	if err := severityClassifier.StartHotReload(ctx); err != nil {
+		setupLog.Error(err, "FATAL: severity policy hot-reload failed",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego")
+		os.Exit(1)
+	}
+	setupLog.Info("severity policy hot-reload started", "policyHash", severityClassifier.GetPolicyHash())
+
+	// ========================================
 	// ENRICHMENT COMPONENTS SETUP
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
@@ -307,21 +342,32 @@ func main() {
 	// DD-PERF-001: Atomic Status Updates
 	// Status Manager for reducing K8s API calls by 66-75%
 	// Consolidates multiple status field updates into single atomic operations
+	// SP-CACHE-001: Pass APIReader to bypass cache for fresh refetches
 	// ========================================
-	statusManager := spstatus.NewManager(mgr.GetClient())
-	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001)")
+	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
+	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
+
+	// ========================================
+	// Phase 3 Refactoring: Audit Manager (2026-01-22)
+	// Wraps AuditClient with ADR-032 enforcement
+	// Follows RO/WE/AIA/NT pattern for consistency
+	// ========================================
+	auditManager := spaudit.NewManager(auditClient)
+	setupLog.Info("SignalProcessing audit manager initialized (Phase 3 refactoring)")
 
 	// Setup reconciler with ALL required components
 	if err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		AuditClient:        auditClient,
+		AuditClient:        auditClient,     // Legacy - kept for backwards compatibility during migration
+		AuditManager:       auditManager,    // Phase 3 refactoring (2026-01-22)
 		Metrics:            spMetrics,       // DD-005: Observability
 		Recorder:           mgr.GetEventRecorderFor("signalprocessing-controller"),
 		StatusManager:      statusManager,   // DD-PERF-001: Atomic status updates
 		EnvClassifier:      envClassifier,
 		PriorityAssigner:   priorityEngine,  // PriorityEngine implements PriorityAssigner interface
 		BusinessClassifier: businessClassifier,
+		SeverityClassifier: severityClassifier, // BR-SP-105: Severity determination (DD-SEVERITY-001)
 		RegoEngine:         regoEngine,
 		OwnerChainBuilder:  ownerChainBuilder,
 		LabelDetector:      labelDetector,

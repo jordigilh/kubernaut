@@ -124,6 +124,13 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// AA-HAPI-001: Log reconcile state for debugging duplicate call issues
+	log.V(1).Info("Reconcile state",
+		"phase", analysis.Status.Phase,
+		"generation", analysis.Generation,
+		"observedGeneration", analysis.Status.ObservedGeneration,
+		"investigationTime", analysis.Status.InvestigationTime)
+
 	// 2. HANDLE DELETION
 	if !analysis.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, analysis)
@@ -153,7 +160,6 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if currentPhase == "" {
 		// Initialize phase to Pending on first reconciliation
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
-		currentPhase = PhasePending
 		analysis.Status.Phase = PhasePending
 		analysis.Status.Message = "AIAnalysis created"
 		if err := r.Status().Update(ctx, analysis); err != nil {

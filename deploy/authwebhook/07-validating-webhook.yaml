@@ -1,0 +1,55 @@
+# ValidatingWebhookConfiguration for NotificationRequest DELETE
+#
+# Purpose: Validate NotificationRequest deletions for audit trail compliance
+#
+# SOC2 CC8.1 Requirement:
+# - Track who deleted notification requests
+# - Prevent unauthorized deletions
+# - Capture deletion events in audit trail
+#
+# Webhook Flow:
+# 1. User/Service attempts to delete NotificationRequest CRD
+# 2. Kubernetes API server calls authwebhook validating endpoint
+# 3. Webhook validates deletion is authorized
+# 4. Webhook creates audit event in DataStorage
+# 5. If validation succeeds, deletion proceeds
+# 6. If validation fails, deletion is blocked
+#
+# Security: mTLS authentication via cert-manager managed certificate
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: authwebhook-validating
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+  annotations:
+    # cert-manager will inject CA bundle automatically
+    cert-manager.io/inject-ca-from: kubernaut-system/authwebhook-tls
+webhooks:
+  - name: notificationrequest.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: kubernaut-system
+        path: /validate-notificationrequest-delete
+        port: 443
+      # CA bundle injected by cert-manager
+      caBundle: ""
+    failurePolicy: Fail  # Block deletions if webhook is unavailable (SOC2 requirement)
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernaut.ai/audit-enabled: "true"  # Only audit in labeled namespaces
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["notificationrequests"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+
+

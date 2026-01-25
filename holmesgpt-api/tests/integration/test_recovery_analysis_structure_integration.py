@@ -67,19 +67,25 @@ from fastapi.testclient import TestClient
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     """Setup test environment for HAPI integration tests."""
-    # Set config file path (must be before app import)
+    # DD-TEST-001 v2.5: Use global LLM configuration from conftest.py
+    # The conftest.py pytest_configure() already sets:
+    #   LLM_MODEL="gpt-4-turbo"
+    #   LLM_ENDPOINT="http://127.0.0.1:18140"
+    # DO NOT override these - recovery tests need to call actual Mock LLM server
+
+    # Only set config file path (must be before app import)
     test_dir = os.path.dirname(__file__)
     config_path = os.path.abspath(os.path.join(test_dir, "../../config.yaml"))
     os.environ["CONFIG_FILE"] = config_path
 
-    # Set mock mode for cost-free testing
-    os.environ["MOCK_LLM_MODE"] = "true"
-    os.environ["LLM_MODEL"] = "mock/test-model"
-    os.environ["DATA_STORAGE_URL"] = os.getenv("DATA_STORAGE_URL", "http://localhost:18098")
+    # DATA_STORAGE_URL is also set globally, but allow override if needed
+    if "DATA_STORAGE_URL" not in os.environ:
+        os.environ["DATA_STORAGE_URL"] = "http://localhost:18098"
 
-    print(f"\n🔧 Test environment setup:")
+    print(f"\n🔧 Recovery Test Environment:")
     print(f"   CONFIG_FILE: {config_path}")
-    print(f"   MOCK_LLM_MODE: true")
+    print(f"   LLM_MODEL: {os.environ.get('LLM_MODEL', 'NOT SET')}")
+    print(f"   LLM_ENDPOINT: {os.environ.get('LLM_ENDPOINT', 'NOT SET')}")
     print(f"   DATA_STORAGE_URL: {os.environ['DATA_STORAGE_URL']}")
 
     yield

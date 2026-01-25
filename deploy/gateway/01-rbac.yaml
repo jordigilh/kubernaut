@@ -52,6 +52,20 @@ rules:
       - list
       - watch
 
+  # ADR-052: Lease resource access for distributed locking (multi-replica safety)
+  # Gateway uses K8s Lease resources for distributed mutual exclusion
+  # to prevent duplicate RemediationRequest creation across replicas
+  # Business Requirement: BR-GATEWAY-190 (Multi-Replica Deduplication Safety)
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+      - delete
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

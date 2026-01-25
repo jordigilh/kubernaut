@@ -175,7 +175,7 @@ var _ = Describe("BR-GATEWAY-006: Signal Normalization Across Sources", func() {
 	})
 })
 
-var _ = Describe("BR-GATEWAY-010: Deduplication Fingerprinting", func() {
+var _ = Describe("BR-GATEWAY-004: Signal Fingerprinting", func() {
 	var (
 		adapter *adapters.PrometheusAdapter
 		ctx     context.Context

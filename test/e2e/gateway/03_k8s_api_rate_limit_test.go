@@ -24,15 +24,13 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Parallel Execution: ✅ ENABLED
@@ -47,7 +45,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testNamespace string
 		httpClient    *http.Client
 		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
-		k8sClient client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {
@@ -59,19 +57,11 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("Test 3: K8s API Rate Limiting - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test
-		testNamespace = fmt.Sprintf("rate-limit-%d", time.Now().UnixNano())
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "rate-limit")
+
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		// Deploy Redis and Gateway in test namespace
-
-		// ✅ Create ONLY namespace (use shared Gateway)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient = getKubernetesClient()
-		// gatewayURL is set per-process in SynchronizedBeforeSuite (8081-8084)
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -104,14 +94,11 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			return
 		}
 
-		// ✅ Cleanup test namespace (CRDs only)
-		// Note: Redis flush removed for parallel execution safety
-		// Redis keys are namespaced by fingerprint, TTL handles cleanup
+		// ✅ Cleanup test namespace (Pattern: RO E2E)
+		// Note: Gateway uses status-based deduplication (DD-GATEWAY-011)
+		// Deduplication state stored in RemediationRequest CRD status, not Redis
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		if testCancel != nil {
 			testCancel()
@@ -233,15 +220,16 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		var crdCount int
 		Eventually(func() error {
 			// Get fresh client to handle API server reconnection
-			freshClient := getKubernetesClientSafe()
-			if freshClient == nil {
+			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
+			// freshClient removed - using suite k8sClient
+			if false { // SKIP: freshClient error check no longer needed
 				if err := GetLastK8sClientError(); err != nil {
 					return fmt.Errorf("failed to create K8s client: %w", err)
 				}
 				return fmt.Errorf("failed to create K8s client (unknown error)")
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
-			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
+			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
 				testLogger.V(1).Info("  Retrying CRD list...", "error", err)
 				return err
 			}

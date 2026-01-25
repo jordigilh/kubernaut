@@ -25,10 +25,17 @@ limitations under the License.
 package audit
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
 // ServiceName is the canonical service identifier for audit events.
@@ -38,6 +45,23 @@ const ServiceName = "remediationorchestrator-controller"
 // Event category for RO audit events (ADR-034 v1.2: Service-level category)
 const (
 	CategoryOrchestration = "orchestration" // Service-level identifier per ADR-034 v1.2
+)
+
+// Event type constants for RemediationOrchestrator audit events (from OpenAPI spec)
+const (
+	EventTypeLifecycleStarted      = "orchestrator.lifecycle.started"
+	EventTypeLifecycleCreated      = "orchestrator.lifecycle.created" // Gap #8: BR-AUDIT-005 (TimeoutConfig capture)
+	EventTypeLifecycleCompleted    = "orchestrator.lifecycle.completed"
+	EventTypeLifecycleFailed       = "orchestrator.lifecycle.failed"
+	EventTypeLifecycleTransitioned = "orchestrator.lifecycle.transitioned" // Replaces "orchestrator.phase.transitioned"
+	EventTypeApprovalRequested     = "orchestrator.approval.requested"
+	EventTypeApprovalApproved      = "orchestrator.approval.approved"
+	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
+)
+
+// Event category constant (from OpenAPI spec)
+const (
+	EventCategoryOrchestration = "orchestration"
 )
 
 // Event actions for RO audit events (per DD-AUDIT-003)
@@ -54,6 +78,16 @@ const (
 	ActionBlocked           = "blocked"   // Routing blocked (DD-RO-002)
 	ActionUnblocked         = "unblocked" // Routing unblocked (future)
 )
+
+// TimeoutConfig mirrors remediationv1alpha1.TimeoutConfig for audit purposes.
+// This avoids importing the entire remediation API package into the audit manager.
+// Per BR-AUDIT-005 Gap #8: Captures timeout configuration for RR reconstruction.
+type TimeoutConfig struct {
+	Global     *metav1.Duration
+	Processing *metav1.Duration
+	Analyzing  *metav1.Duration
+	Executing  *metav1.Duration
+}
 
 // Manager provides audit event building for RO.
 // Per CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §7 (Audit Manager Pattern P3)
@@ -75,6 +109,68 @@ type LifecycleStartedData struct {
 	Namespace string `json:"namespace"`
 }
 
+// BuildRemediationCreatedEvent builds an audit event for RR creation with timeout config (Gap #8).
+// Per BR-AUDIT-005 v2.0 Gap #8: Captures TimeoutConfig for RR reconstruction.
+// Per ADR-034 v1.2: Uses orchestrator.lifecycle.created naming convention.
+// This event is emitted when RemediationRequest is FIRST reconciled by Orchestrator.
+//
+// Event Data includes:
+// - timeout_config: {global, processing, analyzing, executing} (from status, populated by RO)
+// - rr_name: RemediationRequest name
+// - namespace: Kubernetes namespace
+//
+// DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+func (m *Manager) BuildRemediationCreatedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	timeoutConfig *TimeoutConfig,
+) (*ogenclient.AuditEventRequest, error) {
+	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "orchestrator.lifecycle.created") // Gap #8: Per ADR-034 v1.2 naming convention
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, "created")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	// Gap #8: Build timeout_config structure for audit
+	// Convert TimeoutConfig to OptTimeoutConfig (ogen union type)
+	var timeoutConfigOpt api.OptTimeoutConfig
+	if timeoutConfig != nil {
+		// Build TimeoutConfig structure with all fields as OptString
+		tc := api.TimeoutConfig{}
+		if timeoutConfig.Global != nil && timeoutConfig.Global.Duration > 0 {
+			tc.Global.SetTo(timeoutConfig.Global.Duration.String())
+		}
+		if timeoutConfig.Processing != nil && timeoutConfig.Processing.Duration > 0 {
+			tc.Processing.SetTo(timeoutConfig.Processing.Duration.String())
+		}
+		if timeoutConfig.Analyzing != nil && timeoutConfig.Analyzing.Duration > 0 {
+			tc.Analyzing.SetTo(timeoutConfig.Analyzing.Duration.String())
+		}
+		if timeoutConfig.Executing != nil && timeoutConfig.Executing.Duration > 0 {
+			tc.Executing.SetTo(timeoutConfig.Executing.Duration.String())
+		}
+		timeoutConfigOpt.SetTo(tc)
+	}
+
+	// Use ogen union constructor (OGEN-MIGRATION)
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated, // Gap #8: Corrected per ADR-034
+		RrName:        rrName,
+		Namespace:     namespace,
+		TimeoutConfig: timeoutConfigOpt, // Gap #8: Capture TimeoutConfig for RR reconstruction
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
 // BuildLifecycleStartedEvent builds an audit event for remediation lifecycle started.
 // Per DD-AUDIT-003: orchestrator.lifecycle.started (P1)
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
@@ -82,7 +178,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -95,12 +191,13 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
 
-	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := LifecycleStartedData{
-		RRName:    rrName,
+	// Use ogen union constructor (OGEN-MIGRATION)
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted,
+		RrName:    rrName,
 		Namespace: namespace,
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -123,11 +220,11 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	rrName string,
 	fromPhase string,
 	toPhase string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.phase.transitioned")
+	audit.SetEventType(event, EventTypeLifecycleTransitioned)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionTransitioned)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -137,13 +234,14 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := PhaseTransitionData{
-		FromPhase: fromPhase,
-		ToPhase:   toPhase,
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		FromPhase: api.OptString{Value: fromPhase, Set: true},
+		ToPhase:   api.OptString{Value: toPhase, Set: true},
 		Namespace: namespace,
-		RRName:    rrName,
+		RrName:    rrName,
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -168,7 +266,7 @@ func (m *Manager) BuildCompletionEvent(
 	rrName string,
 	outcome string,
 	durationMs int64,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -183,13 +281,16 @@ func (m *Manager) BuildCompletionEvent(
 	audit.SetDuration(event, int(durationMs))
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := CompletionData{
-		Outcome:    outcome,
-		DurationMs: durationMs,
+	// Note: `outcome` parameter is CRD-level (Remediated/NoActionRequired/ManualReviewRequired)
+	// but OpenAPI enum expects ["Success", "Failed", "Pending"] - always use "Success" for completion events
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+		Outcome:    api.OptRemediationOrchestratorAuditPayloadOutcome{Value: api.RemediationOrchestratorAuditPayloadOutcomeSuccess, Set: true},
+		DurationMs: api.OptInt64{Value: durationMs, Set: true},
 		Namespace:  namespace,
-		RRName:     rrName,
+		RrName:     rrName,
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -197,6 +298,7 @@ func (m *Manager) BuildCompletionEvent(
 // BuildFailureEvent builds an audit event for remediation lifecycle failure.
 // Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+// BR-AUDIT-005 Gap #7: Now includes standardized error_details for SOC2 compliance
 func (m *Manager) BuildFailureEvent(
 	correlationID string,
 	namespace string,
@@ -204,7 +306,40 @@ func (m *Manager) BuildFailureEvent(
 	failurePhase string,
 	failureReason string,
 	durationMs int64,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
+	// BR-AUDIT-005 Gap #7: Build standardized error_details
+	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
+
+	// Determine error code and retry guidance based on failure phase/reason
+	// BR-AUDIT-005 Gap #7: Check most specific errors first (invalid config before general timeout)
+	var errorCode string
+	var retryPossible bool
+
+	switch {
+	case strings.Contains(failureReason, "ERR_INVALID_TIMEOUT_CONFIG"):
+		errorCode = "ERR_INVALID_TIMEOUT_CONFIG" // Specific invalid timeout config error
+		retryPossible = false                    // Invalid config is permanent
+	case strings.Contains(failureReason, "invalid") || strings.Contains(failureReason, "configuration"):
+		errorCode = "ERR_INVALID_CONFIG"
+		retryPossible = false // Invalid config is permanent
+	case strings.Contains(failureReason, "timeout"):
+		errorCode = "ERR_TIMEOUT_REMEDIATION"
+		retryPossible = true // Timeouts are transient
+	case strings.Contains(failureReason, "not found") || strings.Contains(failureReason, "create"):
+		errorCode = "ERR_K8S_CREATE_FAILED"
+		retryPossible = true // K8s creation may be transient
+	default:
+		errorCode = "ERR_INTERNAL_ORCHESTRATION"
+		retryPossible = true // Default to retryable
+	}
+
+	errorDetails := sharedaudit.NewErrorDetails(
+		"remediationorchestrator",
+		errorCode,
+		errorMessage,
+		retryPossible,
+	)
+
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -218,16 +353,19 @@ func (m *Manager) BuildFailureEvent(
 	audit.SetNamespace(event, namespace)
 	audit.SetDuration(event, int(durationMs))
 
-	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := CompletionData{
-		Outcome:       "Failed",
-		DurationMs:    durationMs,
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted, // DD-AUDIT-003: lifecycle.completed with failure outcome
+		RrName:        rrName,
 		Namespace:     namespace,
-		RRName:        rrName,
-		FailurePhase:  failurePhase,
-		FailureReason: failureReason,
+		Outcome:       api.OptRemediationOrchestratorAuditPayloadOutcome{Value: api.RemediationOrchestratorAuditPayloadOutcomeFailed, Set: true},
+		DurationMs:    api.OptInt64{Value: durationMs, Set: true},
+		FailurePhase:  ToOptFailurePhase(failurePhase),
+		FailureReason: ToOptFailureReason(failureReason),
+		ErrorDetails:  toOptErrorDetails(errorDetails), // Gap #7: Standardized error_details for SOC2 compliance
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload) // DD-AUDIT-003: Use lifecycle.completed discriminator
 
 	return event, nil
 }
@@ -256,29 +394,30 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	workflowID string,
 	confidence string,
 	requiredBy time.Time,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, "orchestrator.approval.requested")
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionApprovalRequested)
-	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetEventOutcome(event, audit.OutcomePending) // Approval outcome is pending until decision made
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "RemediationApprovalRequest", rarName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := ApprovalData{
-		RARName:       rarName,
-		RRName:        rrName,
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested, // Fixed: was lifecycle.transitioned
+		RarName:       api.OptString{Value: rarName, Set: true},
+		RrName:        rrName,
 		Namespace:     namespace,
-		RequiredBy:    requiredBy.Format(time.RFC3339),
-		WorkflowID:    workflowID,
-		ConfidenceStr: confidence,
+		RequiredBy:    api.OptDateTime{Value: requiredBy, Set: true},
+		WorkflowID:    api.OptString{Value: workflowID, Set: true},
+		ConfidenceStr: api.OptString{Value: confidence, Set: true},
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -294,10 +433,10 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	decision string,
 	decidedBy string,
 	message string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Determine action and outcome based on decision
 	var action string
-	var apiOutcome dsgen.AuditEventRequestEventOutcome
+	var apiOutcome api.AuditEventRequestEventOutcome
 	switch decision {
 	case "Approved":
 		action = ActionApproved
@@ -336,15 +475,37 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := ApprovalData{
-		RARName:   rarName,
-		RRName:    rrName,
-		Namespace: namespace,
-		Decision:  decision,
-		DecidedBy: decidedBy,
-		Message:   message,
+	// Determine the correct EventType based on decision
+	var payloadEventType api.RemediationOrchestratorAuditPayloadEventType
+	switch decision {
+	case "Approved":
+		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved
+	case "Rejected":
+		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected
+	default:
+		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected // Default to rejected for Expired/other
 	}
-	audit.SetEventData(event, data)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: payloadEventType,
+		RarName:   api.OptString{Value: rarName, Set: true},
+		RrName:    rrName,
+		Namespace: namespace,
+		Decision:  ToOptDecision(decision),
+		// DecidedBy: decidedBy, // TODO: Add to OpenAPI schema
+		// Message:   message, // TODO: Add to OpenAPI schema
+
+	}
+
+	// Wrap with the correct discriminator based on decision
+	switch decision {
+	case "Approved":
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
+	case "Rejected":
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
+	default:
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload) // Default to rejected for Expired/other
+	}
 
 	return event, nil
 }
@@ -368,7 +529,7 @@ func (m *Manager) BuildManualReviewEvent(
 	reason string,
 	subReason string,
 	notificationName string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -383,14 +544,15 @@ func (m *Manager) BuildManualReviewEvent(
 	audit.SetSeverity(event, "warning")
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := ManualReviewData{
-		RRName:        rrName,
-		Namespace:     namespace,
-		Reason:        reason,
-		SubReason:     subReason,
-		NotificationN: notificationName,
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:        api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		RrName:           rrName,
+		Namespace:        namespace,
+		Reason:           api.OptString{Value: reason, Set: true},
+		SubReason:        api.OptString{Value: subReason, Set: true},
+		NotificationName: api.OptString{Value: notificationName, Set: true},
 	}
-	audit.SetEventData(event, data)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -424,7 +586,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	rrName string,
 	fromPhase string,
 	blockData *RoutingBlockedData,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -439,9 +601,89 @@ func (m *Manager) BuildRoutingBlockedEvent(
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	// All optional fields are handled by omitempty JSON tags in RoutingBlockedData
-	audit.SetEventData(event, blockData)
+	// Use ogen union constructor (OGEN-MIGRATION)
+	// Note: RoutingBlockedData doesn't have RrName/Namespace, they come from function params
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		RrName:    rrName,
+		Namespace: namespace,
+	}
+	// TODO: Add blocking-specific fields to OpenAPI schema (BlockReason, BlockMessage, etc.)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
 
+// ========================================
+// OGEN-MIGRATION: Helper functions for type conversion
+// ========================================
 
+// toOptFailurePhase converts string to ogen enum type.
+func ToOptFailurePhase(phase string) api.OptRemediationOrchestratorAuditPayloadFailurePhase {
+	if phase == "" {
+		return api.OptRemediationOrchestratorAuditPayloadFailurePhase{}
+	}
+
+	var result api.OptRemediationOrchestratorAuditPayloadFailurePhase
+	switch phase {
+	case "SignalProcessing", "signal_processing": // Controller uses snake_case
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseSignalProcessing)
+	case "AIAnalysis", "ai_analysis": // Controller uses snake_case
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseAIAnalysis)
+	case "WorkflowExecution", "workflow_execution": // Controller uses snake_case
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseWorkflowExecution)
+	case "Approval", "approval": // Controller uses snake_case
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailurePhaseApproval)
+	}
+	return result
+}
+
+// toOptFailureReason converts string to ogen enum type.
+func ToOptFailureReason(reason string) api.OptRemediationOrchestratorAuditPayloadFailureReason {
+	if reason == "" {
+		return api.OptRemediationOrchestratorAuditPayloadFailureReason{}
+	}
+
+	var result api.OptRemediationOrchestratorAuditPayloadFailureReason
+	switch reason {
+	case "Timeout":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailureReasonTimeout)
+	case "ValidationError":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailureReasonValidationError)
+	case "InfrastructureError":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailureReasonInfrastructureError)
+	case "ApprovalRejected":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailureReasonApprovalRejected)
+	case "Unknown":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadFailureReasonUnknown)
+	}
+	return result
+}
+
+// toOptDecision converts string to ogen enum type.
+func ToOptDecision(decision string) api.OptRemediationOrchestratorAuditPayloadDecision {
+	if decision == "" {
+		return api.OptRemediationOrchestratorAuditPayloadDecision{}
+	}
+
+	var result api.OptRemediationOrchestratorAuditPayloadDecision
+	switch decision {
+	case "Approved":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionApproved)
+	case "Rejected":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionRejected)
+	case "Pending":
+		result.SetTo(api.RemediationOrchestratorAuditPayloadDecisionPending)
+	}
+	return result
+}
+
+// toOptErrorDetails converts sharedaudit.ErrorDetails to api.OptErrorDetails.
+//
+// **Refactoring**: 2026-01-22 - Use shared helper from pkg/shared/audit/ogen_helpers.go
+// **Authority**: api/openapi/data-storage-v1.yaml (ErrorDetails schema)
+func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) api.OptErrorDetails {
+	// Use shared helper for type-safe conversion
+	// **Pattern**: Eliminates switch statement duplication across services
+	return sharedaudit.ToOgenOptErrorDetails(errorDetails)
+}

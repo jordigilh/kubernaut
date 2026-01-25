@@ -1,0 +1,58 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: authwebhook
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+rules:
+  # Read CRDs for webhook validation/mutation
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
+    verbs: ["get", "list", "watch"]
+
+  # Update CRD status for webhook mutation (user attribution)
+  # SOC2 CC8.1 Requirement: Track user who initiated CRD status changes
+  # Gap #8: RemediationRequest status mutations (TimeoutConfig) require audit attribution
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
+    verbs: ["update", "patch"]
+
+  # Read ServiceAccounts for user attribution in audit trails
+  # SOC2 CC8.1 Requirement: Attribute actions to authenticated users
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get"]
+
+  # TokenReview for validating ServiceAccount tokens
+  # Required for authenticating webhook callers
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+
+  # SubjectAccessReview for authorization checks
+  # Required for verifying user permissions
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authwebhook
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authwebhook
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: kubernaut-system
+
+

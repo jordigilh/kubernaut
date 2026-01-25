@@ -62,6 +62,9 @@ from datastorage import ApiClient, Configuration  # noqa: E402
 from datastorage.api.audit_write_api_api import AuditWriteAPIApi  # noqa: E402
 from datastorage.exceptions import ApiException  # noqa: E402
 from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
+from datastorage.models.audit_event_request_event_data import AuditEventRequestEventData  # noqa: E402
+from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
+from datastorage_auth_session import ServiceAccountAuthPoolManager  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +142,23 @@ class BufferedAuditStore:
         self._failed_batch_count = 0
         self._lock = threading.Lock()
 
-        # Initialize Data Storage OpenAPI client (Phase 2b)
+        # ========================================
+        # DD-AUTH-005: Inject ServiceAccount authentication session
+        # This change affects holmesgpt-api service automatically:
+        # - holmesgpt-api reads ServiceAccount token from /var/run/secrets/kubernetes.io/serviceaccount/token
+        # - Session caches token for 5 minutes (reduces filesystem I/O)
+        # - Session injects Authorization: Bearer <token> header on every request
+        # - Gracefully degrades if token file doesn't exist (local dev)
+        #
+        # See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
+        # ========================================
+
+        # Initialize Data Storage OpenAPI client with auth session (Phase 2b + DD-AUTH-005)
         # Replaces manual requests.post() for type safety and contract validation
+        auth_pool = ServiceAccountAuthPoolManager()
         api_config = Configuration(host=data_storage_url)
         self._api_client = ApiClient(configuration=api_config)
+        self._api_client.rest_client.pool_manager = auth_pool  # ← ServiceAccount token injection
         self._audit_api = AuditWriteAPIApi(self._api_client)
 
         # Start background worker
@@ -153,23 +169,29 @@ class BufferedAuditStore:
         )
         self._worker.start()
 
-        logger.info(
+        # AGGRESSIVE LOGGING: Print to stderr as backup (logger might not be captured)
+        import sys as _sys
+        log_msg = (
             f"📊 DD-AUDIT-002: BufferedAuditStore initialized with OpenAPI client - "
             f"url={data_storage_url}, "
             f"buffer_size={self._config.buffer_size}, "
             f"batch_size={self._config.batch_size}, "
             f"flush_interval={self._config.flush_interval_seconds}s"
         )
+        print(log_msg, file=_sys.stderr, flush=True)
+        logger.info(log_msg)
 
-    def store_audit(self, event: Dict[str, Any]) -> bool:
+    def store_audit(self, event: AuditEventRequest) -> bool:
         """
         Add event to buffer (non-blocking)
+
+        V3.0: OGEN MIGRATION - Accepts OpenAPI-generated Pydantic model instead of dict.
 
         ADR-038: "Fire-and-forget with local buffering"
         DD-AUDIT-002: "StoreAudit returns immediately, does not wait for write"
 
         Args:
-            event: Audit event dictionary
+            event: AuditEventRequest (OpenAPI-generated Pydantic model)
 
         Returns:
             True if event was buffered, False if dropped (buffer full)
@@ -195,9 +217,11 @@ class BufferedAuditStore:
             with self._lock:
                 self._dropped_count += 1
 
+            # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+            event_type = getattr(event, 'event_type', 'unknown')
             logger.warning(
                 f"⚠️ DD-AUDIT-002: Audit buffer full, dropping event - "
-                f"event_type={event.get('event_type', 'unknown')}, "
+                f"event_type={event_type}, "
                 f"dropped_count={self._dropped_count}"
             )
             return False
@@ -296,7 +320,7 @@ class BufferedAuditStore:
         - Retries failed writes with exponential backoff
         - Stops when shutdown is signaled
         """
-        batch: List[Dict[str, Any]] = []
+        batch: List[AuditEventRequest] = []
         last_flush = time.time()
 
         while True:
@@ -346,6 +370,9 @@ class BufferedAuditStore:
 
                 # Check if flush interval reached
                 elif batch and (time.time() - last_flush) >= self._config.flush_interval_seconds:
+                    # AGGRESSIVE LOGGING: Print flush decision
+                    import sys as _sys
+                    print(f"🔥 HAPI FLUSH: Interval reached, flushing {len(batch)} events", file=_sys.stderr, flush=True)
                     self._write_batch_with_retry(batch)
                     batch = []
                     last_flush = time.time()
@@ -353,7 +380,7 @@ class BufferedAuditStore:
             except Exception as e:
                 logger.error(f"💥 DD-AUDIT-002: Background writer error - {e}")
 
-    def _write_batch_with_retry(self, batch: List[Dict[str, Any]]) -> None:
+    def _write_batch_with_retry(self, batch: List[AuditEventRequest]) -> None:
         """
         Write batch by iterating through events and POSTing each individually
 
@@ -385,18 +412,19 @@ class BufferedAuditStore:
                 self._failed_batch_count += 1
 
         if written > 0:
-            logger.debug(
-                f"✅ DD-AUDIT-002: Wrote audit events - "
-                f"written={written}, failed={failed}"
-            )
+            # AGGRESSIVE LOGGING: Print to stderr
+            import sys as _sys
+            log_msg = f"✅ DD-AUDIT-002: Wrote audit events - written={written}, failed={failed}"
+            print(log_msg, file=_sys.stderr, flush=True)
+            logger.debug(log_msg)
 
         if failed > 0:
-            logger.warning(
-                f"⚠️ DD-AUDIT-002: Some events failed - "
-                f"written={written}, failed={failed}"
-            )
+            import sys as _sys
+            log_msg = f"⚠️ DD-AUDIT-002: Some events failed - written={written}, failed={failed}"
+            print(log_msg, file=_sys.stderr, flush=True)
+            logger.warning(log_msg)
 
-    def _write_single_event_with_retry(self, event: Dict[str, Any]) -> bool:
+    def _write_single_event_with_retry(self, event: AuditEventRequest) -> bool:
         """
         Write single event with exponential backoff retry using OpenAPI client
 
@@ -411,32 +439,33 @@ class BufferedAuditStore:
         """
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                # Create typed request from event dict (Pydantic validation)
-                audit_request = AuditEventRequest(**event)
+                # V3.0: OGEN MIGRATION - No conversion needed, already AuditEventRequest!
+                # Event is already an OpenAPI-generated Pydantic model from events.py
 
                 # Call OpenAPI endpoint (type-safe, contract-validated)
                 response = self._audit_api.create_audit_event(
-                    audit_event_request=audit_request
+                    audit_event_request=event
                 )
 
                 logger.debug(
                     f"✅ Audit event written via OpenAPI - "
                     f"event_id={response.event_id}, "
-                    f"event_type={event.get('event_type')}, "
-                    f"correlation_id={event.get('correlation_id')}"
+                    f"event_type={event.event_type}, "
+                    f"correlation_id={event.correlation_id}"
                 )
                 return True
 
             except ApiException as e:
                 # OpenAPI client exception (HTTP errors, timeouts, etc.)
-                event_type = event.get("event_type", "unknown")
-                correlation_id = event.get("correlation_id", "")
+                # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+                event_type = getattr(event, "event_type", "unknown")
+                correlation_id = getattr(event, "correlation_id", "")
 
                 logger.warning(
                     f"⚠️ DD-AUDIT-002: OpenAPI audit write failed - "
                     f"attempt={attempt}/{self._config.max_retries}, "
                     f"event_type={event_type}, correlation_id={correlation_id}, "
-                    f"status={e.status}, error={e.reason}"
+                    f"status={e.status}, error={e.reason}, body={e.body}"
                 )
 
                 if attempt < self._config.max_retries:
@@ -446,8 +475,9 @@ class BufferedAuditStore:
 
             except Exception as e:
                 # Validation errors (Pydantic), unexpected errors
-                event_type = event.get("event_type", "unknown")
-                correlation_id = event.get("correlation_id", "")
+                # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+                event_type = getattr(event, "event_type", "unknown")
+                correlation_id = getattr(event, "correlation_id", "")
 
                 logger.error(
                     f"❌ DD-AUDIT-002: Unexpected error in audit write - "
@@ -458,8 +488,9 @@ class BufferedAuditStore:
                 return False
 
         # Final failure: Drop event
-        event_type = event.get("event_type", "unknown")
-        correlation_id = event.get("correlation_id", "")
+        # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+        event_type = getattr(event, "event_type", "unknown")
+        correlation_id = getattr(event, "correlation_id", "")
 
         logger.error(
             f"❌ DD-AUDIT-002: Dropping audit event after max retries - "

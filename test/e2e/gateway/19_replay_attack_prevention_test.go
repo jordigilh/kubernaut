@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,21 +27,17 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-075)", Ordered, func() {
 	var (
-		testCtx       context.Context
-		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "replay-attack-prevention")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -50,14 +45,9 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		testLogger.Info("Test 19: Replay Attack Prevention - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("replay-attack")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
+		// Create unique test namespace (Pattern: RO E2E)
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "replay")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -75,25 +65,15 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
-			testLogger.Info(fmt.Sprintf("  kubectl logs -n kubernaut-system deployment/gateway -f"))
-			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		testLogger.Info(fmt.Sprintf("  kubectl logs -n kubernaut-system deployment/gateway -f"))
+		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		_ = k8sClient.Delete(testCtx, ns)
+	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+	// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
 
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
+	testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -330,4 +310,3 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		})
 	})
 })
-

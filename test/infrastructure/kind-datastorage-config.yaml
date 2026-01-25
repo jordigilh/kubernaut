@@ -12,6 +12,11 @@ nodes:
   - containerPort: 30432  # PostgreSQL NodePort in cluster
     hostPort: 25433       # Port on host machine (localhost:25433) - Per DD-TEST-001
     protocol: TCP
+  # DD-TEST-007: Mount coverage directory for E2E coverage collection
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
@@ -31,11 +36,4 @@ nodes:
         # Higher limits prevent CRD creation delays during parallel testing
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-  extraMounts:
-  # Mount coverage directory from host to Kind node for E2E coverage collection
-  # See: docs/development/testing/E2E_COVERAGE_COLLECTION.md
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false
 

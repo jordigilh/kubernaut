@@ -628,4 +628,3 @@ func verifyChildrenExistence(ctx context.Context, c client.Client, rr *remediati
 		}
 	}
 }
-

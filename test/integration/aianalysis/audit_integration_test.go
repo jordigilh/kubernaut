@@ -45,8 +45,8 @@ import (
 	// Uncomment when implementing audit flow validation
 	// "context"
 	// "fmt"
-	// dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
-	_ "github.com/jordigilh/kubernaut/pkg/datastorage/client" // Keep import for future use
+	// ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	_ "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Keep import for future use
 )
 
 // ========================================
@@ -78,12 +78,12 @@ import (
 // NOTE: Currently unused - kept for future flow-based audit tests (Dec 29, 2025)
 // Uncomment when implementing audit flow validation in audit_flow_integration_test.go
 /*
-func queryAuditEventsViaAPI(ctx context.Context, dsClient *dsgen.ClientWithResponses, correlationID, eventType string) ([]dsgen.AuditEvent, error) {
+func queryAuditEventsViaAPI(ctx context.Context, dsClient *ogenclient.Client, correlationID, eventType string) ([]ogenclient.AuditEvent, error) {
 	// Build type-safe query parameters (per DD-API-001)
 	eventCategory := "analysis" // Required per ADR-034 v1.2 (event_category mandatory, matches pkg/aianalysis/audit/audit.go)
-	params := &dsgen.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		EventCategory: &eventCategory, // ✅ Type-safe: Compile error if field missing in spec
+	params := ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		EventCategory: ogenclient.NewOptString(eventCategory, // ✅ Type-safe: Compile error if field missing in spec
 	}
 
 	// Add optional event_type filter if specified
@@ -92,21 +92,21 @@ func queryAuditEventsViaAPI(ctx context.Context, dsClient *dsgen.ClientWithRespo
 	}
 
 	// Query with generated client (type-safe, contract-validated)
-	resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query audit API: %w", err)
 	}
 
 	// Validate response status and structure (per TESTING_GUIDELINES.md)
-	if resp.JSON200 == nil {
+	if false { // ogen migration: JSON200 check removed
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode())
 	}
 
-	if resp.JSON200.Data == nil {
+	if resp.Data == nil {
 		return nil, fmt.Errorf("response missing data array")
 	}
 
-	return *resp.JSON200.Data, nil
+	return resp.Data, nil
 }
 */
 

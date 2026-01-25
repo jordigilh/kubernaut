@@ -5,19 +5,12 @@ description: "Testing strategy and patterns for kubernaut's defense-in-depth app
 
 # Testing Strategy for Kubernaut
 
-## 🚨 **ENHANCED METHODOLOGY INTEGRATION**
-
-**IMPORTANT**: This testing strategy integrates with the comprehensive AI assistant methodology.
-See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assistant-methodology-enforcement.mdc) for complete validation requirements.
-
-**For '/fix-build' commands**: All testing must follow the enhanced validation approach with comprehensive TDD compliance.
-
-## 🔑 **CRITICAL: KUBERNETES CLIENT MANDATE FOR ALL SERVICES**
+## 🔑 **CRITICAL: KUBERNETES CLIENT MANDATE**
 
 **AUTHORITATIVE RULE**: All services that interact with Kubernetes MUST use the approved K8s client interface:
 
 | Test Tier | MANDATORY Interface | Package |
-|---|---|---|
+|-----------|---------------------|---------|
 | **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` |
 | **Integration Tests** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
 | **E2E Tests** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
@@ -25,1045 +18,266 @@ See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assist
 **❌ FORBIDDEN**: Custom `MockK8sClient` implementations - use fake client instead
 **✅ APPROVED**: `fake.NewClientBuilder()` for all unit tests requiring K8s interaction
 
-**ARCHITECTURAL DECISION**: [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md) (✅ ACCEPTED, 97% confidence)
+**See**: [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md)
 
-**See**: [Kubernetes Client Usage - MANDATORY FOR ALL SERVICES](#kubernetes-client-usage---mandatory-for-all-services) for complete details.
+---
 
-## Defense-in-Depth Testing Approach
-Kubernaut implements a **defense-in-depth testing strategy** with **90% overall confidence** through extensive unit test coverage and strong integration testing for microservices coordination:
+## 📊 **Defense-in-Depth Testing Pyramid**
 
-### Coverage Targets: BR Coverage vs Code Coverage
+### Coverage Targets
 
 **Business Requirement (BR) Coverage** - OVERLAPPING:
-- **Unit**: 70%+ of ALL BRs
-- **Integration**: >50% of ALL BRs
-- **E2E**: <10% BR coverage
-- **Purpose**: Ensure ALL business requirements are implemented
+- **Unit**: 70%+ of ALL BRs (maximum coverage foundation)
+- **Integration**: >50% of ALL BRs (critical interactions)
+- **E2E**: <10% BR coverage (essential user journeys)
 
 **Code Coverage** - CUMULATIVE (~100% combined):
 - **Unit**: 70%+ code coverage (algorithms, edge cases, error handling)
 - **Integration**: 50% code coverage (cross-component flows, CRD operations)
 - **E2E**: 50% code coverage (full stack, deployment wiring, real infrastructure)
-- **Purpose**: Same CODE tested at 2+ layers to catch bugs at multiple defense points
 
-**Empirical Validation**: DataStorage and SignalProcessing services demonstrate E2E tests achieve 50%+ code coverage due to full stack execution (main.go initialization, reconciliation loop, business logic, metrics, audit integration).
+**Key Insight**: With 70%/50%/50% code coverage targets, **50%+ of codebase is tested in ALL 3 tiers** - bugs must slip through multiple defense layers to reach production.
 
-**Key Insight**: With 70%/50%/50% code coverage targets, **50%+ of codebase is tested in ALL 3 tiers** - ensuring bugs must slip through multiple defense layers to reach production.
+**See**: [Complete Testing Strategy](mdc:docs/testing/PYRAMID_TEST_MIGRATION_GUIDE.md)
 
 ---
 
-### Unit Tests (70%+ - AT LEAST 70% of ALL BRs) - **MAXIMUM COVERAGE FOUNDATION LAYER**
-**Location**: [test/unit/](mdc:test/unit/)
-**Purpose**: **EXTENSIVE business logic validation covering ALL unit-testable business requirements**
-**BR Coverage Mandate**: **AT LEAST 70% of total business requirements, extended to 100% of unit-testable BRs**
-**Code Coverage Target**: **70%+ of codebase** (algorithms, edge cases, error handling)
-**Confidence**: 85-90%
+## 🧪 **Test Tier Specifications**
+
+### Unit Tests (70%+ BRs, 70%+ Code Coverage)
+
+**Location**: `test/unit/`
+**Purpose**: Extensive business logic validation covering ALL unit-testable business requirements
 **Execution**: `make test`
-**Strategy**: **Use real business logic with mocks ONLY for external dependencies - MAXIMIZE unit test coverage**
+**Framework**: **Ginkgo/Gomega BDD** (MANDATORY - no standard Go testing)
+**Confidence**: 85-90%
 
-**CRITICAL EXPANSION PRINCIPLE**: Unit tests should cover **ALL business requirements that can be unit tested with external mock dependencies**, even if some requirements are also tested in integration or e2e testing (defense-in-depth). The 70% minimum is a floor, not a ceiling.
-
+**Mock Strategy**:
 ```go
-// Example: Comprehensive business logic testing with real components
-Describe("BR-WORKFLOW-001: Intelligent Workflow Generation", func() {
-    var (
-        // Mock ONLY external dependencies
-        mockLLMProvider *mocks.MockLLMProvider
-        mockK8sClient   *mocks.MockKubernetesClient
-        mockVectorDB    *mocks.MockVectorDatabase
+// ✅ CORRECT: Mock ONLY external dependencies
+var (
+    mockLLMProvider   *mocks.MockLLMProvider    // External: AI service
+    mockK8sClient     client.Client              // External: Use fake.NewClientBuilder()
+    mockVectorDB      *mocks.MockVectorDatabase  // External: Database
 
-        // Use REAL business logic components
-        workflowBuilder *engine.IntelligentWorkflowBuilder
-        safetyFramework *platform.SafetyFramework
-        analyticsEngine *insights.AnalyticsEngine
-    )
-
-    BeforeEach(func() {
-        // Mock external/infrastructure dependencies ONLY
-        mockLLMProvider = mocks.NewMockLLMProvider()
-        mockK8sClient = mocks.NewMockKubernetesClient()
-        mockVectorDB = mocks.NewMockVectorDatabase()
-
-        // Create REAL business components
-        safetyFramework = platform.NewSafetyFramework(realConfig)
-        analyticsEngine = insights.NewAnalyticsEngine(realConfig)
-        workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-            mockLLMProvider,    // External: AI service
-            mockK8sClient,      // External: Infrastructure
-            safetyFramework,    // Real: Business safety logic
-            analyticsEngine,    // Real: Business analytics logic
-        )
-    })
-
-    It("should generate workflows with comprehensive business validation", func() {
-        // Test REAL business logic integration and algorithms
-        workflow, err := workflowBuilder.CreateWorkflowFromAlert(ctx, alert)
-
-        // Validate REAL business outcomes and logic
-        Expect(workflow.Template.SafetyValidation).ToNot(BeNil())
-        Expect(safetyFramework.ValidateWorkflow(workflow)).To(Succeed())
-        Expect(analyticsEngine.AssessWorkflowRisk(workflow)).To(BeNumerically("<", 0.3))
-    })
-})
+    // Use REAL business logic components
+    workflowBuilder   *engine.IntelligentWorkflowBuilder
+    safetyFramework   *platform.SafetyFramework
+    analyticsEngine   *insights.AnalyticsEngine
+)
 ```
 
-### Integration Tests (>50% - 100+ BRs) - **CROSS-SERVICE INTERACTION LAYER**
-**Location**: [test/integration/](mdc:test/integration/)
-**Purpose**: **Cross-service behavior, data flow validation, and microservices coordination**
-**BR Coverage Mandate**: **>50% of total business requirements due to microservices architecture**
-**Code Coverage Target**: **50% of codebase** (cross-component flows, CRD operations, real K8s API)
-**Confidence**: 80-85%
-**Execution**: `make test-integration-kind` (Kind cluster) or `make test-integration-kind-ci` (CI with mocked LLM)
-**Strategy**: **Focus on cross-service flows, CRD coordination, and service-to-service integration with real business logic**
+**What to Mock**:
+- ✅ External APIs (LLM, HolmesGPT, OpenAI)
+- ✅ Databases (PostgreSQL, Vector DB, Redis)
+- ✅ Kubernetes API (use `fake.NewClientBuilder()`)
+- ✅ Network services (external HTTP/gRPC)
 
-**MICROSERVICES INTEGRATION FOCUS**: In a microservices architecture, integration tests must cover:
-- CRD-based coordination between services
-- Watch-based status propagation
-- Owner reference lifecycle management
-- Cross-service error handling
-- Service discovery and communication patterns
+**What to Keep Real**:
+- ✅ **ALL** business logic (`pkg/` code)
+- ✅ **ALL** internal algorithms
+- ✅ **ALL** business validators/analyzers/optimizers
+- ✅ **ALL** cross-package business interactions
 
+**See**: [Unit Test Patterns](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)
+
+---
+
+### Integration Tests (<20% BRs, 50% Code Coverage)
+
+**Location**: `test/integration/`
+**Purpose**: Critical component interactions requiring real infrastructure
+**Execution**: `make test-integration-[service]`
+**Framework**: Ginkgo/Gomega BDD with envtest/KIND
+**Confidence**: 75-85%
+
+**When to Write**:
+- ✅ CRD lifecycle with Kubernetes API
+- ✅ Database transaction coordination
+- ✅ Multi-service coordination flows
+- ✅ Complex state management requiring real infrastructure
+
+**Mock Strategy**:
 ```go
-// Example: Cross-component integration with real business logic
-Describe("BR-INTEGRATION-001: Workflow Engine Integration", func() {
-    It("should integrate workflow generation with execution pipeline", func() {
-        // Test real component integration
-        workflow := workflowEngine.CreateWorkflow(ctx, alert)
-        executionResult := executionEngine.ExecuteWorkflow(ctx, workflow)
-
-        // Validate cross-component business outcomes
-        Expect(executionResult.Status).To(Equal("completed"))
-        Expect(executionResult.BusinessMetrics.SuccessRate).To(BeNumerically(">", 0.9))
-    })
-})
+// ✅ ZERO MOCKS for business logic
+// ✅ Real K8s API via envtest
+// ✅ Real databases via testcontainers
+// ✅ Mock ONLY external services (LLM, external APIs)
 ```
 
-### E2E Tests (<10% BR Coverage - 20-30 BRs) - **COMPLETE BUSINESS WORKFLOW LAYER**
-**Location**: [test/e2e/](mdc:test/e2e/)
-**Purpose**: **Complete end-to-end business workflow validation across all services**
-**BR Coverage Mandate**: **<10% of total business requirements (critical user journeys only)**
-**Code Coverage Target**: **50% of codebase** (full stack: main.go, reconciliation, business logic, metrics, audit)
+**See**: [Integration Test Infrastructure](mdc:docs/testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)
+
+---
+
+### E2E Tests (<10% BRs, 50% Code Coverage)
+
+**Location**: `test/e2e/`
+**Purpose**: Essential customer-facing workflows in production-like environments
+**Execution**: `make test-e2e-[service]`
+**Framework**: Ginkgo/Gomega BDD with KIND/OCP clusters
 **Confidence**: 90-95%
-**Execution**: `make test-e2e-ocp` (OpenShift) or `make test-e2e-kind` (Kind cluster)
-**Strategy**: **Complete business scenarios with minimal mocking, focusing on critical remediation workflows**
 
-**E2E FOCUS**: Test complete alert-to-resolution journeys:
-- Alert ingestion → Processing → AI Analysis → Workflow Execution → Kubernetes Execution → Resolution
-- Multi-step remediation scenarios (rollback, scaling, migration)
-- Failure recovery and degraded mode scenarios
+**When to Write**:
+- ✅ Critical user journeys (onboarding, alert → remediation)
+- ✅ End-to-end security flows (auth, RBAC)
+- ✅ Production deployment verification
+- ✅ Cross-service full-stack scenarios
 
-## Defense-in-Depth Testing Strategy - EXPANDED UNIT COVERAGE
+**Mock Strategy**:
+```go
+// ✅ ZERO MOCKS for internal components
+// ✅ Real Kubernetes clusters (KIND/OCP)
+// ✅ Real databases and infrastructure
+// ✅ Mock LLM MAY be acceptable for test speed
+```
 
-### **🛡️ Core Principle: MAXIMUM Unit Coverage with Strategic Multi-Layer Defense**
+**See**: [E2E Testing Strategy](mdc:docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md)
 
-Kubernaut implements **defense-in-depth** testing with **EXPANDED unit test foundation** where business functionality is validated comprehensively at the unit level AND strategically at integration/e2e levels for critical scenarios. This approach ensures **MAXIMUM coverage at the unit level** (70%+ minimum, extending to ALL unit-testable BRs) while maintaining defense layers for scenarios requiring real system integration.
+---
 
-**EXPANSION MANDATE**: Unit tests should cover **EVERY business requirement that can be tested with external mocks**, not just the 70% minimum. This creates a comprehensive foundation layer with strategic overlapping coverage at higher levels.
+## 🚨 **Testing Anti-Patterns - FORBIDDEN**
 
-## Testing Framework
-- **BDD Framework**: Ginkgo/Gomega for behavior-driven development (MANDATORY per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc))
-- **TDD Workflow**: Test-Driven Development is REQUIRED - write tests first, then implementation
-- **Business Requirements**: ALL tests must map to specific business requirements (BR-[CATEGORY]-[NUMBER] format)
-- **Test Organization**: Test files use `_test.go` suffix with same package name as source (e.g., `package datastorage` for tests in `test/unit/datastorage/`)
-- **Mock Strategy**: Use [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go) for consistent mocks
-- **Test Data**: Use [pkg/testutil/test_data_factory.go](mdc:pkg/testutil/test_data_factory.go) for fixture generation
-- **Parallel Execution**: ALL tests MUST support parallel execution whenever possible (see Parallel Testing Requirements below)
+### **NULL-TESTING (Most Critical)**
+```go
+// ❌ FORBIDDEN: Weak assertions
+Expect(result).ToNot(BeNil())
+Expect(items).ToNot(BeEmpty())
 
-## 🚀 **Parallel Testing Requirements - MANDATORY**
+// ✅ CORRECT: Business outcome validation
+Expect(workflow.SafetyValidation).To(ContainElement("resource-limits"))
+Expect(analysis.ConfidenceScore).To(BeNumerically(">=", 0.8))
+```
 
-### **Core Principle: Maximize Test Execution Speed**
+### **MOCK OVERUSE**
+```go
+// ❌ FORBIDDEN: Mocking business logic
+mockValidator := mocks.NewMockWorkflowValidator()
+mockAnalyzer := mocks.NewMockPerformanceAnalyzer()
 
-**MANDATORY**: ALL tests MUST be designed to run in parallel whenever possible to minimize CI/CD execution time and improve developer productivity.
+// ✅ CORRECT: Real business components
+validator := business.NewWorkflowValidator()
+analyzer := business.NewPerformanceAnalyzer()
+```
 
-### **Parallelism Configuration**
+### **LIBRARY TESTING**
+```go
+// ❌ FORBIDDEN: Testing third-party libraries
+logger := logrus.New()
+Expect(logger).ToNot(BeNil())
 
-**Default Parallelism**: **4 concurrent processors** (Ginkgo `-p` flag with 4 procs)
+// ✅ CORRECT: Testing business logic
+logger := business.NewStructuredLogger(config)
+logger.LogWorkflowEvent("workflow-123", "completed")
+Expect(logger.GetLastEvent().WorkflowID).To(Equal("workflow-123"))
+```
+
+**Detection**: Run `make lint-test-patterns`
+**See**: [Anti-Pattern Detection Guide](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)
+
+---
+
+## 📋 **Mandatory Requirements**
+
+### **1. Business Requirement Mapping**
+**MANDATORY**: ALL tests must reference test plan IDs (preferred) or business requirements
+
+**Test Identification Priority**:
+1. **PREFERRED**: Test Scenario ID (e.g., UT-WF-197-001, IT-GW-045-010) - enables methodical TDD execution
+2. **FALLBACK**: Business Requirement (BR-[CATEGORY]-[NUMBER]) - when test plan not available
+
+**Test Plan Locations**:
+- **Single-Service**: docs/services/{service-type}/{service-name}/TEST_PLAN.md
+- **Transactional/Cross-Service**: docs/testing/{BR-NAME}/ (for BRs impacting multiple services)
+- **Example**: docs/testing/BR-HAPI-197/ contains cross-service RCA integration test plans
+
+```go
+// PREFERRED: With Test Plan ID
+Describe("UT-WF-197-001: Workflow Creation with Safety Validation", func() {
+    It("should generate workflows with resource limits", func() {
+        // Test implementation
+    })
+})
+
+// FALLBACK: With BR Reference (no test plan)
+Describe("BR-WORKFLOW-001: Intelligent Workflow Generation", func() {
+    It("should generate workflows with safety validation", func() {
+        // Test implementation
+    })
+})
+```
+
+
+### **2. BDD Framework**
+**MANDATORY**: Use Ginkgo/Gomega for ALL tests (no standard Go testing)
+
+```go
+// ❌ FORBIDDEN
+func TestWorkflow(t *testing.T) { }
+
+// ✅ CORRECT
+var _ = Describe("Workflow Engine", func() {
+    It("should process workflows", func() {
+        // Test with Expect() assertions
+    })
+})
+```
+
+### **3. Real Business Logic**
+**MANDATORY**: Use real `pkg/` components, mock only external dependencies
+
+```go
+// ✅ CORRECT Pattern
+BeforeEach(func() {
+    // Mock external dependencies
+    mockLLM = testutil.NewMockLLMClient()
+    mockK8s = fake.NewClientBuilder().Build()
+
+    // Use REAL business components
+    engine = business.NewWorkflowEngine(mockLLM, mockK8s)
+    validator = business.NewSafetyValidator()
+    analyzer = business.NewPerformanceAnalyzer()
+})
+```
+
+---
+
+## 🔧 **Validation Commands**
 
 ```bash
-# Run tests with 4 parallel processors (default)
-ginkgo -p --procs=4 ./test/unit/...
-ginkgo -p --procs=4 ./test/integration/...
-ginkgo -p --procs=4 ./test/e2e/...
+# Run test pyramid validation
+make test                          # Unit tests
+make test-integration-[service]    # Integration tests
+make test-e2e-[service]            # E2E tests
 
-# CI/CD configuration
-make test              # Unit tests with 4 procs
-make test-integration  # Integration tests with 4 procs
-make test-e2e          # E2E tests with 4 procs
+# Check for anti-patterns
+make lint-test-patterns            # Detect NULL-TESTING, mock overuse
+
+# Verify business integration
+make lint-business-integration     # Check cmd/ integration
+
+# Verify TDD compliance
+make lint-tdd-compliance           # Check BDD framework, BR references
 ```
 
-**Rationale**:
-- **4 processors** balances speed vs. resource usage
-- Optimized for typical CI/CD runners (4-8 CPU cores)
-- Prevents resource exhaustion on developer machines
-- Allows headroom for infrastructure services (Redis, K8s API server)
+---
 
-**Scaling Considerations**:
-- **Local Development**: 4 procs (default)
-- **CI/CD (GitHub Actions)**: 4 procs (standard runners)
-- **High-Performance CI**: Can scale to 8 procs on larger runners
+## 📚 **Complete Documentation**
 
-### **Port Allocation Strategy**
+- **[Testing Strategy Guide](mdc:docs/testing/README.md)** - Complete testing documentation index
+- **[Pyramid Migration Guide](mdc:docs/testing/PYRAMID_TEST_MIGRATION_GUIDE.md)** - 8-week migration plan
+- **[Testing Patterns Quick Reference](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)** - Daily development reference
+- **[Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)** - Violation detection and remediation
+- **[Integration/E2E No-Mocks Policy](mdc:docs/testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)** - Zero mocks mandate
+- **[CI/CD Strategy](mdc:docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md)** - Defense-in-depth execution
 
-**AUTHORITATIVE REFERENCE**: [DD-TEST-001: Port Allocation Strategy](mdc:docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+---
 
-All test suites follow a systematic port allocation strategy to prevent conflicts during parallel execution:
+## ⚡ **Quick Reference**
 
-| Service | Integration Tier | E2E Tier |
-|---------|-----------------|----------|
-| **Data Storage** | PostgreSQL: 15433, Redis: 16379, API: 18090 | PostgreSQL: 25433, Redis: 26379, API: 28090 |
-| **Gateway** | Redis: 16380, API: 18080 | Redis: 26380, API: 28080 |
-| **Effectiveness Monitor** | PostgreSQL: 15434, API: 18100 | PostgreSQL: 25434, API: 28100 |
-| **Workflow Engine** | API: 18110 | API: 28110 |
+| Test Tier | BR Coverage | Code Coverage | Framework | Mock Strategy |
+|-----------|-------------|---------------|-----------|---------------|
+| **Unit** | 70%+ | 70%+ | Ginkgo/Gomega | External deps only |
+| **Integration** | >50% | 50% | Ginkgo/Gomega + envtest | Zero business mocks |
+| **E2E** | <10% | 50% | Ginkgo/Gomega + KIND | Zero internal mocks |
 
-**Port Ranges**:
-- **Integration Tests**: 15000-19999 (infrastructure: 15000-16999, services: 18000-18999)
-- **E2E Tests**: 25000-29999 (infrastructure: 25000-26999, services: 28000-28999)
-
-**Quick Reference**: [DD-TEST-001-QUICK-REFERENCE.md](mdc:docs/architecture/decisions/DD-TEST-001-QUICK-REFERENCE.md)
-
-### **Default: Parallel Execution Enabled**
-
-```go
-// ✅ CORRECT: Default parallel execution (no Ordered)
-var _ = Describe("Feature Tests", Label("unit", "feature"), func() {
-    // Each test runs independently in parallel
-    It("should handle scenario 1", func() { /* ... */ })
-    It("should handle scenario 2", func() { /* ... */ })
-    It("should handle scenario 3", func() { /* ... */ })
-})
-```
-
-### **Parallel Execution Design Patterns**
-
-#### **1. Isolated Test Resources**
-Each test must use unique identifiers to avoid collisions:
-
-```go
-// ✅ CORRECT: Unique namespace per test
-It("should process alerts correctly", func() {
-    testNamespace := fmt.Sprintf("e2e-test-%d", time.Now().UnixNano())
-    alertName := fmt.Sprintf("TestAlert-%d", time.Now().UnixNano())
-
-    // Test uses isolated resources
-    // Cleanup in defer
-    defer cleanupResources(testNamespace)
-})
-```
-
-#### **2. Shared Infrastructure, Isolated Data**
-Use shared services (Gateway, Redis, K8s) but isolate test data:
-
-```go
-// ✅ CORRECT: Shared Gateway, unique test data
-var _ = Describe("Gateway E2E Tests", func() {
-    var (
-        gatewayURL string  // Shared Gateway instance
-        httpClient *http.Client
-    )
-
-    BeforeEach(func() {
-        gatewayURL = "http://localhost:30080"  // Shared
-        httpClient = &http.Client{Timeout: 10 * time.Second}
-    })
-
-    It("test 1", func() {
-        namespace := fmt.Sprintf("test1-%d", time.Now().UnixNano())
-        // Uses shared Gateway, isolated namespace
-    })
-
-    It("test 2", func() {
-        namespace := fmt.Sprintf("test2-%d", time.Now().UnixNano())
-        // Uses shared Gateway, isolated namespace
-    })
-})
-```
-
-#### **3. Cleanup in Defer**
-Always cleanup test resources in `defer` to ensure cleanup even on failure:
-
-```go
-// ✅ CORRECT: Cleanup in defer
-It("should create and cleanup resources", func() {
-    testNamespace := fmt.Sprintf("test-%d", time.Now().UnixNano())
-
-    defer func() {
-        // Cleanup always runs, even if test fails
-        cleanupCRDs(testNamespace)
-        cleanupRedisKeys(testNamespace)
-    }()
-
-    // Test logic here
-})
-```
-
-### **Exceptions: When Sequential Execution is Required**
-
-**RARE EXCEPTIONS**: Use `Ordered` ONLY when tests MUST run sequentially:
-
-```go
-// ✅ ACCEPTABLE: Sequential execution for graceful shutdown tests
-var _ = Describe("Graceful Shutdown", Ordered, Label("e2e", "shutdown"), func() {
-    // Reason: Tests system state transitions that cannot be parallelized
-    It("should start service", func() { /* ... */ })
-    It("should handle SIGTERM gracefully", func() { /* ... */ })
-    It("should complete in-flight requests", func() { /* ... */ })
-    It("should shutdown cleanly", func() { /* ... */ })
-})
-```
-
-**Valid Reasons for Sequential Execution**:
-1. **Graceful Shutdown Tests**: Testing system state transitions
-2. **Database Migration Tests**: Sequential schema changes
-3. **Stateful Integration Tests**: Tests that depend on previous test state
-4. **Resource Exhaustion Tests**: Testing system limits sequentially
-
-**Invalid Reasons** (must be refactored):
-- ❌ Lazy test design (refactor to use unique identifiers)
-- ❌ Shared mutable global state (refactor to use test-scoped state)
-- ❌ Hardcoded resource names (refactor to use dynamic names)
-- ❌ "It's easier this way" (not acceptable - parallel execution is mandatory)
-
-### **Validation: Detecting Non-Parallel Tests**
-
-```bash
-# Find tests that may not support parallel execution
-grep -r "Ordered" test/ --include="*_test.go" | grep -v "graceful\|shutdown\|migration"
-
-# Expected: Only graceful shutdown and migration tests should use Ordered
-```
-
-### **Benefits of Parallel Execution (4 Processors)**
-
-| Metric | Sequential | Parallel (4 procs) | Improvement |
-|--------|-----------|-------------------|-------------|
-| **Unit Tests** | 120s | 35s | **71% faster** |
-| **Integration Tests** | 300s | 90s | **70% faster** |
-| **E2E Tests** | 600s | 180s | **70% faster** |
-| **Total CI/CD Time** | 1020s (17min) | 305s (5min) | **70% faster** |
-
-**Performance Scaling**:
-- **1 processor**: 1020s (baseline)
-- **2 processors**: ~550s (46% faster)
-- **4 processors**: ~305s (70% faster) ← **Default**
-- **8 processors**: ~200s (80% faster, diminishing returns)
-
-**Note**: Beyond 4 processors, returns diminish due to infrastructure overhead (Redis, K8s API, test setup/teardown).
-
-### **Enforcement**
-
-**AI Assistant Checkpoint**:
-```
-✅ PARALLEL EXECUTION CHECKPOINT:
-- [ ] Test uses unique identifiers (namespace, alert name, etc.) ✅/❌
-- [ ] Test cleanup in defer ✅/❌
-- [ ] No `Ordered` unless justified (shutdown/migration/stateful) ✅/❌
-- [ ] Shared infrastructure, isolated data ✅/❌
-
-❌ STOP: Cannot create test until ALL checkboxes are ✅
-```
-
-**Code Review Checklist**:
-- [ ] All new tests support parallel execution (no `Ordered` unless justified)
-- [ ] Tests use unique identifiers to avoid collisions
-- [ ] Cleanup logic in `defer` blocks
-- [ ] Documentation explains any sequential execution requirements
-
-## Test Environment Setup
-### Development Environment
-```bash
-make bootstrap-dev     # Setup complete environment
-make test-integration-dev  # Run tests
-make cleanup-dev       # Clean up when done
-```
-
-### CI/CD Environment
-```bash
-make test-ci          # Run CI test suite with mocked LLM
-```
-
-## 🚫 **IRONCLAD TEST CREATION REQUIREMENTS**
-
-### **MANDATORY TEST CREATION PROTOCOL - BLOCKING REQUIREMENTS**
-
-**🚫 BLOCKING REQUIREMENT - BEFORE ANY TEST CREATION**:
-
-<function_calls>
-<invoke name="Grep">
-<parameter name="pattern">[ComponentType]</parameter>
-<parameter name="path">test/</parameter>
-<parameter name="output_mode">files_with_matches</parameter>
-</invoke>
-</function_calls>
-
-<function_calls>
-<invoke name="Task">
-<parameter name="subagent_type">general-purpose</parameter>
-<parameter name="description">Existing test pattern analysis</parameter>
-<parameter name="prompt">Search test/ directory for existing test patterns similar to [ComponentType]. Find established testing approaches, mock usage patterns, and business requirement mapping examples.</parameter>
-</invoke>
-</function_calls>
-
-```
-✅ TEST CREATION CHECKPOINT:
-- [ ] Existing test patterns searched and documented ✅/❌
-- [ ] Business requirement (BR-XXX-XXX) identified and validated ✅/❌
-- [ ] TDD RED-GREEN-REFACTOR sequence planned ✅/❌
-- [ ] Mock strategy defined (external dependencies only) ✅/❌
-- [ ] Test location determined (unit/integration/e2e) ✅/❌
-
-❌ STOP: Cannot create tests until ALL checkboxes are ✅
-```
-
-**🚫 MANDATORY TEST STRUCTURE - GINKGO/GOMEGA BDD**:
-```go
-// MANDATORY: All tests must follow this exact structure
-var _ = Describe("BR-[CATEGORY]-[NUMBER]: [Business Requirement Description]", func() {
-    var (
-        // Mock ONLY external dependencies
-        mockExternal [ExternalDependencyType]
-
-        // Use REAL business logic components
-        businessComponent [ComponentType]
-        ctx context.Context
-    )
-
-    BeforeEach(func() {
-        // Setup with real business components
-        mockExternal = testutil.NewMock[ExternalDependency]()
-        businessComponent = NewComponent(mockExternal)
-        ctx = context.Background()
-    })
-
-    Context("Business Requirement Validation", func() {
-        It("should [specific business behavior from BR-XXX-XXX]", func() {
-            // Test business outcomes, not implementation
-            result, err := businessComponent.BusinessMethod(ctx, testData)
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.[BusinessOutcome]).To([BusinessMatcher])
-        })
-    })
-})
-```
-
-**RULE VIOLATION DETECTION**:
-If ANY checkbox is ❌ → "🚨 TEST CREATION VIOLATION: Test attempted without following mandatory creation protocol - DEVELOPMENT STOPPED"
-
-## Testing Best Practices (Enhanced with Enforcement)
-1. **Business Outcome Focus**: Test business requirements, not implementation details (MANDATORY)
-2. **Business Requirement Mapping**: All tests MUST reference specific BR-[CATEGORY]-[NUMBER] requirements
-3. **TDD Compliance**: Follow mandatory Test-Driven Development workflow with tool validation
-4. **Isolation**: Each test should be independent and repeatable
-5. **Clear Naming**: Use descriptive test names that reflect business requirements
-6. **Realistic Data**: Use realistic test data that mirrors production scenarios
-7. **Error Scenarios**: Test both happy path and error conditions
-8. **Performance**: Include performance assertions for critical paths
-
-## 🎯 **Comprehensive Realistic Test Case Coverage - MANDATORY**
-
-### **Core Principle: Requirement-Driven Scenario Coverage**
-
-Unit tests MUST cover **realistic combinations necessary to validate all business requirements** - not more, not less. Focus on combinations that:
-- **Actually occur in production** based on documented business requirements
-- **Validate distinct business behaviors** (not redundant scenarios)
-- **Cover requirement boundaries and edge cases** that matter to business outcomes
-- **Find real issues** that could impact production usage
-
-**MANDATE**: Systematically identify and test all realistic combinations needed to satisfy business requirements. Avoid testing "for the sake of testing" - every test case must map to validating a specific business requirement aspect.
-
-**PRAGMATIC BALANCE**:
-- ✅ **DO**: Test combinations that validate different business requirement outcomes
-- ❌ **DON'T**: Test combinations that validate the same business logic repeatedly
-- ✅ **DO**: Cover all realistic input dimensions from business requirements
-- ❌ **DON'T**: Create exhaustive cartesian products of every possible input value
-- ✅ **DO**: Test at the appropriate level - move complex scenarios to integration tests if simpler
-- ❌ **DON'T**: Over-extend unit tests with excessive mocking or complex setup
-
-### **Systematic Test Case Identification Strategy**
-
-#### **1. Input Dimension Analysis**
-For each business function, identify all input dimensions and their realistic values:
-
-```go
-// Example: Workflow generation has multiple input dimensions
-// - Alert Severity: [Critical, High, Medium, Low]
-// - Resource Type: [Pod, Deployment, StatefulSet, Service, Node]
-// - Cluster State: [Healthy, Degraded, Critical]
-// - Historical Pattern: [Known, Unknown, Recurring]
-
-// COMPREHENSIVE: Test realistic combinations, not just happy path
-Describe("BR-WORKFLOW-001: Alert-based Workflow Generation", func() {
-    Context("Critical Severity Scenarios", func() {
-        It("should generate aggressive remediation for critical pod failures with recurring pattern", func() {
-            // Realistic combination: Critical + Pod + Degraded + Recurring
-        })
-
-        It("should generate cautious remediation for critical node failures with unknown pattern", func() {
-            // Realistic combination: Critical + Node + Critical + Unknown
-        })
-    })
-
-    Context("Medium Severity Scenarios", func() {
-        It("should generate balanced remediation for medium deployment issues in healthy cluster", func() {
-            // Realistic combination: Medium + Deployment + Healthy + Known
-        })
-    })
-
-    Context("Cross-Resource Scenarios", func() {
-        It("should handle cascading failures across pod and service", func() {
-            // Realistic combination: Multiple resource types affected
-        })
-    })
-})
-```
-
-#### **2. State-Based Test Coverage Matrix with Ginkgo Data Tables**
-
-**BEST PRACTICE**: Use Ginkgo's `DescribeTable` to reduce code duplication and maintenance cost when testing multiple similar scenarios.
-
-**Benefits of Data Tables**:
-- ✅ **Reduced Duplication**: Single test function handles multiple scenarios
-- ✅ **Lower Maintenance Cost**: Change logic once, affects all test cases
-- ✅ **Clear Test Matrix**: Easy to see all combinations tested
-- ✅ **Easy to Add Cases**: Add new `Entry()` without duplicating test code
-- ✅ **Better Readability**: Test intent clear from Entry descriptions
-
-Create a coverage matrix for system states and transitions:
-
-| System State | Input Condition | Expected Behavior | Test Priority |
-|---|---|---|---|
-| Healthy Cluster | High Severity Alert | Standard remediation | HIGH |
-| Degraded Cluster | High Severity Alert | Cautious remediation | HIGH |
-| Critical Cluster | Any Alert | Defensive mode | CRITICAL |
-| Recovering Cluster | New Alert | Queue for stability | MEDIUM |
-
-```go
-// COMPREHENSIVE: Cover all realistic state combinations using DescribeTable
-Describe("BR-SAFETY-001: State-Aware Remediation", func() {
-    DescribeTable("System state and alert severity combinations",
-        func(clusterState string, alertSeverity string, expectedMode string, expectedActions int) {
-            // Setup cluster in specific state
-            setupClusterState(clusterState)
-            alert := createAlert(alertSeverity)
-
-            workflow, err := workflowBuilder.CreateWorkflow(ctx, alert)
-            Expect(err).ToNot(HaveOccurred())
-            Expect(workflow.RemediationMode).To(Equal(expectedMode))
-            Expect(len(workflow.Actions)).To(Equal(expectedActions))
-        },
-        // Comprehensive realistic combinations
-        Entry("healthy cluster + high severity → standard mode, 3 actions",
-            "healthy", "high", "standard", 3),
-        Entry("degraded cluster + high severity → cautious mode, 2 actions",
-            "degraded", "high", "cautious", 2),
-        Entry("critical cluster + high severity → defensive mode, 1 action",
-            "critical", "high", "defensive", 1),
-        Entry("recovering cluster + medium severity → queued mode, 0 actions",
-            "recovering", "medium", "queued", 0),
-        Entry("healthy cluster + critical severity → aggressive mode, 5 actions",
-            "healthy", "critical", "aggressive", 5),
-    )
-})
-```
-
-**When to Use DescribeTable**:
-- ✅ Testing same logic with different inputs/expected outputs
-- ✅ 3+ similar test cases that differ only in parameters
-- ✅ Boundary value testing (min, typical, max values)
-- ✅ Classification/categorization logic
-- ✅ State machine transitions
-
-**When NOT to Use DescribeTable**:
-- ❌ Test cases have significantly different setup/teardown
-- ❌ Test cases validate completely different business logic
-- ❌ Only 1-2 test cases (overhead not worth it)
-- ❌ Each test needs unique, complex assertions
-
-**Advanced DescribeTable Example**:
-```go
-// Testing classification logic with multiple dimensions
-DescribeTable("Environment classification",
-    func(namespace string, labels map[string]string, expectedEnv string, expectedPriority string, expectedConfidence float64) {
-        alert := testutil.NewAlert(namespace, labels)
-        classification := classifier.Classify(alert)
-
-        Expect(classification.Environment).To(Equal(expectedEnv))
-        Expect(classification.BusinessPriority).To(Equal(expectedPriority))
-        Expect(classification.Confidence).To(BeNumerically(">=", expectedConfidence))
-    },
-    Entry("explicit production label → P0 priority, 95% confidence",
-        "prod-webapp", map[string]string{"environment": "production"},
-        "production", "P0", 0.95),
-    Entry("prod-* namespace pattern → P0 priority, 85% confidence",
-        "prod-api", map[string]string{},
-        "production", "P0", 0.85),
-    Entry("staging namespace → P2 priority, 90% confidence",
-        "staging-webapp", map[string]string{"environment": "staging"},
-        "staging", "P2", 0.90),
-    Entry("dev namespace → P3 priority, 80% confidence",
-        "dev-test", map[string]string{"environment": "dev"},
-        "dev", "P3", 0.80),
-)
-```
-
-#### **3. Boundary Value Analysis**
-Test boundary conditions for all quantitative inputs:
-
-```go
-// COMPREHENSIVE: Cover boundary values and edge cases
-Describe("BR-WORKFLOW-003: Resource Scaling Decisions", func() {
-    Context("Replica Count Boundaries", func() {
-        It("should handle minimum replica count (1)", func() {
-            // Boundary: Minimum value
-        })
-
-        It("should handle typical replica count (3-5)", func() {
-            // Typical: Most common realistic value
-        })
-
-        It("should handle high replica count (50)", func() {
-            // Boundary: High but realistic value
-        })
-
-        It("should handle maximum realistic replica count (100)", func() {
-            // Boundary: Maximum realistic value per requirements
-        })
-
-        It("should reject invalid replica count (0)", func() {
-            // Invalid: Should be rejected
-        })
-
-        It("should reject excessive replica count (1000)", func() {
-            // Invalid: Beyond realistic requirements
-        })
-    })
-
-    Context("Resource Utilization Thresholds", func() {
-        It("should handle 0% utilization (idle)", func() {})
-        It("should handle 25% utilization (underutilized)", func() {})
-        It("should handle 50% utilization (normal)", func() {})
-        It("should handle 75% utilization (high)", func() {})
-        It("should handle 90% utilization (critical)", func() {})
-        It("should handle 100% utilization (saturated)", func() {})
-    })
-})
-```
-
-#### **4. Error and Exception Path Coverage**
-Systematically cover all realistic error scenarios:
-
-```go
-// COMPREHENSIVE: Cover all realistic error paths
-Describe("BR-INTEGRATION-005: External Service Failure Handling", func() {
-    Context("AI Service Failures", func() {
-        It("should handle connection timeout", func() {})
-        It("should handle connection refused", func() {})
-        It("should handle rate limiting (429)", func() {})
-        It("should handle service unavailable (503)", func() {})
-        It("should handle malformed response", func() {})
-        It("should handle partial response", func() {})
-    })
-
-    Context("Kubernetes API Failures", func() {
-        It("should handle unauthorized (401)", func() {})
-        It("should handle forbidden (403)", func() {})
-        It("should handle not found (404)", func() {})
-        It("should handle conflict (409)", func() {})
-        It("should handle resource quota exceeded", func() {})
-        It("should handle admission webhook rejection", func() {})
-    })
-
-    Context("Database Failures", func() {
-        It("should handle connection pool exhaustion", func() {})
-        It("should handle transaction timeout", func() {})
-        It("should handle constraint violation", func() {})
-        It("should handle deadlock detection", func() {})
-    })
-})
-```
-
-#### **5. Combinatorial Test Case Generation - Focus on Distinct Behaviors**
-For complex business logic, identify which combinations produce **distinct business outcomes**:
-
-```go
-// PRAGMATIC: Cover combinations that produce different business behaviors
-Describe("BR-AI-010: Context-Aware Alert Analysis", func() {
-    // Factors: Alert Type, Time of Day, Historical Pattern, Cluster Load
-    // Analysis: 4 factors with 4-5 values each = 256-625 total combinations
-    // Business Requirements Analysis: Only 6 combinations produce distinct behaviors
-    // Test Strategy: Focus on those 6 distinct behavior combinations
-
-    Context("Time-Sensitive Alert Analysis", func() {
-        It("should prioritize deployment failure during business hours with high load", func() {
-            // BR-AI-010.1: Business hours + high load → HIGH priority
-            // Distinct behavior: Immediate escalation
-        })
-
-        It("should defer deployment failure during off-hours with low load", func() {
-            // BR-AI-010.2: Off-hours + low load → LOW priority
-            // Distinct behavior: Queued for morning review
-        })
-    })
-
-    Context("Pattern-Based Analysis", func() {
-        It("should escalate recurring failure regardless of time", func() {
-            // BR-AI-010.3: Recurring pattern → OVERRIDE time-based priority
-            // Distinct behavior: Pattern recognition triggers escalation
-        })
-    })
-
-    // Only 3 tests cover 3 distinct business behaviors specified in requirements
-    // NOT testing all 256 combinations - only those that matter per BR-AI-010
-})
-```
-
-### **Test Level Selection: Maintainability First**
-
-**PRINCIPLE**: Prioritize maintainability and simplicity when choosing between unit, integration, and e2e tests.
-
-#### **Decision Framework: Where to Test?**
-
-**Test at Unit Level WHEN**:
-- ✅ Scenario can be tested with **simple external mocks** (LLM, K8s API, DB)
-- ✅ Focus is on **business logic validation** (algorithms, calculations, decisions)
-- ✅ Setup is **straightforward** (< 20 lines of mock configuration)
-- ✅ Test remains **readable and maintainable** with mocking
-
-**Move to Integration Level WHEN**:
-- ✅ Scenario requires **multiple service interactions** (easier with real services)
-- ✅ Validating **CRD coordination** or **watch-based behavior** (complex to mock)
-- ✅ Unit test would require **excessive mocking** (>50 lines of mock setup)
-- ✅ Integration test is **simpler to understand** and maintain
-- ✅ Testing **real infrastructure behavior** (Kubernetes API, database transactions)
-
-**Move to E2E Level WHEN**:
-- ✅ Testing **complete user journey** (alert → analysis → workflow → execution → resolution)
-- ✅ Validating **cross-service workflow** that spans multiple microservices
-- ✅ Lower-level tests cannot reproduce the scenario realistically
-
-#### **Examples: Choosing the Right Test Level**
-
-```go
-// UNIT TEST - Simple business logic with straightforward mocking
-// ✅ GOOD: Test at unit level - simple mock, clear business logic
-Describe("BR-WORKFLOW-001: Risk Score Calculation", func() {
-    It("should calculate high risk for critical alerts in degraded cluster", func() {
-        // Mock setup: 5 lines
-        mockClusterState := testutil.NewMockClusterState("degraded")
-        calculator := NewRiskCalculator(mockClusterState)
-
-        // Business logic validation
-        risk := calculator.CalculateRisk(criticalAlert)
-        Expect(risk.Score).To(BeNumerically(">", 0.8))
-    })
-})
-
-// INTEGRATION TEST - Complex cross-service scenario
-// ✅ GOOD: Move to integration level - simpler with real services
-Describe("BR-INTEGRATION-003: CRD Status Propagation", func() {
-    It("should propagate workflow status through CRD watch mechanism", func() {
-        // Integration test: Use real Kubernetes API (Kind cluster)
-        // Trying to mock CRD watches in unit test would be >100 lines
-        // Integration test: ~15 lines, much clearer
-
-        workflow := createTestWorkflow()
-        Expect(k8sClient.Create(ctx, workflow)).To(Succeed())
-
-        // Watch for status updates (hard to mock reliably)
-        Eventually(func() string {
-            k8sClient.Get(ctx, workflowKey, workflow)
-            return workflow.Status.Phase
-        }).Should(Equal("Completed"))
-    })
-})
-
-// UNIT TEST ANTI-PATTERN - Over-mocking
-// ❌ BAD: Unit test with excessive mocking - move to integration
-Describe("BR-WORKFLOW-002: Multi-Service Workflow", func() {
-    It("should coordinate between processor, executor, and notifier", func() {
-        // 80 lines of complex mock setup for service interactions
-        mockProcessor := setupComplexProcessorMock()
-        mockExecutor := setupComplexExecutorMock()
-        mockNotifier := setupComplexNotifierMock()
-        mockCRDClient := setupComplexCRDClientMock()
-        // ... more complex mocking
-
-        // BETTER: Move to integration test with real services
-        // Integration version: 15 lines, much clearer intent
-    })
-})
-```
-
-#### **Maintainability Decision Criteria**
-
-Ask these questions before implementing a unit test:
-
-1. **Mock Complexity**: Will mock setup be >30 lines? → Consider integration test
-2. **Readability**: Would a new developer understand this test in 2 minutes? → If no, consider higher level
-3. **Fragility**: Does test break when internal implementation changes? → Consider integration test
-4. **Real Value**: Is this testing business logic or infrastructure interaction? → Infrastructure → integration test
-5. **Maintenance Cost**: How much effort to maintain this vs integration test? → Choose lower cost option
-
-#### **Test Scope Guidelines by Level**
-
-| Test Level | Scope | Mock Strategy | When to Use |
-|---|---|---|---|
-| **Unit** | Single component business logic | Mock external dependencies ONLY | Simple, focused business logic validation |
-| **Integration** | Cross-component coordination | Use real services when simpler | Service interaction, CRD behavior, complex scenarios |
-| **E2E** | Complete workflows | Minimal mocking | Critical user journeys, full system validation |
-
-### **Test Coverage Assessment Checklist**
-
-Before considering a business requirement fully tested, verify:
-
-- [ ] **Happy Path**: Primary success scenario covered
-- [ ] **Boundary Values**: Min, max, and edge values for all numeric inputs
-- [ ] **Invalid Inputs**: All validation rules tested with invalid data
-- [ ] **Error Conditions**: All realistic error scenarios from external dependencies
-- [ ] **State Combinations**: All realistic system state + input combinations
-- [ ] **Null/Empty Cases**: Nil, empty string, empty slice/map handling
-- [ ] **Concurrent Scenarios**: Race conditions and concurrent access patterns (if applicable)
-- [ ] **Performance Boundaries**: Response time under varying loads
-- [ ] **Resource Exhaustion**: Behavior under resource constraints
-- [ ] **Recovery Scenarios**: Error recovery and retry logic
-- [ ] **Test Level Appropriateness**: Each scenario tested at most maintainable level
-
-### **Realistic vs. Exhaustive Testing - Pragmatic Guidelines**
-
-**PRINCIPLE**: Test what matters to business requirements, not every possible permutation.
-
-**✅ DO - Requirement-Driven Testing**:
-```go
-// ✅ GOOD: Tests distinct business behavior from requirements
-It("should handle high severity pod failure in degraded cluster", func() {
-    // BR-WORKFLOW-001: Requirement specifies cautious remediation in degraded state
-    // This validates DIFFERENT behavior than healthy cluster scenario
-})
-
-It("should handle high severity pod failure in healthy cluster", func() {
-    // BR-WORKFLOW-001: Requirement specifies standard remediation in healthy state
-    // This validates DISTINCT requirement aspect - necessary test
-})
-```
-
-**❌ DON'T - Over-Testing Without Purpose**:
-```go
-// ❌ BAD: Impossible combination that violates business rules
-It("should handle critical alert with zero actions in aggressive mode", func() {
-    // This combination can never occur per business logic - waste of test effort
-})
-
-// ❌ BAD: Redundant test that validates same logic
-It("should handle high severity pod failure with 3 replicas in degraded cluster", func() {})
-It("should handle high severity pod failure with 4 replicas in degraded cluster", func() {})
-It("should handle high severity pod failure with 5 replicas in degraded cluster", func() {})
-// These three tests validate SAME business logic - pick representative values instead
-// BETTER: One test with boundary value (minimum replicas) if that's a distinct requirement
-```
-
-**DECISION CRITERIA**: Ask before writing each test:
-1. **Does this test validate a distinct business requirement or requirement aspect?**
-2. **Does this combination actually occur in production scenarios?**
-3. **Would this test catch a bug the other tests wouldn't catch?**
-4. **Is this testing business behavior or implementation variation?**
-
-If answer is "NO" to all questions → Skip the test, it adds maintenance cost without value.
-
-### **Continuous Test Coverage Expansion**
-
-As bugs are discovered or requirements evolve:
-
-1. **Bug-Driven Test Addition**: Every production bug gets a regression test
-2. **Requirement Changes**: New requirements trigger systematic test case analysis
-3. **Pattern Recognition**: Identify common failure patterns and add preventive tests
-4. **Production Monitoring**: Use production metrics to identify undertested scenarios
-
-### **Example: Pragmatic Requirement-Driven Coverage**
-
-```go
-// EXAMPLE: BR-WORKFLOW-005 - Workflow Safety Validation
-// ANALYSIS: Business requirements define 8 distinct safety behaviors
-
-Describe("BR-WORKFLOW-005: Workflow Safety Validation", func() {
-    // ANALYSIS PHASE (from requirements):
-    // - Dimension 1: Action Type (7 types)
-    // - Dimension 2: Target Resource (5 types)
-    // - Dimension 3: Cluster State (3 states)
-    // - Dimension 4: RBAC Permissions (4 levels)
-    //
-    // Total possible combinations: 7×5×3×4 = 420 combinations
-    //
-    // REQUIREMENT ANALYSIS: BR-WORKFLOW-005 defines 8 distinct validation behaviors:
-    // 1. Destructive actions require elevated permissions (BR-WORKFLOW-005.1)
-    // 2. Actions in degraded clusters require safety checks (BR-WORKFLOW-005.2)
-    // 3. Resource quota must be validated for scale operations (BR-WORKFLOW-005.3)
-    // 4. RBAC scope must match resource scope (BR-WORKFLOW-005.4)
-    // 5. Resource state must be stable for certain operations (BR-WORKFLOW-005.5)
-    // 6. Critical clusters block most operations (BR-WORKFLOW-005.6)
-    // 7. Backup required for configuration changes (BR-WORKFLOW-005.7)
-    // 8. Rolling updates preferred over recreate (BR-WORKFLOW-005.8)
-    //
-    // TEST STRATEGY: 15 tests to cover 8 distinct behaviors
-    // NOT testing all 420 combinations - only those defining distinct requirements
-
-    Context("BR-WORKFLOW-005.1: Destructive Action Authorization", func() {
-        It("should require admin permissions for delete deployment", func() {})
-        It("should reject delete node with limited permissions", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.2: Degraded Cluster Safety", func() {
-        It("should apply additional safety checks for operations in degraded cluster", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.3: Resource Quota Validation", func() {
-        It("should validate sufficient quota before scale up", func() {})
-        It("should reject scale operation when quota exceeded", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.4: RBAC Scope Matching", func() {
-        It("should reject namespace-scoped permissions on cluster resources", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.5: Resource State Requirements", func() {
-        It("should allow operations on ready resources", func() {})
-        It("should reject operations on terminating resources", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.6: Critical Cluster Restrictions", func() {
-        It("should block most operations in critical cluster state", func() {})
-        It("should allow emergency-only operations with special permissions", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.7: Configuration Change Safety", func() {
-        It("should require backup before configuration update", func() {})
-    })
-
-    Context("BR-WORKFLOW-005.8: Update Strategy Preferences", func() {
-        It("should prefer rolling update over recreate in healthy cluster", func() {})
-        It("should reject recreate update in degraded cluster", func() {})
-    })
-
-    // Result: 15 tests cover all 8 distinct requirement behaviors
-    // Coverage: 100% of business requirements, not 100% of combinations
-    // Confidence: 90% that safety validation meets all requirements
-})
-```
-
-## Testing Anti-Patterns to AVOID
-- **Null-Testing**: Weak assertions (not nil, > 0, empty checks) - use business-meaningful validations
-- **Implementation Testing**: Testing how code works instead of what business value it delivers
-- **Skip() Usage**: Never use Skip() to avoid test failures - fix tests properly
-- **Local Mocks**: Create reusable mocks in [pkg/testutil/mocks/](mdc:pkg/testutil/mocks/) instead
-- **Over-Extended Unit Tests**: Excessive mocking (>50 lines) - move complex scenarios to integration tests
-- **Wrong Test Level**: Testing infrastructure behavior in unit tests - use integration tests for real service interactions
-- **Redundant Coverage**: Testing same business logic at multiple levels without added value
-- **Hardcoded Container Names**: Never hardcode container names in tests - use environment variables or infrastructure variables because these values are dynamic across local and CI environments (e.g., `datastorage-postgres-test` locally vs `postgres` in Docker Compose)
-
-## Infrastructure Requirements
-- **Kind Cluster**: For local development and CI testing
-- **PostgreSQL**: Real database for integration tests
-- **Vector Database**: Separate PostgreSQL instance with pgvector
-- **LLM Service**: Local AI model at 192.168.1.169:8080 or mocked for CI
-- **Redis**: For caching integration tests
-
-## Test Execution Strategy
-- **Unit**: Run frequently during development
-- **Integration**: Run before commits and in CI
-- **E2E**: Run before releases and for major features
-
-## Mock Usage Decision Matrix - AUTHORITATIVE SOURCE
-
-**PRINCIPLE**: Mock external dependencies ONLY. Use real business logic components.
-
-| Component Type | Unit Tests | Integration Tests | E2E Tests | Justification |
-|---------------|------------|-------------------|-----------|---------------|
-| **External AI APIs** (HolmesGPT, OpenAI) | MOCK | MOCK (CI) / REAL (dev) | REAL | External service dependency |
-| **Kubernetes API** | **FAKE K8S CLIENT** ⚠️ MANDATORY | REAL (envtest/KIND) | REAL (OCP/KIND) | Compile-time API safety, maintained by controller-runtime, NO custom mocks |
-| **Database** | MOCK | REAL | REAL | External infrastructure dependency |
-| **Business Logic Components** | REAL | REAL | REAL | Core business value - test actual logic |
-| **Internal Services** | REAL | REAL | REAL | Business logic integration |
-| **Configuration** | REAL | REAL | REAL | Business behavior configuration |
-| **AI Business Logic** (analysis algorithms) | REAL | REAL | REAL | Core AI business value |
-| **Error Simulation** | MOCK | MOCK | REAL | Controlled error testing |
-| **Performance Testing** | MOCK | MOCK | REAL | Controlled performance scenarios |
-
-### **Mock Factory Usage - MANDATORY**
-- **Unit Tests**: Use [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go) for external dependencies
-- **Reusable Mocks**: Create in [pkg/testutil/mocks/](mdc:pkg/testutil/mocks/) - avoid local mocks
-- **AI Mocks**: Use [pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go) for AI services
-- **CI/CD**: Use `USE_MOCK_LLM=true` for CI reliability
-
-### **Kubernetes Client Usage - MANDATORY FOR ALL SERVICES**
-
-**AUTHORITATIVE MANDATE**: All services that interact with Kubernetes MUST use the approved K8s client interface for each test tier.
-
-**ARCHITECTURAL DECISION**: See [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md) for complete rationale and decision analysis.
-
-| Test Tier | Approved K8s Interface | Package | Justification |
-|---|---|---|---|
-| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` | Compile-time API safety, type-safe CRD handling, maintained by controller-runtime |
-| **Integration Tests** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` | Real K8s behavior, CRD watches, API server validation |
-| **E2E Tests** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` | Complete system validation with real infrastructure |
-
-**CRITICAL RULES**:
-- ✅ **Unit Tests**: MUST use `fake.NewClientBuilder()` - NO custom mocks
-- ✅ **Fake Client Benefits**: Compile-time API safety, automatic `Apply()` method support, deprecation detection
-- ❌ **FORBIDDEN**: Custom `MockK8sClient` implementations (breaks on controller-runtime updates)
-- ❌ **DEPRECATED**: [pkg/testutil/mocks/platform_mocks.go](mdc:pkg/testutil/mocks/platform_mocks.go) `MockK8sClient` - DO NOT USE
-
-**Why Fake Client is Mandatory**:
-1. **Maintained by controller-runtime**: Won't break on interface updates (e.g., `Apply()` method addition)
-2. **Real K8s semantics**: Get/List/Create/Update work correctly with in-memory storage
-3. **Type safety**: Compile-time validation of K8s API usage
-4. **Error simulation**: Supports `WithInterceptorFuncs()` for custom error injection
-5. **Already used**: Established pattern in notification service tests
-
-**Example - Fake K8s Client Setup**:
-```go
-import (
-    "k8s.io/apimachinery/pkg/runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client/fake"
-    corev1 "k8s.io/api/core/v1"
-    appsv1 "k8s.io/api/apps/v1"
-    kubernautv1 "github.com/jordigilh/kubernaut/api/v1"
-)
-
-// Minimal scheme: Only types needed for these tests
-scheme := runtime.NewScheme()
-_ = corev1.AddToScheme(scheme)      // Core v1 types
-_ = appsv1.AddToScheme(scheme)      // Apps v1 types
-_ = kubernautv1.AddToScheme(scheme) // Custom CRDs
-
-// Fake K8s client with compile-time API safety
-fakeClient := fake.NewClientBuilder().
-    WithScheme(scheme).
-    Build()
-
-// Create resources (compile-time validated)
-deployment := &appsv1.Deployment{
-    ObjectMeta: metav1.ObjectMeta{
-        Name:      "test-deployment",
-        Namespace: "default",
-    },
-    Spec: appsv1.DeploymentSpec{
-        Replicas: ptr.To(int32(3)),
-    },
-}
-Expect(fakeClient.Create(ctx, deployment)).To(Succeed())
-
-// Update resources (type-safe)
-deployment.Spec.Replicas = ptr.To(int32(5))
-Expect(fakeClient.Update(ctx, deployment)).To(Succeed())
-```
-
-### **Anti-Patterns - FORBIDDEN**
-- **❌ MOCK OVERUSE**: Never mock business logic (WorkflowEngine, AnalyticsEngine, SafetyFramework)
-- **❌ LOCAL MOCKS**: Never create test-specific mocks - use shared factories
-- **❌ AI BUSINESS LOGIC MOCKING**: Never mock AI analysis algorithms - test real logic
-- **❌ CUSTOM K8S MOCKS**: Never create custom K8s client wrappers - use fake client directly
-- **❌ PLATFORM_MOCKS.GO**: Deprecated MockK8sClient - use controller-runtime fake client instead
-
-## Confidence Targets
-- **Unit Tests**: 85-90% confidence for comprehensive business logic
-- **Integration Tests**: 80-85% confidence for component interactions
-- **E2E Tests**: 90-95% confidence for complete workflows
-- **Overall System**: 90% confidence through defense-in-depth coverage
+**Remember**: Mock external dependencies, use real business logic, validate business outcomes.

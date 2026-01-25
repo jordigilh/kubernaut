@@ -38,7 +38,7 @@ import (
 // - Tests should not break when implementation changes
 // - Focus on business outcomes, not PostgreSQL internals
 
-var _ = Describe("Audit Events Schema Integration Tests",  func() {
+var _ = Describe("Audit Events Schema Integration Tests", func() {
 	BeforeEach(func() {
 
 		// Clean up test data before each test
@@ -147,7 +147,7 @@ var _ = Describe("Audit Events Schema Integration Tests",  func() {
 				ORDER BY event_timestamp
 			`, correlationID)
 			Expect(err).ToNot(HaveOccurred())
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 
 			var count int
 			for rows.Next() {

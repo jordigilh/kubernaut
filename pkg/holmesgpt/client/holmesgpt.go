@@ -45,6 +45,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // ========================================
@@ -73,17 +75,67 @@ type HolmesGPTClient struct {
 // NewHolmesGPTClient creates a new HAPI client using the generated OpenAPI client.
 //
 // DD-HAPI-003: Uses generated client for compile-time type safety and contract compliance.
+// DD-AUTH-006: Uses ServiceAccount authentication by default (production/E2E).
+//
+// For integration tests with custom authentication, use NewHolmesGPTClientWithTransport.
 func NewHolmesGPTClient(cfg Config) (*HolmesGPTClient, error) {
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 60 * time.Second
 	}
 
-	// Create generated OpenAPI client
+	// DD-AUTH-006: Use ServiceAccount authentication for production/E2E
+	// OAuth-proxy validates this token and injects X-Auth-Request-User header
+	transport := auth.NewServiceAccountTransportWithBase(http.DefaultTransport)
+
+	// Create generated OpenAPI client with authentication transport
 	// DD-HAPI-003: Generated client provides type-safe request/response handling
 	generatedClient, err := NewClient(
 		cfg.BaseURL,
-		WithClient(&http.Client{Timeout: timeout}),
+		WithClient(&http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
+	}
+
+	return &HolmesGPTClient{
+		client: generatedClient,
+	}, nil
+}
+
+// NewHolmesGPTClientWithTransport creates a new HAPI client with a custom HTTP transport.
+//
+// DD-AUTH-006: Integration test pattern for mock authentication.
+// This allows tests to inject testutil.MockUserTransport to bypass oauth-proxy.
+//
+// Example (Integration Tests):
+//
+//	mockTransport := testutil.NewMockUserTransport("test-service@integration.test", http.DefaultTransport)
+//	client, err := client.NewHolmesGPTClientWithTransport(cfg, mockTransport)
+//
+// Example (E2E Tests with Static Token):
+//
+//	staticTokenTransport := testutil.NewStaticTokenTransport("sa-token-here", http.DefaultTransport)
+//	client, err := client.NewHolmesGPTClientWithTransport(cfg, staticTokenTransport)
+//
+// For production/E2E with real ServiceAccount tokens, use NewHolmesGPTClient (default).
+func NewHolmesGPTClientWithTransport(cfg Config, transport http.RoundTripper) (*HolmesGPTClient, error) {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
+
+	// Create generated OpenAPI client with custom transport
+	// DD-HAPI-003: Generated client provides type-safe request/response handling
+	generatedClient, err := NewClient(
+		cfg.BaseURL,
+		WithClient(&http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
@@ -176,7 +228,7 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 	// DEBUG: Log what we're sending (BR-HAPI-197 investigation)
 	log.Printf("🔍 DEBUG: Sending recovery request to HAPI - IncidentID=%s, SignalType.Set=%v, SignalType.Value=%s, IsRecoveryAttempt=%v, requestPointer=%p",
 		req.IncidentID, req.SignalType.Set, req.SignalType.Value, req.IsRecoveryAttempt.Value, req)
-	
+
 	// DD-HAPI-003: Use generated client method for compile-time type safety
 	res, err := c.client.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
 	if err != nil {

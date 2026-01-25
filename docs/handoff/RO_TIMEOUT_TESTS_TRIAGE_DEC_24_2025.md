@@ -118,7 +118,7 @@ timeSinceCreation := time.Since(rr.CreationTimestamp.Time)  ← Always "just now
 		logger.Info("RemediationRequest exceeded global timeout",
 			"timeSinceCreation", timeSinceCreation,
 			"globalTimeout", globalTimeout,
-			"overridden", rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil,
+			"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
 			"creationTimestamp", rr.CreationTimestamp.Time)
 		return r.handleGlobalTimeout(ctx, rr)
 	}

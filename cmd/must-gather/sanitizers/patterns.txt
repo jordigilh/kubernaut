@@ -1,0 +1,26 @@
+# Passwords
+password: .*
+PASSWORD: .*
+passwd: .*
+
+# API Keys and Tokens
+apiKey: .*
+api_key: .*
+token: .*
+access_token: .*
+refresh_token: .*
+bearer .*
+
+# Certificates and Private Keys
+-----BEGIN PRIVATE KEY-----
+-----BEGIN RSA PRIVATE KEY-----
+-----BEGIN CERTIFICATE-----
+
+# Email addresses (PII)
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+
+# Database connection strings
+postgresql://.*
+mysql://.*
+mongodb://.*
+redis://.*

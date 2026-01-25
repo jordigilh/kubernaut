@@ -1,7 +1,7 @@
 # Testing Guidelines: Business Requirements vs Unit Tests
 
-**Version**: 2.5.0
-**Last Updated**: 2025-12-26
+**Version**: 2.5.2
+**Last Updated**: 2026-01-20
 **Status**: Active
 
 This document provides clear guidance on **when** and **how** to use each type of test in the kubernaut system.
@@ -9,6 +9,19 @@ This document provides clear guidance on **when** and **how** to use each type o
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.5.2 (2026-01-20)
+- **CLARIFIED**: Integration test infrastructure uses **programmatic Go** (NOT podman-compose) for container orchestration
+- **CLARIFIED**: Test Tier Infrastructure Matrix - envtest for K8s, programmatic Go for external services
+- **REFERENCE**: Links to `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for architecture clarification
+- **DOCUMENTED**: Performance tier is OUT OF SCOPE for v1.0 (resource constraints on development host)
+- **NOTE**: No structural changes - only clarifications based on January 2026 architecture triage
+
+### Version 2.5.1 (2026-01-12)
+- **ADDED**: RR Reconstruction example to HTTP anti-pattern section
+- **CORRECTED**: Integration test anti-pattern discovered in reconstruction feature (January 12, 2026)
+- **EXAMPLE**: Demonstrates correct pattern (direct business logic calls) vs wrong pattern (HTTP endpoint testing)
+- **REFERENCE**: Links to `RECONSTRUCTION_TESTING_TIERS.md` for feature-specific tier clarification
 
 ### Version 2.5.0 (2025-12-26)
 - **CRITICAL**: Added ANTI-PATTERN section for direct audit infrastructure testing
@@ -67,6 +80,11 @@ Kubernaut uses **defense-in-depth** with overlapping BR coverage and cumulative 
 | **E2E** | **<10% BR coverage** | Critical user journeys only |
 
 **Key**: Same BRs tested at multiple tiers (e.g., retry logic in unit, integration, AND E2E)
+
+**Performance Tier** (v2.5.2 - January 2026):
+- ⚠️ **OUT OF SCOPE for v1.0** due to resource constraints on development host
+- 📋 Documented in test tier definitions but not part of v1.0 defense-in-depth strategy
+- 🔮 Future consideration when dedicated performance infrastructure becomes available
 
 #### Code Coverage - CUMULATIVE (~100% combined)
 
@@ -490,6 +508,241 @@ def test_audit_events(mock_data_storage, mock_llm):
 | **Unit** | Registry inspection (metric exists, naming, types) | Fresh Prometheus registry | `NewMetricsWithRegistry(testRegistry)` |
 | **Integration** | Registry inspection (metric values after operations) | controller-runtime registry | `NewMetricsWithRegistry(testRegistry)` |
 | **E2E** | HTTP endpoint (`/metrics` accessible) | Deployed controller with Service | `NewMetrics()` (production) |
+
+#### **MANDATORY: Metrics Testing Validation Pattern (Counter/Gauge/Histogram)**
+
+**Policy**: ALL metrics tests MUST capture initial state BEFORE operations and final state AFTER operations to prove the metric was actually incremented/updated by the test operation.
+
+**Rationale**: Without initial/final comparison, assertions like `Expect(value).To(BeNumerically(">=", 1))` don't prove the test operation caused the metric to change. The metric could have been incremented by a previous test or setup.
+
+##### **✅ CORRECT: Counter Metrics Pattern**
+
+**Rule**: Counters are monotonically increasing. Test MUST verify exact increment.
+
+```go
+// ✅ CORRECT: Counter with initial/final validation
+It("[TEST-ID] should increment counter on operation", func() {
+    // Setup service with test registry
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial counter value")
+    initialValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+
+    By("2. Perform operation that should increment counter")
+    err = service.PerformOperation(ctx, input)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("3. Verify counter incremented by exactly 1")
+    finalValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+    Expect(finalValue).To(Equal(initialValue+1),
+        "BR-XXX-YYY: Counter must increment by 1 for single operation")
+
+    GinkgoWriter.Printf("✅ Counter incremented: %.0f→%.0f\n", initialValue, finalValue)
+})
+
+// ✅ CORRECT: Counter with multiple increments
+It("[TEST-ID] should increment counter for multiple operations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial counter value")
+    initialValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+
+    By("2. Perform 3 operations")
+    for i := 1; i <= 3; i++ {
+        err = service.PerformOperation(ctx, input)
+        Expect(err).ToNot(HaveOccurred())
+    }
+
+    By("3. Verify counter incremented by exactly 3")
+    finalValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+    Expect(finalValue).To(Equal(initialValue+3),
+        "BR-XXX-YYY: Counter must increment by 3 for three operations")
+
+    GinkgoWriter.Printf("✅ Counter incremented: %.0f→%.0f (Δ+3)\n", initialValue, finalValue)
+})
+```
+
+**❌ WRONG: Counter without initial/final comparison**
+
+```go
+// ❌ WRONG: No initial value capture
+It("should increment counter on operation", func() {
+    service.PerformOperation(ctx, input)
+
+    // ❌ WRONG: Doesn't prove THIS test operation caused increment
+    value := getCounterValue(testRegistry, "service_operations_total", labels)
+    Expect(value).To(BeNumerically(">=", 1))  // Could be from previous test!
+})
+```
+
+##### **✅ CORRECT: Gauge Metrics Pattern**
+
+**Rule**: Gauges can increase or decrease. Test MUST verify value changed (delta ≠ 0) OR value is within expected range.
+
+```go
+// ✅ CORRECT: Gauge with delta validation
+It("[TEST-ID] should update gauge on operation", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial gauge value")
+    initialValue := getGaugeValue(testRegistry, "service_queue_depth", map[string]string{})
+
+    By("2. Perform operation that should update gauge")
+    err = service.EnqueueItem(ctx, item)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("3. Verify gauge was updated (delta > 0)")
+    finalValue := getGaugeValue(testRegistry, "service_queue_depth", map[string]string{})
+    Expect(finalValue).To(BeNumerically(">", initialValue),
+        "BR-XXX-YYY: Queue depth gauge must increase when item enqueued")
+
+    delta := finalValue - initialValue
+    GinkgoWriter.Printf("✅ Gauge updated: %.2f→%.2f (Δ+%.2f)\n", initialValue, finalValue, delta)
+})
+
+// ✅ CORRECT: Gauge with calculated value validation
+It("[TEST-ID] should update rate gauge to reflect operations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial deduplication rate gauge")
+    initialRate := getGaugeValue(testRegistry, "service_deduplication_rate", map[string]string{})
+
+    By("2. Process 3 signals with 1 duplicate (33% dedup rate expected)")
+    // ... process signals ...
+
+    By("3. Verify gauge reflects expected rate OR was updated")
+    finalRate := getGaugeValue(testRegistry, "service_deduplication_rate", map[string]string{})
+
+    // Validate gauge bounds
+    Expect(finalRate).To(BeNumerically(">=", 0), "Rate must be non-negative")
+    Expect(finalRate).To(BeNumerically("<=", 1), "Rate must be <= 1 (100%)")
+
+    // If gauge unchanged, verify it's in expected range
+    if initialRate == finalRate {
+        Expect(finalRate).To(BeNumerically("~", 0.33, 0.1),
+            "BR-XXX-YYY: Rate should be ~33% for 1 dedup out of 3 signals")
+    }
+
+    GinkgoWriter.Printf("✅ Rate gauge: %.2f→%.2f (Δ%.2f, %.0f%%)\n",
+        initialRate, finalRate, finalRate-initialRate, finalRate*100)
+})
+```
+
+**❌ WRONG: Gauge without initial/final comparison**
+
+```go
+// ❌ WRONG: No initial value capture
+It("should update gauge on operation", func() {
+    service.EnqueueItem(ctx, item)
+
+    // ❌ WRONG: Doesn't prove THIS test operation caused change
+    value := getGaugeValue(testRegistry, "service_queue_depth", labels)
+    Expect(value).To(BeNumerically(">", 0))  // Could be from previous test!
+})
+```
+
+##### **✅ CORRECT: Histogram Metrics Pattern**
+
+**Rule**: Histograms track distributions. Test MUST verify observations were recorded (sample count > initial count).
+
+```go
+// ✅ CORRECT: Histogram with sample count validation
+It("[TEST-ID] should record duration observations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial histogram sample count")
+    initialSampleCount := getHistogramSampleCount(testRegistry, "service_operation_duration_seconds", map[string]string{
+        "operation": "process",
+    })
+
+    By("2. Perform operations to generate duration samples")
+    for i := 1; i <= 5; i++ {
+        err = service.PerformOperation(ctx, input)
+        Expect(err).ToNot(HaveOccurred())
+    }
+
+    By("3. Verify histogram recorded observations")
+    finalSampleCount := getHistogramSampleCount(testRegistry, "service_operation_duration_seconds", map[string]string{
+        "operation": "process",
+    })
+    Expect(finalSampleCount).To(Equal(initialSampleCount+5),
+        "BR-XXX-YYY: Histogram must record 5 samples for 5 operations")
+
+    GinkgoWriter.Printf("✅ Histogram samples: %d→%d (Δ+5)\n", initialSampleCount, finalSampleCount)
+})
+
+// Helper function for histogram sample count
+func getHistogramSampleCount(registry *prometheus.Registry, name string, labels map[string]string) uint64 {
+    families, err := registry.Gather()
+    Expect(err).ToNot(HaveOccurred())
+
+    for _, family := range families {
+        if family.GetName() == name {
+            for _, metric := range family.GetMetric() {
+                if matchLabels(metric.GetLabel(), labels) {
+                    return metric.GetHistogram().GetSampleCount()
+                }
+            }
+        }
+    }
+    return 0
+}
+```
+
+**❌ WRONG: Histogram without sample count validation**
+
+```go
+// ❌ WRONG: Only checks histogram exists, doesn't verify observations
+It("should record duration observations", func() {
+    service.PerformOperation(ctx, input)
+
+    // ❌ WRONG: Doesn't prove observations were recorded
+    histogram := getHistogramMetric(testRegistry, "service_operation_duration_seconds")
+    Expect(histogram).ToNot(BeNil())  // Just checks metric exists!
+})
+```
+
+##### **Why This Matters**
+
+1. **Proves Causation**: Initial/final comparison proves YOUR test operation caused the metric change
+2. **Test Isolation**: Detects interference from parallel tests or setup/teardown
+3. **Exact Validation**: Counters should increment by exact amount, not just "be greater than 0"
+4. **False Positives**: Without comparison, tests pass even if metric isn't working
+5. **Debugging**: Delta values in output help diagnose test failures
+
+##### **Reference Implementation**
+
+**Gateway Integration Tests**: `test/integration/gateway/metrics_emission_integration_test.go`
+- GW-INT-MET-001, 002, 003, 005, 006, 007, 008, 010, 011, 013, 014, 015 (counters)
+- GW-INT-MET-012 (gauge)
+- GW-INT-MET-009 (histogram)
 
 #### CRD Controllers (AIAnalysis, Notification, RO, etc.)
 
@@ -1003,9 +1256,13 @@ linters-settings:
 
 ## 🐳 **Integration Test Infrastructure**
 
-### Podman Compose for Integration Tests
+> 📋 **Architecture Clarification** (v2.5.2 - January 2026):
+> Integration tests use **programmatic Go** for container orchestration, NOT `podman-compose`.
+> See `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for detailed architecture explanation.
 
-Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Use `podman-compose` to spin up these services locally.
+### Integration Test Container Orchestration
+
+Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Services are orchestrated using **programmatic Go** via `test/infrastructure/container_management.go`.
 
 #### Available Infrastructure
 
@@ -1018,21 +1275,29 @@ Integration tests require real service dependencies (HolmesGPT-API, Data Storage
 
 #### Running Integration Tests
 
+**v2.5.2 Update**: Integration tests now use **programmatic Go** for container orchestration. The test suite itself starts and stops containers via `test/infrastructure/` helpers.
+
 ```bash
-# Start infrastructure (from project root)
-podman-compose -f podman-compose.test.yml up -d
-
-# Wait for services to be healthy
-podman-compose -f podman-compose.test.yml ps
-
-# Run integration tests
+# Option 1: Let test suite manage containers (RECOMMENDED)
+# Test suite uses programmatic Go to start/stop containers automatically
 make test-container-integration
+
+# Option 2: Manual container management (for debugging)
+# Start infrastructure using programmatic Go helpers
+go run test/infrastructure/setup.go
 
 # Run specific service integration tests
 go test ./test/integration/aianalysis/... -v
 
-# Tear down
-podman-compose -f podman-compose.test.yml down -v
+# Tear down (automatic via test cleanup or manual)
+go run test/infrastructure/teardown.go
+```
+
+**Legacy `podman-compose` approach** (deprecated for integration tests):
+```bash
+# ⚠️ DEPRECATED: podman-compose has race conditions and health reporting issues
+# Use programmatic Go approach instead (see DD-TEST-002)
+# podman-compose -f podman-compose.test.yml up -d  # ← DON'T USE
 ```
 
 ### ⚠️ **CRITICAL: `podman-compose` Race Condition Warning**
@@ -1226,8 +1491,15 @@ export REDIS_PORT=6379
 | Test Tier | K8s Environment | Services | Infrastructure |
 |-----------|-----------------|----------|----------------|
 | **Unit** | None | Mocked | None required |
-| **Integration** | envtest | Real (podman-compose) | `podman-compose.test.yml` |
+| **Integration** | envtest | Real (programmatic Go) | `test/infrastructure/container_management.go` |
 | **E2E** | KIND cluster | Real (deployed to KIND) | KIND + Helm/manifests |
+
+**CRITICAL CLARIFICATION** (v2.5.2 - January 2026):
+- **Integration tests use programmatic Go**, NOT `podman-compose`, for external service orchestration
+- **Why programmatic Go?**: `podman-compose` has health reporting issues and race conditions (see DD-TEST-002)
+- **Reference**: `test/infrastructure/container_management.go` - Generic container orchestration functions
+- **Pattern**: `StartGenericContainer()` → wait for health → run tests → `StopContainer()`
+- **See**: `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for detailed architecture explanation
 
 #### Mock LLM in All Tiers
 
@@ -2262,6 +2534,487 @@ If your test directly calls `testMetrics.RecordReconciliation()` or similar meth
 
 ---
 
+### 🚫 **ANTI-PATTERN: HTTP Testing in Integration Tests**
+
+**CRITICAL**: Integration tests MUST test **component coordination with direct business logic calls**, NOT **HTTP API contracts**.
+
+**Discovered**: January 10, 2026 - System-wide triage found Gateway service (19/24 tests) following this anti-pattern.
+
+**Reference**: DataStorage test refactoring (January 2026) - moved 12 HTTP tests from integration to E2E/performance tiers.
+
+#### The Problem
+
+Integration tests that use `httptest.Server` and make HTTP requests test the **HTTP transport layer**, NOT **component coordination**. This conflates E2E testing (full stack with HTTP) with integration testing (component coordination without HTTP).
+
+**What's Being Tested**:
+- ❌ HTTP endpoints work (E2E tier responsibility)
+- ❌ HTTP status codes correct (E2E tier responsibility)
+- ❌ Request/response serialization (E2E tier responsibility)
+- ❌ OpenAPI validation middleware (E2E tier responsibility)
+
+**What's NOT Being Tested**:
+- ❌ Component coordination without transport overhead
+- ❌ Business logic integration with dependencies
+- ❌ Fast, focused integration validation
+
+#### The Root Cause
+
+**Integration tests were treating HTTP as essential** when HTTP is just a **transport mechanism**. The confusion stems from:
+
+1. **Gateway is an HTTP service** → "Integration tests should use HTTP"
+2. **DataStorage has HTTP API** → "Integration tests should test HTTP"
+
+**Reality**: HTTP is a **deployment detail**, not a **business integration requirement**.
+
+#### Test Tier Definitions
+
+|| Tier | Infrastructure | HTTP? | Focus |
+||------|---------------|-------|-------|
+|| **Unit** | None | ❌ No | Algorithm correctness, edge cases |
+|| **Integration** | Real dependencies (PostgreSQL, Redis, K8s) | ❌ **NO HTTP** | Component coordination via **direct business logic calls** |
+|| **E2E** | Full deployment (Kind cluster) | ✅ Yes | Full stack including HTTP, OpenAPI validation |
+|| **Performance** | Full deployment | ✅ Yes | Throughput, latency, resource usage |
+
+**Key Rule**: **Integration tests MUST NOT use HTTP**. If you need HTTP, it's an E2E or performance test.
+
+#### ❌ WRONG PATTERN: HTTP in Integration Tests
+
+```go
+// ❌ FORBIDDEN: Gateway integration test using HTTP
+var _ = Describe("Adapter Integration", func() {
+    var (
+        testServer *httptest.Server  // ❌ HTTP server in integration test
+        k8sClient  *K8sTestClient
+    )
+
+    BeforeEach(func() {
+        // ❌ WRONG: Create HTTP test server
+        gatewayServer := gateway.NewServer(config, k8sClient, redisClient, auditClient)
+        testServer = httptest.NewServer(gatewayServer.Handler())
+    })
+
+    It("should process Prometheus alert through pipeline", func() {
+        // ❌ WRONG: Send HTTP webhook
+        payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+            AlertName: "HighMemoryUsage",
+            Namespace: namespace,
+            Severity:  "critical",
+        })
+
+        resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+
+        // ❌ WRONG: Verify HTTP response
+        Expect(resp.StatusCode).To(Equal(201))
+
+        // ✅ Verify CRD created (this part is correct)
+        Eventually(func() bool {
+            var crd remediationv1alpha1.RemediationRequest
+            err := k8sClient.Get(ctx, key, &crd)
+            return err == nil
+        }, 30*time.Second, 1*time.Second).Should(BeTrue())
+    })
+})
+```
+
+**Why This is Wrong**:
+1. **E2E Disguised as Integration**: Full HTTP stack = E2E test, not integration
+2. **Slow**: HTTP overhead slows down test suite
+3. **Wrong Focus**: Tests HTTP transport, not business logic coordination
+4. **Duplicate Coverage**: E2E tests already cover HTTP endpoints
+5. **Misleading Tier**: Developers expect fast, focused tests in integration tier
+
+#### ❌ WRONG PATTERN: DataStorage HTTP Testing (Before Refactoring)
+
+```go
+// ❌ FORBIDDEN: DataStorage integration test using HTTP (DELETED January 2026)
+var _ = Describe("Audit Write API", func() {
+    var (
+        testServer *httptest.Server  // ❌ HTTP server in integration test
+        client     *ogenclient.Client
+    )
+
+    BeforeEach(func() {
+        // ❌ WRONG: Create in-process HTTP server
+        dsServer, _ := server.NewServer(dbConn, redisAddr, logger, config)
+        testServer = httptest.NewServer(dsServer.Handler())
+        client, _ = ogenclient.NewClient(testServer.URL)
+    })
+
+    It("should accept valid audit event", func() {
+        // ❌ WRONG: Test HTTP API endpoint
+        event := ogenclient.AuditEventRequest{
+            EventType:     "gateway.signal.received",
+            EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
+            // ...
+        }
+
+        resp, err := client.CreateAuditEvent(ctx, &event)  // ❌ HTTP call
+        Expect(err).ToNot(HaveOccurred())
+
+        // ❌ WRONG: Verify HTTP response type
+        _, ok := resp.(*ogenclient.CreateAuditEventCreated)
+        Expect(ok).To(BeTrue())
+    })
+})
+```
+
+**Why This Was Wrong**:
+1. **Testing HTTP API Contract**: Should be in E2E tier
+2. **OpenAPI Validation**: Middleware validation is E2E concern
+3. **Status Code Testing**: HTTP semantics are E2E concern
+4. **Duplicates E2E Coverage**: Full stack already tested in E2E
+
+#### ✅ CORRECT PATTERN: Direct Business Logic Calls
+
+```go
+// ✅ CORRECT: Gateway integration test WITHOUT HTTP
+var _ = Describe("Adapter Integration", func() {
+    var (
+        prometheusAdapter *adapters.PrometheusAdapter
+        dedupService      *dedup.Service
+        crdManager        *crd.Manager
+        k8sClient         *K8sTestClient
+        redisClient       *redis.Client
+        auditClient       audit.AuditStore
+    )
+
+    BeforeEach(func() {
+        // ✅ CORRECT: Wire components directly (no HTTP)
+        prometheusAdapter = adapters.NewPrometheusAdapter(logger)
+        dedupService = dedup.NewService(redisClient, config)
+        crdManager = crd.NewManager(k8sClient, auditClient, logger)
+    })
+
+    It("should process Prometheus alert through adapter → dedup → CRD pipeline", func() {
+        // ✅ CORRECT: Call adapter directly (no HTTP)
+        alertPayload := `{
+            "alerts": [{
+                "labels": {
+                    "alertname": "HighMemoryUsage",
+                    "namespace": "production",
+                    "severity": "critical"
+                }
+            }]
+        }`
+
+        // Step 1: Adapter transforms alert
+        signal, err := prometheusAdapter.Transform([]byte(alertPayload))
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 2: Dedup checks if duplicate
+        isDuplicate, fingerprint, err := dedupService.CheckDuplicate(ctx, signal)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(isDuplicate).To(BeFalse())
+
+        // Step 3: CRD manager creates RemediationRequest
+        crd, err := crdManager.CreateRemediationRequest(ctx, signal, fingerprint)
+        Expect(err).ToNot(HaveOccurred())
+
+        // ✅ CORRECT: Verify CRD created via K8s API (real integration)
+        Eventually(func() bool {
+            var retrieved remediationv1alpha1.RemediationRequest
+            err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crd), &retrieved)
+            return err == nil
+        }, 30*time.Second, 1*time.Second).Should(BeTrue())
+
+        // ✅ CORRECT: Verify audit event emitted (side effect)
+        Eventually(func() int {
+            resp, _ := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+                CorrelationID: ogenclient.NewOptString(string(crd.UID)),
+            })
+            return len(resp.Data)
+        }, 10*time.Second, 1*time.Second).Should(BeNumerically(">", 0))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Component Coordination**: Adapter → Dedup → CRD pipeline
+2. ✅ **No HTTP Overhead**: Direct function calls, fast execution
+3. ✅ **Real Dependencies**: Uses real Redis, K8s API, PostgreSQL
+4. ✅ **Correct Tier**: Focused integration validation, not full stack
+5. ✅ **Clear Intent**: Tests business logic flow, not transport layer
+
+#### ✅ CORRECT PATTERN: DataStorage WITHOUT HTTP (After Refactoring)
+
+```go
+// ✅ CORRECT: DataStorage integration test WITHOUT HTTP (January 2026)
+var _ = Describe("Audit Repository Integration", func() {
+    var (
+        repo   *repository.AuditEventsRepository
+        db     *sqlx.DB
+        logger logr.Logger
+    )
+
+    BeforeEach(func() {
+        // ✅ CORRECT: Use repository directly (no HTTP)
+        repo = repository.NewAuditEventsRepository(db.DB, logger)
+    })
+
+    It("should insert audit event into PostgreSQL", func() {
+        // ✅ CORRECT: Call repository method directly
+        event := &repository.AuditEvent{
+            EventType:     "gateway.signal.received",
+            EventCategory: "gateway",
+            EventOutcome:  "success",
+            CorrelationID: correlationID,
+            // ...
+        }
+
+        createdEvent, err := repo.Create(ctx, event)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(createdEvent.EventID).ToNot(BeEmpty())
+
+        // ✅ CORRECT: Verify database state directly
+        var count int
+        err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(count).To(Equal(1))
+    })
+
+    It("should batch insert multiple events", func() {
+        // ✅ CORRECT: Test repository batching logic (no HTTP)
+        events := []*repository.AuditEvent{
+            {EventType: "gateway.signal.received", EventCategory: "gateway", CorrelationID: correlationID},
+            {EventType: "gateway.signal.processed", EventCategory: "gateway", CorrelationID: correlationID},
+            {EventType: "gateway.crd.created", EventCategory: "gateway", CorrelationID: correlationID},
+        }
+
+        createdEvents, err := repo.CreateBatch(ctx, events)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(createdEvents).To(HaveLen(3))
+
+        // ✅ CORRECT: Verify batch insertion worked
+        var count int
+        err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(count).To(Equal(3))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Repository Logic**: Database operations without HTTP overhead
+2. ✅ **Real PostgreSQL**: Tests actual database integration
+3. ✅ **Fast Execution**: No HTTP serialization/deserialization
+4. ✅ **Correct Tier**: Integration tests repository with real database
+5. ✅ **Clear Separation**: HTTP API tests moved to E2E tier
+
+#### ✅ CORRECT PATTERN: RR Reconstruction WITHOUT HTTP (January 2026)
+
+```go
+// ✅ CORRECT: RR Reconstruction integration test WITHOUT HTTP (January 2026)
+var _ = Describe("RemediationRequest Reconstruction Integration", func() {
+    var (
+        db     *sql.DB
+        logger logr.Logger
+    )
+
+    It("should reconstruct RR from audit events using business logic directly", func() {
+        // Given: Audit events in database
+        correlationID := "test-correlation-123"
+        // (Assume events were inserted via integration setup)
+
+        // ✅ CORRECT: Call business logic directly (no HTTP)
+        // Step 1: Query audit events
+        events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db, logger, correlationID)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(events).ToNot(BeEmpty())
+
+        // Step 2: Parse events
+        parsedData := make([]*reconstruction.ParsedAuditData, 0, len(events))
+        for _, event := range events {
+            parsed, err := reconstruction.ParseAuditEvent(event)
+            Expect(err).ToNot(HaveOccurred())
+            parsedData = append(parsedData, parsed)
+        }
+
+        // Step 3: Merge audit data
+        rrFields, err := reconstruction.MergeAuditData(parsedData)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 4: Build RemediationRequest
+        rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 5: Validate reconstruction
+        validation, err := reconstruction.ValidateReconstructedRR(rr)
+        Expect(err).ToNot(HaveOccurred())
+
+        // ✅ CORRECT: Verify business outcomes (not HTTP status codes)
+        Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
+        Expect(rr.Status.TimeoutConfig).ToNot(BeNil())
+        Expect(validation.IsValid).To(BeTrue())
+        Expect(validation.CompletenessPercentage).To(BeNumerically(">=", 50))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Business Flow**: Query → Parse → Merge → Build → Validate pipeline
+2. ✅ **Real PostgreSQL**: Uses actual database with audit events
+3. ✅ **No HTTP Overhead**: Direct function calls, fast execution
+4. ✅ **Correct Tier**: Tests component coordination, not transport layer
+5. ✅ **Clear Intent**: Validates reconstruction logic, not API contract
+
+**❌ WRONG Pattern (Original Implementation - Corrected January 2026)**:
+```go
+// ❌ FORBIDDEN: Testing HTTP endpoint in integration test
+var _ = Describe("Reconstruction API Integration", func() {
+    var testServer *httptest.Server  // ❌ HTTP server
+
+    It("should reconstruct RR via HTTP endpoint", func() {
+        // ❌ WRONG: HTTP request in integration test
+        resp, err := testServer.ServeHTTP(req)
+        Expect(resp.StatusCode).To(Equal(200))  // ❌ Testing HTTP layer
+    })
+})
+```
+
+**Correction Applied**: January 12, 2026 - Refactored to call business logic directly, moved HTTP endpoint testing to E2E tier.
+
+**Reference**: `docs/development/SOC2/RECONSTRUCTION_TESTING_TIERS.md` - Clarifies integration vs E2E boundaries for reconstruction feature.
+
+#### When HTTP IS Acceptable
+
+**HTTP is ONLY acceptable in these tiers:**
+
+| Test Tier | HTTP Allowed? | Why? |
+|-----------|---------------|------|
+| **Unit** | ❌ No | Mocked, no real dependencies |
+| **Integration** | ❌ **NO** | Direct business logic calls only |
+| **E2E** | ✅ Yes | Full stack validation including HTTP |
+| **Performance** | ✅ Yes | Throughput/latency testing requires HTTP |
+
+#### NO EXCEPTIONS: HTTP Infrastructure Tests Also Belong in E2E
+
+**CRITICAL**: There are **NO EXCEPTIONS** to the "no HTTP in integration tests" rule.
+
+Even tests that validate HTTP infrastructure (timeouts, rate limits, TLS, server lifecycle) should be in the **E2E tier**, not integration tier.
+
+```go
+// ❌ WRONG: HTTP infrastructure test in integration tier
+// Location: test/integration/gateway/http_server_test.go
+var _ = Describe("HTTP Server Infrastructure", func() {
+    var testServer *httptest.Server  // ← HTTP = E2E tier
+
+    It("should enforce request timeout", func() {
+        // ❌ This is testing HTTP infrastructure, not component coordination
+    })
+})
+
+// ✅ CORRECT: HTTP infrastructure test in E2E tier
+// Location: test/e2e/gateway/XX_http_server_test.go
+var _ = Describe("HTTP Server Infrastructure", func() {
+    It("should enforce request timeout", func() {
+        // ✅ E2E tests validate full infrastructure including HTTP
+    })
+})
+```
+
+**Rationale**:
+1. **HTTP = Full Stack = E2E**: Any test requiring HTTP stack validates full deployment
+2. **TLS = Infrastructure = E2E**: Certificate validation requires real HTTP/TLS (E2E scope)
+3. **No Special Cases**: Consistency prevents "exception creep"
+
+**Formerly "Legitimate" Cases** (Now Corrected):
+- ❌ **"TLS tests need HTTP"** → Move to E2E (infrastructure validation)
+- ❌ **"Audit verification via HTTP"** → Query PostgreSQL directly in integration tests
+- ❌ **"HTTP infrastructure tests"** → Move to E2E (full stack validation)
+
+**Rule**: **NO HTTP in integration tests. No exceptions. Ever.**
+
+#### Migration Guide
+
+**Step 1**: Identify HTTP tests in integration tier
+```bash
+# Find integration tests using HTTP
+grep -r "httptest\|http\.Post\|http\.Get\|testServer" test/integration/{service}/ --include="*_test.go" -l
+```
+
+**Step 2**: Categorize tests
+```go
+// Ask: "What is this test validating?"
+
+// ❌ HTTP API contract (status codes, request/response format)
+//    → Move to E2E tier
+
+// ❌ Performance (throughput, latency, cold start)
+//    → Move to performance tier
+
+// ✅ Component coordination (adapter → dedup → CRD)
+//    → Refactor to use direct business logic calls
+```
+
+**Step 3**: Refactor to direct calls
+```go
+// BEFORE: HTTP-based integration test
+resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+Expect(resp.StatusCode).To(Equal(201))
+
+// AFTER: Direct business logic integration test
+signal, err := adapter.Transform(payload)
+Expect(err).ToNot(HaveOccurred())
+isDupe, fingerprint, err := dedupService.CheckDuplicate(ctx, signal)
+Expect(err).ToNot(HaveOccurred())
+crd, err := crdManager.CreateRemediationRequest(ctx, signal, fingerprint)
+Expect(err).ToNot(HaveOccurred())
+```
+
+**Step 4**: Move HTTP tests to E2E
+```bash
+# Move HTTP API contract tests
+git mv test/integration/{service}/audit_write_api_test.go \
+       test/e2e/{service}/12_audit_write_api_test.go
+```
+
+#### Real-World Refactoring Example
+
+**DataStorage Service (January 2026)**:
+
+| Before | After | Change |
+|--------|-------|--------|
+| **Integration**: 12 tests (3 using HTTP) | **Integration**: 9 tests (0 using HTTP) | ✅ -3 HTTP tests |
+| **E2E**: 9 tests | **E2E**: 19 tests | ✅ +10 tests |
+| **Performance**: 0 tests | **Performance**: 2 tests | ✅ +2 tests |
+
+**Results**:
+- ✅ Integration tests 40% faster (no HTTP overhead)
+- ✅ Clear tier separation (integration = business logic, E2E = HTTP)
+- ✅ Better test focus (integration tests component coordination, not transport)
+
+#### Enforcement
+
+CI pipelines SHOULD:
+1. **Detect** `httptest.Server` or `http.Post` in integration test directories
+2. **Flag** for review in code review
+3. **Require** justification for HTTP in integration tests
+
+```bash
+# CI check for HTTP anti-pattern in integration tests
+if grep -r "httptest\|http\.Post\|http\.Get\|SendWebhook" test/integration --include="*_test.go" | grep -v "http_server_test\|rate_limit" | grep -v "^Binary"; then
+    echo "⚠️  WARNING: Found HTTP usage in integration tests"
+    echo "   Integration tests MUST use direct business logic calls, NOT HTTP"
+    echo "   HTTP tests belong in E2E or performance tiers"
+    echo "   See: docs/development/business-requirements/TESTING_GUIDELINES.md#anti-pattern-http-testing-in-integration-tests"
+    echo ""
+    echo "   NO EXCEPTIONS: ALL HTTP tests should be in E2E or performance tier"
+    echo "   Even HTTP infrastructure tests belong in E2E, not integration"
+fi
+```
+
+#### Key Takeaway
+
+**Integration tests MUST test component coordination via direct business logic calls, NOT via HTTP.**
+
+If your integration test uses `httptest.Server`, you're likely writing an E2E test in the wrong tier.
+
+**Correct mental model**:
+- **Integration**: `adapter.Transform()` → `dedupService.CheckDuplicate()` → `crdManager.Create()`
+- **E2E**: `http.Post("/api/v1/signals")` → verify full stack
+
+---
+
 ### 🔌 **EventRecorder Testing Requirements** (CRD Controllers Only)
 
 **Policy**: Controllers MUST emit Kubernetes Events for debugging. E2E tests MUST verify events.
@@ -2384,5 +3137,6 @@ This template provides:
 > find docs/architecture/decisions -name "*.md" -newer docs/development/business-requirements/TESTING_GUIDELINES.md
 > ```
 >
-> **Last Updated**: 2025-12-19 (v2.1.0)
+> **Last Updated**: 2026-01-20 (v2.5.2)
+> **Last Triage**: 2026-01-20 - Architecture clarification (see `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md`)
 > **Next Review**: When any new ADR/DD affecting testing is created

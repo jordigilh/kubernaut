@@ -425,5 +425,21 @@ func DefaultRules() []*Rule {
 			Replacement: `"annotations":` + RedactedPlaceholder,
 			Description: "Redact webhook annotations",
 		},
+
+		// ========================================
+		// PII Patterns (BR-GATEWAY-042)
+		// ========================================
+		{
+			Name:        "email-address",
+			Pattern:     regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b`),
+			Replacement: RedactedPlaceholder,
+			Description: "Redact email addresses (PII)",
+		},
+		{
+			Name:        "ipv4-address",
+			Pattern:     regexp.MustCompile(`\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b`),
+			Replacement: RedactedPlaceholder,
+			Description: "Redact IPv4 addresses (internal infrastructure)",
+		},
 	}
 }

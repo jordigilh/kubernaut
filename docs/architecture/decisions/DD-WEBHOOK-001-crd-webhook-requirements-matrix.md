@@ -1,10 +1,15 @@
 # DD-WEBHOOK-001: CRD Webhook Requirements Matrix
 
-**Date**: December 20, 2025
+**Date**: January 6, 2026 (v1.2 - Single Consolidated Webhook Architecture)
 **Status**: ✅ **AUTHORITATIVE**
 **Purpose**: Define WHEN and WHY CRDs require webhooks for authenticated user operations
 **Authority**: Decision criteria for all CRD webhook implementations
 **Scope**: All Kubernetes CRDs in Kubernaut requiring user authentication
+
+**Version History**:
+- **v1.2** (January 6, 2026): **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers. Updated implementation approach and timelines. Added references to comprehensive implementation and test plans.
+- **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution). **Note**: Workflow CRUD uses HTTP middleware, not CRD webhook (see DD-AUTH-003)
+- **v1.0** (December 20, 2025): Initial version with WorkflowExecution + RemediationApprovalRequest
 
 ---
 
@@ -20,14 +25,161 @@
 
 ---
 
+## 🏗️ **CONSOLIDATED WEBHOOK ARCHITECTURE** (v1.2)
+
+### **Single Webhook Deployment, Multiple Handlers**
+
+**Key Principle**: One webhook service (`kubernaut-auth-webhook`) handles authentication for ALL CRDs requiring webhooks.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Single Pod: kubernaut-auth-webhook                            │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  Webhook Server (controller-runtime)                     │ │
+│  │                                                           │ │
+│  │  Route: /mutate-workflowexecution                        │ │
+│  │    → WorkflowExecutionAuthHandler                        │ │
+│  │    → Populates: status.blockClearanceRequest.clearedBy  │ │
+│  │                                                           │ │
+│  │  Route: /mutate-remediationapprovalrequest               │ │
+│  │    → RemediationApprovalRequestAuthHandler               │ │
+│  │    → Populates: status.approvalRequest.approvedBy        │ │
+│  │                                                           │ │
+│  │  Route: /validate-notificationrequest-delete             │ │
+│  │    → NotificationRequestDeleteHandler                    │ │
+│  │    → Captures: metadata.deletionTimestamp + user         │ │
+│  │                                                           │ │
+│  │  Shared: ExtractAuthenticatedUser(req.UserInfo)          │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  Port: 9443 (DEFAULT - HTTPS with TLS cert)                   │
+│  Data Storage URL: http://datastorage-service:8080 (DEFAULT)  │
+│  Metrics: ❌ NONE (audit traces sufficient)                   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Default Configuration**:
+- **Webhook Port**: `9443` (standard Kubernetes webhook port - no configuration needed)
+- **Data Storage URL**: `http://datastorage-service:8080` (K8s service name - no configuration needed)
+- **Metrics**: ❌ **None** - Audit traces capture 100% of operations; K8s API server exposes webhook metrics
+- **Override**: Via environment variables or CLI flags for dev/test environments
+
+### **Benefits of Consolidated Approach**
+
+| Aspect | Separate Webhooks | Consolidated Webhook ✅ | Improvement |
+|--------|-------------------|-------------------------|-------------|
+| **Pods** | 3 | 1 | 66% reduction |
+| **Memory** | 150MB (3×50MB) | 50MB | 66% reduction |
+| **Configs** | 3 webhooks | 1 webhook | Simpler maintenance |
+| **Deployment time** | 3× slower | Fast | 3× faster |
+| **Code consistency** | Risk of drift | Guaranteed | Shared logic |
+| **Testing** | 3× test suites | 1 unified suite | Easier maintenance |
+
+### **Implementation Structure**
+
+```
+cmd/authwebhook/main.go                    # Single webhook server entry point
+pkg/authwebhook/auth/common.go             # Shared: ExtractAuthenticatedUser()
+pkg/authwebhook/workflowexecution_handler.go     # WE-specific logic
+pkg/authwebhook/remediationapprovalrequest_handler.go  # RAR-specific logic
+pkg/authwebhook/notificationrequest_handler.go         # NR-specific logic
+```
+
+**Comprehensive Plans**:
+- **[Implementation Plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md)**: 5-6 day roadmap with APDC-TDD methodology
+- **[Test Plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md)**: 95 tests (70 unit + 11 integration + 14 E2E)
+
+---
+
+## ⚙️ **Service Configuration (AUTHORITATIVE)**
+
+### **Default Configuration** (Zero Config Production)
+
+| Parameter | Default Value | Override Method | Purpose |
+|-----------|---------------|-----------------|---------|
+| **Webhook Port** | `9443` | `--webhook-port` or `WEBHOOK_PORT` | Standard K8s webhook HTTPS port |
+| **Data Storage URL** | `http://datastorage-service:8080` | `--data-storage-url` or `WEBHOOK_DATA_STORAGE_URL` | Audit event API endpoint |
+| **Cert Directory** | `/tmp/k8s-webhook-server/serving-certs` | `--cert-dir` | TLS certificate location |
+| **Metrics** | ❌ **None** | N/A | Audit traces sufficient; K8s API server exposes webhook metrics |
+
+### **Configuration Priority** (Highest to Lowest)
+
+1. **CLI Flags**: Explicit command-line arguments
+2. **Environment Variables**: `WEBHOOK_*` prefixed variables
+3. **Default Values**: Sensible production defaults
+
+### **Production Deployment** (No Configuration Needed)
+
+```yaml
+# deploy/webhooks/deployment.yaml
+containers:
+- name: webhook
+  image: kubernaut/auth-webhook:latest
+  # No args needed - all defaults work in production
+  ports:
+  - containerPort: 9443  # Webhook HTTPS port (only port needed)
+    name: webhook
+  # No metrics port - audit traces sufficient
+```
+
+**Result**: Webhook works out-of-box in standard Kubernetes environments with zero configuration.
+
+### **Development/Test Overrides**
+
+```yaml
+# Integration tests - override Data Storage URL only
+env:
+- name: WEBHOOK_DATA_STORAGE_URL
+  value: "http://localhost:18099"
+# Webhook port 9443 uses default
+```
+
+```yaml
+# Staging - override Data Storage URL only
+env:
+- name: WEBHOOK_DATA_STORAGE_URL
+  value: "http://datastorage-staging:8080"
+# Webhook port 9443 uses default
+```
+
+### **CLI Flag Reference**
+
+```bash
+./webhooks-controller \
+  --webhook-port=9443 \                          # DEFAULT (can omit)
+  --data-storage-url=http://datastorage-service:8080 \  # DEFAULT (can omit)
+  --cert-dir=/tmp/k8s-webhook-server/serving-certs      # DEFAULT (can omit)
+
+# Minimal production command (all defaults):
+./webhooks-controller
+
+# No metrics flag - audit traces sufficient
+```
+
+### **Why Port 9443?**
+
+**Standard**: Port 9443 is the de facto standard for Kubernetes admission webhooks
+- ✅ Used by cert-manager, OPA Gatekeeper, Istio, and other K8s webhooks
+- ✅ Well-known port for webhook HTTPS traffic
+- ✅ No conflicts with application ports (8080-8089 range)
+- ✅ Firewall-friendly (standard HTTPS alternative port)
+
+**Authority**: Kubernetes webhook best practices and community conventions
+
+---
+
 ## 📊 **CRD Webhook Requirements Matrix**
 
-### **CRDs Requiring Webhooks** ✅
+### **CRDs Requiring Webhooks** ✅ (3 Total)
 
 | CRD | Use Case | Status Fields Requiring Auth | SOC2 Control | Implementation Owner | Priority | Target Version |
 |-----|----------|------------------------------|--------------|----------------------|----------|----------------|
 | **WorkflowExecution** | Block Clearance | `status.blockClearanceRequest` | CC8.1 (Attribution) | WE Team | P0 | v1.0 |
 | **RemediationApprovalRequest** | Approval Decisions | `status.approvalRequest` | CC8.1 (Attribution) | RO Team | P0 | v1.0 |
+| **NotificationRequest** | Cancellation Attribution | `metadata.deletionTimestamp` (DELETE) | CC8.1 (Attribution) | Notification Team | P0 | v1.1 |
+
+**Note**: Workflow catalog CRUD operations use externalized authorization via sidecar (REST API), not CRD webhooks. See `DD-AUTH-003-externalized-authorization-sidecar.md` for workflow CRUD attribution.
 
 ### **CRDs NOT Requiring Webhooks** ❌
 
@@ -36,7 +188,6 @@
 | **SignalProcessing** | Controller-only status | Controller manages K8s context enrichment |
 | **AIAnalysis** | Controller-only status | Controller manages AI investigation results |
 | **RemediationRequest** | Controller-only status | RO controller manages routing logic |
-| **NotificationRequest** | Controller-only status | Controller manages notification delivery status |
 
 **Note**: **KubernetesExecution** was deprecated 2025-10-19 (never implemented, replaced by Tekton Pipelines). See [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md)
 
@@ -170,6 +321,62 @@
 **Timeline**: 2-3 days (reuses shared library from WE implementation)
 
 **Reference**: [ADR-051](./ADR-051-operator-sdk-webhook-scaffolding.md)
+
+---
+
+### **Use Case 3: NotificationRequest Cancellation Attribution** (v1.1)
+
+**Business Requirement**: SOC2 CC8.1 Attribution for notification cancellations
+
+**Scenario**: Operator manually cancels notification delivery by deleting NotificationRequest CRD (e.g., issue manually resolved, notification no longer needed).
+
+**Why Webhook Required**:
+1. ✅ **Manual Intervention**: Operator manually deletes NotificationRequest CRD
+2. ✅ **SOC2 CC8.1**: Must record WHO cancelled the notification
+3. ✅ **Override Action**: Operator cancels automated notification delivery
+4. ✅ **Operational Decision**: Cancellation requires human judgment
+
+**Operation**:
+```bash
+kubectl delete notificationrequest <nr-name> -n <namespace>
+```
+
+**Metadata Fields Requiring Authentication**:
+- **Kubernetes Sets**: `metadata.deletionTimestamp` (on DELETE operation)
+- **Webhook Captures**: Authenticated user identity before allowing deletion
+- **Finalizer**: Webhook uses finalizer to intercept DELETE and emit audit event
+
+**Audit Event**: `notification.request.cancelled` (NEW event type - requires DD-AUDIT-003 v1.4)
+
+**Event Data**:
+```json
+{
+  "notification_request_id": "nr-approval-rr-123",
+  "remediation_request_id": "rr-oomkill-abc123",
+  "notification_type": "approval",
+  "cancelled_by": {
+    "username": "operator@example.com",
+    "uid": "k8s-user-uuid",
+    "groups": ["platform-admins"]
+  },
+  "cancellation_reason": "Issue manually resolved",
+  "notification_phase": "Pending"
+}
+```
+
+**Webhook Type**: **ValidatingWebhookConfiguration** (DELETE operation)
+
+**Implementation Pattern**:
+1. Webhook intercepts DELETE operation
+2. Extract authenticated user from `req.UserInfo`
+3. Emit `notification.request.cancelled` audit event with authenticated actor
+4. Allow DELETE to proceed (remove finalizer)
+
+**Implementation Owner**: Notification Team
+
+**Timeline**: 1-2 days (reuses shared library)
+
+**Reference**: [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](../../development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md)
 
 ---
 
@@ -332,66 +539,80 @@ Is this an approval workflow or override action?
 
 ---
 
-## 🎯 **Team Responsibility Matrix**
+## 🎯 **Team Responsibility Matrix (v1.2 - Consolidated Webhook)**
 
-| CRD | Webhook Needed? | Implementation Owner | Shared Library Owner | Timeline | Dependencies |
-|-----|----------------|----------------------|---------------------|----------|--------------|
-| **WorkflowExecution** | ✅ YES | WE Team | WE Team (creates shared lib) | 3-4 days | None (first implementation) |
-| **RemediationApprovalRequest** | ✅ YES | RO Team | WE Team (reuses shared lib) | 2-3 days | WE webhook complete |
+| CRD | Webhook Needed? | Handler Owner | Implementation Phase | Timeline | Dependencies |
+|-----|----------------|---------------|----------------------|----------|--------------|
+| **WorkflowExecution** | ✅ YES | Webhook Team | Phase 2 (Day 2) | 1 day | Phase 1 complete |
+| **RemediationApprovalRequest** | ✅ YES | Webhook Team | Phase 3 (Day 3) | 1 day | Phase 1 complete |
+| **NotificationRequest** (v1.1) | ✅ YES | Webhook Team | Phase 4 (Day 4) | 1 day | Phase 1 complete |
 | **SignalProcessing** | ❌ NO | N/A | N/A | N/A | N/A (K8s enrichment automated) |
 | **AIAnalysis** | ❌ NO | N/A | N/A | N/A | N/A (AI investigation automated) |
 | **RemediationRequest** | ❌ NO | N/A | N/A | N/A | N/A (routing automated) |
-| **NotificationRequest** | ❌ NO | N/A | N/A | N/A | N/A (delivery automated) |
 
-**Shared Library Ownership**:
-- **WE Team**: Implements `pkg/authwebhook` (Day 1 of WE webhook work)
-- **All Teams**: Reuse shared library for consistency
+**Note**: Workflow CRUD attribution (Data Storage Team) uses externalized authorization via sidecar, not CRD webhook. See `DD-AUTH-003` for implementation.
+
+**Single Webhook Service Ownership**:
+- **Webhook Team**: Implements unified `kubernaut-auth-webhook` service
+- **Phase 1 (Day 1)**: Common authentication logic (`pkg/authwebhook/auth/common.go`)
+- **Phase 2-4 (Days 2-4)**: CRD-specific handlers (one per day)
+- **Phase 5-6 (Days 5-6)**: Integration + E2E testing + documentation
 
 ---
 
-## 📅 **Implementation Timeline - V1.0**
+## 📅 **Implementation Timeline - V1.2 (Consolidated Webhook)**
 
-### **Sprint 1: WE Webhook Implementation** (3-4 days)
+**V1.0 (December 2025)**: WorkflowExecution + RemediationApprovalRequest
+**V1.1 (January 2026)**: NotificationRequest (Week 2-3)
+**V1.2 (January 2026)**: **ARCHITECTURE UPDATE** - Single consolidated webhook deployment
 
-**Day 1** (WE Team):
-- Implement `pkg/authwebhook` shared library
-- Write 18 unit tests for shared library
-- **Deliverable**: Reusable authentication library ✅
+**Note**: Workflow CRUD attribution uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook
 
-**Day 2-3** (WE Team):
-- Scaffold WE webhook using operator-sdk
-- Implement `Default()` and `ValidateUpdate()` methods
-- Implement controller bypass and mutual exclusion
-- Write 18 unit tests for webhook
-- Write 3 integration tests
-- **Deliverable**: WE webhook implementation ✅
+### **Consolidated Implementation (5-6 days) - v1.2**
 
-**Day 4** (WE Team):
-- Write 2 E2E tests
-- SOC2 compliance validation
-- Documentation
-- **Deliverable**: WE webhook complete and documented ✅
+**See Comprehensive Plans**:
+- **[WEBHOOK_IMPLEMENTATION_PLAN.md](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md)**: Detailed roadmap with APDC-TDD methodology
+- **[WEBHOOK_TEST_PLAN.md](../../development/SOC2/WEBHOOK_TEST_PLAN.md)**: 95 tests (70 unit + 11 integration + 14 E2E)
 
-### **Sprint 2: RO Webhook Implementation** (2-3 days)
+### **High-Level Timeline**
 
-**Day 1** (RO Team):
-- Review `pkg/authwebhook` shared library
-- Update RAR CRD schema
-- Scaffold RO webhook using operator-sdk
-- **Deliverable**: RO webhook scaffolding ✅
+**Day 1: Webhook Server Foundation** (Webhook Team)
+- Create `cmd/authwebhook/main.go` (single webhook server)
+- Implement `pkg/authwebhook/auth/common.go` (shared authentication logic)
+- Write 10 unit tests for common auth
+- Setup TLS certificates (cert-manager)
+- **Deliverable**: Webhook server runs, common auth tested ✅
 
-**Day 2** (RO Team):
-- Implement `Default()` and `ValidateUpdate()` methods
-- Implement controller bypass and mutual exclusion
-- Write 18 unit tests for webhook
-- Write 3 integration tests
-- **Deliverable**: RO webhook implementation ✅
+**Day 2: WorkflowExecution Handler** (Webhook Team)
+- Implement `pkg/authwebhook/workflowexecution_handler.go`
+- Wire handler to webhook server (`/mutate-workflowexecution`)
+- Write 20 unit tests + 3 integration tests
+- Update WE controller to detect `clearedBy` field
+- **Deliverable**: WE attribution working end-to-end ✅
 
-**Day 3** (RO Team):
-- Write 2 E2E tests
-- SOC2 compliance validation
-- Documentation
-- **Deliverable**: RO webhook complete and documented ✅
+**Day 3: RemediationApprovalRequest Handler** (Webhook Team)
+- Implement `pkg/authwebhook/remediationapprovalrequest_handler.go`
+- Wire handler to webhook server (`/mutate-remediationapprovalrequest`)
+- Write 20 unit tests + 3 integration tests
+- Update RAR controller to detect `approvedBy`/`rejectedBy` fields
+- **Deliverable**: RAR attribution working end-to-end ✅
+
+**Day 4: NotificationRequest Handler** (Webhook Team)
+- Implement `pkg/authwebhook/notificationrequest_handler.go`
+- Wire handler to webhook server (`/validate-notificationrequest-delete`)
+- Write 20 unit tests + 3 integration tests
+- Update NR controller to detect cancellation annotations
+- **Deliverable**: NR attribution working end-to-end ✅
+
+**Day 5-6: Integration + E2E + Documentation** (Webhook Team)
+- E2E tests: Complete flows for all 3 CRDs (14 tests)
+- Performance validation: Webhook latency < 50ms
+- Security validation: TLS + RBAC + NetworkPolicy
+- Documentation: Runbooks, troubleshooting guides
+- SOC2 compliance validation: 100% attribution
+- **Deliverable**: Production-ready webhook service ✅
+
+**Note**: Workflow CRUD attribution (Data Storage Team) requires externalized authorization via sidecar. See `DD-AUTH-003-externalized-authorization-sidecar.md` for implementation plan.
 
 ---
 
@@ -520,6 +741,8 @@ This DD is successfully implemented when:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **1.2** | **2026-01-06** | **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers instead of 3 separate webhooks. Added consolidated architecture section with benefits (66% memory reduction, 3× faster deployments, guaranteed consistency). Updated team responsibility matrix for unified Webhook Team ownership. Updated implementation timeline to 5-6 days consolidated approach. Added comprehensive [implementation plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md) and [test plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md) references. Updated all DD-AUTH-002 references to DD-AUTH-003 (sidecar pattern supersedes middleware). |
+| 1.1 | 2026-01-06 | Added NotificationRequest (DELETE attribution). Workflow CRUD uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook. |
 | 1.0.2 | 2025-12-20 | **CRITICAL**: Removed KubernetesExecution CRD (deprecated 2025-10-19, never implemented, replaced by Tekton Pipelines). Verified all CRDs against authoritative BR documents. Added deprecation note referencing [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md). Updated examples with actual CRDs: SignalProcessing, AIAnalysis, RemediationRequest, NotificationRequest. |
 | 1.0.1 | 2025-12-20 | Fixed CRD names to match actual kubernaut CRDs: KubernetesExecution (not KubernetesExecutor), SignalProcessing, AIAnalysis, NotificationRequest (removed invented CRDs: WorkflowDefinition, AlertForwarder, DataStorage). |
 | 1.0 | 2025-12-20 | Initial DD: CRD webhook requirements matrix. Decision criteria for WHEN/WHY webhooks are needed. Team responsibility matrix. Implementation checklist. SOC2 compliance requirements. Must gather procedures. |
@@ -527,7 +750,7 @@ This DD is successfully implemented when:
 ---
 
 **Document Status**: ✅ **AUTHORITATIVE**
-**Version**: 1.0.2
+**Version**: 1.2
 **Authority**: Decision criteria for all CRD webhook implementations
-**Next Review**: 2026-01-20 (1 month - after v1.0 release)
+**Next Review**: 2026-02-06 (1 month - after consolidated webhook v1.2 deployment)
 

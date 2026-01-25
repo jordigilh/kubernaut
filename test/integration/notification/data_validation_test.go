@@ -63,8 +63,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -87,7 +87,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Controller processes and delivers notification
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -100,7 +100,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Verify delivery outcome
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(freshNotif.Status.SuccessfulDeliveries).To(Equal(1),
@@ -124,8 +124,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -148,7 +148,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Notification is delivered successfully
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -161,7 +161,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Subject is preserved
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(freshNotif.Spec.Subject)).To(Equal(500),
 				"Subject length preserved through delivery")
@@ -181,8 +181,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -205,7 +205,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Large notification is delivered
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -237,8 +237,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/severity":    "low",
@@ -263,7 +263,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// Verify CRD exists and controller started processing
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -292,8 +292,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/severity":    "medium",
@@ -320,7 +320,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// Verify CRD exists and controller started processing
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -347,8 +347,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -386,8 +386,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -428,8 +428,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -452,7 +452,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Unicode notification delivered successfully
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -465,7 +465,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Unicode preserved
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(freshNotif.Spec.Subject).To(ContainSubstring("🚀"),
@@ -491,8 +491,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -517,7 +517,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Controller processes notification with duplicate detection
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -532,7 +532,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Idempotency ensures no duplicate deliveries
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			// First Console delivery succeeds, duplicates are detected (idempotency)
@@ -561,8 +561,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -585,7 +585,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Notification delivered safely (no script execution)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -598,7 +598,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Content stored/delivered as text (no execution)
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(freshNotif.Status.SuccessfulDeliveries).To(Equal(1),
 				"Special characters handled safely in text-only delivery")
@@ -623,8 +623,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -647,7 +647,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Notification delivered with sanitization applied
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -674,8 +674,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -698,7 +698,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Notification with multiple secrets delivered
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -724,8 +724,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -748,7 +748,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: Alert delivered with context preserved
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -761,7 +761,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			// CORRECTNESS: Important details preserved (namespace, pod, error type, timestamp)
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(freshNotif.Spec.Subject).To(ContainSubstring("prod-app"),
@@ -785,8 +785,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -809,7 +809,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			// BEHAVIOR: URL secrets redacted before delivery
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)

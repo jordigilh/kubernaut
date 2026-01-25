@@ -59,11 +59,11 @@ var _ = Describe("Redis Client", func() {
 
 	AfterEach(func() {
 		if client != nil {
-		_ = client.Close()
-	}
-	if miniRedis != nil {
-		miniRedis.Close()
-	}
+			_ = client.Close()
+		}
+		if miniRedis != nil {
+			miniRedis.Close()
+		}
 	})
 
 	Describe("NewClient", func() {

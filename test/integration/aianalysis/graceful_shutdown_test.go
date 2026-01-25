@@ -19,7 +19,6 @@ package aianalysis
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -62,9 +61,9 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
+var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 	var (
-		uniqueSuffix   string
+		uniqueSuffix string
 		// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
 		// No need to declare it here - each test gets a unique namespace automatically
 		dataStorageURL = "http://127.0.0.1:18095" // From suite infrastructure (IPv4 explicit)
@@ -189,7 +188,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
-							Severity:         "warning",
+							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalType:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P3",
@@ -301,34 +300,33 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
 				Equal(aianalysisv1alpha1.PhaseFailed),
 			), "Analysis should complete and generate audit events")
 
-		// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
-		// IMPROVEMENT: Use explicit Flush() instead of time.Sleep() for reliability
-		// This guarantees audit events are written before querying
-		if auditStore != nil {
-			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-			GinkgoWriter.Printf("✅ Audit store flushed before querying\n")
-		}
+			// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
+			// IMPROVEMENT: Use explicit Flush() instead of time.Sleep() for reliability
+			// This guarantees audit events are written before querying
+			if auditStore != nil {
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer flushCancel()
+				err := auditStore.Flush(flushCtx)
+				Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+				GinkgoWriter.Printf("✅ Audit store flushed before querying\n")
+			}
 
-	// Query audit events via Data Storage API
-		dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
-		Expect(err).NotTo(HaveOccurred())
-
-		correlationID := analysis.Spec.RemediationID
-		eventCategory := "analysis"
-		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventCategory: &eventCategory,
-		})
+			// Query audit events via Data Storage API
+			dsClient, err := ogenclient.NewClient(dataStorageURL)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(resp.JSON200.Data).ToNot(BeNil(), "Response should have data array")
-			Expect(len(*resp.JSON200.Data)).To(BeNumerically(">=", 1),
+
+			correlationID := analysis.Spec.RemediationID
+			eventCategory := "analysis"
+			resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+			})
+			Expect(err).NotTo(HaveOccurred(), "Audit query should succeed")
+			Expect(resp.Data).ToNot(BeNil(), "Response should have data array")
+			Expect(len(resp.Data)).To(BeNumerically(">=", 1),
 				"Audit events must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
 
-			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(*resp.JSON200.Data))
+			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(resp.Data))
 
 			// Cleanup
 			err = k8sClient.Delete(context.Background(), analysis)

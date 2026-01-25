@@ -13,8 +13,7 @@ description: "Conflict resolution matrix and automated detection for kubernaut r
 |----------|------|--------|-----------|-------|
 | **1. FOUNDATIONAL** | 00-core-development-methodology.mdc | FOUNDATIONAL | APDC Framework | All development |
 | **2. MANDATORY** | 00-project-guidelines.mdc | MANDATORY PRINCIPLES | TDD & Business Requirements | All development |
-| **3. BEHAVIORAL** | 00-ai-assistant-behavioral-constraints-consolidated.mdc | AI ASSISTANT CONTROL | AI Assistant Behavior | AI assistant usage |
-| **4. ENFORCEMENT** | 00-ai-assistant-methodology-enforcement.mdc | VALIDATION CONTROL | Methodology Compliance | Development validation |
+| **3. BEHAVIORAL** | 01-ai-assistant-behavior.mdc | AI ASSISTANT CONTROL | AI Assistant Behavior | AI assistant usage |
 | **5. TESTING** | 03-testing-strategy.mdc | AUTHORITATIVE SOURCE | Testing & Mock Strategy | All testing |
 | **6. SPECIALIZED** | 04,05,12,etc | DOMAIN-SPECIFIC | Specialized Implementation | Specific domains |
 | **7. QUALITY** | 06,08,09,10 | VALIDATION | Quality Assurance | Post-development |

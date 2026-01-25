@@ -1,8 +1,8 @@
 server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: "30s"
-  write_timeout: "30s"
+  readTimeout: "30s"   # CORRECTED: camelCase to match Go struct tag
+  writeTimeout: "30s"  # CORRECTED: camelCase to match Go struct tag
 
 logging:
   level: "info"
@@ -14,19 +14,19 @@ database:
   name: "action_history"
   user: "slm_user"
   password: "slm_password_dev"
-  ssl_mode: "disable"
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: "5m"
-  conn_max_idle_time: "10m"
+  sslMode: "disable"         # CORRECTED: camelCase to match Go struct tag
+  maxOpenConns: 25           # CORRECTED: camelCase to match Go struct tag (was max_open_conns)
+  maxIdleConns: 5            # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
+  connMaxLifetime: "5m"      # CORRECTED: camelCase to match Go struct tag (was conn_max_lifetime)
+  connMaxIdleTime: "10m"     # CORRECTED: camelCase to match Go struct tag (was conn_max_idle_time)
 
 redis:
   addr: "localhost:6379"
   db: 0
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
   # when PostgreSQL is unavailable
-  dlq_stream_name: "audit:dlq:notification"
-  dlq_max_len: 10000
-  dlq_consumer_group: "datastorage-dlq-consumers"
+  dlqStreamName: "audit:dlq:notification"     # CORRECTED: camelCase to match Go struct tag
+  dlqMaxLen: 10000                            # CORRECTED: camelCase to match Go struct tag
+  dlqConsumerGroup: "datastorage-dlq-consumers"  # CORRECTED: camelCase to match Go struct tag
 
 

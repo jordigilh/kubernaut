@@ -128,12 +128,9 @@ var AllMigrations = []Migration{
 		Description: "Vector schema for embeddings",
 		Tables:      []string{},
 	},
-	{
-		Name:        "effectiveness_assessment",
-		File:        "006_effectiveness_assessment.sql",
-		Description: "Effectiveness assessment table",
-		Tables:      []string{"effectiveness_assessments"},
-	},
+	// NOTE: Migration 006 (effectiveness_assessment) moved to migrations/v1.1/ (v1.1 feature)
+	// Removed 2026-01-07 to prevent v1.1 feature leakage into v1.0
+	// Also had CREATE INDEX CONCURRENTLY which breaks transaction-based E2E migrations
 	{
 		Name:        "context_column",
 		File:        "007_add_context_column.sql",

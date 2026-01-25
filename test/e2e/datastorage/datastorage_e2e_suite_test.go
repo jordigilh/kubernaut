@@ -24,12 +24,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -39,7 +42,7 @@ import (
 // Test suite for Data Storage E2E tests
 // This suite sets up a complete production-like environment:
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
-// - PostgreSQL 16 (V1.0 label-only, for audit events and workflow catalog)
+// - PostgreSQL 16 (V1.0 label-only, for workflow catalog)
 // - Redis (for DLQ fallback)
 // - Data Storage service (deployed to Kind cluster)
 //
@@ -75,6 +78,15 @@ var (
 	// These are set in SynchronizedBeforeSuite and available to all tests
 	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
+
+	// Shared OpenAPI client (DD-API-001: OpenAPI Client Mandate)
+	// Replaces raw HTTP client for type-safe API interaction
+	dsClient *dsgen.Client
+
+	// Shared PostgreSQL connection for E2E test verification
+	// NOTE: E2E tests should prefer API verification over direct DB access
+	// This is provided for tests migrated from integration that require DB verification
+	testDB *sql.DB
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "datastorage-e2e"
@@ -122,7 +134,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NodePort exposure: Data Storage (30081→8081), PostgreSQL (30432→5432)")
-		logger.Info("  • PostgreSQL 16 (V1.0 label-only, audit events and workflow catalog)")
+		logger.Info("  • PostgreSQL 16 (V1.0 label-only, workflow catalog, SOC2 audit storage)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
 		logger.Info("  • Kubeconfig: ~/.kube/datastorage-e2e-config")
@@ -165,6 +177,22 @@ var _ = SynchronizedBeforeSuite(
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
 		logger.Info("✅ Data Storage is ready via NodePort (localhost:8081)")
 
+		// DD-API-001: Initialize OpenAPI client for E2E tests
+		// E2E tests run externally against Kind cluster, so we use mock user transport
+		// (no oauth-proxy in E2E environment)
+		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for E2E tests...")
+		mockTransport := testauth.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
+		httpClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: mockTransport,
+		}
+		dsClient, err = dsgen.NewClient(
+			"http://localhost:28090",
+			dsgen.WithClient(httpClient),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		logger.Info("✅ DataStorage OpenAPI client created", "baseURL", "http://localhost:28090")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -201,14 +229,20 @@ var _ = SynchronizedBeforeSuite(
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
 		// Test if NodePort is accessible (check PostgreSQL connection)
-		testDB, err := sql.Open("pgx", postgresURL)
+		var err error
+		testDB, err = sql.Open("pgx", postgresURL)
 		nodePortWorks := false
 		if err == nil {
 			if err := testDB.Ping(); err == nil {
 				nodePortWorks = true
-				logger.Info("✅ NodePort accessible (Docker provider)", "process", processID)
+				logger.Info("✅ NodePort accessible (Docker provider) - testDB ready", "process", processID)
+				// Keep testDB open for use by E2E tests (closed in AfterSuite)
+			} else {
+				_ = testDB.Close()
+				testDB = nil
 			}
-			_ = testDB.Close()
+		} else {
+			testDB = nil
 		}
 
 		// If NodePort doesn't work, use kubectl port-forward (Podman)
@@ -260,9 +294,20 @@ var _ = SynchronizedBeforeSuite(
 			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
 			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
 
+			// Connect to PostgreSQL via port-forward
+			testDB, err = sql.Open("pgx", postgresURL)
+			if err != nil {
+				logger.Error(err, "Failed to open PostgreSQL connection via port-forward")
+			} else if err := testDB.Ping(); err != nil {
+				logger.Error(err, "Failed to ping PostgreSQL via port-forward")
+				_ = testDB.Close()
+				testDB = nil
+			}
+
 			logger.Info("✅ Port-forward established", "process", processID,
 				"dataStorageURL", dataStorageURL,
-				"postgresURL", postgresURL)
+				"postgresURL", postgresURL,
+				"testDB", testDB != nil)
 		}
 
 		logger.Info("🔌 URLs configured",
@@ -270,6 +315,21 @@ var _ = SynchronizedBeforeSuite(
 			"dataStorageURL", dataStorageURL,
 			"postgresURL", postgresURL,
 			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
+
+		// DD-API-001: Initialize OpenAPI client for this process
+		// E2E tests run externally against Kind cluster, so we use mock user transport
+		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
+		mockTransport := testauth.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
+		httpClient := &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: mockTransport,
+		}
+		dsClient, err = dsgen.NewClient(
+			dataStorageURL,
+			dsgen.WithClient(httpClient),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		logger.Info("✅ DataStorage OpenAPI client created", "process", processID, "baseURL", dataStorageURL)
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly
@@ -292,6 +352,11 @@ var _ = SynchronizedAfterSuite(
 			"process", processID,
 			"hadFailures", anyTestFailed)
 
+		// Close PostgreSQL connection for this process
+		if testDB != nil {
+			_ = testDB.Close()
+		}
+
 		// Cancel context for this process
 		if cancel != nil {
 			cancel()
@@ -309,10 +374,22 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Data Storage E2E Test Suite - Cleanup (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// Detect setup failure: if dsClient is nil, BeforeSuite failed
+		setupFailed := dsClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (dsClient is nil)")
+		}
+
 		// Check if we should keep the cluster for debugging
+		// Note: In parallel execution, anyTestFailed may not capture all process failures
+		// Use KEEP_CLUSTER=always to force preservation, or check test exit code
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		suiteReport := CurrentSpecReport()
-		suiteFailed := suiteReport.Failed() || anyTestFailed || keepCluster == "true"
+
+		// In SynchronizedAfterSuite, we're in process 1 which may not have run failing tests
+		// The safest approach: always export logs if ANY process reported failures
+		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
+		// Also check for setup failures (BeforeSuite failures)
+		suiteFailed := setupFailed || anyTestFailed || keepCluster == "true" || keepCluster == "always"
 
 		// DD-TEST-007: E2E Coverage Capture Standard
 		// Extract coverage from Kind node before cluster deletion
@@ -390,20 +467,55 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if suiteFailed {
+			logger.Info("⚠️  Test failure detected - collecting diagnostic information...")
+
+			// Export cluster logs (like must-gather) BEFORE preserving cluster
+			logger.Info("📋 Exporting cluster logs (Kind must-gather)...")
+			logsDir := "/tmp/datastorage-e2e-logs-" + time.Now().Format("20060102-150405")
+			exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+			if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+				logger.Error(exportErr, "Failed to export Kind logs",
+					"output", string(exportOutput),
+					"logs_dir", logsDir)
+			} else {
+				logger.Info("✅ Cluster logs exported successfully",
+					"logs_dir", logsDir)
+				logger.Info("📁 Logs include: pod logs, node logs, kubelet logs, and more")
+
+				// Extract and display DataStorage server logs for immediate analysis
+				dsLogPattern := logsDir + "/*/datastorage-e2e_data-storage-service-*/*.log"
+				findCmd := exec.Command("sh", "-c", "ls "+dsLogPattern+" 2>/dev/null | head -1")
+				if logPath, err := findCmd.Output(); err == nil && len(logPath) > 0 {
+					logPathStr := strings.TrimSpace(string(logPath))
+					logger.Info("📄 DataStorage server log location", "path", logPathStr)
+
+					// Display last 100 lines of server log
+					tailCmd := exec.Command("tail", "-100", logPathStr)
+					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
+						logger.Info("═══════════════════════════════════════════════════════════")
+					logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
+					logger.Info("═══════════════════════════════════════════════════════════")
+					logger.Info(string(tailOutput))
+					logger.Info("═══════════════════════════════════════════════════════════")
+					}
+				}
+			}
+
 			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
 			logger.Info("Cluster details for debugging",
 				"cluster", clusterName,
 				"kubeconfig", kubeconfigPath,
 				"dataStorageURL", dataStorageURL,
-				"postgresURL", postgresURL)
+				"postgresURL", postgresURL,
+				"logs_exported", logsDir)
 			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return
 		}
 
-		// Delete Kind cluster
+		// Delete Kind cluster (no log export needed - tests passed)
 		logger.Info("🗑️  Deleting Kind cluster...")
-		if err := infrastructure.DeleteCluster(clusterName, GinkgoWriter); err != nil {
+		if err := infrastructure.DeleteCluster(clusterName, "datastorage", false, GinkgoWriter); err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		} else {
 			logger.Info("✅ Cluster deleted successfully")

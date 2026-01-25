@@ -82,6 +82,9 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 
+	// Track if BeforeSuite completed successfully (for setup failure detection)
+	setupSucceeded bool
+
 	// Path to Python pytest tests
 	projectRoot string
 	pytestDir   string
@@ -138,45 +141,48 @@ var _ = SynchronizedBeforeSuite(
 		hapiURL = "http://localhost:30120"
 		dataStorageURL = "http://localhost:30098"
 
-	// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
-	// Pods may be ready but NodePort routing needs time to propagate with podman provider
-	logger.Info("⏳ Waiting 5 seconds for Kind NodePort mapping to stabilize...")
-	time.Sleep(5 * time.Second)
+		// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
+		// Pods may be ready but NodePort routing needs time to propagate with podman provider
+		logger.Info("⏳ Waiting 5 seconds for Kind NodePort mapping to stabilize...")
+		time.Sleep(5 * time.Second)
 
-	// Wait for Data Storage HTTP endpoint to be responsive via NodePort
-	// Reduced timeout from 180s to 90s (per notification E2E pattern)
-	// With stabilization wait, this should be sufficient
-	logger.Info("⏳ Waiting for Data Storage service to be ready...")
-	Eventually(func() error {
-		resp, err := http.Get(dataStorageURL + "/health/ready")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("health check returned %d", resp.StatusCode)
-		}
-		return nil
-	}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
+		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
+		// Reduced timeout from 180s to 90s (per notification E2E pattern)
+		// With stabilization wait, this should be sufficient
+		logger.Info("⏳ Waiting for Data Storage service to be ready...")
+		Eventually(func() error {
+			resp, err := http.Get(dataStorageURL + "/health/ready")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
 
-	// Wait for HAPI HTTP endpoint to be responsive via NodePort
-	logger.Info("⏳ Waiting for HAPI service to be ready...")
-	Eventually(func() error {
-		resp, err := http.Get(hapiURL + "/health")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("health check returned %d", resp.StatusCode)
-		}
-		return nil
-	}, 90*time.Second, 2*time.Second).Should(Succeed(), "HAPI health check should succeed")
+		// Wait for HAPI HTTP endpoint to be responsive via NodePort
+		logger.Info("⏳ Waiting for HAPI service to be ready...")
+		Eventually(func() error {
+			resp, err := http.Get(hapiURL + "/health")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 90*time.Second, 2*time.Second).Should(Succeed(), "HAPI health check should succeed")
 
-	logger.Info("✅ HAPI E2E infrastructure ready")
-	logger.Info("   HAPI URL: " + hapiURL)
-	logger.Info("   Data Storage URL: " + dataStorageURL)
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("✅ HAPI E2E infrastructure ready")
+		logger.Info("   HAPI URL: " + hapiURL)
+		logger.Info("   Data Storage URL: " + dataStorageURL)
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// Mark setup as successful (for setup failure detection in AfterSuite)
+		setupSucceeded = true
 
 		return []byte(kubeconfigPath)
 	},
@@ -212,21 +218,21 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		env := os.Environ()
 		env = append(env, fmt.Sprintf("HAPI_BASE_URL=%s", hapiURL))
 		env = append(env, fmt.Sprintf("DATA_STORAGE_URL=%s", dataStorageURL))
-		env = append(env, "MOCK_LLM_MODE=true")
+		// Note: Mock LLM is now standalone service, MOCK_LLM_MODE no longer needed
 
-	// Run pytest
-	cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
-		pytestDir,
-		"-v",
-		"--tb=short",
-		"-x", // Stop on first failure for faster feedback
-	)
-	cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
-	cmd.Env = env
-	cmd.Stdout = GinkgoWriter
-	cmd.Stderr = GinkgoWriter
+		// Run pytest
+		cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
+			pytestDir,
+			"-v",
+			"--tb=short",
+			// Note: -x flag removed to see all test results for Mock LLM validation
+		)
+		cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
+		cmd.Env = env
+		cmd.Stdout = GinkgoWriter
+		cmd.Stderr = GinkgoWriter
 
-	logger.Info("Executing: python3 -m pytest " + pytestDir)
+		logger.Info("Executing: python3 -m pytest " + pytestDir)
 		err := cmd.Run()
 		if err != nil {
 			anyTestFailed = true
@@ -260,16 +266,18 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("HAPI E2E Test Suite - Teardown (ONCE - Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Check if we should keep cluster for debugging
-		keepCluster := os.Getenv("KEEP_CLUSTER") == "true" || anyTestFailed
+		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
+		setupFailed := !setupSucceeded
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
+		}
 
-		if keepCluster {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
-			if anyTestFailed {
-				logger.Info("Reason: Tests failed")
-			} else {
-				logger.Info("Reason: KEEP_CLUSTER=true")
-			}
+		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
+		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("")
 			logger.Info("To debug:")
 			logger.Info("  export KUBECONFIG=" + kubeconfigPath)
@@ -282,11 +290,11 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// Delete cluster (with must-gather log export on failure)
 		logger.Info("🧹 Deleting Kind cluster...")
-		cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-		output, err := cmd.CombinedOutput()
+		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyFailure, GinkgoWriter)
 		if err != nil {
-			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err, "output", string(output))
+			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err)
 		} else {
 			logger.Info("✅ Cluster deleted successfully")
 		}
@@ -294,5 +302,3 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
-
-

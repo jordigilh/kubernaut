@@ -1,0 +1,212 @@
+---
+# ========================================
+# SOC2 Day 10.1: Tiered RBAC for Audit Operations
+# ========================================
+#
+# This RBAC configuration implements role-based access control for audit operations
+# following the principle of least privilege (SOC2 AU-9 requirement).
+#
+# Three Access Tiers:
+# 1. auditor: Read-only access (export audit events)
+# 2. admin: Full audit access (export + legal hold management)
+# 3. operator: Service-level access (audit event creation)
+#
+# Implementation Notes:
+# - oauth-proxy SAR check: "get" verb = read-only, "update" verb = full access
+# - DataStorage server honors X-Auth-Request-User header for attribution
+# - Fine-grained endpoint authorization enforced via oauth-proxy SAR subresource checks
+# ========================================
+
+---
+# ========================================
+# Auditor Role: Read-Only Audit Access
+# ========================================
+# Purpose: External auditors, compliance teams, security analysts
+# Permissions: Export audit events only (no modifications)
+# SOC2 AU-9: Separate audit query access from audit modification
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auditor
+  labels:
+    app: data-storage-service
+    component: rbac
+    rbac.kubernaut.ai/role-tier: auditor
+rules:
+  # OAuth-proxy SAR check for read-only access
+  # Verb: "get" = Export audit events only
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["get"]
+
+---
+# ========================================
+# Admin Role: Full Audit Access
+# ========================================
+# Purpose: Audit administrators, compliance officers, legal teams
+# Permissions: Export audit events + place/release legal holds
+# SOC2 AU-9: Audit protection requires authorized legal hold management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-admin
+  labels:
+    app: data-storage-service
+    component: rbac
+    rbac.kubernaut.ai/role-tier: admin
+rules:
+  # OAuth-proxy SAR check for full access
+  # Verbs: "get", "update" = Export + legal hold management
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["get", "update"]
+
+---
+# ========================================
+# Operator Role: Service-Level Access
+# ========================================
+# Purpose: Internal services (Gateway, AIAnalysis, etc.)
+# Permissions: Create audit events + query workflows
+# Note: This is the same as data-storage-client (maintained for backward compatibility)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-operator
+  labels:
+    app: data-storage-service
+    component: rbac
+    rbac.kubernaut.ai/role-tier: operator
+rules:
+  # OAuth-proxy SAR check for service operations
+  # Verb: "get" = Create audit events, query workflows (no export/legal hold)
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["get"]
+
+---
+# ========================================
+# Example RoleBinding: Grant Auditor Access
+# ========================================
+# Usage: Bind this to external auditor ServiceAccounts or User accounts
+#
+# For ServiceAccount:
+# subjects:
+#   - kind: ServiceAccount
+#     name: external-auditor-sa
+#     namespace: audit-tools
+#
+# For User (OpenShift/OAuth):
+# subjects:
+#   - kind: User
+#     name: auditor@company.com
+#     apiGroup: rbac.authorization.k8s.io
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: example-auditor-binding
+  namespace: kubernaut-system
+  labels:
+    app: data-storage-service
+    component: rbac
+    example: "true"  # Mark as example (not applied by default)
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auditor
+subjects:
+  - kind: ServiceAccount
+    name: auditor-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# Example RoleBinding: Grant Admin Access
+# ========================================
+# Usage: Bind this to compliance officers or legal team accounts
+#
+# For User (OpenShift/OAuth):
+# subjects:
+#   - kind: User
+#     name: compliance-officer@company.com
+#     apiGroup: rbac.authorization.k8s.io
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: example-admin-binding
+  namespace: kubernaut-system
+  labels:
+    app: data-storage-service
+    component: rbac
+    example: "true"  # Mark as example (not applied by default)
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-admin
+subjects:
+  - kind: ServiceAccount
+    name: audit-admin-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# Usage Guide
+# ========================================
+#
+# Applying Roles:
+# ---------------
+# These ClusterRoles are automatically created by Kustomize.
+# RoleBindings marked with `example: "true"` are NOT applied automatically.
+#
+# To grant audit access to a user/ServiceAccount:
+#
+# 1. Create a RoleBinding (copy example, remove `example: "true"` label):
+#    kubectl apply -f - <<EOF
+#    apiVersion: rbac.authorization.k8s.io/v1
+#    kind: RoleBinding
+#    metadata:
+#      name: jane-auditor-access
+#      namespace: kubernaut-system
+#    roleRef:
+#      apiGroup: rbac.authorization.k8s.io
+#      kind: ClusterRole
+#      name: data-storage-auditor
+#    subjects:
+#      - kind: User
+#        name: jane@company.com
+#        apiGroup: rbac.authorization.k8s.io
+#    EOF
+#
+# 2. Verify access:
+#    # As the user, test audit export
+#    kubectl port-forward -n kubernaut-system svc/data-storage-service 8080:8080
+#    curl -H "Authorization: Bearer $(oc whoami -t)" \
+#         http://localhost:8080/api/v1/audit/export?limit=10
+#
+# API Endpoint Authorization Matrix:
+# ----------------------------------
+# | Endpoint                     | Auditor | Admin | Operator |
+# |------------------------------|---------|-------|----------|
+# | GET /api/v1/audit/export     | ✅      | ✅    | ❌       |
+# | POST /api/v1/audit/legal-hold| ❌      | ✅    | ❌       |
+# | DELETE /api/v1/audit/legal-hold/{id} | ❌ | ✅ | ❌      |
+# | GET /api/v1/audit/legal-hold | ✅      | ✅    | ❌       |
+# | POST /api/v1/audit/*         | ❌      | ❌    | ✅       |
+# | GET /api/v1/workflows/*      | ❌      | ❌    | ✅       |
+#
+# OAuth-Proxy SAR Mapping:
+# ------------------------
+# auditor: Can "get" service → Read-only audit export
+# admin: Can "get" + "update" service → Export + legal hold management
+# operator: Can "get" service → Create audit events, query workflows
+#
+# Note: Fine-grained endpoint authorization requires DataStorage server
+# to validate X-Auth-Request-User permissions. In v1.0, oauth-proxy SAR
+# provides coarse-grained authorization at the service level.
+#
+# Authority: SOC2 AU-9 (Audit protection), Day 10.1 (RBAC for audit queries)
+# ========================================
+
+

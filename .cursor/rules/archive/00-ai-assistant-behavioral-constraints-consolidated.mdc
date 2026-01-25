@@ -1,0 +1,377 @@
+---
+alwaysApply: false
+---
+# AI Assistant Behavioral Constraints for TDD Enforcement
+
+## 🤖 **MANDATORY AI ASSISTANT PROTOCOL**
+
+### **REAL-TIME PREVENTION SYSTEM**
+
+**AI must execute validation BEFORE generating any code, not after:**
+
+#### **IMMEDIATE VALIDATION REQUIREMENTS**
+1. **BEFORE referencing any struct field**: Validate field exists in type definition
+2. **BEFORE creating test code**: Search for existing implementations
+3. **BEFORE using testutil types**: Confirm they exist in codebase
+4. **BEFORE generating business logic**: Verify main application integration
+5. **BEFORE fixing undefined symbols**: Execute comprehensive build error analysis (CHECKPOINT D)
+
+### **CRITICAL DECISION CHECKPOINTS**
+
+**These are BLOCKING checkpoints - AI must STOP and validate:**
+
+#### **CHECKPOINT A: Type Reference Validation**
+**TRIGGER**: About to reference any struct field (e.g., `object.FieldName`)
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Read">
+<parameter name="file_path">[TYPE_DEFINITION_FILE_PATH]</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ TYPE VALIDATION CHECKPOINT:
+- [ ] Type definition file read ✅/❌
+- [ ] Target field exists in struct definition ✅/❌
+- [ ] No empty struct{} definitions ✅/❌
+- [ ] No assumptions made about field existence ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT A VIOLATION: Type reference attempted without validation - DEVELOPMENT STOPPED"
+
+#### **CHECKPOINT B: Test Creation Validation**
+**TRIGGER**: About to create test file with business logic references
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Search for existing implementations</parameter>
+<parameter name="prompt">Search the entire codebase for existing implementations of [ComponentType]. Provide specific file paths, implementation details, and integration patterns found.</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">pkg/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ TEST CREATION CHECKPOINT:
+- [ ] Existing implementation search executed ✅/❌
+- [ ] Similar components discovered and documented ✅/❌
+- [ ] TDD RED-GREEN-REFACTOR sequence planned ✅/❌
+- [ ] Business requirement (BR-XXX-XXX) identified ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT B VIOLATION: Test creation attempted without existing implementation analysis - DEVELOPMENT STOPPED"
+
+#### **CHECKPOINT C: Business Integration Validation**
+**TRIGGER**: Creating new business types or interfaces
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[NewComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">content</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ BUSINESS INTEGRATION CHECKPOINT:
+- [ ] Main application search executed ✅/❌
+- [ ] Integration points identified and documented ✅/❌
+- [ ] Component usage patterns discovered ✅/❌
+- [ ] Main app integration planned ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT C VIOLATION: Business component creation attempted without main app integration validation - DEVELOPMENT STOPPED"
+
+**INTEGRATION MANDATE**:
+If NO integration points found → "🚨 ORPHANED BUSINESS CODE VIOLATION: All business code MUST be integrated in main applications (cmd/) - DEVELOPMENT STOPPED"
+
+#### **CHECKPOINT D: Build Error Investigation**
+**TRIGGER**: User reports build errors or undefined symbols
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[EXACT_UNDEFINED_SYMBOL]</parameter>
+<parameter name="path">.</parameter>
+<parameter name="output_mode">content</parameter>
+<parameter name="-n">true</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Comprehensive dependency analysis</parameter>
+<parameter name="prompt">Analyze the complete dependency chain for [UNDEFINED_SYMBOL]. Find all files that reference this symbol, identify missing infrastructure, and determine the scope of implementation needed.</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Bash">
+<parameter name="command">go build [AFFECTED_FILE] 2>&1</parameter>
+<parameter name="description">Test compilation impact</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ BUILD ERROR INVESTIGATION CHECKPOINT:
+- [ ] Symbol analysis tools executed ✅/❌
+- [ ] Complete dependency chain mapped ✅/❌
+- [ ] Impact assessment performed ✅/❌
+- [ ] Options A/B/C analysis completed ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**🚫 MANDATORY USER APPROVAL GATE:**
+```
+🚨 COMPREHENSIVE UNDEFINED SYMBOL ANALYSIS:
+Symbol: [undefined_symbol]
+References found: [N files with specific paths]
+Dependent infrastructure: [list missing types/functions with details]
+Scope: [minimal/medium/extensive with evidence]
+
+OPTIONS (Evidence-Based):
+A) Implement complete infrastructure ([X] files affected, [Y] types needed)
+B) Create minimal stub ([Z] files affected, may break [W] dependent files)
+C) Alternative approach: [evidence-based alternative with justification]
+
+🚫 MANDATORY USER DECISION REQUIRED: Which approach should I take? (A/B/C)
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT D VIOLATION: Build error resolution attempted without comprehensive analysis - DEVELOPMENT STOPPED"
+If NO user approval → "🚨 APPROVAL VIOLATION: Implementation attempted without explicit user approval - DEVELOPMENT STOPPED"
+
+### **MANDATORY TOOL USAGE PATTERN**
+
+**AI must ALWAYS use tools in this sequence for any code generation:**
+
+#### **Step 1: Discovery (REQUIRED)**
+```
+codebase_search "existing [ComponentType] implementations"
+# OR
+grep -r "[TypeName]" pkg/ --include="*.go"
+```
+
+#### **Step 2: Type Validation (REQUIRED)**
+```
+read_file pkg/path/to/type_definition.go
+# Verify all referenced fields exist in struct definitions
+```
+
+#### **Step 3: Integration Check (REQUIRED)**
+```
+grep -r "[NewType]" cmd/ --include="*.go"
+# Verify business code is used in main applications
+```
+
+### **FORBIDDEN AI ACTIONS**
+
+#### **Immediate Failure Conditions - NEVER DO THESE:**
+1. **NEVER** reference struct fields without first reading the type definition file
+2. **NEVER** assume testutil types exist - always validate with `read_file` or `grep`
+3. **NEVER** create test code without first using `codebase_search` for existing implementations
+4. **NEVER** generate business types without confirming main application usage
+5. **NEVER** proceed if any validation step fails
+6. **NEVER** implement missing types without full dependency analysis (CHECKPOINT D)
+
+### **MANDATORY VALIDATION SEQUENCE**
+
+**AI must execute these steps IN ORDER before any code generation:**
+
+#### **Validation Step 1: Existence Check**
+```bash
+# For struct field references (e.g., node.Name)
+read_file pkg/workflow/engine/workflow_simulator.go
+# RULE: Verify field exists in struct definition before referencing
+
+# For testutil types (e.g., testutil.TDDConversionHelper)
+grep -r "TDDConversionHelper" pkg/testutil/ --include="*.go"
+# RULE: Confirm type exists before using
+```
+
+#### **Validation Step 2: Implementation Discovery**
+```bash
+# Before creating new test structures
+codebase_search "existing WorkflowSimulator test patterns"
+# RULE: Enhance existing patterns instead of creating new ones
+```
+
+#### **Validation Step 3: Integration Verification**
+```bash
+# For new business types
+grep -r "NewBusinessType" cmd/ --include="*.go"
+# RULE: Business code must be integrated in main applications
+```
+
+#### **Validation Step 4: Build Error Analysis (CHECKPOINT D)**
+```bash
+# For any undefined symbol error
+codebase_search "[undefined_symbol] usage patterns across codebase"
+grep -r "[undefined_symbol]" . --include="*.go" -n
+# Find constructor patterns
+grep -r "New[SymbolName]\|Create[SymbolName]" . --include="*.go"
+# Test compilation impact
+go build [dependent_file.go] 2>&1
+# RULE: Present complete analysis before implementation
+```
+
+#### **MANDATORY DECISION GATES**
+
+AI must answer YES to ALL questions before proceeding:
+
+**For Type References:**
+- ✅ Have I read the actual type definition file?
+- ✅ Do all referenced fields exist in the struct?
+- ✅ Are there no empty struct{} definitions?
+
+**For Test Creation:**
+- ✅ Have I searched for existing test patterns?
+- ✅ Am I following TDD RED-GREEN-REFACTOR sequence?
+- ✅ Do all testutil dependencies actually exist?
+
+**For Business Code:**
+- ✅ Is this integrated into main applications?
+- ✅ Are all interfaces implemented by real code?
+- ✅ Have I verified the complete dependency chain?
+
+**For Build Error Fixes (CHECKPOINT D):**
+- ✅ Have I analyzed ALL references to the undefined symbol?
+- ✅ Have I mapped the complete dependency chain?
+- ✅ Have I presented options A/B/C to the user?
+- ✅ Have I received explicit approval before implementing?
+
+### **TOOL CALL ENFORCEMENT**
+
+#### **BLOCKING TOOL REQUIREMENTS**
+
+**AI MUST use these tool calls BEFORE any code generation. No exceptions:**
+
+**For ANY struct field reference (object.FieldName):**
+```xml
+<function_calls>
+<invoke name="read_file">
+<parameter name="target_file">pkg/workflow/engine/types.go</parameter>
+</invoke>
+</function_calls>
+```
+
+**For ANY undefined symbol error:**
+```xml
+<function_calls>
+<invoke name="codebase_search">
+<parameter name="query">[symbol_name] usage patterns and dependencies</parameter>
+<parameter name="target_directories">[]</parameter>
+</invoke>
+</function_calls>
+```
+
+#### **Error Prevention Protocol**
+1. **ALWAYS** run `codebase_search` before assuming types exist
+2. **ALWAYS** check type definitions before referencing fields
+3. **ALWAYS** validate testutil dependencies before use
+4. **ALWAYS** confirm main application integration
+5. **ALWAYS** execute CHECKPOINT D for undefined symbols
+
+#### **Recovery Actions**
+When validation fails:
+1. **STOP** code generation immediately
+2. **REPORT** specific validation failure
+3. **SUGGEST** corrective action following TDD methodology
+4. **REQUIRE** validation success before proceeding
+
+### **Confidence Assessment Requirements**
+
+**After any code generation, AI must provide:**
+```
+Validation Confidence: [60-100]%
+Type Safety: ✅/❌ All referenced fields exist in type definitions
+TDD Compliance: ✅/❌ Follows RED-GREEN-REFACTOR sequence
+Integration Status: ✅/❌ Business code integrated in main applications
+Build Error Analysis: ✅/❌ Complete dependency analysis performed (if applicable)
+Risk Assessment: [Description of potential issues]
+```
+
+### **Emergency Stop Conditions**
+
+**AI must immediately halt and request manual intervention if:**
+1. Type definitions are incomplete (empty structs)
+2. Referenced fields don't exist in type definitions
+3. Business code has no main application integration
+4. TDD sequence is being bypassed
+5. Validation scripts are missing or failing
+6. Undefined symbols detected without complete analysis
+
+### **Quality Gates**
+
+**No code generation is permitted without:**
+- ✅ Type safety validation passing
+- ✅ TDD methodology compliance confirmed
+- ✅ Business integration verified
+- ✅ Dependency existence validated
+- ✅ Main application usage confirmed
+- ✅ Build error analysis completed (when applicable)
+
+## **IMPLEMENTATION PRIORITY**
+
+**PRIORITY LEVEL**: 3 - BEHAVIORAL (per [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc))
+
+This rule controls AI assistant behavior and has authority over development decisions:
+- **BEHAVIORAL CONTROL**: Governs AI assistant behavior within APDC methodology framework
+- **NON-NEGOTIABLE**: Cannot be bypassed for convenience or speed
+- **AUTOMATED**: Must be enforced programmatically, not manually
+- **SCOPE**: AI assistant usage - does not override APDC methodology or testing strategy
+
+## **Integration with Existing Rules**
+
+This rule **enforces** compliance with:
+- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD methodology
+- [07-business-code-integration.mdc](mdc:.cursor/rules/07-business-code-integration.mdc) - Integration requirements
+- [02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc) - Technical patterns
+- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
+- [build-error-protocol.md](mdc:.cursor/build-error-protocol.md) - Build error protocol (INTEGRATED)
+
+## **Quick Reference for Build Error Investigation**
+
+**When user says**: "Fix build errors"
+**AI must**: Execute CHECKPOINT D + ask for approval
+
+**When user says**: "undefined [symbol]"
+**AI must**: Complete symbol analysis + show options A/B/C
+
+**When user says**: "implement recommended approach"
+**AI must**: Follow approved option exactly as specified
+
+**Priority**: FOUNDATIONAL - This rule prevents cascade failures and incomplete implementations

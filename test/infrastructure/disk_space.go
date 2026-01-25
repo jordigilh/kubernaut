@@ -47,9 +47,9 @@ import (
 
 // DiskSpaceInfo represents disk space statistics
 type DiskSpaceInfo struct {
-	Total     string // Total disk size (e.g., "50G")
-	Used      string // Used space (e.g., "35G")
-	Available string // Available space (e.g., "15G")
+	Total      string // Total disk size (e.g., "50G")
+	Used       string // Used space (e.g., "35G")
+	Available  string // Available space (e.g., "15G")
 	UsePercent string // Usage percentage (e.g., "70%")
 }
 
@@ -88,9 +88,10 @@ func GetDiskSpaceInfo() (*DiskSpaceInfo, error) {
 // LogDiskSpace logs disk space at a specific stage for diagnostics
 //
 // Example output:
-//   💾 [START] Disk: 50G total, 35G used, 15G available (70% used)
-//   💾 [IMAGES_BUILT] Disk: 50G total, 42G used, 8G available (84% used)
-//   💾 [AFTER_PRUNE] Disk: 50G total, 36G used, 14G available (72% used) [+6G freed]
+//
+//	💾 [START] Disk: 50G total, 35G used, 15G available (70% used)
+//	💾 [IMAGES_BUILT] Disk: 50G total, 42G used, 8G available (84% used)
+//	💾 [AFTER_PRUNE] Disk: 50G total, 36G used, 14G available (72% used) [+6G freed]
 func LogDiskSpace(stage string, writer io.Writer) {
 	info, err := GetDiskSpaceInfo()
 	if err != nil {
@@ -105,7 +106,8 @@ func LogDiskSpace(stage string, writer io.Writer) {
 // LogDiskSpaceWithComparison logs disk space and compares with previous stage
 //
 // Example output:
-//   💾 [AFTER_PRUNE] Disk: 50G total, 36G used, 14G available (72% used) [+6G freed vs IMAGES_BUILT]
+//
+//	💾 [AFTER_PRUNE] Disk: 50G total, 36G used, 14G available (72% used) [+6G freed vs IMAGES_BUILT]
 func LogDiskSpaceWithComparison(stage string, previousInfo *DiskSpaceInfo, writer io.Writer) *DiskSpaceInfo {
 	currentInfo, err := GetDiskSpaceInfo()
 	if err != nil {
@@ -254,9 +256,9 @@ func AggressivePodmanCleanup(writer io.Writer) error {
 }
 
 // ExportImagesAndPrune is a high-level helper that:
-//   1. Exports multiple images to .tar files
-//   2. Performs aggressive Podman cleanup
-//   3. Returns map of image name -> .tar path for later loading
+//  1. Exports multiple images to .tar files
+//  2. Performs aggressive Podman cleanup
+//  3. Returns map of image name -> .tar path for later loading
 //
 // This is the recommended pattern for E2E tests with multiple services.
 //
@@ -305,8 +307,8 @@ func ExportImagesAndPrune(images map[string]string, tmpDir string, writer io.Wri
 }
 
 // LoadImagesAndCleanup is a high-level helper that:
-//   1. Loads multiple .tar files into Kind cluster
-//   2. Deletes .tar files after successful load
+//  1. Loads multiple .tar files into Kind cluster
+//  2. Deletes .tar files after successful load
 //
 // This is the recommended pattern for E2E tests with multiple services.
 //
@@ -346,5 +348,3 @@ func LoadImagesAndCleanup(clusterName string, tarFiles map[string]string, writer
 
 	return nil
 }
-
-

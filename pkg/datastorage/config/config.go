@@ -71,12 +71,12 @@ type DatabaseConfig struct {
 	Port            int    `yaml:"port"`
 	Name            string `yaml:"name"`
 	User            string `yaml:"user"`
-	Password        string `yaml:"-"`                  // NOT in YAML - loaded from secret file via LoadSecrets()
-	SSLMode         string `yaml:"ssl_mode"`           // disable, require, verify-ca, verify-full
-	MaxOpenConns    int    `yaml:"max_open_conns"`     // Maximum open connections
-	MaxIdleConns    int    `yaml:"max_idle_conns"`     // Maximum idle connections
-	ConnMaxLifetime string `yaml:"conn_max_lifetime"`  // e.g., "5m"
-	ConnMaxIdleTime string `yaml:"conn_max_idle_time"` // e.g., "10m"
+	Password        string `yaml:"-"`               // NOT in YAML - loaded from secret file via LoadSecrets()
+	SSLMode         string `yaml:"sslMode"`         // disable, require, verify-ca, verify-full
+	MaxOpenConns    int    `yaml:"maxOpenConns"`    // Maximum open connections
+	MaxIdleConns    int    `yaml:"maxIdleConns"`    // Maximum idle connections
+	ConnMaxLifetime string `yaml:"connMaxLifetime"` // e.g., "5m"
+	ConnMaxIdleTime string `yaml:"connMaxIdleTime"` // e.g., "10m"
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/database/credentials.yaml"
@@ -86,12 +86,12 @@ type DatabaseConfig struct {
 
 // RedisConfig contains Redis configuration for DLQ
 type RedisConfig struct {
-	Addr             string `yaml:"addr"`               // e.g., "localhost:6379"
-	DB               int    `yaml:"db"`                 // Redis database number
-	Password         string `yaml:"-"`                  // NOT in YAML - loaded from secret file via LoadSecrets()
-	DLQStreamName    string `yaml:"dlq_stream_name"`    // DD-009: Dead Letter Queue stream name
-	DLQMaxLen        int    `yaml:"dlq_max_len"`        // Maximum DLQ stream length
-	DLQConsumerGroup string `yaml:"dlq_consumer_group"` // DLQ consumer group name
+	Addr             string `yaml:"addr"`             // e.g., "localhost:6379"
+	DB               int    `yaml:"db"`               // Redis database number
+	Password         string `yaml:"-"`                // NOT in YAML - loaded from secret file via LoadSecrets()
+	DLQStreamName    string `yaml:"dlqStreamName"`    // DD-009: Dead Letter Queue stream name
+	DLQMaxLen        int    `yaml:"dlqMaxLen"`        // Maximum DLQ stream length
+	DLQConsumerGroup string `yaml:"dlqConsumerGroup"` // DLQ consumer group name
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/redis/credentials.yaml"
@@ -269,22 +269,22 @@ func (c *Config) Validate() error {
 	// Validate timeout durations (parse to ensure valid format)
 	if c.Server.ReadTimeout != "" {
 		if _, err := time.ParseDuration(c.Server.ReadTimeout); err != nil {
-			return fmt.Errorf("invalid read_timeout: %w", err)
+			return fmt.Errorf("invalid readTimeout: %w", err)
 		}
 	}
 	if c.Server.WriteTimeout != "" {
 		if _, err := time.ParseDuration(c.Server.WriteTimeout); err != nil {
-			return fmt.Errorf("invalid write_timeout: %w", err)
+			return fmt.Errorf("invalid writeTimeout: %w", err)
 		}
 	}
 	if c.Database.ConnMaxLifetime != "" {
 		if _, err := time.ParseDuration(c.Database.ConnMaxLifetime); err != nil {
-			return fmt.Errorf("invalid conn_max_lifetime: %w", err)
+			return fmt.Errorf("invalid connMaxLifetime: %w", err)
 		}
 	}
 	if c.Database.ConnMaxIdleTime != "" {
 		if _, err := time.ParseDuration(c.Database.ConnMaxIdleTime); err != nil {
-			return fmt.Errorf("invalid conn_max_idle_time: %w", err)
+			return fmt.Errorf("invalid connMaxIdleTime: %w", err)
 		}
 	}
 

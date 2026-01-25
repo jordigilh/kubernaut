@@ -56,25 +56,37 @@ import (
 
 // channelAlreadySucceeded checks if channel delivery has already succeeded for this notification.
 // Used to prevent duplicate successful deliveries and optimize retry logic.
+// DD-NOT-008: Checks both persisted status and in-memory tracking to prevent duplicate deliveries
 func (r *NotificationRequestReconciler) channelAlreadySucceeded(notification *notificationv1alpha1.NotificationRequest, channel string) bool {
+	// Check persisted success in status
+	persistedSuccess := false
 	for _, attempt := range notification.Status.DeliveryAttempts {
 		if attempt.Channel == channel && attempt.Status == "success" {
-			return true
+			persistedSuccess = true
+			break
 		}
 	}
-	return false
+	
+	// DD-NOT-008: Check both persisted and in-memory success
+	// This prevents duplicate deliveries when status hasn't been persisted yet
+	return r.DeliveryOrchestrator.HasChannelSucceeded(notification, channel, persistedSuccess)
 }
 
 // getChannelAttemptCount returns the number of delivery attempts for a specific channel.
 // BR-NOT-052: Automatic Retry - tracks per-channel attempts for retry limit enforcement
+// DD-NOT-008: Includes in-flight attempts to prevent "6 attempts instead of 5" bug
 func (r *NotificationRequestReconciler) getChannelAttemptCount(notification *notificationv1alpha1.NotificationRequest, channel string) int {
-	count := 0
+	// Count persisted attempts from status
+	persistedCount := 0
 	for _, attempt := range notification.Status.DeliveryAttempts {
 		if attempt.Channel == channel {
-			count++
+			persistedCount++
 		}
 	}
-	return count
+	
+	// DD-NOT-008: Get total count (persisted + in-flight) from orchestrator
+	// This prevents concurrent reconciliations from both thinking attemptCount < MaxAttempts
+	return r.DeliveryOrchestrator.GetTotalAttemptCount(notification, channel, persistedCount)
 }
 
 // hasChannelPermanentError checks if channel has a permanent error that should not be retried.
@@ -162,4 +174,3 @@ func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool { //nol
 	}
 	return !r.CircuitBreaker.AllowRequest("slack")
 }
-

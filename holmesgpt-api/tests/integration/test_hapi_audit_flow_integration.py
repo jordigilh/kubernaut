@@ -70,9 +70,9 @@ from src.extensions.recovery.llm_integration import analyze_recovery
 
 # Data Storage client for audit validation (external dependency)
 sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
-from src.clients.datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
-from src.clients.datastorage.api.audit_write_api_api import AuditWriteAPIApi
-from src.clients.datastorage.models.audit_event import AuditEvent
+from datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
+from datastorage.api.audit_write_api_api import AuditWriteAPIApi
+from datastorage.models.audit_event import AuditEvent
 
 
 # ========================================
@@ -268,13 +268,15 @@ class TestIncidentAnalysisAuditFlow:
         )
 
         # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
-        # Business logic now emits additional events (llm_tool_call, workflow_validation_attempt)
+        # ADR-034 v1.1+: Tool-using LLMs (workflow search) emit multiple request/response pairs
+        # Business logic emits: llm_request → llm_tool_call → workflow.catalog.search_completed → llm_response
+        # May have multiple LLM calls during analysis (tool retries, follow-ups)
         # Test focuses on BR-AUDIT-005 requirement: llm_request + llm_response must be emitted
         llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
 
-        # Verify exactly 2 LLM events (request + response)
-        assert len(llm_events) == 2, \
-            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+        # Verify AT LEAST 2 LLM events (allow multiple request/response pairs)
+        assert len(llm_events) >= 2, \
+            f"Expected at least 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
             f"All events: {[e.event_type for e in all_events]}"
 
         # Extract event types
@@ -448,12 +450,13 @@ class TestRecoveryAnalysisAuditFlow:
         )
 
         # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # ADR-034 v1.1+: Recovery analysis with tool-using LLMs emits multiple request/response pairs
         # Recovery analysis may also emit additional events (tool calls, validation attempts)
         llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
 
-        # Verify exactly 2 LLM events (request + response)
-        assert len(llm_events) == 2, \
-            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+        # Verify AT LEAST 2 LLM events (allow multiple request/response pairs)
+        assert len(llm_events) >= 2, \
+            f"Expected at least 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
             f"All events: {[e.event_type for e in all_events]}"
 
         event_types = [e.event_type for e in llm_events]
@@ -540,9 +543,20 @@ class TestAuditEventSchemaValidation:
                 assert field_value is not None, \
                     f"Event {event.event_type} has null value for ADR-034 required field: {field}"
 
-            # Verify event_category is correct for HAPI (ADR-034 v1.2)
-            assert event.event_category == "analysis", \
-                f"Expected event_category='analysis' for HAPI, got '{event.event_category}'"
+            # ADR-034 v1.1+: HAPI triggers workflow search in DataStorage.
+            # DataStorage emits workflow.catalog.search_completed with category="workflow".
+            # Tests must expect MIXED event categories (enabled by Mock LLM extraction Jan 2026).
+            valid_categories = ["analysis", "workflow"]
+            assert event.event_category in valid_categories, \
+                f"Expected ADR-034 category in {valid_categories}, got '{event.event_category}'"
+
+            # Validate event_category matches event_type per ADR-034 service-level naming
+            if event.event_type.startswith("workflow."):
+                assert event.event_category == "workflow", \
+                    f"Workflow events must have category='workflow', got '{event.event_category}'"
+            elif event.event_type.startswith("aianalysis."):
+                assert event.event_category == "analysis", \
+                    f"AI Analysis events must have category='analysis', got '{event.event_category}'"
 
             # Verify event has valid version
             assert event.version is not None, \
@@ -615,12 +629,13 @@ class TestErrorScenarioAuditFlow:
         )
 
         # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # ADR-034 v1.1+: Even failed workflows may have multiple LLM calls (tool retries, error handling)
         # Even failed workflows may emit additional events (tool calls, validation attempts)
         llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
 
-        # Verify exactly 2 LLM events even for failed workflow search
-        assert len(llm_events) == 2, \
-            f"Expected exactly 2 LLM events (llm_request, llm_response) even for failed workflow search, got {len(llm_events)}. " \
+        # Verify AT LEAST 2 LLM events even for failed workflow search
+        assert len(llm_events) >= 2, \
+            f"Expected at least 2 LLM events (llm_request, llm_response) even for failed workflow search, got {len(llm_events)}. " \
             f"All events: {[e.event_type for e in all_events]}"
 
         # Verify events include the remediation_id (correlation)

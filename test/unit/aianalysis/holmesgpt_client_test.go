@@ -70,30 +70,30 @@ var _ = Describe("HolmesGPTClient", func() {
 					}`))
 				}))
 
-			var err error
-			hgClient, err = client.NewHolmesGPTClient(client.Config{
-				BaseURL: mockServer.URL,
-			})
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		It("should return valid response", func() {
-			resp, err := hgClient.Investigate(ctx, &client.IncidentRequest{
-				IncidentID:        "test-incident-001",
-				RemediationID:     "test-rem-001",
-				SignalType:        "OOMKilled",
-				Severity:          "critical",
-				ResourceNamespace: "default",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
+				var err error
+				hgClient, err = client.NewHolmesGPTClient(client.Config{
+					BaseURL: mockServer.URL,
+				})
+				Expect(err).ToNot(HaveOccurred())
 			})
 
-		Expect(err).NotTo(HaveOccurred())
-		Expect(resp.Analysis).To(Equal("Root cause: OOM"))
-		Expect(resp.TargetInOwnerChain.Set).To(BeTrue())
-		Expect(resp.TargetInOwnerChain.Value).To(BeTrue())
-		Expect(resp.Confidence).To(BeNumerically("~", 0.85, 0.01))
-		})
+			It("should return valid response", func() {
+				resp, err := hgClient.Investigate(ctx, &client.IncidentRequest{
+					IncidentID:        "test-incident-001",
+					RemediationID:     "test-rem-001",
+					SignalType:        "OOMKilled",
+					Severity:          "critical",
+					ResourceNamespace: "default",
+					ResourceKind:      "Pod",
+					ResourceName:      "test-pod",
+				})
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.Analysis).To(Equal("Root cause: OOM"))
+				Expect(resp.TargetInOwnerChain.Set).To(BeTrue())
+				Expect(resp.TargetInOwnerChain.Value).To(BeTrue())
+				Expect(resp.Confidence).To(BeNumerically("~", 0.85, 0.01))
+			})
 		})
 
 		// BR-AI-009: Transient error handling (503)
@@ -103,8 +103,8 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}))
 				var err error
-			hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
-			Expect(err).ToNot(HaveOccurred())
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return transient error", func() {
@@ -123,8 +123,8 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusUnauthorized)
 				}))
 				var err error
-			hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
-			Expect(err).ToNot(HaveOccurred())
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return permanent error", func() {
@@ -143,8 +143,8 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusBadRequest)
 				}))
 				var err error
-			hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
-			Expect(err).ToNot(HaveOccurred())
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return permanent error", func() {
@@ -163,8 +163,8 @@ var _ = Describe("HolmesGPTClient", func() {
 					w.WriteHeader(http.StatusTooManyRequests)
 				}))
 				var err error
-			hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
-			Expect(err).ToNot(HaveOccurred())
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("should return transient error", func() {

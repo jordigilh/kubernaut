@@ -46,10 +46,10 @@ database:
   name: "action_history"
   user: "slm_user"
   password: "slm_password_dev"
-  ssl_mode: "disable"
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: "1h"
+  sslMode: "disable"          # CORRECTED: camelCase to match Go struct tag
+  maxOpenConns: 25            # CORRECTED: camelCase to match Go struct tag (was max_open_conns)
+  maxIdleConns: 5             # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
+  connMaxLifetime: "1h"       # CORRECTED: camelCase to match Go struct tag (was conn_max_lifetime)
 
 # Vector Database Configuration
 vector_database:
@@ -59,7 +59,7 @@ vector_database:
   name: "vector_store"
   user: "vector_user"
   password: "vector_password_dev"
-  ssl_mode: "disable"
+  sslMode: "disable"     # CORRECTED: camelCase to match Go struct tag
   dimension: 1536
 
 # Redis Configuration

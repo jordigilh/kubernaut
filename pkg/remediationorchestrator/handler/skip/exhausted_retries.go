@@ -74,12 +74,15 @@ func (h *ExhaustedRetriesHandler) Handle(
 
 	logger.Info("WE skipped: ExhaustedRetries - manual intervention required")
 
-	// Update RR status to Failed + RequiresManualReview (BR-ORCH-032, BR-ORCH-036)
+	// Prepare failure reason
+	failureReason := "Retry limit exceeded - 5+ consecutive pre-execution failures"
+
+	// Update RR status with handler-specific fields (BR-ORCH-032, BR-ORCH-036)
+	// Note: Phase transition and audit emission handled by TransitionToFailedFunc callback below
 	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, h.ctx.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		rr.Status.SkipReason = "ExhaustedRetries"
 		rr.Status.RequiresManualReview = true
-		rr.Status.Message = "Retry limit exceeded - 5+ consecutive pre-execution failures"
+		rr.Status.Message = failureReason
 		return nil
 	})
 	if err != nil {
@@ -99,6 +102,7 @@ func (h *ExhaustedRetriesHandler) Handle(
 		// Continue even if notification fails - don't block the skip handling
 	}
 
-	// Terminal state - no requeue
-	return ctrl.Result{}, nil
+	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
+	return h.ctx.TransitionToFailedFunc(ctx, rr, "workflow_execution", failureReason)
 }

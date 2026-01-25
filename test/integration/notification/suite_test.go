@@ -51,12 +51,14 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
 )
@@ -70,6 +72,7 @@ var (
 	testEnv         *envtest.Environment
 	cfg             *rest.Config
 	k8sClient       client.Client
+	k8sAPIReader    client.Reader // DD-STATUS-001: Cache-bypassed reader for test assertions
 	k8sManager      ctrl.Manager
 	testNamespace   string // Default test namespace (kubernaut-notifications)
 	mockSlackServer *httptest.Server
@@ -79,6 +82,19 @@ var (
 
 	// Audit store for testing controller audit emission (Defense-in-Depth Layer 4)
 	realAuditStore audit.AuditStore // REAL audit store (DD-AUDIT-003 mandate compliance)
+
+	// DeliveryOrchestrator exposed for mock service injection in tests
+	// Tests can RegisterChannel() and UnregisterChannel() to inject mocks
+	deliveryOrchestrator *delivery.Orchestrator
+
+	// Original console and slack services for restoration after mock tests
+	originalConsoleService *delivery.ConsoleDeliveryService
+	originalSlackService   *delivery.SlackDeliveryService
+
+	// orchestratorMockLock serializes mock registration/test/cleanup to prevent logical races
+	// sync.Map provides thread-safety, but tests still need to lock the sequence:
+	// register mocks → create NotificationRequest → validate → restore original services
+	orchestratorMockLock sync.Mutex
 )
 
 // SlackWebhookRequest captures mock Slack webhook calls
@@ -159,10 +175,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs once to avoid container name collisions when TEST_PROCS > 1
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("Starting Notification integration infrastructure (Process #1 only)")
-	err := infrastructure.StartNotificationIntegrationInfrastructure(GinkgoWriter)
+	By("Starting Notification integration infrastructure (Process #1 only, DD-TEST-002)")
+	// This starts: PostgreSQL, Redis, DataStorage
+	// Per DD-TEST-001 v2.6: PostgreSQL=15440, Redis=16385, DS=18096
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "notification",
+		PostgresPort:    15440, // DD-TEST-001 v2.2
+		RedisPort:       16385, // DD-TEST-001 v2.2
+		DataStoragePort: 18096, // DD-TEST-001 v2.2
+		MetricsPort:     19096,
+		ConfigDir:       "test/integration/notification/config",
+	}, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
-	GinkgoWriter.Println("✅ Notification integration infrastructure started (shared across all processes)")
+	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, DataStorage - shared across all processes)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	return []byte{} // No data to share between processes
 }, func(data []byte) {
@@ -183,11 +213,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
@@ -198,6 +224,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	By("Creating cache-bypassed API reader for test assertions (DD-STATUS-001)")
+	// DD-STATUS-001: Create a DelegatingClient that bypasses cache for NotificationRequest
+	// This ensures tests read fresh status updates from the API server
+	uncachedClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	k8sAPIReader = uncachedClient // Use as API reader for test assertions
+	GinkgoWriter.Println("  ✅ Cache-bypassed API reader initialized (DD-STATUS-001)")
 
 	By("Creating namespaces for testing")
 	// Create kubernaut-notifications namespace for controller
@@ -235,15 +269,17 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Setting up the Notification controller with delivery services")
 	// Create console delivery service (no logger needed per DD-013 logging standard)
 	consoleService := delivery.NewConsoleDeliveryService()
+	originalConsoleService = consoleService // Save for restoration after mock tests
 
 	// Create Slack delivery service with mock webhook URL
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
+	originalSlackService = slackService // Save for restoration after mock tests
 
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
-	// Create audit helpers for controller audit emission (BR-NOT-062)
-	auditHelpers := notification.NewAuditHelpers("notification-controller")
+	// Create audit manager for controller audit emission (BR-NOT-062)
+	auditManager := notificationaudit.NewManager("notification-controller")
 
 	// Create REAL audit store using Data Storage service (DD-AUDIT-003 mandate)
 	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
@@ -270,7 +306,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageURL)
 
 	// Create Data Storage client with OpenAPI generated client (DD-API-001)
-	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
+	mockTransport := testauth.NewMockUserTransport("test-notification@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 
 	// Create REAL buffered audit store
@@ -287,12 +329,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  ✅ Metrics recorder initialized (Pattern 1)")
 
 	// Pattern 2: Create Status Manager for centralized status updates
-	statusManager := notificationstatus.NewManager(k8sManager.GetClient())
-	GinkgoWriter.Println("  ✅ Status Manager initialized (Pattern 2)")
+	// DD-STATUS-001: Pass API reader to bypass cache for fresh refetches
+	statusManager := notificationstatus.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader())
+	GinkgoWriter.Println("  ✅ Status Manager initialized (Pattern 2 + DD-STATUS-001)")
 
 	// DD-NOT-007: Registration Pattern (MANDATORY)
 	// Pattern 3: Create Delivery Orchestrator with NO channel parameters
-	deliveryOrchestrator := delivery.NewOrchestrator(
+	// Assign to global variable for test mock injection
+	deliveryOrchestrator = delivery.NewOrchestrator(
 		sanitizer,
 		metricsRecorder,
 		statusManager,
@@ -305,6 +349,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Note: fileService and logService NOT registered (E2E only)
 
 	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
+	GinkgoWriter.Println("  ✅ DeliveryOrchestrator exposed for test mock injection")
 
 	// Create circuit breaker for integration tests
 	// Per BR-NOT-055: Circuit breaker provides per-channel isolation
@@ -328,13 +373,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Patterns 1-3: Metrics, StatusManager, DeliveryOrchestrator wired in
 	err = (&notification.NotificationRequestReconciler{
 		Client:               k8sManager.GetClient(),
+		APIReader:            k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               k8sManager.GetScheme(),
 		ConsoleService:       consoleService,
 		SlackService:         slackService,
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager, // BR-NOT-055: Circuit breaker with gobreaker
 		AuditStore:           realAuditStore,        // ✅ REAL audit store (mandate compliance)
-		AuditHelpers:         auditHelpers,
+		AuditManager:         auditManager,
 		Metrics:              metricsRecorder,                                           // Pattern 1: Metrics (DD-METRICS-001)
 		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
 		StatusManager:        statusManager,                                             // Pattern 2: Status Manager
@@ -355,7 +401,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Eventually(func() error {
 		// Verify manager is ready by checking if we can list CRDs
 		list := &notificationv1alpha1.NotificationRequestList{}
-		return k8sClient.List(ctx, list)
+		return k8sManager.GetAPIReader().List(ctx, list)
 	}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
 		"Controller manager cache should sync within 10 seconds")
 
@@ -372,14 +418,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
-
-	// Check if any tests failed (for debugging)
-	// If tests failed, preserve infrastructure for triaging
-	// Note: We can't easily check if tests failed at this point in AfterSuite
-	// Instead, we'll check for an environment variable to control cleanup
-	skipCleanup := os.Getenv("SKIP_CLEANUP_ON_FAILURE") == "true"
+var _ = SynchronizedAfterSuite(func() {
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	By("Tearing down per-process test environment")
 
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
 	// NT-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
@@ -411,6 +452,31 @@ var _ = AfterSuite(func() {
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
 
+	cancel()
+
+	err = testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
+
+	GinkgoWriter.Println("✅ Per-process cleanup complete")
+}, func() {
+	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
+	// This ensures DataStorage is only stopped AFTER all processes finish
+	By("Stopping shared DataStorage infrastructure (DD-TEST-002)")
+
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("notification", []string{
+		"notification_datastorage_test",
+		"notification_postgres_test",
+		"notification_redis_test",
+	}, GinkgoWriter)
+
+	// Check if any tests failed (for debugging)
+	// If tests failed, preserve infrastructure for triaging
+	skipCleanup := os.Getenv("SKIP_CLEANUP_ON_FAILURE") == "true"
+
 	if skipCleanup {
 		GinkgoWriter.Println("")
 		GinkgoWriter.Println("⚠️  SKIP_CLEANUP_ON_FAILURE=true detected")
@@ -427,20 +493,10 @@ var _ = AfterSuite(func() {
 		GinkgoWriter.Println("")
 	} else {
 		// DD-TEST-001 v1.1: Clean up infrastructure containers
-		// NT-SHUTDOWN-001: Safe to stop now - audit events already flushed
+		// NT-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
 		By("Cleaning up integration test infrastructure (Go-bootstrapped)")
 		cleanupPodmanComposeInfrastructure()
-	}
-
-	cancel()
-
-	err = testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-
-	if skipCleanup {
-		GinkgoWriter.Println("⚠️  Envtest stopped but containers preserved for debugging")
-	} else {
-		GinkgoWriter.Println("✅ Cleanup complete")
+		GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 	}
 })
 
@@ -492,29 +548,6 @@ var _ = AfterEach(func() {
 	// Also clear request history for clean slate
 	resetSlackRequests()
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-//
-// This function streamlines the process by finding the required binaries, similar to
-// setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
-// properly set up, run 'make setup-envtest' beforehand.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
 
 // deployMockSlackServer creates an HTTP server that simulates Slack webhook
 // Thread-safe for parallel test execution (4 procs) - uses mutex for slackRequests
@@ -648,94 +681,6 @@ type MockSlackServer struct {
 	FailureStatus   int    // HTTP status code to return on failure
 }
 
-// createMockSlackServer creates an isolated mock Slack webhook server for a single test
-// Returns server instance with dedicated request tracking (prevents test pollution)
-func createMockSlackServer() *MockSlackServer { //nolint:unused
-	mock := &MockSlackServer{
-		Requests:      make([]SlackWebhookRequest, 0),
-		FailureMode:   "none",
-		FailureStatus: http.StatusServiceUnavailable,
-	}
-
-	mock.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read request body
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			GinkgoWriter.Printf("❌ Failed to read Slack webhook body: %v\n", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		// Validate JSON
-		var payload map[string]interface{}
-		if err := json.Unmarshal(body, &payload); err != nil {
-			GinkgoWriter.Printf("❌ Invalid JSON in Slack webhook: %v\n", err)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("invalid_payload"))
-			return
-		}
-
-		// Check failure mode for testing retry logic
-		mock.RequestsMu.Lock()
-		mode := mock.FailureMode
-		failCount := mock.FailureCount
-		currentFail := mock.CurrentFailures
-		failStatus := mock.FailureStatus
-		mock.RequestsMu.Unlock()
-
-		if mode == "always" {
-			GinkgoWriter.Printf("⚠️  Mock Slack webhook configured to always fail (%d)\n", failStatus)
-			w.WriteHeader(failStatus)
-			_, _ = w.Write([]byte("service_unavailable"))
-			return
-		}
-
-		if mode == "first-N" && currentFail < failCount {
-			mock.RequestsMu.Lock()
-			mock.CurrentFailures++
-			current := mock.CurrentFailures
-			mock.RequestsMu.Unlock()
-
-			GinkgoWriter.Printf("⚠️  Mock Slack webhook failure %d/%d (%d)\n", current, failCount, failStatus)
-			w.WriteHeader(failStatus)
-			_, _ = w.Write([]byte("service_unavailable"))
-			return
-		}
-
-		// Extract test correlation ID from webhook payload
-		testID := "unknown"
-		if blocks, ok := payload["blocks"].([]interface{}); ok && len(blocks) > 0 {
-			if firstBlock, ok := blocks[0].(map[string]interface{}); ok {
-				if textObj, ok := firstBlock["text"].(map[string]interface{}); ok {
-					if text, ok := textObj["text"].(string); ok {
-						testID = text
-					}
-				}
-			}
-		}
-
-		// Record successful request (thread-safe, per-test isolated)
-		mock.RequestsMu.Lock()
-		mock.Requests = append(mock.Requests, SlackWebhookRequest{
-			Timestamp: time.Now(),
-			Body:      body,
-			Headers:   r.Header.Clone(),
-			TestID:    testID,
-		})
-		requestCount := len(mock.Requests)
-		mock.RequestsMu.Unlock()
-
-		GinkgoWriter.Printf("✅ Mock Slack webhook received request #%d (testID: %s)\n", requestCount, testID)
-
-		// Simulate Slack webhook response
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}))
-
-	mock.WebhookURL = mock.Server.URL
-	return mock
-}
-
 // ConfigureFailure sets failure behavior for MockSlackServer
 func (m *MockSlackServer) ConfigureFailure(mode string, count int, statusCode int) {
 	m.RequestsMu.Lock()
@@ -866,13 +811,6 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 	})
 }
 
-// getSlackRequestCount returns the count of Slack requests (thread-safe)
-func getSlackRequestCount() int { //nolint:unused
-	slackRequestsMu.Lock()
-	defer slackRequestsMu.Unlock()
-	return len(slackRequests)
-}
-
 // resetSlackRequests clears the slackRequests slice (thread-safe for parallel tests)
 func resetSlackRequests() {
 	slackRequestsMu.Lock()
@@ -898,6 +836,7 @@ func createSlackWebhookSecret() {
 
 	// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
 	// Verify deletion completed before creating new secret
+	// NOTE: Use k8sClient (not apiReader) here - this is setup code before manager starts
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      secret.Name,

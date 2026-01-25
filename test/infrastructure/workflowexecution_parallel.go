@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // CreateWorkflowExecutionClusterParallel creates a Kind cluster for WorkflowExecution E2E tests
@@ -277,5 +279,208 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	_, _ = fmt.Fprintf(output, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution E2E cluster ready (PARALLEL MODE)!\n")
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	return nil
+}
+func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.Writer) error {
+	projectRoot := getProjectRoot()
+
+	// Build Data Storage image
+	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
+	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+		"-f", "docker/data-storage.Dockerfile", ".")
+	buildCmd.Dir = projectRoot
+	buildCmd.Stdout = output
+	buildCmd.Stderr = output
+	if err := buildCmd.Run(); err != nil {
+		// Try docker as fallback
+		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
+			"-f", "docker/data-storage.Dockerfile", ".")
+		buildCmd.Dir = projectRoot
+		buildCmd.Stdout = output
+		buildCmd.Stderr = output
+		if err := buildCmd.Run(); err != nil {
+			return fmt.Errorf("failed to build Data Storage: %w", err)
+		}
+	}
+
+	// Load into Kind
+	_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
+	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
+		return fmt.Errorf("failed to load image: %w", err)
+	}
+
+	// Deploy ConfigMap with ADR-030 configuration
+	configMapManifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      metricsPort: 9090
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+      gracefulShutdownTimeout: 30s
+    database:
+      host: postgresql
+      port: 5432
+      name: action_history
+      ssl_mode: disable
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: 5m
+      # ADR-030 Section 6: Secrets from file
+      secretsFile: /etc/datastorage/secrets/db-credentials.yaml
+      usernameKey: username
+      passwordKey: password
+    redis:
+      addr: redis:6379
+      db: 0
+      dlq_stream_name: audit_dlq
+      dlq_max_len: 10000
+      dlq_consumer_group: audit_processors
+      # ADR-030 Section 6: Secrets from file
+      secretsFile: /etc/datastorage/secrets/redis-credentials.yaml
+      passwordKey: password
+    logging:
+      level: info
+      format: json
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(configMapManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ConfigMap: %w", err)
+	}
+
+	// Deploy Secret with credentials in YAML format (ADR-030 Section 6)
+	secretManifest := `
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-secrets
+  namespace: kubernaut-system
+stringData:
+  db-credentials.yaml: |
+    username: slm_user
+    password: test_password
+  redis-credentials.yaml: |
+    password: ""
+`
+	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(secretManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Secret: %w", err)
+	}
+
+	// Deploy Data Storage with proper volumes and CONFIG_PATH
+	// Note: Image name is localhost/kubernaut-datastorage:latest when loaded via kind load
+	deploymentManifest := `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+    spec:
+      containers:
+      - name: datastorage
+        image: localhost/kubernaut-datastorage:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: CONFIG_PATH
+          value: /etc/datastorage/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/datastorage
+          readOnly: true
+        - name: secrets
+          mountPath: /etc/datastorage/secrets
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: datastorage-config
+      - name: secrets
+        secret:
+          secretName: datastorage-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datastorage
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: datastorage
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30081
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datastorage-service
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: datastorage
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+`
+	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(deploymentManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	return cmd.Run()
+}
+
+func waitForWEDataStorageReady(kubeconfigPath string, output io.Writer) error {
+	if err := waitForDeploymentReady(kubeconfigPath, "datastorage", output); err != nil {
+		return err
+	}
+	// Brief wait for DS to initialize connections to PostgreSQL/Redis
+	time.Sleep(5 * time.Second)
 	return nil
 }

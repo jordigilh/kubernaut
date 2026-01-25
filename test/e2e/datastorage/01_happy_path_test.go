@@ -17,22 +17,18 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
 // Scenario 1: Happy Path - Complete Remediation Audit Trail (P0)
@@ -147,124 +143,101 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Step 1: Gateway - Signal Received
 		testLogger.Info("📨 Step 1: Gateway processes signal...")
-		gatewayEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("PodCrashLooping").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
-		gatewayEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_action":    "signal_processing",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      gatewayEventData,
+		// DD-API-001: Use typed OpenAPI struct for type safety
+		gatewayEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventAction:    "signal_processing",
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
-		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID := createAuditEventOpenAPI(ctx, dsClient, gatewayEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Gateway audit event should be created")
 		testLogger.Info("✅ Gateway audit event created")
 
 		// Step 2: AIAnalysis - Analysis Completed
 		testLogger.Info("🤖 Step 2: AIAnalysis generates RCA...")
-		aiEventData, err := audit.NewAIAnalysisEvent("analysis.completed").
-			WithAnalysisID(fmt.Sprintf("analysis-%s", testNamespace)).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
-		aiEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "analysis",
-			"event_action":    "rca_generation",
-			"event_type":      "analysis.analysis.completed",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      aiEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		aiEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+			EventAction:    "rca_generation",
+			EventType:      "aianalysis.analysis.completed",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      newMinimalAIAnalysisPayload(fmt.Sprintf("analysis-%s", testNamespace)),
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID = createAuditEventOpenAPI(ctx, dsClient, aiEvent)
+		Expect(eventID).ToNot(BeEmpty(), "AIAnalysis audit event should be created")
 		testLogger.Info("✅ AIAnalysis audit event created")
 
 		// Step 3: Workflow - Workflow Completed
 		testLogger.Info("⚙️  Step 3: Workflow executes remediation...")
-		workflowEventData, err := audit.NewWorkflowEvent("workflow.completed").
-			WithWorkflowID(fmt.Sprintf("workflow-%s", testNamespace)).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
-		workflowEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "workflow",
-			"event_action":    "remediation_execution",
-			"event_type":      "workflow.workflow.completed",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      workflowEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		workflowEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
+			EventAction:    "remediation_execution",
+			EventType:      "workflow.execution.started",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      newMinimalWorkflowPayload(fmt.Sprintf("workflow-%s", testNamespace)),
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Workflow audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID = createAuditEventOpenAPI(ctx, dsClient, workflowEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Workflow audit event should be created")
 		testLogger.Info("✅ Workflow audit event created")
 
 		// Step 4: Orchestrator - Remediation Completed
 		testLogger.Info("🎯 Step 4: Orchestrator completes...")
-		orchestratorEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "orchestration", // ADR-034 v1.2 valid category (was "orchestrator")
-			"event_action":    "orchestration",
-			"event_type":      "orchestration.remediation.completed", // Match category
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      map[string]interface{}{},
+		// DD-API-001: Use typed OpenAPI struct
+		orchestratorEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryOrchestration, // ADR-034 v1.2 valid category
+			EventAction:    "orchestration",
+			EventType:      "workflow.search.executed", // Using minimal generic payload
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      newMinimalGenericPayload(),
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID = createAuditEventOpenAPI(ctx, dsClient, orchestratorEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Orchestrator audit event should be created")
 		testLogger.Info("✅ Orchestrator audit event created")
 
 		// Step 5: EffectivenessMonitor - Assessment Completed
 		testLogger.Info("📊 Step 5: EffectivenessMonitor assesses...")
-		monitorEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "analysis", // ADR-034 v1.2: effectiveness assessment = analysis category (was "monitor")
-			"event_action":    "effectiveness_assessment",
-			"event_type":      "analysis.assessment.completed", // Match category
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      map[string]interface{}{},
+		// DD-API-001: Use typed OpenAPI struct
+		monitorEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis, // ADR-034 v1.2: effectiveness assessment = analysis category
+			EventAction:    "effectiveness_assessment",
+			EventType:      "workflow.search.executed", // Using minimal generic payload
+			EventTimestamp: time.Now().UTC(),
+			CorrelationID:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      newMinimalGenericPayload(),
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Monitor audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		eventID = createAuditEventOpenAPI(ctx, dsClient, monitorEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Monitor audit event should be created")
 		testLogger.Info("✅ Monitor audit event created")
 
 		// Verification: Query database directly
 		testLogger.Info("🔍 Verifying audit events in database...")
 		var count int
-		err = db.QueryRow(`
+		err := db.QueryRow(`
 			SELECT COUNT(*) FROM audit_events
 			WHERE correlation_id = $1
 		`, correlationID).Scan(&count)
@@ -274,25 +247,38 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		Expect(count).To(BeNumerically(">=", 5), "Should have at least 5 audit events in database")
 		testLogger.Info("✅ All audit events persisted to database", "count", count)
 
-		// Verification: Query via REST API
+		// Verification: Query via REST API using OpenAPI client with pagination
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS handle pagination under concurrent load
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-				_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
+		var allEvents []dsgen.AuditEvent
+		offset := 0
+		limit := 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Query API should return 200 OK")
 
-		var queryResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEvents = append(allEvents, queryResp.Data...)
 
-		data, ok := queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue(), "Response should have data array")
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		Expect(allEvents).ToNot(BeNil(), "Query response should have data array")
+
 		// Self-auditing creates additional events, so we expect at least 5
+		data := allEvents
 		Expect(len(data)).To(BeNumerically(">=", 5), "Query API should return at least 5 events")
 		testLogger.Info("✅ Query API returned complete audit trail", "event_count", len(data))
 
@@ -301,25 +287,16 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Sort events by timestamp
 		sort.Slice(data, func(i, j int) bool {
-			eventI := data[i].(map[string]interface{})
-			eventJ := data[j].(map[string]interface{})
-			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
-			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
-			return timestampI.Before(timestampJ)
+			return data[i].EventTimestamp.Before(data[j].EventTimestamp)
 		})
 
 		var previousTimestamp time.Time
-		for i, item := range data {
-			event := item.(map[string]interface{})
-			timestampStr := event["event_timestamp"].(string)
-			timestamp, err := time.Parse(time.RFC3339, timestampStr)
-			Expect(err).ToNot(HaveOccurred())
-
+		for i, event := range data {
 			if i > 0 {
-				Expect(timestamp.After(previousTimestamp) || timestamp.Equal(previousTimestamp)).To(BeTrue(),
+				Expect(event.EventTimestamp.After(previousTimestamp) || event.EventTimestamp.Equal(previousTimestamp)).To(BeTrue(),
 					"Events should be in chronological order")
 			}
-			previousTimestamp = timestamp
+			previousTimestamp = event.EventTimestamp
 		}
 		testLogger.Info("✅ Events are in chronological order")
 
@@ -329,32 +306,5 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 	})
 })
 
-// Helper function to post audit event
-func postAuditEvent(client *http.Client, baseURL string, event map[string]interface{}) *http.Response {
-	body, err := json.Marshal(event)
-	Expect(err).ToNot(HaveOccurred())
-
-	req, err := http.NewRequest("POST", baseURL+"/api/v1/audit/events", bytes.NewBuffer(body))
-	Expect(err).ToNot(HaveOccurred())
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Log response body if not 2xx status
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		if err := resp.Body.Close(); err != nil {
-			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
-		}
-		if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
-			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
-		}
-		// Create new reader for the response body so tests can still read it
-		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	}
-
-	return resp
-}
+// DD-API-001: postAuditEvent helper function removed
+// Replaced by createAuditEventFromMap() in helpers.go (OpenAPI client-based)

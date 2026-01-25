@@ -66,12 +66,12 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 	handlerLog := log.WithName("investigating-handler")
 	return &InvestigatingHandler{
 		hgClient:        hgClient,
-		metrics:         m,
-		auditClient:     auditClient,
-		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor (audit recorded by handler, not processor)
-		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
-		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
+	metrics:         m,
+	auditClient:     auditClient,
+	log:             handlerLog,
+	processor:       NewResponseProcessor(log, m, auditClient),   // P1.1: Initialize response processor (audit recorded by processor for failures)
+	builder:         NewRequestBuilder(log),         // P1.2: Initialize request builder
+	errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
 }
 
@@ -84,12 +84,15 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		"isRecoveryAttempt", analysis.Spec.IsRecoveryAttempt,
 	)
 
+	// AA-HAPI-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
+	// via AtomicStatusUpdate callback with APIReader refetch. No handler-level check needed.
+
 	// Track duration (per crd-schema.md: InvestigationTime)
 	startTime := time.Now()
 
 	// BR-AI-083: Route based on IsRecoveryAttempt
 	if analysis.Spec.IsRecoveryAttempt {
-		h.log.Info("Using recovery endpoint",
+		h.log.Info("Calling HolmesGPT-API recovery endpoint",
 			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
 		)
 		recoveryReq := h.builder.BuildRecoveryRequest(analysis) // P1.2: Use request builder
@@ -107,6 +110,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
 		}
+
+		// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
+		// This prevents duplicate HAPI calls when controller reconciles before status persists
+		// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
+		analysis.Status.ObservedGeneration = analysis.Generation
 
 		// Set investigation time on successful response
 		analysis.Status.InvestigationTime = investigationTime
@@ -155,6 +163,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
 		}
+
+		// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
+		// This prevents duplicate HAPI calls when controller reconciles before status persists
+		// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
+		analysis.Status.ObservedGeneration = analysis.Generation
 
 		// Set investigation time on successful response
 		analysis.Status.InvestigationTime = investigationTime
@@ -234,7 +247,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Transition to permanent failure after max retries
 		now := metav1.Now()
 		analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
@@ -243,6 +256,11 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 
 		// Record metric for max retries exceeded
 		h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
+
+		// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+		if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+		}
 
 		return ctrl.Result{}, nil
 	}
@@ -255,7 +273,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
+	analysis.Status.CompletedAt = &now                       // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
 	analysis.Status.Reason = "APIError"
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
@@ -263,34 +281,13 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	// Record metric for permanent errors
 	h.metrics.RecordFailure("APIError", string(classification.ErrorType))
 
+	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
 	return ctrl.Result{}, nil
 }
-
-// P1.1 Refactoring: Response processing methods moved to response_processor.go
-// - ProcessIncidentResponse (was processIncidentResponse)
-// - ProcessRecoveryResponse (was processRecoveryResponse)
-// - PopulateRecoveryStatusFromRecovery (was populateRecoveryStatusFromRecovery)
-// - handleWorkflowResolutionFailureFromIncident (private method in processor)
-// - handleProblemResolvedFromIncident (private method in processor)
-// - handleRecoveryNotPossible (private method in processor)
-// - mapEnumToSubReason (private method in processor)
-
-// getRetryCount reads retry count from annotations
-func (h *InvestigatingHandler) getRetryCount(analysis *aianalysisv1.AIAnalysis) int {
-	if analysis.Annotations == nil {
-		return 0
-	}
-	countStr, ok := analysis.Annotations[RetryCountAnnotation]
-	if !ok {
-		return 0
-	}
-	count, err := strconv.Atoi(countStr)
-	if err != nil {
-		return 0
-	}
-	return count
-}
-
 // setRetryCount writes retry count to annotations
 func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
 	if analysis.Annotations == nil {
@@ -298,6 +295,7 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 	}
 	analysis.Annotations[RetryCountAnnotation] = strconv.Itoa(count)
 }
+
 // ========================================
 // BR-HAPI-197: WORKFLOW RESOLUTION FAILURE HANDLING
 // When HolmesGPT-API returns needs_human_review=true, we MUST:

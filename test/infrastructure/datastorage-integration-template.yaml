@@ -9,8 +9,8 @@
 server:
   port: 8080  # Internal container port
   host: "0.0.0.0"
-  read_timeout: "30s"
-  write_timeout: "30s"
+  readTimeout: "30s"
+  writeTimeout: "30s"
 
 logging:
   level: "{{LOG_LEVEL}}"  # Replaced: "info", "debug", "error"
@@ -21,11 +21,11 @@ database:
   port: {{POSTGRES_PORT}}    # Replaced: internal port (5432 for network, or host port)
   name: "{{DB_NAME}}"        # Replaced: database name
   user: "{{DB_USER}}"        # Replaced: database user
-  ssl_mode: "disable"  # Integration tests use insecure connections
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: "5m"
-  conn_max_idle_time: "5m"
+  sslMode: "disable"  # Integration tests use insecure connections
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
+  connMaxIdleTime: "5m"
   # ADR-030 Section 6: Secrets loaded from mounted files
   secretsFile: "/etc/datastorage-secrets/database-credentials.yaml"
   passwordKey: "password"
@@ -34,9 +34,9 @@ redis:
   addr: "{{REDIS_HOST}}:{{REDIS_PORT}}"  # Replaced: Redis address
   db: {{REDIS_DB}}  # Replaced: Redis database number
   # DD-009: Redis DLQ configuration
-  dlq_stream_name: "audit:dlq:integration"
-  dlq_max_len: 10000
-  dlq_consumer_group: "datastorage-dlq-integration"
+  dlqStreamName: "audit:dlq:integration"
+  dlqMaxLen: 10000
+  dlqConsumerGroup: "datastorage-dlq-integration"
   # ADR-030 Section 6: Secrets loaded from mounted files
   secretsFile: "/etc/datastorage-secrets/redis-credentials.yaml"
   passwordKey: "password"

@@ -76,8 +76,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -103,7 +103,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -136,12 +136,12 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -167,8 +167,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -193,7 +193,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -204,28 +204,30 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 				}, 60*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 			}
 
-		// CORRECTNESS: Goroutines are cleaned up after deliveries complete
-		// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
-		// Force garbage collection to help clean up goroutines (pattern from performance tests)
-		runtime.GC()
+			// CORRECTNESS: Goroutines are cleaned up after deliveries complete
+			// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
+			// Force garbage collection to help clean up goroutines (pattern from performance tests)
+			runtime.GC()
 
-		// Wait for goroutine count to stabilize after all deliveries complete
-		var finalGoroutines int
-		Eventually(func() int {
-			finalGoroutines = runtime.NumGoroutine()
-			return finalGoroutines
-		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", initialGoroutines+20),
-			"Goroutines should stabilize within reasonable bounds after cleanup")
+			// Wait for goroutine count to stabilize after all deliveries complete
+			// DD-STATUS-001: Increased timeout and tolerance for parallel execution (12 procs)
+			var finalGoroutines int
+			Eventually(func() int {
+				runtime.GC() // Force GC on each check in parallel execution
+				finalGoroutines = runtime.NumGoroutine()
+				return finalGoroutines
+			}, 30*time.Second, 1*time.Second).Should(BeNumerically("<=", initialGoroutines+50),
+				"Goroutines should stabilize within reasonable bounds after cleanup (parallel execution)")
 
-		GinkgoWriter.Printf("📊 Final goroutines: %d\n", finalGoroutines)
+			GinkgoWriter.Printf("📊 Final goroutines: %d\n", finalGoroutines)
 
-		goroutineGrowth := finalGoroutines - initialGoroutines
-		GinkgoWriter.Printf("📈 Goroutine growth: %d (50 notifications processed)\n", goroutineGrowth)
+			goroutineGrowth := finalGoroutines - initialGoroutines
+			GinkgoWriter.Printf("📈 Goroutine growth: %d (50 notifications processed)\n", goroutineGrowth)
 
-		// Goroutine growth should be minimal (allow some variance for async cleanup)
-		// Threshold increased to 20 to account for GC and async cleanup variability
-		Expect(goroutineGrowth).To(BeNumerically("<=", 20),
-			"Goroutine growth should be bounded (proper cleanup)")
+			// Goroutine growth should be minimal (allow some variance for async cleanup)
+			// Threshold increased to 20 to account for GC and async cleanup variability
+			Expect(goroutineGrowth).To(BeNumerically("<=", 20),
+				"Goroutine growth should be bounded (proper cleanup)")
 
 			GinkgoWriter.Printf("✅ Goroutines stable: processed 50 notifications with %d goroutine growth\n", goroutineGrowth)
 
@@ -233,12 +235,12 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -267,8 +269,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -293,7 +295,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -324,12 +326,12 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -358,8 +360,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notifName,
-							Namespace: testNamespace,
+							Name:       notifName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -390,7 +392,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -405,7 +407,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				// Count successes
 				notif := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}
@@ -423,12 +425,12 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -453,8 +455,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -479,7 +481,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -494,26 +496,26 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 
 			// BEHAVIOR: Resources cleaned up after deletion
 			// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
-		// Wait for goroutines to be cleaned up after all deletions complete
-		runtime.GC() // Force GC to help cleanup
+			// Wait for goroutines to be cleaned up after all deletions complete
+			runtime.GC() // Force GC to help cleanup
 
-		var finalGoroutines, goroutineGrowth int
-		Eventually(func() int {
-			finalGoroutines = runtime.NumGoroutine()
-			goroutineGrowth = finalGoroutines - initialGoroutines
-			return goroutineGrowth
-		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", 10),
-			"Goroutines should be cleaned up after notification lifecycle completes")
+			var finalGoroutines, goroutineGrowth int
+			Eventually(func() int {
+				finalGoroutines = runtime.NumGoroutine()
+				goroutineGrowth = finalGoroutines - initialGoroutines
+				return goroutineGrowth
+			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", 10),
+				"Goroutines should be cleaned up after notification lifecycle completes")
 
 			GinkgoWriter.Printf("📊 Goroutine growth after cleanup: %d (processed 30 notifications)\n", goroutineGrowth)
 
@@ -535,7 +537,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			// DD-TEST-002: Test isolation - only check current test namespace
 			Eventually(func() int {
 				list := &notificationv1alpha1.NotificationRequestList{}
-				err := k8sClient.List(ctx, list, client.InNamespace(testNamespace))
+				err := k8sManager.GetAPIReader().List(ctx, list, client.InNamespace(testNamespace))
 				if err != nil {
 					return -1
 				}
@@ -594,8 +596,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -620,7 +622,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -635,12 +637,12 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 
 			// BEHAVIOR: Resources recovered after burst
@@ -648,14 +650,14 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			// Wait for goroutines to stabilize after burst recovery
 			runtime.GC() // Force GC for recovery
 
-		var recoveredMem runtime.MemStats
-		var recoveredGoroutines int
-		Eventually(func() int {
-			runtime.ReadMemStats(&recoveredMem)
-			recoveredGoroutines = runtime.NumGoroutine()
-			return recoveredGoroutines
-		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", baselineGoroutines+20),
-			"Goroutines should recover to near-baseline after burst")
+			var recoveredMem runtime.MemStats
+			var recoveredGoroutines int
+			Eventually(func() int {
+				runtime.ReadMemStats(&recoveredMem)
+				recoveredGoroutines = runtime.NumGoroutine()
+				return recoveredGoroutines
+			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", baselineGoroutines+20),
+				"Goroutines should recover to near-baseline after burst")
 
 			GinkgoWriter.Printf("📊 After recovery: %d MB, %d goroutines\n",
 				recoveredMem.Alloc/1024/1024, recoveredGoroutines)

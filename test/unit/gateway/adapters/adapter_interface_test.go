@@ -208,13 +208,15 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				"Error message must indicate deduplication requirement")
 		})
 
-		It("rejects signals with invalid severity (business classification)", func() {
-			// BUSINESS OUTCOME: Severity determines remediation priority
-			// Gateway rejects invalid severity to ensure correct prioritization
+		It("rejects signals with empty severity (BR-GATEWAY-181 pass-through)", func() {
+			// BUSINESS OUTCOME: Severity pass-through architecture
+			// Gateway accepts ANY non-empty severity string (Sev1, P0, critical, HIGH, etc.)
+			// SignalProcessing Rego policies determine normalized severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			invalidSignal := &types.NormalizedSignal{
 				AlertName:   "PodCrashLooping",
 				Fingerprint: "fingerprint-123",
-				Severity:    "high", // INVALID (must be critical/warning/info)
+				Severity:    "", // INVALID (empty string)
 				Resource: types.ResourceIdentifier{
 					Kind: "Pod",
 					Name: "test-pod",
@@ -224,11 +226,9 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			err := adapter.Validate(invalidSignal)
 
 			Expect(err).To(HaveOccurred(),
-				"Must reject signals with invalid severity")
+				"BR-GATEWAY-181: Must reject empty severity")
 			Expect(err.Error()).To(ContainSubstring("severity"),
-				"Error message must indicate severity validation failure")
-			Expect(err.Error()).To(ContainSubstring("critical/warning/info"),
-				"Error message must show valid severity options")
+				"Error message must indicate severity is required")
 		})
 
 		It("rejects signals missing resource kind (remediation target requirement)", func() {
@@ -273,12 +273,22 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				"Error message must indicate missing resource name")
 		})
 
-		It("accepts all valid severities (critical, warning, info)", func() {
-			// BUSINESS OUTCOME: All severity levels supported for different urgency
-			// Critical → immediate remediation
-			// Warning → scheduled remediation
-			// Info → monitoring only
-			validSeverities := []string{"critical", "warning", "info"}
+		It("accepts ANY non-empty severity string (BR-GATEWAY-181 pass-through)", func() {
+			// BUSINESS OUTCOME: Severity pass-through architecture
+			// Gateway accepts ANY severity scheme: standard, enterprise, PagerDuty, custom
+			// - Standard: "critical", "warning", "info"
+			// - Enterprise: "Sev1", "Sev2", "Sev3", "Sev4"
+			// - PagerDuty: "P0", "P1", "P2", "P3"
+			// - Custom: "HIGH", "MEDIUM", "LOW", "urgent", "normal"
+			// SignalProcessing Rego policies normalize downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+			validSeverities := []string{
+				"critical", "warning", "info", // Standard
+				"Sev1", "Sev2", "Sev3", "Sev4", // Enterprise
+				"P0", "P1", "P2", "P3", // PagerDuty
+				"HIGH", "MEDIUM", "LOW", // Custom uppercase
+				"urgent", "normal", // Custom lowercase
+			}
 
 			for _, severity := range validSeverities {
 				signal := &types.NormalizedSignal{
@@ -294,8 +304,94 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				err := adapter.Validate(signal)
 
 				Expect(err).NotTo(HaveOccurred(),
-					"Severity '%s' must be accepted for business prioritization", severity)
+					"BR-GATEWAY-181: Gateway must accept '%s' severity (pass-through)", severity)
 			}
+		})
+
+		// GW-UNIT-ADP-015: BR-GATEWAY-005 Adapter Error Resilience
+		Context("BR-GATEWAY-005: Adapter Error Non-Fatal", func() {
+			It("[GW-UNIT-ADP-015] should handle adapter errors without crashing service", func() {
+				// BR-GATEWAY-005: Adapter errors must not terminate Gateway
+				// BUSINESS LOGIC: One bad payload should not affect other signals
+				// Unit Test: Error handling without infrastructure
+
+				adapter := adapters.NewPrometheusAdapter()
+
+				// Malformed JSON payload
+				malformedPayload := []byte(`{"alerts": [{"labels": {incomplete`)
+
+				signal, err := adapter.Parse(nil, malformedPayload)
+
+				// BUSINESS RULE: Parsing error should be returned (not panic)
+				Expect(err).To(HaveOccurred(),
+					"BR-GATEWAY-005: Malformed payload should return error")
+				Expect(signal).To(BeNil(),
+					"Invalid payload should not produce signal")
+
+				// BUSINESS RULE: Adapter should remain functional after error
+				validPayload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "Test",
+						"namespace": "prod"
+					}
+				}]
+			}`)
+
+				signal2, err2 := adapter.Parse(nil, validPayload)
+				Expect(err2).ToNot(HaveOccurred(),
+					"BR-GATEWAY-005: Adapter should process valid signals after error")
+				Expect(signal2).ToNot(BeNil())
+			})
+
+			It("[GW-UNIT-ADP-015] should provide actionable error messages", func() {
+				// BR-GATEWAY-005: Error messages must help operators debug
+				// BUSINESS LOGIC: Clear errors enable faster incident resolution
+				// Unit Test: Error message quality
+
+				adapter := adapters.NewPrometheusAdapter()
+
+				// Empty payload
+				emptyPayload := []byte(`{}`)
+
+				_, err := adapter.Parse(nil, emptyPayload)
+
+				// BUSINESS RULE: Error should indicate what's wrong
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("alert"),
+					"BR-GATEWAY-005: Error should indicate missing alerts")
+			})
+
+			It("[GW-UNIT-ADP-015] should handle missing required fields gracefully", func() {
+				// BR-GATEWAY-005: Missing fields should not cause panics
+				// BUSINESS LOGIC: Defensive programming for external inputs
+				// Unit Test: Edge case handling
+
+				adapter := adapters.NewPrometheusAdapter()
+
+				// Missing alertname
+				payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"namespace": "prod"
+					}
+				}]
+			}`)
+
+				signal, err := adapter.Parse(nil, payload)
+
+				// BUSINESS RULE: Validation should catch missing required fields
+				if signal != nil {
+					validationErr := adapter.Validate(signal)
+					Expect(validationErr).To(HaveOccurred(),
+						"BR-GATEWAY-005: Missing alertname should fail validation")
+				}
+
+				// Either parsing or validation should catch the error
+				hasError := (err != nil) || (signal != nil && adapter.Validate(signal) != nil)
+				Expect(hasError).To(BeTrue(),
+					"BR-GATEWAY-005: Missing required fields must be detected")
+			})
 		})
 	})
 })

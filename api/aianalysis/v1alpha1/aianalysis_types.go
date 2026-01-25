@@ -33,6 +33,17 @@ import (
 // ========================================
 
 // AIAnalysisSpec defines the desired state of AIAnalysis.
+//
+// ADR-001: Spec Immutability
+// AIAnalysis represents an immutable event (AI investigation).
+// Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+// - Audit trail integrity (AI investigation matches original RCA request)
+// - No tampering with RCA targets post-HAPI validation
+// - No workflow selection modification after AI recommendation
+//
+// To re-analyze, delete and recreate the AIAnalysis CRD.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type AIAnalysisSpec struct {
 	// ========================================
 	// PARENT REFERENCE (Audit/Lineage)
@@ -75,7 +86,7 @@ type AIAnalysisSpec struct {
 	// ========================================
 	// TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
 	// Replaces deprecated annotation-based timeout (security + validation)
-	// Passed through from RR.Spec.TimeoutConfig.AIAnalysisTimeout by RO
+	// Passed through from RR.Status.TimeoutConfig.AIAnalysisTimeout by RO (Gap #8: moved to Status)
 	// ========================================
 	// Optional timeout configuration for this analysis
 	// If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
@@ -117,8 +128,8 @@ type SignalContextInput struct {
 	// +kubebuilder:validation:MaxLength=64
 	Fingerprint string `json:"fingerprint"`
 
-	// Signal severity: critical, warning, info
-	// +kubebuilder:validation:Enum=critical;warning;info
+	// Signal severity: critical, high, medium, low, unknown (normalized by SignalProcessing Rego - DD-SEVERITY-001 v1.1)
+	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
 	Severity string `json:"severity"`
 
 	// Signal type (e.g., OOMKilled, CrashLoopBackOff)
@@ -378,7 +389,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -419,6 +430,21 @@ type AIAnalysisStatus struct {
 	ApprovalReason string `json:"approvalReason,omitempty"`
 	// Rich context for approval notification
 	ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
+
+	// ========================================
+	// HUMAN REVIEW SIGNALING (BR-HAPI-197)
+	// Set by HAPI when AI cannot produce reliable result
+	// ========================================
+	// True if human review required (HAPI decision: RCA incomplete/unreliable)
+	// BR-HAPI-197: Triggers NotificationRequest creation in RO
+	// BR-HAPI-212: Set when workflow selected but affectedResource missing
+	NeedsHumanReview bool `json:"needsHumanReview"`
+	// Reason why human review needed (when NeedsHumanReview=true)
+	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+	// BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
+	// +optional
+	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 
 	// ========================================
 	// INVESTIGATION DETAILS
@@ -480,8 +506,9 @@ type AIAnalysisStatus struct {
 type RootCauseAnalysis struct {
 	// Brief summary of root cause
 	Summary string `json:"summary"`
-	// Severity determined by RCA
-	// +kubebuilder:validation:Enum=critical;high;medium;low
+	// Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
+	// DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)
+	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
 	Severity string `json:"severity"`
 	// Signal type determined by RCA (may differ from input)
 	SignalType string `json:"signalType"`

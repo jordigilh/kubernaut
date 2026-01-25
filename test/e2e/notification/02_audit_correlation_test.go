@@ -26,10 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -55,7 +54,7 @@ import (
 // Test Scenario:
 // 1. Create 3 NotificationRequests with same remediation context
 // 2. Wait for controller to process all 3 notifications (phase → Sent)
-// 3. Verify controller emitted 3 "notification.message.sent" audit events
+// 3. Verify controller emitted 3 string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) audit events
 // 4. Verify all events share same correlation_id (remediation request name)
 // 5. Verify all events follow ADR-034 format
 //
@@ -77,7 +76,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		testCtx        context.Context
 		testCancel     context.CancelFunc
 		notifications  []*notificationv1alpha1.NotificationRequest
-		dsClient       *dsgen.ClientWithResponses
+		dsClient       *ogenclient.Client
 		dataStorageURL string
 		correlationID  string
 	)
@@ -94,7 +93,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create 3 NotificationRequests with same remediation context
@@ -175,16 +174,16 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		By("Waiting for controller to emit audit events for all processed notifications")
 
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
-				EventType:     ptr.To("notification.message.sent"),
-				EventCategory: ptr.To("notification"),
-				CorrelationId: &correlationID,
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
+				EventCategory: ogenclient.NewOptString("notification"),
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil || resp.JSON200 == nil {
+			if err != nil || resp.Data == nil {
 				return 0
 			}
 			// Filter by controller actor_id after retrieving events
-			events := *resp.JSON200.Data
+			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
 		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
@@ -205,9 +204,9 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// Verify all events have same correlation_id
 		for _, event := range events {
-			Expect(event.CorrelationId).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"All events should have same correlation_id: %s (found: %s)",
-				correlationID, event.CorrelationId)
+				correlationID, event.CorrelationID)
 		}
 
 		// ===== STEP 5: Verify event types distribution and per-notification uniqueness =====
@@ -222,32 +221,22 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		notificationEvents := make(map[string]*notificationEventCount)
 
 		for _, event := range events {
-			// Extract notification_id from EventData
-			// EventData structure: {"notification_id": "...", "channel": "...", ...}
+			// Extract notification_id from EventData discriminated union
+			// ogen: Different event types use different payload fields
+			// - notification.message.sent → NotificationMessageSentPayload.NotificationID (string)
+			// - notification.message.acknowledged → NotificationMessageAcknowledgedPayload.NotificationID (string)
 			notificationID := ""
-			if event.EventData != nil {
-				// Try direct map access first
-				if eventDataMap, ok := event.EventData.(map[string]interface{}); ok {
-					if id, exists := eventDataMap["notification_id"]; exists {
-						if idStr, ok := id.(string); ok {
-							notificationID = idStr
-						}
-					}
-				} else if eventDataStr, ok := event.EventData.(string); ok {
-					// EventData might be JSON string from PostgreSQL JSONB
-					var eventDataMap map[string]interface{}
-					if err := json.Unmarshal([]byte(eventDataStr), &eventDataMap); err == nil {
-						if id, exists := eventDataMap["notification_id"]; exists {
-							if idStr, ok := id.(string); ok {
-								notificationID = idStr
-							}
-						}
-					}
-				}
+			switch event.EventType {
+			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
+				notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
+			case "notification.message.acknowledged":
+				notificationID = event.EventData.NotificationMessageAcknowledgedPayload.NotificationID
+			default:
+				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'notification.message.sent' or 'notification.message.acknowledged')", event.EventType))
 			}
 
 			Expect(notificationID).ToNot(BeEmpty(),
-				"Event should have notification_id in EventData (got EventData type: %T)", event.EventData)
+				"Event should have notification_id in EventData (got EventType: %s)", event.EventType)
 
 			// Initialize struct for this notification if needed
 			if notificationEvents[notificationID] == nil {
@@ -256,12 +245,10 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 			// Increment count for this event type
 			switch event.EventType {
-			case "notification.message.sent":
+			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
 				notificationEvents[notificationID].sentCount++
 			case "notification.message.acknowledged":
 				notificationEvents[notificationID].acknowledgedCount++
-			default:
-				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'sent' or 'acknowledged')", event.EventType))
 			}
 		}
 
@@ -297,19 +284,19 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(event.EventTimestamp).ToNot(BeZero(), "EventTimestamp should be set")
 			Expect(string(event.EventCategory)).To(Equal("notification"), "EventCategory should be 'notification'")
 			Expect(event.ActorType).ToNot(BeNil(), "ActorType should be set")
-			Expect(*event.ActorType).To(Equal("service"), "ActorType should be 'service'")
-			Expect(event.ActorId).ToNot(BeNil(), "ActorID should be set")
-			Expect(*event.ActorId).To(Equal("notification-controller"), "ActorID should be 'notification-controller'")
+			Expect(event.ActorType.Value).To(Equal("service"), "ActorType should be 'service'")
+			Expect(event.ActorID).ToNot(BeNil(), "ActorID should be set")
+			Expect(event.ActorID.Value).To(Equal("notification-controller"), "ActorID should be 'notification-controller'")
 			Expect(event.ResourceType).ToNot(BeNil(), "ResourceType should be set")
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
 			// Note: RetentionDays is stored in PostgreSQL but not returned by Data Storage Query API
 
 			// Verify event outcome is valid
 			Expect(string(event.EventOutcome)).To(BeElementOf("success", "failure", "error"),
 				"EventOutcome should be valid: %s", event.EventOutcome)
 
-			// Verify event data is valid JSON (marshal from interface{} first)
-			if event.EventData != nil {
+			// Verify event data is valid JSON (marshal from discriminated union)
+			if event.EventData.Type != "" {
 				eventDataBytes, err := json.Marshal(event.EventData)
 				Expect(err).ToNot(HaveOccurred(), "EventData should be marshallable")
 				var jsonData interface{}

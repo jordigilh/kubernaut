@@ -74,8 +74,8 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -98,7 +98,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for Sent phase (may skip Pending/Sending due to fast delivery)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -128,13 +128,13 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 		It("should transition Pending → Sending → Failed when all channels fail permanently (BR-NOT-056)", func() {
 			notifName := fmt.Sprintf("phase-failed-%s", uniqueSuffix)
 
-		// Configure mock to return permanent error (401 Unauthorized)
-		ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
+			// Configure mock to return permanent error (401 Unauthorized)
+			ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -148,12 +148,12 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelSlack, // Will fail with 401
 					},
-				RetryPolicy: &notificationv1alpha1.RetryPolicy{
-					MaxAttempts:           1, // Only 1 attempt for faster test
-					InitialBackoffSeconds: 1,
-					BackoffMultiplier:     2,
-					MaxBackoffSeconds:     60, // CRD validation requires ≥60
-				},
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1, // Only 1 attempt for faster test
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     2,
+						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
 				},
 			}
 
@@ -163,7 +163,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for Failed phase (permanent error, no retry)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -194,13 +194,13 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 		It("should transition Pending → Sending → PartiallySent when some channels succeed and some fail (BR-NOT-056)", func() {
 			notifName := fmt.Sprintf("phase-partial-%s", uniqueSuffix)
 
-		// Configure mock to fail Slack but console will succeed
-		ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
+			// Configure mock to fail Slack but console will succeed
+			ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -215,12 +215,12 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 						notificationv1alpha1.ChannelConsole, // Will succeed
 						notificationv1alpha1.ChannelSlack,   // Will fail with 401
 					},
-				RetryPolicy: &notificationv1alpha1.RetryPolicy{
-					MaxAttempts:           1, // Only 1 attempt for faster test
-					InitialBackoffSeconds: 1,
-					BackoffMultiplier:     2,
-					MaxBackoffSeconds:     60, // CRD validation requires ≥60
-				},
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1, // Only 1 attempt for faster test
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     2,
+						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
 				},
 			}
 
@@ -230,7 +230,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for PartiallySent phase (mixed success/failure)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -266,8 +266,8 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -292,7 +292,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			// Note: These phases are transient and may be skipped for fast deliveries
 			var observedPending, observedSending bool
 			for i := 0; i < 10; i++ {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -314,7 +314,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Eventually reach terminal state
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -344,8 +344,8 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -367,7 +367,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -384,7 +384,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait additional time to ensure phase doesn't change
 			Consistently(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -412,13 +412,13 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 		It("should keep terminal phase Failed immutable (BR-NOT-056: No invalid transitions)", func() {
 			notifName := fmt.Sprintf("phase-immutable-failed-%s", uniqueSuffix)
 
-		// Configure permanent failure
-		ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
+			// Configure permanent failure
+			ConfigureFailureMode("always", 0, 401) // mode=always, count=0, statusCode=401
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -431,13 +431,13 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					},
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelSlack,
-				},
-				RetryPolicy: &notificationv1alpha1.RetryPolicy{
-					MaxAttempts:           1,
-					InitialBackoffSeconds: 1,
-					BackoffMultiplier:     2,
-					MaxBackoffSeconds:     60, // CRD validation requires ≥60
-				},
+					},
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1,
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     2,
+						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
 				},
 			}
 
@@ -446,7 +446,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -461,7 +461,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait additional time to ensure phase doesn't change
 			Consistently(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -489,8 +489,8 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -513,7 +513,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for terminal phase
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

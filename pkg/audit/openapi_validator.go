@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -105,7 +105,7 @@ func loadOpenAPIValidator() (*OpenAPIValidator, error) {
 // When the spec changes, validation automatically updates (zero drift risk).
 //
 // Returns detailed validation errors with field names and constraint violations.
-func ValidateAuditEventRequest(event *dsgen.AuditEventRequest) error {
+func ValidateAuditEventRequest(event *ogenclient.AuditEventRequest) error {
 	validator, err := GetValidator()
 	if err != nil {
 		return fmt.Errorf("failed to get OpenAPI validator: %w", err)

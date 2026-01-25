@@ -45,11 +45,17 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			// Create WorkflowExecution
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-pipeline-created",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-pipeline-created",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-pipeline-created",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -104,11 +110,17 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should be set when PipelineRun starts executing", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-running",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-running",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-running",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -161,11 +173,17 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should be set to True when PipelineRun succeeds", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-complete-success",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-complete-success",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-complete-success",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -225,24 +243,30 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
 			condition := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete)
-		Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineSucceeded))
-	})
+			Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineSucceeded))
+		})
 
-	// REMOVED: Moved to E2E suite
-	// See: test/e2e/workflowexecution/01_lifecycle_test.go (BR-WE-004)
-	// Test: "should populate failure details when workflow fails"
-	// Reason: EnvTest doesn't trigger reconciliation on cross-namespace PipelineRun status updates
-})
+		// REMOVED: Moved to E2E suite
+		// See: test/e2e/workflowexecution/01_lifecycle_test.go (BR-WE-004)
+		// Test: "should populate failure details when workflow fails"
+		// Reason: EnvTest doesn't trigger reconciliation on cross-namespace PipelineRun status updates
+	})
 
 	Context("AuditRecorded condition", func() {
 		It("should be set after audit event emission", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-audit",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-audit",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-audit",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -286,11 +310,17 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should set all applicable conditions during successful execution", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-full-lifecycle",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-full-lifecycle",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-full-lifecycle",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",

@@ -1,0 +1,238 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authwebhook
+  namespace: ${WEBHOOK_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: authwebhook
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+rules:
+  # Read CRDs for webhook validation/mutation
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
+    verbs: ["get", "list", "watch"]
+  # Update CRD status for webhook mutation
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authwebhook
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authwebhook
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: ${WEBHOOK_NAMESPACE}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authwebhook
+  namespace: ${WEBHOOK_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+spec:
+  selector:
+    app.kubernetes.io/name: authwebhook
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+      nodePort: 30443  # Per DD-TEST-001: AuthWebhook E2E NodePort
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authwebhook
+  namespace: ${WEBHOOK_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Avoid rolling updates in E2E - ensures clean pod replacement
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authwebhook
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authwebhook
+        app.kubernetes.io/component: admission-webhook
+    spec:
+      serviceAccountName: authwebhook
+      containers:
+        - name: authwebhook
+          image: authwebhook:e2e-test  # Replaced by infrastructure setup (service binary is 'webhooks')
+          imagePullPolicy: Never
+          ports:
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # Webhook Configuration
+            - name: WEBHOOK_PORT
+              value: "9443"
+            - name: LOG_LEVEL
+              value: "debug"
+            # Data Storage Configuration
+            - name: DATA_STORAGE_URL
+              value: "http://datastorage:8080"
+            # Coverage Configuration (DD-TEST-007)
+            - name: GOCOVERDIR
+              value: "/coverdata"
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: coverdata
+              mountPath: /coverdata
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15  # Increased: Allow time for DataStorage client init (30s timeout) + manager startup
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6      # Increased: Total wait now ~75s (15 + 10*5) instead of 25s
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: authwebhook-tls
+        - name: coverdata
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate
+---
+# NOTE: authwebhook-tls Secret is created by infrastructure setup (generateWebhookCerts)
+# DO NOT define it here as it will overwrite the actual certificate data with empty values
+---
+# MutatingWebhookConfiguration for WorkflowExecution and RemediationApprovalRequest
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: authwebhook-mutating
+webhooks:
+  - name: workflowexecution.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: ${WEBHOOK_NAMESPACE}
+        path: /mutate-workflowexecution
+      caBundle: ""  # Populated by infrastructure
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["workflowexecutions/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+
+  - name: remediationapprovalrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: ${WEBHOOK_NAMESPACE}
+        path: /mutate-remediationapprovalrequest
+      caBundle: ""  # Populated by infrastructure
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: ${WEBHOOK_NAMESPACE}
+        path: /mutate-remediationrequest
+      caBundle: ""  # Populated by infrastructure
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+---
+# ValidatingWebhookConfiguration for NotificationRequest DELETE
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: authwebhook-validating
+webhooks:
+  - name: notificationrequest.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: ${WEBHOOK_NAMESPACE}
+        path: /validate-notificationrequest-delete
+      caBundle: ""  # Populated by infrastructure
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["notificationrequests"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+

@@ -43,6 +43,9 @@ import (
 	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
+// Note: noopAuditClient is defined in investigating_handler_test.go
+// and is reused across all ResponseProcessor tests in this package
+
 var _ = Describe("ResponseProcessor Recovery Flow", func() {
 	var (
 		processor *handlers.ResponseProcessor
@@ -54,7 +57,7 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 	BeforeEach(func() {
 		// Create metrics with test registry for isolation
 		m = metrics.NewMetrics()
-		processor = handlers.NewResponseProcessor(logr.Discard(), m)
+		processor = handlers.NewResponseProcessor(logr.Discard(), m, &noopAuditClient{})
 		ctx = context.Background()
 	})
 
@@ -294,6 +297,146 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 
 			// BUSINESS OUTCOME: System fails safely when uncertain ✅
 		})
+	})
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// BR-HAPI-197: Human Review Required Flag
+	// Test Plan: docs/testing/BR-HAPI-197/aianalysis_test_plan_v1.0.md
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	Context("BR-HAPI-197: Human Review Required", func() {
+		BeforeEach(func() {
+			analysis = &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-human-review",
+					Namespace: "default",
+					UID:       types.UID("test-uid-hr-001"),
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationID: "test-rr-001",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+				},
+			}
+		})
+
+		// UT-AA-197-001: Human review required (needs_human_review=true)
+		It("should set NeedsHumanReview=true when HAPI requires human review", func() {
+			// GIVEN: HAPI response with needs_human_review=true
+			needsReview := true
+			reason := client.HumanReviewReasonLowConfidence
+			hapiResp := &client.IncidentResponse{
+				IncidentID:        "test-needs-review-001",
+				NeedsHumanReview:  client.NewOptBool(needsReview),
+				HumanReviewReason: client.NewOptNilHumanReviewReason(reason),
+				Confidence:        0.65, // Below threshold
+				Warnings: []string{
+					"Confidence below threshold for automatic remediation",
+				},
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: NeedsHumanReview should be true
+			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				"NeedsHumanReview must be set when HAPI requires human review")
+
+			// AND: HumanReviewReason should be populated
+			Expect(analysis.Status.HumanReviewReason).To(Equal("low_confidence"),
+				"HumanReviewReason must match HAPI reason")
+
+			// AND: Phase should be Failed (requires human intervention)
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"Phase must be Failed when human review required")
+		})
+
+		// UT-AA-197-002: Normal flow (needs_human_review=false)
+		It("should set NeedsHumanReview=false when HAPI response is successful", func() {
+			// GIVEN: Successful HAPI response (problem resolved, no workflow needed)
+			// BR-HAPI-200: High confidence + no workflow = problem resolved
+			hapiResp := &client.IncidentResponse{
+				IncidentID:       "test-success-001",
+				NeedsHumanReview: client.NewOptBool(false),
+				Confidence:       0.85, // High confidence
+				// Note: SelectedWorkflow not set (problem resolved case)
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: NeedsHumanReview should remain false
+			Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+				"NeedsHumanReview must be false for successful responses")
+
+			// AND: HumanReviewReason should be empty
+			Expect(analysis.Status.HumanReviewReason).To(BeEmpty(),
+				"HumanReviewReason must be empty when no review needed")
+
+			// AND: Phase should be Completed (problem resolved)
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+				"Phase must be Completed for problem resolved case")
+		})
+
+		// UT-AA-197-003: Map all 7 human_review_reason values (rca_incomplete added via BR-HAPI-212)
+		// Note: rca_incomplete test deferred until HAPI OpenAPI spec updated
+		DescribeTable("should map all human_review_reason enum values",
+			func(reason client.HumanReviewReason, expectedString string) {
+				// GIVEN: HAPI response with specific human_review_reason
+				hapiResp := &client.IncidentResponse{
+					IncidentID:        "test-reason-mapping",
+					NeedsHumanReview:  client.NewOptBool(true),
+					HumanReviewReason: client.NewOptNilHumanReviewReason(reason),
+					Confidence:        0.50,
+					Warnings: []string{
+						"Human review required: " + expectedString,
+					},
+				}
+
+				// WHEN: Processing the incident response
+				_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+				// THEN: Processing should succeed
+				Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+				// AND: HumanReviewReason should match exactly
+				Expect(analysis.Status.HumanReviewReason).To(Equal(expectedString),
+					"HumanReviewReason must match HAPI reason exactly (no transformation)")
+
+				// AND: NeedsHumanReview should be true
+				Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+					"NeedsHumanReview must be true when reason is provided")
+			},
+			Entry("workflow_not_found",
+				client.HumanReviewReasonWorkflowNotFound,
+				"workflow_not_found"),
+			Entry("no_matching_workflows",
+				client.HumanReviewReasonNoMatchingWorkflows,
+				"no_matching_workflows"),
+			Entry("low_confidence",
+				client.HumanReviewReasonLowConfidence,
+				"low_confidence"),
+			Entry("llm_parsing_error",
+				client.HumanReviewReasonLlmParsingError,
+				"llm_parsing_error"),
+			Entry("parameter_validation_failed",
+				client.HumanReviewReasonParameterValidationFailed,
+				"parameter_validation_failed"),
+			Entry("image_mismatch",
+				client.HumanReviewReasonImageMismatch,
+				"image_mismatch"),
+			Entry("investigation_inconclusive",
+				client.HumanReviewReasonInvestigationInconclusive,
+				"investigation_inconclusive"),
+			// TODO: Add rca_incomplete test once HAPI OpenAPI spec is updated with BR-HAPI-212 enum value
+		)
 	})
 })
 

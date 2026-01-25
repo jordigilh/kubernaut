@@ -2,9 +2,15 @@ logging:
   level: "INFO"
 
 llm:
-  provider: "mock"
-  model: "mock/test-model"
-  endpoint: "http://localhost:11434"
+  provider: "openai"
+  model: "mock-model"
+  endpoint: "http://mock-llm-aianalysis:8080"  # Container-to-container (was 127.0.0.1:18141 which only works from host)
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:
   url: "http://host.containers.internal:18095"
+
+audit:
+  flush_interval_seconds: 0.1
+  buffer_size: 10000
+  batch_size: 50

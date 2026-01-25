@@ -18,12 +18,15 @@ package notification
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sony/gobreaker"
 
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 )
 
 // BR-NOT-052: Retry Policy - BEHAVIOR & CORRECTNESS Testing
@@ -206,70 +209,221 @@ var _ = Describe("BR-NOT-052: Retry Policy", func() {
 				"Backoff cap should apply to all attempts beyond threshold")
 		})
 
-	It("should calculate correct backoff delays for retry attempts (BR-NOT-052: Backoff calculation)", func() {
-		// CORRECTNESS: Retry policy calculates correct exponential backoff delays
-		// BUSINESS CONTEXT: Ensures service has time to recover between retries
-		// NOTE: Testing calculation logic directly (no sleep) - faster and equally valid
+		It("should calculate correct backoff delays for retry attempts (BR-NOT-052: Backoff calculation)", func() {
+			// CORRECTNESS: Retry policy calculates correct exponential backoff delays
+			// BUSINESS CONTEXT: Ensures service has time to recover between retries
+			// NOTE: Testing calculation logic directly (no sleep) - faster and equally valid
 
-		policy := retry.NewPolicy(&retry.Config{
-			MaxAttempts:       3,
-			BaseBackoff:       50 * time.Millisecond,
-			MaxBackoff:        500 * time.Millisecond,
-			BackoffMultiplier: 2.0,
+			policy := retry.NewPolicy(&retry.Config{
+				MaxAttempts:       3,
+				BaseBackoff:       50 * time.Millisecond,
+				MaxBackoff:        500 * time.Millisecond,
+				BackoffMultiplier: 2.0,
+			})
+
+			// Verify backoff calculation for each attempt
+			backoff0 := policy.NextBackoff(0)
+			backoff1 := policy.NextBackoff(1)
+			backoff2 := policy.NextBackoff(2)
+
+			// CORRECTNESS VALIDATION: Verify exponential delay pattern
+			Expect(backoff0).To(Equal(50*time.Millisecond),
+				"First backoff should be base delay (50ms)")
+			Expect(backoff1).To(Equal(100*time.Millisecond),
+				"Second backoff should be 2x base (100ms)")
+			Expect(backoff2).To(Equal(200*time.Millisecond),
+				"Third backoff should be 4x base (200ms)")
+
+			// Verify exponential growth
+			Expect(backoff1).To(BeNumerically(">", backoff0),
+				"Each backoff must be longer than previous (exponential growth)")
+			Expect(backoff2).To(BeNumerically(">", backoff1),
+				"Each backoff must be longer than previous (exponential growth)")
+
+			// Verify multiplier relationship
+			Expect(backoff1).To(Equal(backoff0*2),
+				"Backoff should grow by configured multiplier (2.0)")
+			Expect(backoff2).To(Equal(backoff1*2),
+				"Backoff should grow by configured multiplier (2.0)")
 		})
-
-		// Verify backoff calculation for each attempt
-		backoff0 := policy.NextBackoff(0)
-		backoff1 := policy.NextBackoff(1)
-		backoff2 := policy.NextBackoff(2)
-
-		// CORRECTNESS VALIDATION: Verify exponential delay pattern
-		Expect(backoff0).To(Equal(50 * time.Millisecond),
-			"First backoff should be base delay (50ms)")
-		Expect(backoff1).To(Equal(100 * time.Millisecond),
-			"Second backoff should be 2x base (100ms)")
-		Expect(backoff2).To(Equal(200 * time.Millisecond),
-			"Third backoff should be 4x base (200ms)")
-
-		// Verify exponential growth
-		Expect(backoff1).To(BeNumerically(">", backoff0),
-			"Each backoff must be longer than previous (exponential growth)")
-		Expect(backoff2).To(BeNumerically(">", backoff1),
-			"Each backoff must be longer than previous (exponential growth)")
-
-		// Verify multiplier relationship
-		Expect(backoff1).To(Equal(backoff0 * 2),
-			"Backoff should grow by configured multiplier (2.0)")
-		Expect(backoff2).To(Equal(backoff1 * 2),
-			"Backoff should grow by configured multiplier (2.0)")
-	})
 	})
 })
 
 // ==============================================
-// BR-NOT-061: Circuit Breaker - BEHAVIOR & CORRECTNESS
+// BR-NOT-061: Circuit Breaker Manager - BEHAVIOR & CORRECTNESS
 // ==============================================
 //
-// NOTE: These tests are SKIPPED pending refactor to use new circuit breaker implementation.
-// Circuit breaker functionality moved from pkg/notification/retry to pkg/shared/circuitbreaker
-// using github.com/sony/gobreaker library with Manager pattern.
-// TODO: Rewrite tests to use circuitbreaker.Manager and gobreaker.CircuitBreaker
-// See: pkg/shared/circuitbreaker/manager.go
-// See: cmd/notification/main.go (circuitBreakerManager initialization)
-var _ = Describe("BR-NOT-061: Circuit Breaker [PENDING REFACTOR]", func() {
-	PIt("Circuit breaker tests require refactor to use pkg/shared/circuitbreaker.Manager", func() {
-		// These tests need to be rewritten to use the new circuit breaker implementation:
-		// - Use circuitbreaker.Manager from pkg/shared/circuitbreaker
-		// - Use gobreaker.CircuitBreaker from github.com/sony/gobreaker
-		// - Test Manager.Execute() pattern instead of old retry.CircuitBreaker
-		//
-		// Original test coverage (BR-NOT-061):
-		// 1. Request Blocking - cascade failure prevention, service recovery, circuit closure
-		// 2. Channel Isolation - independent circuit states per channel
-		// 3. Failure Recovery - failure count reset, recovery failure handling, success threshold
-		//
-		// All this functionality is now provided by github.com/sony/gobreaker
-		// and tested in integration tests (multichannel_retry_test.go, tls_failure_scenarios_test.go)
-		Skip("Circuit breaker functionality refactored - tests need update")
+// NOTE: These unit tests validate the Manager wrapper behavior.
+// The underlying github.com/sony/gobreaker library is battle-tested and covered by its own tests.
+// Integration tests cover end-to-end circuit breaker behavior (performance_concurrent_test.go).
+//
+// Unit Test Scope:
+// 1. Manager wrapper API (Execute, AllowRequest, State)
+// 2. Per-channel isolation (multiple channels don't interfere)
+// 3. Manager creation and configuration
+//
+// Integration Test Scope (see test/integration/notification/performance_concurrent_test.go):
+// 1. Request blocking after threshold failures (cascade failure prevention)
+// 2. Service recovery and circuit closure
+// 3. Half-open state and probing behavior
+var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
+	var manager *circuitbreaker.Manager
+
+	BeforeEach(func() {
+		// Create manager with test-friendly settings
+		manager = circuitbreaker.NewManager(gobreaker.Settings{
+			MaxRequests: 2,
+			Interval:    10 * time.Second,
+			Timeout:     1 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures >= 3
+			},
+		})
+	})
+
+	Context("Manager Creation", func() {
+		It("should create manager with shared settings", func() {
+			// BEHAVIOR: Manager initializes successfully
+			Expect(manager).ToNot(BeNil())
+		})
+
+		It("should allow initial requests (circuit starts closed)", func() {
+			// BEHAVIOR: New channels start in closed state (normal operation)
+			Expect(manager.AllowRequest("slack")).To(BeTrue(),
+				"New circuit should allow requests initially")
+			Expect(manager.State("slack")).To(Equal(gobreaker.StateClosed),
+				"New circuit should start in Closed state")
+		})
+	})
+
+	Context("Per-Channel Isolation", func() {
+		It("should maintain independent circuit states per channel", func() {
+			// BEHAVIOR: Each channel has its own circuit breaker state
+			// BUSINESS VALUE: Slack failure doesn't affect console delivery
+
+			// Fail slack channel 3 times to open circuit
+			for i := 0; i < 3; i++ {
+				_, err := manager.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("slack failure %d", i+1)
+				})
+				Expect(err).To(HaveOccurred())
+			}
+
+			// CORRECTNESS: Slack circuit should be open
+			Expect(manager.AllowRequest("slack")).To(BeFalse(),
+				"Slack circuit should be open after 3 failures")
+
+			// CORRECTNESS: Console circuit should still be closed
+			Expect(manager.AllowRequest("console")).To(BeTrue(),
+				"Console circuit should remain closed (independent from slack)")
+			Expect(manager.State("console")).To(Equal(gobreaker.StateClosed),
+				"Console circuit should be in Closed state")
+		})
+
+		It("should allow success on one channel while another is open", func() {
+			// Open slack circuit
+			for i := 0; i < 3; i++ {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("slack failure")
+				})
+			}
+
+			// BEHAVIOR: Console can still succeed
+			_, err := manager.Execute("console", func() (interface{}, error) {
+				return "success", nil
+			})
+			Expect(err).ToNot(HaveOccurred(),
+				"Console delivery should succeed even when slack circuit is open")
+		})
+	})
+
+	Context("Execute Method", func() {
+		It("should return function result on success", func() {
+			// BEHAVIOR: Execute returns function's return value
+			result, err := manager.Execute("slack", func() (interface{}, error) {
+				return "delivered", nil
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal("delivered"))
+		})
+
+		It("should return function error on failure", func() {
+			// BEHAVIOR: Execute propagates function errors
+			expectedErr := fmt.Errorf("delivery failed")
+			_, err := manager.Execute("slack", func() (interface{}, error) {
+				return nil, expectedErr
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("delivery failed"))
+		})
+
+		It("should return ErrOpenState when circuit is open", func() {
+			// Open the circuit
+			for i := 0; i < 3; i++ {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("failure")
+				})
+			}
+
+			// BEHAVIOR: Execute returns gobreaker.ErrOpenState
+			_, err := manager.Execute("slack", func() (interface{}, error) {
+				Fail("Function should not be called when circuit is open")
+				return nil, nil
+			})
+			Expect(err).To(Equal(gobreaker.ErrOpenState),
+				"Should return ErrOpenState when circuit is open")
+		})
+	})
+
+	Context("State Method", func() {
+		It("should return Closed state initially", func() {
+			state := manager.State("new-channel")
+			Expect(state).To(Equal(gobreaker.StateClosed))
+		})
+
+		It("should return Open state after threshold failures", func() {
+			// Trigger circuit open
+			for i := 0; i < 3; i++ {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("failure")
+				})
+			}
+
+			state := manager.State("slack")
+			Expect(state).To(Equal(gobreaker.StateOpen))
+		})
+	})
+
+	Context("AllowRequest Method", func() {
+		It("should return true for closed circuit", func() {
+			Expect(manager.AllowRequest("slack")).To(BeTrue())
+		})
+
+		It("should return false for open circuit", func() {
+			// Open circuit
+			for i := 0; i < 3; i++ {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("failure")
+				})
+			}
+
+			Expect(manager.AllowRequest("slack")).To(BeFalse())
+		})
+	})
+
+	Context("Backward Compatibility Methods", func() {
+		It("RecordSuccess should be no-op (backward compatibility)", func() {
+			// BEHAVIOR: RecordSuccess exists for API compatibility
+			// but is a no-op (gobreaker tracks via Execute)
+			manager.RecordSuccess("slack")
+			// No assertion - just verify it doesn't panic
+		})
+
+		It("RecordFailure should be no-op (backward compatibility)", func() {
+			// BEHAVIOR: RecordFailure exists for API compatibility
+			// but is a no-op (gobreaker tracks via Execute)
+			manager.RecordFailure("slack")
+			// No assertion - just verify it doesn't panic
+		})
 	})
 })

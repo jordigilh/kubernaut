@@ -28,10 +28,12 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -71,15 +73,123 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 	return nil
 }
 
-// DeleteCluster deletes a Kind cluster
-func DeleteCluster(clusterName string, writer io.Writer) error {
+// DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
+//
+// Parameters:
+//   - clusterName: Name of the Kind cluster to delete
+//   - serviceName: Service name for log directory naming (e.g., "gateway", "datastorage")
+//   - testsFailed: If true, exports logs before deletion (must-gather style)
+//   - writer: Output writer for logging
+//
+// Log Export Behavior (when testsFailed=true):
+//   - Exports to: /tmp/{serviceName}-e2e-logs-{timestamp}
+//   - Uses `kind export logs` (equivalent to must-gather)
+//   - Extracts and displays kubernaut service logs (last 100 lines)
+//   - ALWAYS deletes cluster after log export
+//
+// Example:
+//
+//	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
+func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	if testsFailed {
+		// ═══════════════════════════════════════════════════════════════════════
+		// EXPORT LOGS (Must-Gather Style)
+		// ═══════════════════════════════════════════════════════════════════════
+		_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
+		_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
+
+		logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
+		exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+
+		if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+			_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
+			_, _ = fmt.Fprintf(writer, "   (Continuing with cluster deletion)\n\n")
+		} else {
+			_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
+			_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
+			_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+
+			// ═══════════════════════════════════════════════════════════════════════
+			// EXTRACT KUBERNAUT SERVICE LOGS (for immediate analysis)
+			// ═══════════════════════════════════════════════════════════════════════
+			extractKubernautServiceLogs(logsDir, serviceName, writer)
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// ALWAYS DELETE CLUSTER (even after log export)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintf(writer, "🗑️  Deleting Kind cluster...\n")
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to delete cluster: %s\n", output)
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
+	_, _ = fmt.Fprintf(writer, "✅ Kind cluster deleted\n")
 	return nil
+}
+
+// extractKubernautServiceLogs finds and displays logs from kubernaut services
+// This helps with immediate debugging without manually navigating Kind log directories
+func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) {
+	// Define kubernaut service patterns to search for
+	servicePatterns := []struct {
+		name    string
+		pattern string
+	}{
+		{serviceName, fmt.Sprintf("*%s*/*.log", serviceName)},
+		{"datastorage", "*datastorage*/*.log"},
+		{"gateway", "*gateway*/*.log"},
+		{"holmesgpt-api", "*holmesgpt*/*.log"},
+		{"aianalysis", "*aianalysis*/*.log"},
+		{"notification", "*notification*/*.log"},
+		{"signalprocessing", "*signalprocessing*/*.log"},
+		{"workflowexecution", "*workflowexecution*/*.log"},
+		{"remediationorchestrator", "*remediationorchestrator*/*.log"},
+		{"authwebhook", "*authwebhook*/*.log"},
+	}
+
+	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n")
+	_, _ = fmt.Fprintf(writer, "📋 KUBERNAUT SERVICE LOGS (Last 100 lines each)\n")
+	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
+
+	foundAny := false
+	for _, svc := range servicePatterns {
+		// Try to find service log files
+		findPattern := filepath.Join(logsDir, "*", svc.pattern)
+		findCmd := exec.Command("sh", "-c", fmt.Sprintf("ls %s 2>/dev/null | head -5", findPattern))
+		logPaths, err := findCmd.Output()
+
+		if err == nil && len(logPaths) > 0 {
+			// Process each log file found
+			for _, logPath := range strings.Split(strings.TrimSpace(string(logPaths)), "\n") {
+				if logPath == "" {
+					continue
+				}
+
+				foundAny = true
+				_, _ = fmt.Fprintf(writer, "📄 Service: %s\n", svc.name)
+				_, _ = fmt.Fprintf(writer, "📁 Path: %s\n", logPath)
+				_, _ = fmt.Fprintf(writer, "-----------------------------------------------------------\n")
+
+				// Display last 100 lines
+				tailCmd := exec.Command("tail", "-100", logPath)
+				if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
+					_, _ = fmt.Fprintln(writer, string(tailOutput))
+				} else {
+					_, _ = fmt.Fprintf(writer, "⚠️  Could not read log: %v\n", tailErr)
+				}
+				_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
+				break // Only show first log file per service
+			}
+		}
+	}
+
+	if !foundAny {
+		_, _ = fmt.Fprintf(writer, "⚠️  No kubernaut service logs found in exported directory\n")
+		_, _ = fmt.Fprintf(writer, "   (This is normal if pods never started)\n\n")
+	}
 }
 
 // SetupDataStorageInfrastructureParallel creates the full E2E infrastructure with parallel execution.
@@ -96,19 +206,44 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 // Total time: ~3.6 minutes (vs ~4.7 minutes sequential)
 // Savings: ~1 minute per E2E run (~23% faster)
 //
+// PostgreSQL-only architecture (SOC2 audit storage)
+//
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
+// SetupDataStorageInfrastructureParallel sets up DataStorage E2E infrastructure with OAuth2-Proxy.
+// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io (no manual build/load).
 func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (HYBRID PATTERN)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  Parallel optimization: ~1 min saved per E2E run (23% faster)")
-	_, _ = fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Build image → Create cluster → Load → Deploy")
+	_, _ = fmt.Fprintln(writer, "  Optimization: Eliminates cluster idle time during image build")
+	_, _ = fmt.Fprintln(writer, "  Authority: Gateway hybrid pattern migration (Jan 7, 2026)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Create Kind cluster + namespace (Sequential - must be first)
+	// PHASE 1: Build DataStorage image (BEFORE cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building DataStorage image (NO CLUSTER YET)...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~1-2 minutes")
+
+	cfg := E2EImageConfig{
+		ServiceName:      "datastorage",
+		ImageName:        "kubernaut/datastorage",
+		DockerfilePath:   "docker/data-storage.Dockerfile",
+		BuildContextPath: "", // Empty = use project root (default)
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+	}
+	dsImageName, err := BuildImageForKind(cfg, writer)
+	if err != nil {
+		return fmt.Errorf("DS image build failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image built: %s\n", dsImageName)
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Create Kind cluster + namespace
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster + namespace...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
 	// Create Kind cluster
 	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
@@ -122,12 +257,13 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Parallel infrastructure setup
+	// PHASE 3: Load image + Deploy infrastructure in PARALLEL
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
-	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading image + Deploying infrastructure in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
 	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
 	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
 
 	type result struct {
 		name string
@@ -136,19 +272,19 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	results := make(chan result, 3)
 
-	// Goroutine 1: Build and load DataStorage image (with dynamic tag from caller)
+	// Goroutine 1: Load pre-built DataStorage image to Kind
 	go func() {
-		var err error
-		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
-			err = fmt.Errorf("DS image build failed: %w", buildErr)
-		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
-			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
+		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image load failed: %w", err)
 		}
-		results <- result{name: "DS image", err: err}
+		results <- result{name: "DS image load", err: err}
 	}()
 
 	// Goroutine 2: Deploy PostgreSQL
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
 		if err != nil {
 			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
@@ -158,6 +294,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 3: Deploy Redis
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
 		if err != nil {
 			err = fmt.Errorf("Redis deploy failed: %w", err)
@@ -175,13 +312,17 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded")
+	// Update dataStorageImage to use the actual built image name for deployment
+	dataStorageImage = dsImageName
+
+	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3/4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
+	// PHASE 4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3/4: Deploying migrations + DataStorage service in parallel...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying migrations + DataStorage service in parallel...")
 	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 
 	type deployResult struct {
 		name string
@@ -191,10 +332,13 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Launch migrations and DataStorage deployment concurrently
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
+		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar (image from quay.io)
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -233,6 +377,10 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 // DeployDataStorageTestServices deploys PostgreSQL, Redis, and Data Storage Service to a namespace
 // This is used by E2E tests to create isolated test environments
 // dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
+//
+// PostgreSQL-only architecture (SOC2 audit storage)
+// DeployDataStorageTestServices deploys DataStorage with OAuth2-Proxy for testing.
+// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
@@ -263,8 +411,8 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	// 5. Deploy Data Storage Service with OAuth2-Proxy (TD-E2E-001 Phase 1 - image from quay.io)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
@@ -275,7 +423,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (PostgreSQL + Redis + DataStorage)\n", namespace)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
@@ -287,11 +435,14 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 //   - nodePort: NodePort to use for DataStorage service (e.g., 30081, 30090)
 //
 // Usage:
-//   // Notification E2E: Uses NodePort 30090 (per kind-notification-config.yaml)
-//   DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30090, writer)
 //
-//   // Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
-//   DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
+//	// Notification E2E: Uses NodePort 30090 (per kind-notification-config.yaml)
+//	DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30090, writer)
+//
+//	// Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
+//	DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
+// DeployDataStorageTestServicesWithNodePort deploys DataStorage with OAuth2-Proxy using a specific NodePort.
+// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
@@ -323,8 +474,8 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service with custom NodePort
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort %d)...\n", nodePort)
+	// 5. Deploy Data Storage Service with OAuth2-Proxy and custom NodePort (TD-E2E-001 Phase 1 - image from quay.io)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy from quay.io (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
@@ -335,7 +486,7 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d)\n", namespace, nodePort)
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d, PostgreSQL + Redis + DataStorage)\n", namespace, nodePort)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
@@ -408,40 +559,9 @@ func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath 
 		return err
 	}
 
-	// 1. Create ConfigMap for init script
-	initConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "postgresql-init",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"init.sql": `-- V1.0: Standard PostgreSQL (no pgvector extension)
-
--- Create user if not exists (idempotent, race-proof)
--- Fix: PostgreSQL docker entrypoint may not create user before running init scripts
--- This handles Kubernetes secret loading delays and container startup timing
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'slm_user') THEN
-        CREATE ROLE slm_user WITH LOGIN PASSWORD 'test_password';
-    END IF;
-END
-$$;
-
--- Grant permissions to slm_user
-GRANT ALL PRIVILEGES ON DATABASE action_history TO slm_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
-		},
-	}
-
-	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, initConfigMap, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL init ConfigMap: %w", err)
-	}
-
-	// 2. Create Secret for credentials
+	// 1. Create Secret for credentials
+	// Note: PostgreSQL docker entrypoint auto-creates user and database from env vars
+	// No init script needed - POSTGRES_USER gets ownership of POSTGRES_DB automatically
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "postgresql-secret",
@@ -456,10 +576,18 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 
 	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		// Handle case where secret already exists (from previous test run)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		}
+		// Secret exists, update it to ensure it has correct values
+		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update existing PostgreSQL secret: %w", err)
+		}
 	}
 
-	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
+	// 2. Create Service (NodePort for direct access from host - eliminates port-forward instability)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "postgresql",
@@ -490,7 +618,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL service: %w", err)
 	}
 
-	// 4. Create Deployment
+	// 3. Create Deployment
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -568,10 +696,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 									Name:      "postgresql-data",
 									MountPath: "/var/lib/postgresql/data",
 								},
-								{
-									Name:      "postgresql-init",
-									MountPath: "/docker-entrypoint-initdb.d",
-								},
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -586,7 +710,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user"},
+										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
 									},
 								},
 								InitialDelaySeconds: 5,
@@ -596,7 +720,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user"},
+										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
 									},
 								},
 								InitialDelaySeconds: 30,
@@ -612,16 +736,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
-						{
-							Name: "postgresql-init",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "postgresql-init",
-									},
-								},
-							},
-						},
 					},
 				},
 			},
@@ -633,7 +747,8 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (ConfigMap + Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ℹ️  User and database auto-created by PostgreSQL entrypoint\n")
 	return nil
 }
 
@@ -763,11 +878,20 @@ func ApplyMigrations(ctx context.Context, namespace, kubeconfigPath string, writ
 	return ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 }
 
+// deployDataStorageServiceInNamespace deploys DataStorage with OAuth2-Proxy sidecar using default NodePort.
+// TD-E2E-001 Phase 1: All E2E deployments now include oauth2-proxy for SOC2 architecture parity.
+// OAuth2-Proxy image pulled automatically from quay.io (public registry).
 func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
 	return deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30081, writer)
 }
 
+// deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage with OAuth2-Proxy sidecar.
+// Architecture: Service:8080 → oauth2-proxy:8080 → DataStorage:8081
+// TD-E2E-001 Phase 1: Pass-through mode (--skip-auth-regex=.*) for architecture parity without breaking existing tests.
+// OAuth2-Proxy image: quay.io/oauth2-proxy/oauth2-proxy:v7.5.1 (pulled automatically by Kubernetes).
 func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with OAuth2-Proxy sidecar (public registry: quay.io)...\n")
+
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return err
@@ -780,7 +904,7 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8080
+  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
@@ -789,20 +913,20 @@ database:
   port: 5432
   name: action_history
   user: slm_user
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 50
+  maxIdleConns: 10
+  connMaxLifetime: 1h
+  connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
   passwordKey: "password"
 redis:
   addr: redis.%s.svc.cluster.local:6379
   db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
@@ -839,7 +963,15 @@ password: test_password`,
 
 	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+		// Handle case where secret already exists (from previous test run)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+		}
+		// Secret exists, update it to ensure it has correct values
+		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update existing Data Storage Secret: %w", err)
+		}
 	}
 
 	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
@@ -928,15 +1060,52 @@ password: test_password`,
 						}
 						return nil
 					}(),
-					Containers: []corev1.Container{
-						{
-							Name:            "datastorage",
-							Image:           dataStorageImage, // DD-TEST-001: service-specific tag
-							ImagePullPolicy: corev1.PullNever, // DD-TEST-001: Use local Kind image (scheduled on control-plane where images are loaded)
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "http",
-									ContainerPort: 8080,
+				Containers: []corev1.Container{
+					// Container 1: oauth2-proxy sidecar (TD-E2E-001 Phase 1: SOC2 architecture parity)
+					// Image pulled automatically from public registry (no manual build/load needed)
+					{
+						Name:            "oauth2-proxy",
+						Image:           "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1",
+						ImagePullPolicy: corev1.PullIfNotPresent, // Pull from quay.io if not cached
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "http",
+								ContainerPort: 8080, // External port (Service routes here)
+							},
+						},
+					Args: []string{
+						"--http-address=0.0.0.0:8080",
+						"--upstream=http://localhost:8081",      // Forward to DataStorage internal port
+						"--skip-auth-regex=.*",                  // Phase 1: Pass-through mode (no real auth)
+						"--set-xauthrequest=true",               // Still inject X-Forwarded-User header
+						"--pass-user-headers=true",              // Pass through headers
+						"--email-domain=*",                      // Allow all email domains
+						"--provider=google",                     // Dummy provider (not used in pass-through)
+						"--client-id=e2e-test-client",           // Dummy client-id (not used in pass-through)
+						"--client-secret=e2e-test-secret",       // Dummy client-secret (not used in pass-through)
+						"--cookie-secret=0123456789ABCDEF0123456789ABCDEF", // Dummy 32-char secret (not used)
+						"--skip-provider-button=true",           // No provider UI
+					},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("20Mi"),
+							},
+							Limits: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+								corev1.ResourceMemory: resource.MustParse("100Mi"),
+							},
+						},
+					},
+					// Container 2: DataStorage (TD-E2E-001: Changed to internal port 8081, behind oauth2-proxy)
+					{
+						Name:            "datastorage",
+						Image:           dataStorageImage, // DD-TEST-001: service-specific tag
+						ImagePullPolicy: corev1.PullNever, // DD-TEST-001: Use local Kind image (scheduled on control-plane where images are loaded)
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "http-internal", // TD-E2E-001: Renamed from "http" (now internal port)
+								ContainerPort: 8081,            // TD-E2E-001: Changed from 8080 (behind oauth2-proxy)
 								},
 								{
 									Name:          "metrics",
@@ -1153,62 +1322,17 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 }
 
 func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// Check if cluster already exists
-	checkCmd := exec.Command("kind", "get", "clusters")
-	checkOutput, _ := checkCmd.CombinedOutput()
-	if strings.Contains(string(checkOutput), clusterName) {
-		_, _ = fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
-		_ = DeleteCluster(clusterName, writer)
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
+	opts := KindClusterOptions{
+		ClusterName:    clusterName,
+		KubeconfigPath: kubeconfigPath,
+		ConfigPath:     "test/infrastructure/kind-datastorage-config.yaml",
+		WaitTimeout:    "60s",
+		DeleteExisting: true, // Original behavior: delete if exists
+		ReuseExisting:  false,
 	}
-
-	// Use external config file with extraPortMappings for NodePort access
-	// This eliminates kubectl port-forward instability (like Gateway E2E tests)
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-	configPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-datastorage-config.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("kind config file not found: %s", configPath)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", configPath)
-
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath) // Isolated kubeconfig per TESTING_GUIDELINES.md
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created")
-
-	// Export kubeconfig to specified path
-	// Note: kind create --kubeconfig doesn't always work reliably, so we export explicitly
-	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
-	// Use Output() instead of CombinedOutput() to avoid capturing stderr
-	// (stderr contains "enabling experimental podman provider" which breaks YAML parsing)
-	kubeconfigOutput, err := kubeconfigCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get kubeconfig: %w", err)
-	}
-
-	// Ensure directory exists
-	kubeconfigDir := filepath.Dir(kubeconfigPath)
-	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
-	}
-
-	// Write kubeconfig to file
-	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
-		return fmt.Errorf("failed to write kubeconfig: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
-	return nil
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 func buildDataStorageImage(writer io.Writer) error {
@@ -1221,7 +1345,7 @@ func buildDataStorageImage(writer io.Writer) error {
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	buildArgs := []string{
 		"build",
-		"--no-cache", // Force fresh build to include latest code changes
+		"--no-cache",                                                 // Force fresh build to include latest code changes
 		"-t", "localhost/kubernaut-datastorage:e2e-test-datastorage", // DD-TEST-001: service-specific tag
 		"-f", "docker/data-storage.Dockerfile",
 	}
@@ -1555,7 +1679,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 		"004_add_effectiveness_assessment_due.sql",
-		"006_effectiveness_assessment.sql",
+		// NOTE: Migration 006 moved to migrations/v1.1/ (v1.1 feature, removed 2026-01-07)
 		"012_adr033_multidimensional_tracking.sql",
 		"013_create_audit_events_table.sql",
 		"017_add_workflow_schema_fields.sql",
@@ -1652,7 +1776,7 @@ service:
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8080
+  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
@@ -1661,20 +1785,20 @@ database:
   port: 5432
   name: %s
   user: %s
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 50
+  maxIdleConns: 10
+  connMaxLifetime: 1h
+  connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
   passwordKey: "password"
 redis:
   addr: %s:6379
   db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
@@ -1871,7 +1995,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	buildArgs := []string{
 		"build",
-		"--no-cache", // Force fresh build to include latest code changes
+		"--no-cache",   // Force fresh build to include latest code changes
 		"-t", imageTag, // Use dynamic tag for parallel isolation
 		"-f", "docker/data-storage.Dockerfile",
 	}
@@ -1939,3 +2063,195 @@ func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer)
 	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
 	return nil
 }
+
+// InstallCertManager installs cert-manager into the Kind cluster for SOC2 E2E testing.
+// This is ONLY needed for DataStorage SOC2 compliance tests to validate production
+// certificate management flow.
+//
+// Installation:
+// - Uses official cert-manager v1.13.0+ manifests
+// - Installs into cert-manager namespace
+// - Requires ~30 seconds for full deployment
+//
+// Usage: Call ONLY in test/e2e/datastorage/05_soc2_compliance_test.go
+func InstallCertManager(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Installing cert-manager (SOC2 E2E Only)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Use latest stable cert-manager version
+	certManagerURL := "https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
+
+	cmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-f", certManagerURL)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install cert-manager: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ cert-manager installed (waiting for readiness...)")
+	return nil
+}
+
+// WaitForCertManagerReady waits for cert-manager pods to become ready.
+// This ensures cert-manager is fully operational before creating Certificate resources.
+//
+// Waits for:
+// - cert-manager controller pod (ready)
+// - cert-manager cainjector pod (ready)
+// - cert-manager webhook pod (ready)
+//
+// Timeout: 120 seconds (cert-manager can take 60-90s for webhook registration)
+func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to be ready...")
+
+	// Wait for cert-manager deployment to be available
+	checkCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"--namespace", "cert-manager",
+		"--for=condition=available",
+		"--timeout=120s",
+		"deployment/cert-manager",
+		"deployment/cert-manager-cainjector",
+		"deployment/cert-manager-webhook")
+	checkCmd.Stdout = writer
+	checkCmd.Stderr = writer
+
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("cert-manager did not become ready: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ cert-manager is ready")
+	return nil
+}
+
+// ApplyCertManagerIssuer creates the ClusterIssuer for self-signed certificate generation.
+// This is used by DataStorage Certificate resources to request TLS certificates.
+//
+// Creates:
+// - ClusterIssuer "selfsigned-issuer" (self-signed CA)
+//
+// Note: For production, this would be replaced with Let's Encrypt or organizational CA.
+func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
+
+	// Get workspace root to find the issuer manifest
+	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
+	if workspaceRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		// Navigate up from test/e2e/datastorage or test/infrastructure to repo root
+		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+	}
+
+	issuerPath := filepath.Join(workspaceRoot, "deploy", "cert-manager", "selfsigned-issuer.yaml")
+
+	// Check if issuer manifest exists
+	if _, err := os.Stat(issuerPath); os.IsNotExist(err) {
+		return fmt.Errorf("ClusterIssuer manifest not found at %s", issuerPath)
+	}
+
+	cmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-f", issuerPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ ClusterIssuer 'selfsigned-issuer' created")
+	return nil
+}
+
+// DeployCertManagerDataStorage deploys DataStorage with cert-manager Certificate resource.
+// This is a specialized deployment function for SOC2 E2E tests that validates the
+// production certificate management flow.
+//
+// Deploys:
+// - DataStorage Deployment (with /etc/certs volumeMount)
+// - DataStorage Service
+// - Certificate resource (cert-manager managed)
+//
+// The Certificate resource triggers cert-manager to create a Secret with TLS cert/key,
+// which DataStorage mounts at /etc/certs for audit export signing.
+func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage with cert-manager (SOC2 E2E)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Get workspace root
+	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
+	if workspaceRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+	}
+
+	// Apply Certificate resource first (cert-manager will create Secret)
+	certPath := filepath.Join(workspaceRoot, "deploy", "data-storage", "certificate.yaml")
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		return fmt.Errorf("Certificate manifest not found at %s", certPath)
+	}
+
+	_, _ = fmt.Fprintln(writer, "📋 Creating Certificate resource...")
+	certCmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"-f", certPath)
+	certCmd.Stdout = writer
+	certCmd.Stderr = writer
+
+	if err := certCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Certificate: %w", err)
+	}
+
+	// Wait for cert-manager to create the Secret
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to issue certificate...")
+	waitSecretCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"--for=condition=Ready",
+		"--timeout=60s",
+		"certificate/datastorage-signing-cert")
+	waitSecretCmd.Stdout = writer
+	waitSecretCmd.Stderr = writer
+
+	if err := waitSecretCmd.Run(); err != nil {
+		return fmt.Errorf("cert-manager did not issue certificate: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ Certificate issued by cert-manager")
+
+	// Now deploy DataStorage using Kustomize (includes deployment with cert volume mount)
+	kustomizePath := filepath.Join(workspaceRoot, "deploy", "data-storage")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage via Kustomize...")
+
+	// Use kubectl apply with kustomize
+	deployCmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"-k", kustomizePath)
+	deployCmd.Stdout = writer
+	deployCmd.Stderr = writer
+
+	// Set IMAGE_TAG environment variable for kustomize
+	deployCmd.Env = append(os.Environ(), fmt.Sprintf("IMAGE_TAG=%s", imageTag))
+
+	if err := deployCmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+

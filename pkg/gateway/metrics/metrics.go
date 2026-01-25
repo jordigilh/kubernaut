@@ -19,6 +19,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // Gateway Service Prometheus Metrics
@@ -92,7 +93,7 @@ type Metrics struct {
 
 	// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
 	DeduplicationCacheHitsTotal prometheus.Counter // gateway_deduplication_cache_hits_total
-	DeduplicationRate           prometheus.Gauge   // gateway_deduplication_rate
+	// Note: DeduplicationRate is NOT stored here - it's calculated on-the-fly by DeduplicationRateCollector
 
 	// Conflict Resolution Metrics (Performance Observability - Option A)
 	// Track optimistic concurrency control performance for status updates
@@ -132,7 +133,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		gatherer = prometheus.DefaultGatherer
 	}
 
-	return &Metrics{
+	m := &Metrics{
 		// Store registry for /metrics endpoint
 		registry: gatherer,
 
@@ -171,7 +172,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		// Performance Metrics (BR-GATEWAY-067: HTTP metrics, BR-GATEWAY-079: Performance metrics)
 		HTTPRequestDuration: factory.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name: MetricNameHTTPRequestDuration, // DD-005 V3.0: Pattern B,
+				Name:    MetricNameHTTPRequestDuration, // DD-005 V3.0: Pattern B,
 				Help:    "HTTP request duration in seconds (includes full pipeline)",
 				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s for P50/P95/P99 SLO
 			},
@@ -185,12 +186,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total deduplication cache hits (duplicate fingerprint found)",
 			},
 		),
-		DeduplicationRate: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: MetricNameDeduplicationRate, // DD-005 V3.0: Pattern B,
-				Help: "Current deduplication rate (percentage of signals deduplicated)",
-			},
-		),
+		// DeduplicationRate: Removed - now calculated by custom collector (see below)
 
 		// Conflict Resolution Metrics (Performance Observability - Option A)
 		// Track optimistic concurrency control performance for status updates
@@ -238,6 +234,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			[]string{"name", "result"},
 		),
 	}
+
+	// BR-GATEWAY-069: Register custom collector for deduplication rate
+	// This calculates the rate on-the-fly when /metrics is scraped
+	dedupRateCollector := NewDeduplicationRateCollector(m)
+	registry.MustRegister(dedupRateCollector)
+
+	return m
 }
 
 // Registry returns the Prometheus Gatherer for this metrics instance
@@ -247,4 +250,81 @@ func (m *Metrics) Registry() prometheus.Gatherer {
 		return m.registry
 	}
 	return prometheus.DefaultGatherer
+}
+
+// DeduplicationRateCollector is a custom Prometheus collector that calculates
+// gateway_deduplication_rate gauge on-the-fly when /metrics is scraped
+// BR-GATEWAY-069: Derived metric implementation
+//
+// Design Pattern: Custom Collector for Derived Metrics
+// - Calculates rate from existing counters (DeduplicationCacheHitsTotal / sum(AlertsReceivedTotal))
+// - No state duplication - reads from Prometheus counters
+// - Metric always fresh when scraped
+// - Standard Prometheus pattern for derived metrics
+type DeduplicationRateCollector struct {
+	metrics *Metrics
+	desc    *prometheus.Desc
+}
+
+// NewDeduplicationRateCollector creates a custom collector for the deduplication rate gauge
+func NewDeduplicationRateCollector(m *Metrics) *DeduplicationRateCollector {
+	return &DeduplicationRateCollector{
+		metrics: m,
+		desc: prometheus.NewDesc(
+			MetricNameDeduplicationRate,
+			"Current deduplication rate (percentage of signals deduplicated, calculated on-the-fly)",
+			nil, // No labels
+			nil, // No constant labels
+		),
+	}
+}
+
+// Describe implements prometheus.Collector
+func (c *DeduplicationRateCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.desc
+}
+
+// Collect implements prometheus.Collector
+// Calculates deduplication rate from existing counters when /metrics is scraped
+func (c *DeduplicationRateCollector) Collect(ch chan<- prometheus.Metric) {
+	// Get total deduplications (simple counter, no labels)
+	var totalDeduplicated float64
+	metricCh := make(chan prometheus.Metric, 1)
+	go func() {
+		c.metrics.DeduplicationCacheHitsTotal.Collect(metricCh)
+		close(metricCh)
+	}()
+	for m := range metricCh {
+		var dto dto.Metric
+		if err := m.Write(&dto); err == nil && dto.Counter != nil {
+			totalDeduplicated = dto.Counter.GetValue()
+		}
+	}
+
+	// Get total signals received (sum across all source_type and severity labels)
+	var totalReceived float64
+	receivedCh := make(chan prometheus.Metric, 100)
+	go func() {
+		c.metrics.AlertsReceivedTotal.Collect(receivedCh)
+		close(receivedCh)
+	}()
+	for m := range receivedCh {
+		var dto dto.Metric
+		if err := m.Write(&dto); err == nil && dto.Counter != nil {
+			totalReceived += dto.Counter.GetValue()
+		}
+	}
+
+	// Calculate rate (0 if no signals received yet)
+	var dedupRate float64
+	if totalReceived > 0 {
+		dedupRate = totalDeduplicated / totalReceived
+	}
+
+	// Emit gauge metric
+	ch <- prometheus.MustNewConstMetric(
+		c.desc,
+		prometheus.GaugeValue,
+		dedupRate,
+	)
 }

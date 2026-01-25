@@ -19,9 +19,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,11 +32,16 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sony/gobreaker" // BR-GATEWAY-093: Circuit breaker detection
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
-	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+	"github.com/jordigilh/kubernaut/pkg/audit"                       // DD-AUDIT-003: Audit integration
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
 
+	coordinationv1 "k8s.io/api/coordination/v1" // BR-GATEWAY-190: Lease resources for distributed locking
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -51,6 +58,27 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
+)
+
+// Gateway Audit Event Type Constants (from OpenAPI spec)
+// See: api/openapi/data-storage-v1.yaml - GatewayAuditPayload.event_type enum
+const (
+	EventTypeSignalReceived     = "gateway.signal.received"     // BR-GATEWAY-190: New signal received, RR created
+	EventTypeSignalDeduplicated = "gateway.signal.deduplicated" // BR-GATEWAY-191: Duplicate signal detected
+	EventTypeCRDCreated         = "gateway.crd.created"         // DD-AUDIT-003: RR CRD successfully created
+	EventTypeCRDFailed          = "gateway.crd.failed"          // DD-AUDIT-003: RR CRD creation failed
+	CategoryGateway             = "gateway"                     // Service-level category per ADR-034
+	// EventCategoryGateway is an alias for consistency with other services
+	EventCategoryGateway        = CategoryGateway
+)
+
+// Gateway Audit Event Action Constants (ADR-034 event_action field)
+// These are past-tense verbs describing what action was performed
+const (
+	ActionReceived     = "received"     // Signal was received and processed
+	ActionDeduplicated = "deduplicated" // Signal was deduplicated to existing RR
+	ActionCreated      = "created"      // RemediationRequest CRD was created
+	ActionFailed       = "failed"       // Operation failed
 )
 
 // Server is the main Gateway HTTP server
@@ -103,6 +131,7 @@ type Server struct {
 	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
+	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 
 	// Infrastructure clients
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
@@ -176,12 +205,82 @@ func NewServer(cfg *config.ServerConfig, logger logr.Logger) (*Server, error) {
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+// DD-STATUS-001: For tests, ctrlClient serves as both client and apiReader (direct API access)
 func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
 	// Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// Initialize processing pipeline components (no Redis)
-	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
+	// In test environments, this provides direct K8s API access
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
+}
+
+// NewServerForTesting creates a Gateway server with injected dependencies for testing.
+// This constructor allows injecting a mock audit store for unit tests.
+//
+// USAGE: Unit tests only - allows testing audit failure scenarios
+// PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore) (*Server, error) {
+	// Use provided Kubernetes client
+	k8sClient := k8s.NewClient(ctrlClient)
+
+	// Initialize adapter registry
+	adapterRegistry := adapters.NewAdapterRegistry(logger)
+
+	// Create phaseChecker (for deduplication)
+	// DD-GATEWAY-011: Use ctrlClient as apiReader for deduplication (test environment uses direct API access)
+	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+
+	// Create statusUpdater
+	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
+
+	// Create CRD creator
+	fallbackNamespace := "default"
+	if cfg.Processing.CRD.FallbackNamespace != "" {
+		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
+	}
+	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
+
+	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety (test environment)
+	// Uses ctrlClient as apiReader (test clients don't have separate cache/apiReader)
+	var lockManager *processing.DistributedLockManager
+	podName := os.Getenv("POD_NAME")
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "default" // Test environment default
+	}
+	if podName != "" {
+		lockManager = processing.NewDistributedLockManager(ctrlClient, namespace, podName)
+	}
+
+	// Create server
+	server := &Server{
+		adapterRegistry: adapterRegistry,
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
+		crdCreator:      crdCreator,
+		k8sClient:       k8sClient,
+		ctrlClient:      ctrlClient,
+		lockManager:     lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:      auditStore,  // Injected for testing
+		metricsInstance: metricsInstance,
+		logger:          logger,
+	}
+
+	// Setup HTTP server with routes
+	router := server.setupRoutes()
+	server.router = router
+	handler := server.wrapWithMiddleware(router)
+
+	server.httpServer = &http.Server{
+		Addr:         cfg.Server.ListenAddr,
+		Handler:      handler,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	return server, nil
 }
 
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
@@ -202,7 +301,8 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// This is required for controller-runtime to work with custom CRDs
 	scheme := k8sruntime.NewScheme()
 	_ = remediationv1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
+	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
+	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
 
 	// ========================================
 	// BR-GATEWAY-185 v1.1: Create cached client with field index
@@ -256,10 +356,25 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
 
+	// DD-STATUS-001: Create UNCACHED client for fresh API reads (adopted from RO pattern)
+	// This is critical for reading CRDs immediately after creation (bypasses cache sync delays)
+	// RO uses mgr.GetAPIReader() which returns an uncached client - we replicate that here
+	apiReader, err := client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		// NO Cache option = direct API server reads (no cache)
+	})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create uncached API reader: %w", err)
+	}
+
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	// DD-STATUS-001: Pass separate cached client and uncached apiReader
+	// ctrlClient: Cached reads/writes for normal operations
+	// apiReader: Uncached reads for fresh data (status refetch after CRD creation)
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -276,7 +391,9 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 // DD-005: Uses logr.Logger for unified logging interface
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
+// DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
+// BR-GATEWAY-190: apiReader is client.Client (not just client.Reader) for distributed locking Create/Update/Delete operations
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// Metrics are mandatory for observability
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
@@ -322,8 +439,28 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// DD-GATEWAY-011: Status-based deduplication
 	// All state in K8s RR status - Redis fully deprecated
-	statusUpdater := processing.NewStatusUpdater(ctrlClient)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
+	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
+	// DD-GATEWAY-011: Use apiReader for deduplication to eliminate race conditions (cache-bypassed reads)
+	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+
+	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety
+	// Uses K8s Lease resources for distributed locking (no external dependencies)
+	//
+	// CRITICAL: Uses apiReader (non-cached client) for immediate consistency
+	// WHY: Cached client has 5-50ms sync delay → race condition → duplicate locks
+	// IMPACT: 3-24 API req/sec (production load) - acceptable per impact analysis
+	// See: docs/services/stateless/gateway-service/GW_API_SERVER_IMPACT_ANALYSIS_DISTRIBUTED_LOCKING_JAN18_2026.md
+	var lockManager *processing.DistributedLockManager
+	podName := os.Getenv("POD_NAME")
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "kubernaut-system"
+	}
+	if podName != "" {
+		lockManager = processing.NewDistributedLockManager(apiReader, namespace, podName)
+	}
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
 	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
@@ -360,6 +497,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
 		crdCreator:      crdCreator,
+		lockManager:     lockManager,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
 		auditStore:      auditStore,
@@ -690,8 +828,8 @@ func (s *Server) sendSuccessResponse(
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
-	if response.Status == StatusAccepted || response.Duplicate {
-		statusCode = http.StatusAccepted
+	if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
+		statusCode = http.StatusAccepted // HTTP 202 for storm aggregation and deduplication
 	}
 
 	// Record metrics
@@ -854,6 +992,79 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// Record ingestion metric (environment label removed - SP owns classification)
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
 
+	// BR-GATEWAY-190: Acquire distributed lock for multi-replica safety
+	// DD-GATEWAY-013: K8s Lease-based distributed locking pattern
+	// ADR-052 Addendum 001 (Jan 2026): Exponential backoff with jitter (anti-thundering herd)
+	if s.lockManager != nil {
+		const maxRetries = 10 // 10 retries = ~2.5s total wait with exponential backoff
+
+		// Configure shared backoff with jitter (pkg/shared/backoff)
+		// ADR-052 Addendum 001: Use production-proven backoff from Notification v3.1
+		backoffConfig := backoff.Config{
+			BasePeriod:    100 * time.Millisecond, // Start at 100ms (proven in production)
+			MaxPeriod:     1 * time.Second,        // Cap at 1s (faster than 30s lease expiry)
+			Multiplier:    2.0,                    // Standard exponential (100ms → 200ms → 400ms → 800ms)
+			JitterPercent: 10,                     // ±10% jitter (prevents thundering herd)
+		}
+
+		// Iterative retry loop with exponential backoff (replaces unbounded recursion)
+		// ADR-052 Addendum 001: Prevents stack overflow risk from recursive retry
+		for attempt := int32(1); attempt <= maxRetries; attempt++ {
+			acquired, err := s.lockManager.AcquireLock(ctx, signal.Fingerprint)
+			if err != nil {
+				return nil, fmt.Errorf("distributed lock acquisition failed: %w", err)
+			}
+
+			if acquired {
+				// Lock acquired - exit retry loop and proceed with normal flow
+				break
+			}
+
+			// Lock held by another Gateway pod
+			logger.V(1).Info("Lock contention, retrying with exponential backoff",
+				"attempt", attempt,
+				"maxRetries", maxRetries,
+				"fingerprint", signal.Fingerprint)
+
+			// Check if we've exhausted all retries (early return for failure case)
+			if attempt >= maxRetries {
+				// Max retries exceeded - fail immediately
+				return nil, fmt.Errorf("lock acquisition timeout after %d attempts (fingerprint: %s)",
+					maxRetries, signal.Fingerprint)
+			}
+
+			// Exponential backoff with jitter (shared implementation)
+			backoffDuration := backoffConfig.Calculate(attempt)
+			logger.V(2).Info("Backing off before retry",
+				"backoff", backoffDuration,
+				"attempt", attempt,
+				"fingerprint", signal.Fingerprint)
+
+			time.Sleep(backoffDuration)
+
+			// Retry deduplication check (other pod may have created RR by now)
+			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+			if err != nil {
+				return nil, fmt.Errorf("deduplication check failed after lock contention: %w", err)
+			}
+
+			if shouldDeduplicate && existingRR != nil {
+				// BR-GATEWAY-190: Another pod created RR during lock contention
+				// Handle deduplication and return early (no need to continue retry loop)
+				return s.handleDuplicateSignal(ctx, signal, existingRR)
+			}
+
+			// Still no RR - continue to next retry attempt
+		}
+
+		// Lock acquired successfully - ensure it's released after operation
+		defer func() {
+			if err := s.lockManager.ReleaseLock(ctx, signal.Fingerprint); err != nil {
+				logger.Error(err, "Failed to release distributed lock", "fingerprint", signal.Fingerprint)
+			}
+		}()
+	}
+
 	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
 	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
 	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
@@ -881,6 +1092,12 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 		// Record metrics
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+
+		// BR-GATEWAY-069: Cache hit metric (deduplication detected)
+		s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
+
+		// Note: DeduplicationRate gauge is calculated on-the-fly by custom collector
+		// when /metrics endpoint is scraped (see metrics.DeduplicationRateCollector)
 
 		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
 			"fingerprint", signal.Fingerprint,
@@ -1026,29 +1243,13 @@ type ProcessingResponse struct {
 	WindowID  string `json:"windowID,omitempty"`  // aggregation window identifier
 }
 
-// Processing status constants
+// Processing status constants (HTTP response body status field)
+// Aligned with OpenAPI enum values for consistency (no backwards compatibility needed)
 const (
-	StatusCreated   = "created"   // RemediationRequest CRD created
-	StatusDuplicate = "duplicate" // Duplicate alert (deduplicated)
-	StatusAccepted  = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
+	StatusCreated      = "created"   // RemediationRequest CRD created
+	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum)
+	StatusAccepted     = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
-
-// NewDuplicateResponse creates a ProcessingResponse for duplicate signals
-// TDD REFACTOR: Extracted factory function for duplicate response pattern
-// Business Outcome: Consistent duplicate signal handling (BR-005)
-// DEPRECATED: Use NewDuplicateResponseFromRR for DD-GATEWAY-011 status-based deduplication
-// NewDuplicateResponse is DEPRECATED - use NewDuplicateResponseFromRR instead
-// DD-GATEWAY-011: Redis metadata replaced with K8s status-based tracking
-// Kept for backward compatibility with any external code that might use it
-func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
-	return &ProcessingResponse{
-		Status:      StatusDuplicate,
-		Message:     "Duplicate signal (deduplication successful)",
-		Fingerprint: fingerprint,
-		Duplicate:   true,
-		Metadata:    metadata,
-	}
-}
 
 // NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
 // DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
@@ -1069,7 +1270,7 @@ func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.Reme
 	}
 
 	return &ProcessingResponse{
-		Status:                      StatusDuplicate,
+		Status:                      StatusDeduplicated,
 		Message:                     "Duplicate signal (K8s status-based deduplication)",
 		Fingerprint:                 fingerprint,
 		Duplicate:                   true,
@@ -1124,44 +1325,56 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *Processin
 	}
 }
 
-// processDuplicateSignal handles the duplicate signal fast path
-// processDuplicateSignal is DEPRECATED and removed
-// DD-GATEWAY-011: Replaced by inline logic in ProcessSignal using PhaseBasedDeduplicationChecker
-// BR-GATEWAY-185: Redis deprecation complete for deduplication path
-
-// parseCRDReference is DEPRECATED - no longer needed after DD-GATEWAY-011
-// DD-GATEWAY-011: PhaseChecker returns the actual RR, no need to parse references
-// Kept for backward compatibility with any external code
-//
-// DD-GATEWAY-009: Helper for parsing RemediationRequestRef
-// Format: "namespace/name" (e.g., "production/rr-abc123")
-//
-// Returns:
-// - namespace: The namespace part (empty if invalid format)
-//
-// - name: The name part (empty if invalid format)
-//
-//nolint:unused // Deprecated but kept for compatibility
-func (s *Server) parseCRDReference(ref string) (namespace, name string) {
-	if ref == "" {
-		return "", ""
-	}
-
-	parts := strings.Split(ref, "/")
-	if len(parts) != 2 {
-		return "", ""
-	}
-
-	return parts[0], parts[1]
-}
-
-// DD-GATEWAY-012: processStormAggregation REMOVED - Redis-based storm buffering deprecated
-// Storm detection now uses status.stormAggregation via StatusUpdater (async pattern)
-// Per DD-GATEWAY-008 supersession: Create RR immediately, track storm in status
-
 // =============================================================================
 // DD-AUDIT-003: Audit Event Emission (P0 Compliance)
 // =============================================================================
+
+// extractRRReconstructionFields sanitizes signal fields for audit event storage
+//
+// ========================================
+// RR RECONSTRUCTION FIELD SANITIZATION (REFACTOR PHASE)
+// BR-AUDIT-005: Ensure PostgreSQL JSONB compatibility
+// ========================================
+//
+// WHY THIS HELPER?
+// - ✅ Eliminates code duplication (used by signal.received AND signal.deduplicated)
+// - ✅ PostgreSQL JSONB prefers empty maps over nil values
+// - ✅ Graceful handling of synthetic signals without RawPayload
+// - ✅ Consistent nil handling across all Gateway audit events
+//
+// RETURNS:
+// - labels: non-nil map[string]string (empty map if nil)
+// - annotations: non-nil map[string]string (empty map if nil)
+// - originalPayload: interface{} (nil if signal.RawPayload is nil)
+// ========================================
+func extractRRReconstructionFields(signal *types.NormalizedSignal) (
+	labels map[string]string,
+	annotations map[string]string,
+	originalPayload map[string]interface{},
+) {
+	// Gap #2: Signal labels (ensure non-nil for JSONB)
+	labels = signal.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	// Gap #3: Signal annotations (ensure non-nil for JSONB)
+	annotations = signal.Annotations
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	// Gap #1: Original payload (nil OK for synthetic signals)
+	if len(signal.RawPayload) > 0 {
+		// Unmarshal json.RawMessage to map[string]interface{}
+		if err := json.Unmarshal(signal.RawPayload, &originalPayload); err != nil {
+			// If unmarshal fails, leave originalPayload nil (defensive)
+			originalPayload = nil
+		}
+	}
+
+	return labels, annotations, originalPayload
+}
 
 // emitSignalReceivedAudit emits 'gateway.signal.received' audit event (BR-GATEWAY-190)
 // This is called when a NEW signal is received and RR is created
@@ -1175,30 +1388,60 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.signal.received")
-	audit.SetEventCategory(event, "gateway")
-	audit.SetEventAction(event, "received")
+	audit.SetEventType(event, EventTypeSignalReceived)
+	audit.SetEventCategory(event, CategoryGateway)
+	audit.SetEventAction(event, ActionReceived)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType) // e.g., "prometheus", "kubernetes"
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
 
-	// Event data with Gateway-specific fields
-	eventData := map[string]interface{}{
-		"gateway": map[string]interface{}{
-			"signal_type":          signal.SourceType,
-			"alert_name":           signal.AlertName,
-			"namespace":            signal.Namespace,
-			"fingerprint":          signal.Fingerprint,
-			"severity":             signal.Severity,
-			"resource_kind":        signal.Resource.Kind,
-			"resource_name":        signal.Resource.Name,
-			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
-			"deduplication_status": "new",
-		},
+	// Event data with Gateway-specific fields + RR reconstruction fields
+	//
+	// ========================================
+	// BR-AUDIT-005: RR Reconstruction Fields (DD-AUDIT-004)
+	// ========================================
+	// SOC2 Compliance: Gaps #1-3 for RemediationRequest reconstruction
+	// - Gap #1: original_payload (full signal payload for RR.Spec.OriginalPayload)
+	// - Gap #2: signal_labels (for RR.Spec.SignalLabels)
+	// - Gap #3: signal_annotations (for RR.Spec.SignalAnnotations)
+	// ========================================
+
+	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
+	labels, annotations, originalPayload := extractRRReconstructionFields(signal)
+
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeSignalReceived, // Required for discriminator
+
+		// Gateway-Specific Metadata
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, eventData)
+
+	// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+	if originalPayload != nil {
+		payload.OriginalPayload.SetTo(convertMapToJxRaw(originalPayload)) // Gap #1
+	}
+	if labels != nil {
+		payload.SignalLabels.SetTo(labels) // Gap #2
+	}
+	if annotations != nil {
+		payload.SignalAnnotations.SetTo(annotations) // Gap #3
+	}
+
+	// Optional fields
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.DeduplicationStatus.SetTo(toGatewayAuditPayloadDeduplicationStatus("new"))
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1219,27 +1462,48 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.signal.deduplicated")
-	audit.SetEventCategory(event, "gateway")
-	audit.SetEventAction(event, "deduplicated")
+	audit.SetEventType(event, EventTypeSignalDeduplicated)
+	audit.SetEventCategory(event, CategoryGateway)
+	audit.SetEventAction(event, ActionDeduplicated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType)
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
 
-	eventData := map[string]interface{}{
-		"gateway": map[string]interface{}{
-			"signal_type":          signal.SourceType,
-			"alert_name":           signal.AlertName,
-			"namespace":            signal.Namespace,
-			"fingerprint":          signal.Fingerprint,
-			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
-			"deduplication_status": "duplicate",
-			"occurrence_count":     occurrenceCount,
-		},
+	// Event data with RR reconstruction fields (same as signal.received for consistency)
+	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
+	labels, annotations, originalPayload := extractRRReconstructionFields(signal)
+
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeSignalDeduplicated, // Required for discriminator
+
+		// Gateway-Specific Metadata
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, eventData)
+	payload.OccurrenceCount.SetTo(occurrenceCount)
+
+	// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+	if originalPayload != nil {
+		payload.OriginalPayload.SetTo(convertMapToJxRaw(originalPayload)) // Gap #1
+	}
+	if labels != nil {
+		payload.SignalLabels.SetTo(labels) // Gap #2
+	}
+	if annotations != nil {
+		payload.SignalAnnotations.SetTo(annotations) // Gap #3
+	}
+
+	// Optional fields
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.DeduplicationStatus.SetTo(toGatewayAuditPayloadDeduplicationStatus("duplicate"))
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(payload)
 
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
 		s.logger.Info("DD-AUDIT-003: Failed to emit signal.deduplicated audit event",
@@ -1259,29 +1523,49 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.crd.created")
-	audit.SetEventCategory(event, "gateway")
-	audit.SetEventAction(event, "created")
+	audit.SetEventType(event, EventTypeCRDCreated)
+	audit.SetEventCategory(event, CategoryGateway)
+	audit.SetEventAction(event, ActionCreated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "gateway", "crd-creator") // Gateway's CRD creator component
 	audit.SetResource(event, "RemediationRequest", fmt.Sprintf("%s/%s", rrNamespace, rrName))
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
 
-	// Event data with Gateway-specific fields
-	eventData := map[string]interface{}{
-		"gateway": map[string]interface{}{
-			"signal_fingerprint":  signal.Fingerprint,
-			"signal_type":         signal.SourceType,
-			"alert_name":          signal.AlertName,
-			"namespace":           signal.Namespace,
-			"remediation_request": fmt.Sprintf("%s/%s", rrNamespace, rrName),
-			"resource_kind":       signal.Resource.Kind,
-			"resource_name":       signal.Resource.Name,
-			"severity":            signal.Severity,
-		},
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeCRDCreated, // Required for discriminator
+
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, eventData)
+
+	// Optional fields
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.OccurrenceCount.SetTo(1) // BR-GATEWAY-056: New CRD always has OccurrenceCount=1
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload)
+
+	// DEBUG: Log full event structure for HTTP 400 troubleshooting
+	s.logger.Info("[DEBUG] emitCRDCreatedAudit - full event",
+		"event_type", event.EventType,
+		"correlation_id", event.CorrelationID,
+		"resource_type", event.ResourceType,
+		"resource_id", event.ResourceID,
+		"actor_type", event.ActorType,
+		"actor_id", event.ActorID,
+		"namespace", event.Namespace)
+	s.logger.Info("[DEBUG] emitCRDCreatedAudit - payload",
+		"event_type_discriminator", payload.EventType,
+		"signal_type", payload.SignalType,
+		"severity_is_set", payload.Severity.IsSet(),
+		"alert_name", payload.AlertName)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1290,8 +1574,16 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	}
 }
 
-// emitCRDCreationFailedAudit emits 'gateway.crd.creation_failed' audit event (DD-AUDIT-003)
+// emitCRDCreationFailedAudit emits 'gateway.crd.failed' audit event (DD-AUDIT-003)
 // This is called when RemediationRequest CRD creation fails
+//
+// GW-INT-AUD-019 Enhancement (BR-GATEWAY-093):
+// Detects circuit breaker state and includes it in error details for audit trail compliance
+//
+// BR-GATEWAY-058-A (Enhanced Correlation ID Pattern):
+// Uses human-readable correlation ID (alertname:namespace:kind:name) instead of SHA256 hash
+// for better operator experience and pattern matching capabilities.
+// Fingerprint (SHA256) remains in payload for deduplication queries.
 func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.NormalizedSignal, err error) {
 	if s.auditStore == nil {
 		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
@@ -1302,35 +1594,141 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.crd.creation_failed")
-	audit.SetEventCategory(event, "gateway")
-	audit.SetEventAction(event, "created")
+	audit.SetEventType(event, EventTypeCRDFailed)
+	audit.SetEventCategory(event, CategoryGateway)
+	audit.SetEventAction(event, ActionFailed)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "gateway", "crd-creator")
-	audit.SetResource(event, "RemediationRequest", signal.Fingerprint) // Use fingerprint as resource ID
-	audit.SetCorrelationID(event, signal.Fingerprint)                  // Use fingerprint as correlation (no RR name yet)
+
+	// BR-GATEWAY-058-A: Use human-readable correlation ID
+	// Format: "alertname:namespace:kind:name" (e.g., "HighMemoryUsage:prod:Pod:api-789")
+	// Benefit: SRE can immediately understand what triggered the failure
+	// Fingerprint (SHA256) still available in payload for deduplication
+	correlationID := constructReadableCorrelationID(signal)
+	audit.SetResource(event, "RemediationRequest", correlationID)
+	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, signal.Namespace)
 
-	// Event data with Gateway-specific fields + error details
-	eventData := map[string]interface{}{
-		"gateway": map[string]interface{}{
-			"signal_fingerprint": signal.Fingerprint,
-			"signal_type":        signal.SourceType,
-			"alert_name":         signal.AlertName,
-			"namespace":          signal.Namespace,
-			"resource_kind":      signal.Resource.Kind,
-			"resource_name":      signal.Resource.Name,
-			"severity":           signal.Severity,
-			"error_message":      err.Error(),
-		},
+	// BR-AUDIT-005 Gap #7: Standardized error_details
+	// GW-INT-AUD-019 (BR-GATEWAY-093): Detect circuit breaker errors for audit compliance
+	var errorDetails *sharedaudit.ErrorDetails
+	if errors.Is(err, gobreaker.ErrOpenState) {
+		// Circuit breaker is open - create specialized error details
+		// BR-GATEWAY-093: Circuit breaker for K8s API
+		errorDetails = sharedaudit.NewErrorDetails(
+			"gateway",
+			"ERR_CIRCUIT_BREAKER_OPEN",
+			"K8s API circuit breaker is open (fail-fast mode) - preventing cascade failure",
+			true, // Retry possible once circuit breaker closes
+		)
+		s.logger.Info("Circuit breaker prevented K8s API request",
+			"fingerprint", signal.Fingerprint,
+			"circuit_breaker_state", "open")
+	} else {
+		// Standard K8s error handling
+		errorDetails = sharedaudit.NewErrorDetailsFromK8sError("gateway", err)
 	}
-	audit.SetEventData(event, eventData)
+
+	// Convert shared ErrorDetails to api.ErrorDetails
+	apiErrorDetails := toAPIErrorDetails(errorDetails)
+
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeCRDFailed, // Required for discriminator
+
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
+	}
+
+	// Optional fields
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.ErrorDetails.SetTo(apiErrorDetails) // Gap #7: Standardized error_details for SOC2 compliance
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if storeErr := s.auditStore.StoreAudit(ctx, event); storeErr != nil {
 		s.logger.Info("DD-AUDIT-003: Failed to emit crd.creation_failed audit event",
 			"error", storeErr, "fingerprint", signal.Fingerprint)
 	}
+}
+
+// constructReadableCorrelationID creates human-readable correlation ID for failed CRD creation
+//
+// BR-GATEWAY-058-A: Enhanced Correlation ID Pattern
+//
+// Format: "alertname:namespace:kind:name"
+// Examples:
+//   - "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
+//   - "NodeNotReady:default:Node:worker-node-1"
+//   - "DeploymentReplicasUnavailable:prod-api:Deployment:api-server"
+//
+// Benefits:
+//   - Human-readable: SRE can immediately identify the alert and resource
+//   - Pattern matching: Query all failures for specific alert or namespace
+//   - Consistency: Aligns with industry standards (OpenTelemetry semantic conventions)
+//
+// Fingerprint (SHA256) remains in GatewayAuditPayload.fingerprint for deduplication queries.
+//
+// Returns:
+//   - string: Human-readable correlation ID (30-150 chars depending on names)
+func constructReadableCorrelationID(signal *types.NormalizedSignal) string {
+	return fmt.Sprintf("%s:%s:%s:%s",
+		signal.AlertName,
+		signal.Namespace,
+		signal.Resource.Kind,
+		signal.Resource.Name,
+	)
+}
+
+// handleDuplicateSignal handles the case where another pod created a RemediationRequest during lock contention
+// TDD REFACTOR: Extracted from ProcessSignal lock retry loop for clarity and testability
+//
+// BR-GATEWAY-190: Multi-replica deduplication safety
+// ADR-052 Addendum 001: This helper is called when exponential backoff retry discovers
+// that another Gateway pod successfully acquired the lock and created the RR.
+//
+// Business Outcome:
+//   - Updates occurrence count for deduplication tracking
+//   - Records metrics for alert deduplication monitoring
+//   - Emits audit event for compliance and debugging
+//   - Returns early from retry loop (no need to continue retrying)
+//
+// Returns:
+//   - *ProcessingResponse: Duplicate response with existing RR reference
+//   - error: Non-nil if status update or audit emission fails critically
+func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, existingRR *remediationv1alpha1.RemediationRequest) (*ProcessingResponse, error) {
+	logger := middleware.GetLogger(ctx)
+
+	// Update occurrence count for deduplication tracking
+	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, existingRR); err != nil {
+		// Non-critical: Log and continue (deduplication still succeeded)
+		logger.Info("Failed to update deduplication status after lock contention",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"rr", existingRR.Name)
+	}
+
+	// Get updated occurrence count for metrics and audit
+	occurrenceCount := int32(1)
+	if existingRR.Status.Deduplication != nil {
+		occurrenceCount = existingRR.Status.Deduplication.OccurrenceCount
+	}
+
+	// Record metrics for monitoring dashboard
+	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+	s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
+
+	// Emit audit event for compliance (DD-AUDIT-003)
+	s.emitSignalDeduplicatedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)
+
+	// Return duplicate response (early exit from retry loop)
+	return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 }
 
 // createRemediationRequestCRD handles the CRD creation pipeline
@@ -1390,13 +1788,6 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 
 	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace), nil
 }
-
-// DD-GATEWAY-012: createAggregatedCRD REMOVED - Redis-based storm aggregation deprecated
-// Storm tracking now uses status.stormAggregation via StatusUpdater (async pattern)
-// RRs are created immediately on first alert, storm status updated on subsequent alerts
-
-// DD-GATEWAY-012: monitorWindowExpiration REMOVED - No Redis windows to monitor
-// Storm detection threshold now based on status.deduplication.occurrenceCount
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
 

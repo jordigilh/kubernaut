@@ -1,10 +1,10 @@
 # Signal Processing Service - Business Requirements
 
-**Version**: 1.2
-**Last Updated**: 2025-12-06
+**Version**: 1.3
+**Last Updated**: 2026-01-09
 **Status**: ✅ APPROVED
 **Owner**: SignalProcessing Team
-**Related**: [IMPLEMENTATION_PLAN_V1.25.md](IMPLEMENTATION_PLAN_V1.25.md)
+**Related**: [IMPLEMENTATION_PLAN_V1.25.md](IMPLEMENTATION_PLAN_V1.25.md), [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md)
 
 ---
 
@@ -702,6 +702,131 @@ volumeMounts:
 
 ---
 
+## Severity Determination (BR-SP-105 to BR-SP-109)
+
+### BR-SP-105: Severity Determination via Rego Policy
+
+**Priority**: P0 (Critical)
+**Category**: Classification
+**Status**: 🆕 NEW (January 2026)
+
+**Description**: SignalProcessing MUST determine normalized severity from external signal severity using operator-configurable Rego policies. This enables customers to use ANY severity naming scheme (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.) without code changes.
+
+**Acceptance Criteria**:
+- [ ] Rego policy file: `severity.rego` (operator-provided ConfigMap)
+- [ ] Policy input: `input.signal.severity` (external value from Gateway, e.g., "Sev1", "P0", "HIGH")
+- [ ] Policy output: `result.severity` (normalized to `critical`, `warning`, or `info`)
+- [ ] Status field: `Status.SeverityClassification` (struct similar to `EnvironmentClassification`)
+- [ ] Fallback: If Rego evaluation fails or severity unmapped → `"unknown"` (NOT `"warning"`)
+- [ ] Audit trail: Log severity determination (external → normalized, source: rego/fallback)
+- [ ] Observability: Emit event/log when Rego policy fails to map severity
+- [ ] Hot-reload: Support ConfigMap updates without pod restart (per BR-SP-072 pattern)
+
+**SeverityClassification Status Field**:
+```go
+type SeverityClassification struct {
+    Severity      string      `json:"severity"`              // Normalized: critical, warning, info, or unknown
+    Source        string      `json:"source"`                // rego-policy, fallback
+    ClassifiedAt  metav1.Time `json:"classifiedAt"`
+    ExternalValue string      `json:"externalValue"`         // Original value from Gateway (e.g., "Sev1")
+}
+```
+
+**Default Rego Policy** (backward compatibility):
+```rego
+package signalprocessing.severity
+
+import rego.v1
+
+# 1:1 mapping for standard severity values
+result := {"severity": "critical", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "critical"
+}
+
+result := {"severity": "warning", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "warning"
+}
+
+result := {"severity": "info", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "info"
+}
+
+# Fallback: unmapped severity → unknown
+default result := {"severity": "unknown", "source": "fallback"}
+```
+
+**Operator Customization Example**:
+```rego
+package signalprocessing.severity
+
+import rego.v1
+
+# Enterprise "Sev" scheme
+result := {"severity": "critical", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev1", "SEV1", "sev1"]
+}
+
+result := {"severity": "warning", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev2", "SEV2", "sev2"]
+}
+
+result := {"severity": "info", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev3", "SEV3", "sev3", "Sev4", "SEV4", "sev4"]
+}
+
+# PagerDuty "P" scheme
+result := {"severity": "critical", "source": "rego-policy"} if {
+    input.signal.severity in ["P0", "P1"]
+}
+
+result := {"severity": "warning", "source": "rego-policy"} if {
+    input.signal.severity in ["P2", "P3"]
+}
+
+result := {"severity": "info", "source": "rego-policy"} if {
+    input.signal.severity in ["P4"]
+}
+
+# Fallback
+default result := {"severity": "unknown", "source": "fallback"}
+```
+
+**Rationale**:
+- **Customer Extensibility**: Operators define severity mappings based on their organization's standards
+- **Separation of Concerns**: Gateway extracts, SignalProcessing determines
+- **Architectural Consistency**: Matches environment/priority/business classification pattern
+- **Observability**: Operators can monitor unmapped severities and adjust policies
+
+**Implementation**:
+- `pkg/signalprocessing/classifier/severity.go`: Severity classifier with Rego evaluation
+- `internal/controller/signalprocessing/signalprocessing_controller.go`: Add severity classification in `reconcileClassifying` phase
+- `api/signalprocessing/v1alpha1/signalprocessing_types.go`: Add `Status.SeverityClassification` field
+- `deploy/signalprocessing/policies/severity.rego`: Default policy ConfigMap
+
+**Tests**:
+- `test/unit/signalprocessing/severity_classifier_test.go`: Unit tests for classifier
+- `test/integration/signalprocessing/severity_policy_test.go`: Custom severity mapping E2E
+- `test/unit/signalprocessing/controller_test.go`: Status field population
+
+**Related BRs**:
+- BR-GATEWAY-111 (Gateway Pass-Through Architecture)
+- BR-SP-051 to BR-SP-053 (Environment Classification - same pattern)
+- BR-SP-070 to BR-SP-072 (Priority Assignment - same pattern)
+- BR-SP-090 (Audit Trail)
+
+**Consumer Impact**:
+- BR-AI-XXX: AIAnalysis MUST read `sp.Status.SeverityClassification.Severity` (NOT `sp.Spec.Severity`)
+- BR-RO-XXX: RemediationOrchestrator MUST read `sp.Status.SeverityClassification.Severity` (NOT `sp.Spec.Severity`)
+
+**Decision Reference**:
+- [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+- [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md)
+- [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md)
+
+**Migration Plan**: See DD-SEVERITY-001 Phase 3 (Week 2)
+
+---
+
 ## Requirements Summary
 
 | Category | Count | Priority Breakdown | Notes |
@@ -709,11 +834,12 @@ volumeMounts:
 | Core Enrichment | 5 | P0: 2, P1: 1, P2: 2 | 2 deprecated (BR-SP-006, BR-SP-012) |
 | Environment Classification | 3 | P0: 1, P1: 2 | |
 | Priority Assignment | 3 | P0: 1, P1: 2 | |
+| **Severity Determination** | **1** | **P0: 1** | **🆕 NEW: BR-SP-105** |
 | Business Classification | 2 | P1: 2 | |
 | Audit & Observability | 1 | P1: 1 | |
 | Observability | 2 | P1: 2 | BR-SP-110, BR-SP-111 |
 | Label Detection | 5 | P0: 3, P1: 2 | |
-| **Total** | **21** | **P0: 7, P1: 11, P2: 3** | **2 deprecated** |
+| **Total** | **22** | **P0: 8, P1: 11, P2: 3** | **2 deprecated** |
 
 ### Deprecated Requirements
 
@@ -739,6 +865,7 @@ volumeMounts:
 | BR-SP-070 | Day 5: Priority Engine | `priority_engine_test.go` | ✅ Planned |
 | BR-SP-071 | Day 5: Priority Engine | `priority_engine_test.go` | ✅ Planned |
 | BR-SP-072 | Day 5: Hot Reloader | `hot_reloader_test.go` | ✅ Planned |
+| **BR-SP-105** | **Severity Classifier** | **`severity_classifier_test.go`** | **⏳ NEW** |
 | BR-SP-080 | Day 6: Business Classifier | All classifier tests | ✅ Planned |
 | BR-SP-081 | Day 6: Business Classifier | `business_classifier_test.go` | ✅ Planned |
 | BR-SP-090 | Day 11: Audit Client | `audit_client_test.go` | ✅ Planned |
@@ -754,6 +881,7 @@ volumeMounts:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2026-01-09 | **NEW BR-SP-105**: Severity Determination via Rego Policy. Enables customer extensibility (Sev1-4, P0-P4 schemes). Operator-configurable severity mappings. Fallback to "unknown" (not "warning"). Observability for unmapped severities. |
 | 1.2 | 2025-12-06 | BR-SP-071: Changed to severity-only fallback (not environment × severity matrix) |
 | 1.1 | 2025-12-06 | BR-SP-072: Updated to fsnotify-based hot-reload per DD-INFRA-001, added FileWatcher reference |
 | 1.0 | 2025-12-03 | Initial release - 19 BRs defined |

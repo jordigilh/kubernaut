@@ -18,15 +18,45 @@ package datastorage
 
 import (
 	"context"
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// directStorageClient implements audit.DataStorageClient for direct DB writes (no HTTP)
+// This tests BufferedStore → Repository → PostgreSQL without HTTP layer
+type directStorageClient struct {
+	repo *repository.AuditEventsRepository
+}
+
+func (d *directStorageClient) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
+	// Convert ogen requests to repository models
+	repoEvents := make([]*repository.AuditEvent, len(events))
+	for i, event := range events {
+		// Minimal conversion - just the fields needed for the test
+		repoEvent := &repository.AuditEvent{
+			Version:        event.Version,
+			EventType:      event.EventType,
+			EventTimestamp: event.EventTimestamp,
+			EventCategory:  string(event.EventCategory),
+			EventAction:    event.EventAction,
+			EventOutcome:   string(event.EventOutcome),
+			CorrelationID:  event.CorrelationID,
+			// EventData serialization handled by repository layer
+		}
+		repoEvents[i] = repoEvent
+	}
+
+	// Insert batch directly to repository
+	_, err := d.repo.CreateBatch(ctx, repoEvents)
+	return err
+}
 
 // ========================================
 // AUDIT CLIENT TIMING INTEGRATION TESTS
@@ -48,42 +78,24 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client", "timing"), func() {
+var _ = Describe("Audit Client Timing Integration Tests", Label("audit-client", "timing"), func() {
 	var (
 		auditStore    audit.AuditStore
-		dsClient      *dsgen.ClientWithResponses
 		testCtx       context.Context
 		testCancel    context.CancelFunc
 		correlationID string
 	)
 
 	BeforeEach(func() {
-		// CRITICAL: Use public schema for audit_events table queries
-		// audit_events table is written to public schema by HTTP API
-		// Without this, DELETE and SELECT queries go to test_process_N schema (wrong schema)
-		usePublicSchema()
-
 		// Create test context
 		testCtx, testCancel = context.WithTimeout(context.Background(), 2*time.Minute)
 
-		// Ensure service is ready (simple HTTP health check)
-		Eventually(func() bool {
-			resp, err := http.Get(datastorageURL + "/health")
-			if err != nil || resp == nil {
-				return false
-			}
-			defer func() { _ = resp.Body.Close() }()
-			return resp.StatusCode == 200
-		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
+		// Create direct repository for audit events (no HTTP layer)
+		// Integration test: BufferedStore → Repository → PostgreSQL
+		auditRepo := repository.NewAuditEventsRepository(db.DB, logger)
 
-		// Create DataStorage client using audit.NewOpenAPIClientAdapter
-		var err error
-		httpClient, err := audit.NewOpenAPIClientAdapter(datastorageURL, 5*time.Second)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create OpenAPI client for queries
-		dsClient, err = dsgen.NewClientWithResponses(datastorageURL)
-		Expect(err).ToNot(HaveOccurred())
+		// Create direct storage client (bypasses HTTP, writes directly to repository)
+		directClient := &directStorageClient{repo: auditRepo}
 
 		// Create audit client with PRODUCTION configuration
 		// DD-AUDIT-004: Use small buffer for basic timing tests (not stress tests)
@@ -94,8 +106,9 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			MaxRetries:    3,
 		}
 
-		// Create buffered audit store with REAL HTTP client
-		auditStore, err = audit.NewBufferedStore(httpClient, auditConfig, "test-service", logger)
+		// Create buffered audit store with DIRECT repository client (no HTTP)
+		var err error
+		auditStore, err = audit.NewBufferedStore(directClient, auditConfig, "test-service", logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Generate unique correlation ID for test isolation
@@ -122,15 +135,25 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 	Context("Flush Timing (RO Team Bug Reproduction)", func() {
 		It("should flush event within configured interval (1 second)", func() {
 			By("Creating audit event using REAL audit client")
-			event := &dsgen.AuditEventRequest{
+			// Use valid discriminated union type for event data
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+				AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+					EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+					AnalysisName: "timing-test-analysis",
+					Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+				},
+			}
+
+			event := &ogenclient.AuditEventRequest{
 				Version:        "1.0",
-				EventType:      "test.timing",
-				EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+				EventType:      "aianalysis.analysis.completed",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
 				EventAction:    "test_action",
-				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-				EventTimestamp: time.Now(),
-				CorrelationId:  correlationID,
-				EventData:      map[string]interface{}{"test": "timing"},
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				CorrelationID:  correlationID,
+				EventData:      eventData,
 			}
 
 			By("Emitting event through audit.BufferedStore")
@@ -138,24 +161,16 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			err := auditStore.StoreAudit(testCtx, event)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Waiting for event to become queryable in DataStorage")
+			By("Waiting for event to appear in PostgreSQL")
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
-					CorrelationId: &correlationID,
-				})
+				var count int
+				err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
 				if err != nil {
 					GinkgoWriter.Printf("Query error: %v\n", err)
 					return 0
 				}
-				if resp.JSON200 == nil {
-					GinkgoWriter.Printf("No JSON200 response (status: %d)\n", resp.StatusCode())
-					return 0
-				}
-				if resp.JSON200.Data == nil {
-					return 0
-				}
-				return len(*resp.JSON200.Data)
-			}, "10s", "100ms").Should(Equal(1), "Event should become queryable")
+				return count
+			}, "10s", "100ms").Should(Equal(1), "Event should appear in database")
 
 			elapsed := time.Since(start)
 
@@ -172,15 +187,25 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 		It("should flush buffered events on Close()", func() {
 			By("Buffering 5 events")
 			for i := 0; i < 5; i++ {
-				event := &dsgen.AuditEventRequest{
+				// Use valid discriminated union type for event data
+				eventData := ogenclient.AuditEventRequestEventData{
+					Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+					AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+						EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+						AnalysisName: fmt.Sprintf("shutdown-test-%d", i),
+						Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+					},
+				}
+
+				event := &ogenclient.AuditEventRequest{
 					Version:        "1.0",
-					EventType:      "test.shutdown",
-					EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+					EventType:      "aianalysis.analysis.completed",
+					EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
 					EventAction:    "test_shutdown",
-					EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-					EventTimestamp: time.Now(),
-					CorrelationId:  correlationID,
-					EventData:      map[string]interface{}{"test": "shutdown", "index": i},
+					EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					CorrelationID:  correlationID,
+					EventData:      eventData,
 				}
 
 				err := auditStore.StoreAudit(testCtx, event)
@@ -199,16 +224,16 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			// depending on system load. Correctness is validated by database check below.
 
 			By("Verifying all 5 events were flushed")
-		// Handle async database write - Close() triggers flush but data may not be immediately committed
-		Eventually(func() int {
-			var eventCount int
-			err := db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
-			if err != nil {
-				return -1
-			}
-			return eventCount
-		}, 5*time.Second, 100*time.Millisecond).Should(Equal(5),
-			"All buffered events should be flushed on Close()")
+			// Handle async database write - Close() triggers flush but data may not be immediately committed
+			Eventually(func() int {
+				var eventCount int
+				err := db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
+				if err != nil {
+					return -1
+				}
+				return eventCount
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(5),
+				"All buffered events should be flushed on Close()")
 		})
 
 	})

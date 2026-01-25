@@ -24,11 +24,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationctrl "github.com/jordigilh/kubernaut/internal/controller/notification"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 )
 
 // Note: RunSpecs is called in suite_test.go - do not add another TestXxx function here
@@ -36,12 +37,12 @@ import (
 
 var _ = Describe("Audit Helpers", func() {
 	var (
-		helpers      *notificationctrl.AuditHelpers
+		helpers      *notificationaudit.Manager
 		notification *notificationv1alpha1.NotificationRequest
 	)
 
 	BeforeEach(func() {
-		helpers = notificationctrl.NewAuditHelpers("notification-controller")
+		helpers = notificationaudit.NewManager("notification-controller")
 
 		// Create test notification fixture
 		notification = createTestNotification()
@@ -80,29 +81,29 @@ var _ = Describe("Audit Helpers", func() {
 				"Event outcome MUST be 'success' for successful delivery")
 
 			// Correctness: Actor correctly identifies source service
-			Expect(event.ActorType).ToNot(BeNil())
-			Expect(*event.ActorType).To(Equal("service"),
+			Expect(event.ActorType.IsSet()).To(BeTrue())
+			Expect(event.ActorType.Value).To(Equal("service"),
 				"Actor type MUST be 'service' (not 'user' or 'external')")
-			Expect(event.ActorId).ToNot(BeNil())
-			Expect(*event.ActorId).To(Equal("notification-controller"),
+			Expect(event.ActorID.IsSet()).To(BeTrue())
+			Expect(event.ActorID.Value).To(Equal("notification-controller"),
 				"Actor ID MUST match service name for traceability")
 
 			// Correctness: Resource fields identify the notification CRD
-			Expect(event.ResourceType).ToNot(BeNil())
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"),
+			Expect(event.ResourceType.IsSet()).To(BeTrue())
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"),
 				"Resource type MUST be 'NotificationRequest' (CRD kind)")
-			Expect(event.ResourceId).ToNot(BeNil())
-			Expect(*event.ResourceId).To(Equal("test-notification"),
+			Expect(event.ResourceID.IsSet()).To(BeTrue())
+			Expect(event.ResourceID.Value).To(Equal("test-notification"),
 				"Resource ID MUST match notification CRD name for correlation")
 
 			// Correctness: Correlation ID enables end-to-end tracing (BR-NOT-064)
-			Expect(event.CorrelationId).To(Equal("remediation-123"),
+			Expect(event.CorrelationID).To(Equal("remediation-123"),
 				"Correlation ID MUST match remediation_id for workflow tracing")
 
 			// Correctness: Namespace populated for Kubernetes context
 			Expect(event.Namespace).ToNot(BeNil(),
 				"Namespace MUST be populated for Kubernetes context")
-			Expect(*event.Namespace).To(Equal("default"),
+			Expect(event.Namespace.Value).To(Equal("default"),
 				"Namespace MUST match notification CRD namespace")
 
 			// Note: RetentionDays removed - not in OpenAPI spec (DD-AUDIT-002 V2.0.1)
@@ -173,7 +174,7 @@ var _ = Describe("Audit Helpers", func() {
 				"Error message MUST be in event_data for failed deliveries")
 
 			// Correctness: Correlation ID for workflow tracing
-			Expect(event.CorrelationId).To(Equal("remediation-123"),
+			Expect(event.CorrelationID).To(Equal("remediation-123"),
 				"Correlation ID MUST match for tracking failed attempts")
 
 			// Business outcome: Failed delivery audited for retry analysis and SLA tracking
@@ -198,21 +199,21 @@ var _ = Describe("Audit Helpers", func() {
 				"Event action MUST be 'acknowledged'")
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"Event outcome MUST be 'success'")
-			Expect(event.CorrelationId).To(Equal("remediation-123"),
+			Expect(event.CorrelationID).To(Equal("remediation-123"),
 				"Correlation ID MUST match for workflow tracing")
 
 			// Correctness: Event category and actor
 			Expect(string(event.EventCategory)).To(Equal("notification"))
-			Expect(event.ActorType).ToNot(BeNil())
-			Expect(*event.ActorType).To(Equal("service"))
-			Expect(event.ActorId).ToNot(BeNil())
-			Expect(*event.ActorId).To(Equal("notification-controller"))
+			Expect(event.ActorType.IsSet()).To(BeTrue())
+			Expect(event.ActorType.Value).To(Equal("service"))
+			Expect(event.ActorID.IsSet()).To(BeTrue())
+			Expect(event.ActorID.Value).To(Equal("notification-controller"))
 
 			// Correctness: Resource identification
-			Expect(event.ResourceType).ToNot(BeNil())
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"))
-			Expect(event.ResourceId).ToNot(BeNil())
-			Expect(*event.ResourceId).To(Equal("test-notification"))
+			Expect(event.ResourceType.IsSet()).To(BeTrue())
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"))
+			Expect(event.ResourceID.IsSet()).To(BeTrue())
+			Expect(event.ResourceID.Value).To(Equal("test-notification"))
 
 			// Note: RetentionDays removed - not in OpenAPI spec (DD-AUDIT-002 V2.0.1)
 
@@ -238,21 +239,21 @@ var _ = Describe("Audit Helpers", func() {
 				"Event action MUST be 'escalated'")
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"Event outcome MUST be 'success'")
-			Expect(event.CorrelationId).To(Equal("remediation-123"),
+			Expect(event.CorrelationID).To(Equal("remediation-123"),
 				"Correlation ID MUST match for workflow tracing")
 
 			// Correctness: Event category and actor
 			Expect(string(event.EventCategory)).To(Equal("notification"))
-			Expect(event.ActorType).ToNot(BeNil())
-			Expect(*event.ActorType).To(Equal("service"))
-			Expect(event.ActorId).ToNot(BeNil())
-			Expect(*event.ActorId).To(Equal("notification-controller"))
+			Expect(event.ActorType.IsSet()).To(BeTrue())
+			Expect(event.ActorType.Value).To(Equal("service"))
+			Expect(event.ActorID.IsSet()).To(BeTrue())
+			Expect(event.ActorID.Value).To(Equal("notification-controller"))
 
 			// Correctness: Resource identification
-			Expect(event.ResourceType).ToNot(BeNil())
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"))
-			Expect(event.ResourceId).ToNot(BeNil())
-			Expect(*event.ResourceId).To(Equal("test-notification"))
+			Expect(event.ResourceType.IsSet()).To(BeTrue())
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"))
+			Expect(event.ResourceID.IsSet()).To(BeTrue())
+			Expect(event.ResourceID.Value).To(Equal("test-notification"))
 
 			// Note: RetentionDays removed - not in OpenAPI spec (DD-AUDIT-002 V2.0.1)
 
@@ -267,7 +268,7 @@ var _ = Describe("Audit Helpers", func() {
 	// ========================================
 	Describe("Event Creation Matrix (DescribeTable Pattern)", func() {
 		DescribeTable("Audit event creation for all notification states",
-			func(eventType string, eventAction string, eventOutcome string, createFunc func() (*dsgen.AuditEventRequest, error), shouldSucceed bool, expectedErrorMsg string) {
+			func(eventType string, eventAction string, eventOutcome string, createFunc func() (*ogenclient.AuditEventRequest, error), shouldSucceed bool, expectedErrorMsg string) {
 				// BR-NOT-062: Unified audit table integration
 
 				// BEHAVIOR: Create event
@@ -287,7 +288,7 @@ var _ = Describe("Audit Helpers", func() {
 						"Event action must match operation")
 					Expect(string(event.EventOutcome)).To(Equal(eventOutcome),
 						"Event outcome must match result")
-					Expect(event.CorrelationId).To(Equal("remediation-123"),
+					Expect(event.CorrelationID).To(Equal("remediation-123"),
 						"Correlation ID must match for workflow tracing")
 					// Note: RetentionDays removed - not in OpenAPI spec (DD-AUDIT-002 V2.0.1)
 
@@ -308,60 +309,60 @@ var _ = Describe("Audit Helpers", func() {
 			// SUCCESS CASES (4 event types)
 			Entry("message sent successfully (BR-NOT-062)",
 				"notification.message.sent", "sent", "success",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageSentEvent(notification, "slack")
 				}, true, ""),
 			Entry("message delivery failed (BR-NOT-062)",
 				"notification.message.failed", "sent", "failure",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageFailedEvent(notification, "slack", fmt.Errorf("rate limited"))
 				}, true, ""),
 			Entry("message acknowledged (BR-NOT-062)",
 				"notification.message.acknowledged", "acknowledged", "success",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageAcknowledgedEvent(notification)
 				}, true, ""),
 			Entry("message escalated (BR-NOT-062)",
 				"notification.message.escalated", "escalated", "success",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageEscalatedEvent(notification)
 				}, true, ""),
 
 			// ERROR CASES (Edge Cases) - CreateMessageSentEvent
 			Entry("nil notification for CreateMessageSentEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageSentEvent(nil, "slack")
 				}, false, "notification cannot be nil"),
 			Entry("empty channel for CreateMessageSentEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageSentEvent(notification, "")
 				}, false, "channel cannot be empty"),
 
 			// ERROR CASES - CreateMessageFailedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageFailedEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageFailedEvent(nil, "slack", fmt.Errorf("test error"))
 				}, false, "notification cannot be nil"),
 			Entry("empty channel for CreateMessageFailedEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageFailedEvent(notification, "", fmt.Errorf("test error"))
 				}, false, "channel cannot be empty"),
 
 			// ERROR CASES - CreateMessageAcknowledgedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageAcknowledgedEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageAcknowledgedEvent(nil)
 				}, false, "notification cannot be nil"),
 
 			// ERROR CASES - CreateMessageEscalatedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageEscalatedEvent returns error",
 				"", "", "",
-				func() (*dsgen.AuditEventRequest, error) {
+				func() (*ogenclient.AuditEventRequest, error) {
 					return helpers.CreateMessageEscalatedEvent(nil)
 				}, false, "notification cannot be nil"),
 		)
@@ -377,14 +378,15 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("when RemediationID is missing", func() {
 			It("should use notification UID as correlation_id fallback", func() {
-				// Edge Case: Missing correlation ID in metadata
+				// Edge Case: Missing correlation ID (DD-AUDIT-CORRELATION-002)
+				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
 				notification.Spec.Metadata = map[string]string{} // No remediationRequestName
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(event.CorrelationId).To(Equal(string(notification.UID)),
-					"Correlation ID MUST fallback to notification.UID when remediationRequestName is empty (per ADR-032)")
+				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
+					"Correlation ID MUST fallback to notification.UID when RemediationRequestRef is nil (per DD-AUDIT-CORRELATION-002)")
 			})
 		})
 
@@ -428,15 +430,16 @@ var _ = Describe("Audit Helpers", func() {
 			It("should use notification UID as correlation_id fallback", func() {
 				// Edge Case: nil Metadata (different from empty map)
 				// BEHAVIOR: Event creation succeeds
-				// CORRECTNESS: correlation_id falls back to notification.UID (per ADR-032)
+				// CORRECTNESS: correlation_id falls back to notification.UID (per DD-AUDIT-CORRELATION-002)
+				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
 				notification.Spec.Metadata = nil // nil, not map[string]string{}
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
 				Expect(err).ToNot(HaveOccurred(),
 					"BEHAVIOR: Event creation should succeed with nil Metadata")
-				Expect(event.CorrelationId).To(Equal(string(notification.UID)),
-					"CORRECTNESS: Correlation ID MUST fallback to notification.UID when Metadata is nil (per ADR-032)")
+				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
+					"CORRECTNESS: Correlation ID MUST fallback to notification.UID when RemediationRequestRef is nil (per DD-AUDIT-CORRELATION-002)")
 			})
 		})
 
@@ -465,13 +468,13 @@ var _ = Describe("Audit Helpers", func() {
 		// ===== CATEGORY 2: Boundary Conditions (3 tests) =====
 
 		Context("when subject is very long", func() {
-		It("should handle subject >10KB", func() {
-			// Edge Case: Large string handling
-			longSubjectBytes := make([]byte, 15000) // 15KB subject
-			for i := range longSubjectBytes {
-				longSubjectBytes[i] = 'A'
-			}
-			notification.Spec.Subject = string(longSubjectBytes)
+			It("should handle subject >10KB", func() {
+				// Edge Case: Large string handling
+				longSubjectBytes := make([]byte, 15000) // 15KB subject
+				for i := range longSubjectBytes {
+					longSubjectBytes[i] = 'A'
+				}
+				notification.Spec.Subject = string(longSubjectBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
@@ -506,14 +509,14 @@ var _ = Describe("Audit Helpers", func() {
 		})
 
 		Context("when event_data approaches PostgreSQL JSONB limit", func() {
-		It("should handle maximum payload size (~1MB test)", func() {
-			// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
-			// Real limit is ~10MB, but we test with 1MB for faster execution
-			largeBodyBytes := make([]byte, 1*1024*1024) // 1MB body
-			for i := range largeBodyBytes {
-				largeBodyBytes[i] = 'X'
-			}
-			notification.Spec.Body = string(largeBodyBytes)
+			It("should handle maximum payload size (~1MB test)", func() {
+				// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
+				// Real limit is ~10MB, but we test with 1MB for faster execution
+				largeBodyBytes := make([]byte, 1*1024*1024) // 1MB body
+				for i := range largeBodyBytes {
+					largeBodyBytes[i] = 'X'
+				}
+				notification.Spec.Body = string(largeBodyBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
@@ -592,7 +595,7 @@ var _ = Describe("Audit Helpers", func() {
 				// BR-NOT-063: Graceful audit degradation
 
 				const burstCount = 100
-				events := make([]*dsgen.AuditEventRequest, 0, burstCount)
+				events := make([]*ogenclient.AuditEventRequest, 0, burstCount)
 
 				// Create 100 events rapidly
 				for i := 0; i < burstCount; i++ {
@@ -654,8 +657,8 @@ var _ = Describe("Audit Helpers", func() {
 		Context("Actor Type", func() {
 			It("should set actor_type to 'service' for controller actions", func() {
 				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
-				Expect(event.ActorType).ToNot(BeNil())
-				Expect(*event.ActorType).To(Equal("service"),
+				Expect(event.ActorType.IsSet()).To(BeTrue())
+				Expect(event.ActorType.Value).To(Equal("service"),
 					"Actor type must be 'service' for Kubernetes controller actions (not 'user' or 'external')")
 			})
 		})
@@ -663,7 +666,7 @@ var _ = Describe("Audit Helpers", func() {
 		Context("Correlation ID", func() {
 			It("should use metadata['remediationRequestName'] as correlation_id for workflow tracing", func() {
 				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
-				Expect(event.CorrelationId).To(Equal("remediation-123"),
+				Expect(event.CorrelationID).To(Equal("remediation-123"),
 					"Correlation ID must match remediationRequestName for end-to-end workflow tracing (BR-NOT-064)")
 			})
 		})
@@ -679,11 +682,11 @@ var _ = Describe("Audit Helpers", func() {
 		Context("Resource Identification", func() {
 			It("should populate resource_type and resource_id for CRD identification", func() {
 				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
-				Expect(event.ResourceType).ToNot(BeNil())
-				Expect(*event.ResourceType).To(Equal("NotificationRequest"),
+				Expect(event.ResourceType.IsSet()).To(BeTrue())
+				Expect(event.ResourceType.Value).To(Equal("NotificationRequest"),
 					"Resource type must match CRD kind")
-				Expect(event.ResourceId).ToNot(BeNil())
-				Expect(*event.ResourceId).To(Equal("test-notification"),
+				Expect(event.ResourceID.IsSet()).To(BeTrue())
+				Expect(event.ResourceID.Value).To(Equal("test-notification"),
 					"Resource ID must match CRD name for correlation")
 			})
 		})
@@ -700,6 +703,13 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 			Namespace: "default",
 		},
 		Spec: notificationv1alpha1.NotificationRequestSpec{
+			// DD-AUDIT-CORRELATION-002: RemediationRequestRef is used for correlation_id
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: "remediation.kubernaut.ai/v1",
+				Kind:       "RemediationRequest",
+				Name:       "remediation-123",
+				Namespace:  "default",
+			},
 			Type:     notificationv1alpha1.NotificationTypeSimple,
 			Priority: notificationv1alpha1.NotificationPriorityCritical,
 			Subject:  "Test Alert: Database Connection Failed",
@@ -726,6 +736,8 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 func createTestNotificationWithID(id int) *notificationv1alpha1.NotificationRequest {
 	notification := createTestNotification()
 	notification.Name = fmt.Sprintf("test-notification-%d", id)
+	// DD-AUDIT-CORRELATION-002: Update RemediationRequestRef.Name (not metadata)
+	notification.Spec.RemediationRequestRef.Name = fmt.Sprintf("remediation-%d", id)
 	notification.Spec.Metadata["remediationRequestName"] = fmt.Sprintf("remediation-%d", id)
 	return notification
 }
@@ -733,7 +745,7 @@ func createTestNotificationWithID(id int) *notificationv1alpha1.NotificationRequ
 // MockAuditStore is a mock implementation of audit.AuditStore for unit testing
 // Implements the AuditStore interface for testing audit helper methods
 type MockAuditStore struct {
-	events      []*dsgen.AuditEventRequest
+	events      []*ogenclient.AuditEventRequest
 	storeErrors []error
 	mu          sync.Mutex
 	closed      bool
@@ -742,13 +754,13 @@ type MockAuditStore struct {
 // NewMockAuditStore creates a new mock audit store
 func NewMockAuditStore() *MockAuditStore {
 	return &MockAuditStore{
-		events:      []*dsgen.AuditEventRequest{},
+		events:      []*ogenclient.AuditEventRequest{},
 		storeErrors: []error{},
 	}
 }
 
 // StoreAudit stores an audit event in memory
-func (m *MockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -784,10 +796,10 @@ func (m *MockAuditStore) GetEventCount() int {
 }
 
 // GetEvents returns all stored events (for testing)
-func (m *MockAuditStore) GetEvents() []*dsgen.AuditEventRequest {
+func (m *MockAuditStore) GetEvents() []*ogenclient.AuditEventRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	result := make([]*dsgen.AuditEventRequest, len(m.events))
+	result := make([]*ogenclient.AuditEventRequest, len(m.events))
 	copy(result, m.events)
 	return result
 }

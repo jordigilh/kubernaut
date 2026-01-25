@@ -3,61 +3,41 @@ globs: "pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*,test/**/*ai*"
 description: "AI/ML Development Methodology - TDD workflow and integration patterns"
 ---
 
-# Rule 12: AI/ML Development Methodology
+# AI/ML Development Methodology
 
-## 🎯 **PURPOSE & SCOPE**
+## 🎯 **PURPOSE**
 
-This rule resolves conflicts between AI/ML development patterns and TDD methodology by providing crystal clear guidance for developing AI components with proper integration.
+Provides AI-specific TDD patterns that integrate with [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) APDC methodology.
 
-**Resolves**: Conflicts between Rule 03 (TDD), Rule 04 (AI/ML), and Rule 07 (Integration)
+**Resolves**: Conflicts between TDD methodology, AI/ML patterns, and integration requirements.
 
 ---
 
-## 🤖 **AI/ML APDC-TDD METHODOLOGY - UNIFIED APPROACH**
+## 🤖 **AI-SPECIFIC TDD PHASES**
 
-**INTEGRATION**: This methodology fully integrates with the APDC framework from [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)
+### **AI Discovery Phase** (5-10 min)
 
-### **APDC-ANALYSIS PHASE: AI Component Discovery**
-**Duration**: 5-15 minutes (APDC Analysis timeframe)
-**APDC Purpose**: Comprehensive context understanding enhanced with AI-specific discovery
-**Context**: Reference general AI service patterns in [04-ai-ml-guidelines.mdc](mdc:.cursor/rules/04-ai-ml-guidelines.mdc) for supported providers and integration patterns.
+**Action**: Use APDC Analysis phase with AI-specific discovery patterns
+**Rule**: Search existing AI interfaces BEFORE creating new
 
-**AI-Enhanced Analysis Actions**:
-1. **Business Context**: Map AI requirement to business need (BR-AI-XXX format)
-2. **AI Technical Context**: Search existing AI interfaces: `grep -r "Client.*interface" pkg/ai/`
-3. **AI Integration Assessment**: Check main app AI usage: `grep -r "AI\|LLM\|Holmes" cmd/`
-4. **AI Decision Point**: Enhance existing vs create new AI component (follow APDC risk evaluation)
+**Mandatory Checks**:
+```bash
+# Check existing AI interfaces
+grep -r "Client.*interface" pkg/ai/ --include="*.go"
+# Check main app AI usage
+grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
+# Decision point: enhance existing vs create new AI component
+```
 
-**Prevention-Focused Discovery Checklist**:
-**Before creating any AI component, verify these questions:**
-1. **Existing Interface Search**: Are there existing AI interfaces in `pkg/ai/` that can be enhanced?
-2. **Main App Integration**: Are current AI interfaces properly integrated in `cmd/` applications?
-3. **Enhancement vs Creation**: Should you enhance existing AI clients instead of creating new ones?
-4. **Business Alignment**: Does this map to a documented BR-AI-XXX business requirement?
+**Success**: Found existing AI interfaces to enhance, confirmed main app integration
 
-**Success Indicators**:
-- ✅ Found existing AI interfaces to enhance
-- ✅ Main application AI usage confirmed
-- ✅ Enhancement approach chosen over creation
-- ✅ Business requirement clearly mapped
+---
 
-### **APDC-PLAN PHASE: AI Implementation Strategy**
-**Duration**: 10-20 minutes (APDC Plan timeframe)
-**APDC Purpose**: Detailed implementation strategy with AI-specific TDD phase mapping
+### **AI RED Phase** (15-20 min)
 
-**AI-Enhanced Planning Actions**:
-1. **AI TDD Strategy**: Map Analysis findings to RED-GREEN-REFACTOR approach
-2. **AI Interface Plan**: Document which existing interfaces to enhance (`pkg/ai/llm.Client`)
-3. **AI Integration Plan**: Define main app integration points (`cmd/*/main.go`)
-4. **AI Success Criteria**: Define measurable AI business outcomes
-
-### **APDC-DO-RED PHASE: Write Failing AI Tests**
-**Duration**: 10-15 minutes (within APDC Do phase)
-**APDC Purpose**: Plan-structured test creation with AI-specific patterns
-**Mandatory Actions**:
-1. **MANDATORY**: Import existing AI interfaces (`pkg/ai/llm.Client`)
-2. **FORBIDDEN**: Creating new AI interfaces
-3. **MANDATORY**: Use existing AI mocks from `pkg/testutil/mocks/`
+**Rule**: Import existing AI interfaces (`pkg/ai/llm.Client`)
+**Forbidden**: Creating new AI interfaces
+**Validation**: Built-in through TDD RED phase design
 
 **AI-Specific RED Pattern**:
 ```go
@@ -73,7 +53,7 @@ var _ = Describe("AI Context Optimization", func() {
         ctx = context.Background()
     })
 
-    It("should optimize context using AI analysis", func() {
+    It("should optimize context using AI analysis (BR-AI-045)", func() {
         // Call existing AI interface method
         analysis, err := llmClient.AnalyzeContext(ctx, "test content")
         Expect(err).ToNot(HaveOccurred())
@@ -82,26 +62,14 @@ var _ = Describe("AI Context Optimization", func() {
 })
 ```
 
-**Prevention-Focused RED Phase Guidelines**:
-**Before writing AI tests, confirm these preventive measures:**
-1. **Interface Reuse Check**: Are you importing existing AI interfaces (`pkg/ai/llm.Client`)?
-2. **Creation Prevention**: Are you avoiding creating new AI interfaces in RED phase?
-3. **Mock Verification**: Are you using existing AI mocks from `pkg/testutil/mocks/`?
-4. **Test Design**: Do tests focus on business behavior rather than technical implementation?
+---
 
-**RED Phase Success Indicators**:
-- ✅ Existing AI interfaces imported and used
-- ✅ No new AI interface creation attempted
-- ✅ Existing mock factories utilized
-- ✅ Tests written to fail appropriately per plan
+### **AI GREEN Phase** (20-25 min)
 
-### **APDC-DO-GREEN PHASE: Minimal AI Implementation + Integration**
-**Duration**: 15-20 minutes (within APDC Do phase)
-**APDC Purpose**: Plan-guided implementation with mandatory AI integration
-**Mandatory Actions**:
-1. **MANDATORY**: Enhance existing AI client (e.g., `ClientImpl`)
-2. **MANDATORY**: Add to main app (`cmd/*/main.go`) - APDC integration requirement
-3. **FORBIDDEN**: New AI service files
+**Rule**: Enhance existing AI client (e.g., `ClientImpl`)
+**Integration**: Add to main app (`cmd/*/main.go`)
+**Forbidden**: New AI service files
+**Validation**: Built-in through GREEN phase integration requirement
 
 **AI-Specific GREEN Pattern**:
 ```go
@@ -122,7 +90,7 @@ func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*Conte
 }
 ```
 
-**Integration Pattern**:
+**Integration Example**:
 ```go
 // cmd/kubernaut/main.go
 llmClient := llm.NewClient(config.LLM)
@@ -130,36 +98,13 @@ workflowEngine.SetLLMClient(llmClient)
 processor := processor.New(llmClient, deps...)
 ```
 
-**Prevention-Focused GREEN Phase Guidelines**:
-**Before implementing AI functionality, ensure these preventive measures:**
-1. **Integration Planning**: Have you planned main app integration points (`cmd/*/main.go`)?
-2. **Enhancement Focus**: Are you enhancing existing AI clients rather than creating new files?
-3. **Minimal Implementation**: Is implementation minimal enough to pass tests?
-4. **Main App Integration**: Is AI component integrated during GREEN phase (not delayed)?
+---
 
-**GREEN Phase Success Indicators**:
-- ✅ AI client enhanced in existing files
-- ✅ Main application integration completed
-- ✅ No new AI service files created
-- ✅ Tests pass with minimal implementation
+### **AI REFACTOR Phase** (25-35 min)
 
-### **APDC-DO-REFACTOR PHASE: Enhance AI Methods**
-**Duration**: 20-30 minutes (within APDC Do phase)
-**APDC Purpose**: Plan-structured enhancement of existing AI code
-**Mandatory Actions**:
-1. **MANDATORY**: Enhance same AI methods tests call
-2. **REFACTOR NEVER MEANS**: Create new parallel/additional AI code
-3. **FORBIDDEN**: New AI types, files, interfaces
-
-### **APDC-CHECK PHASE: AI Implementation Validation**
-**Duration**: 5-10 minutes (APDC Check timeframe)
-**APDC Purpose**: Comprehensive validation of AI implementation quality and business alignment
-
-**AI-Enhanced Check Actions**:
-1. **AI Business Verification**: Confirm BR-AI-XXX requirements are met
-2. **AI Integration Validation**: Verify main app integration with AI components
-3. **AI Performance Assessment**: Evaluate AI response quality and performance impact
-4. **AI Confidence Rating**: Provide 60-100% confidence with AI-specific justification
+**Rule**: Enhance same AI methods tests call
+**Forbidden**: New AI types, files, interfaces
+**Validation**: Built-in through REFACTOR phase enhancement focus
 
 **AI-Specific REFACTOR Focus**:
 ```go
@@ -178,136 +123,81 @@ func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*Conte
 }
 ```
 
-**Prevention-Focused REFACTOR Phase Guidelines**:
-**Before enhancing AI implementation, verify these preventive measures:**
-1. **Method Enhancement Focus**: Are you enhancing existing AI methods rather than creating new types?
-2. **Structural Stability**: Are you avoiding new AI types, files, or interfaces?
-3. **Algorithmic Improvement**: Is focus on sophisticated logic within existing structure?
-4. **Integration Preservation**: Is main application integration maintained?
+---
 
-**REFACTOR Phase Success Indicators**:
-- ✅ Existing AI methods enhanced with sophisticated logic
-- ✅ No new AI types or structural changes
-- ✅ Algorithmic improvements implemented
-- ✅ Main application integration preserved
+## 🔧 **AI INTEGRATION PATTERNS**
+
+### **Mock Usage Decision Matrix**
+
+| Component | Action |
+|-----------|--------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK |
+| **AI Business Logic** (analysis algorithms) | REAL |
+| **Error Simulation** | MOCK |
+| **Performance Testing** | MOCK |
+
+### **AI Integration Conflict Resolution**
+
+**When AI rules conflict with general TDD**:
+1. **AI Discovery**: Use AI-specific search patterns (`pkg/ai/`)
+2. **AI Interface Reuse**: Use existing `pkg/ai/llm.Client` interface
+3. **AI Client Enhancement**: Enhance existing clients, don't create new
+4. **AI REFACTOR**: Focus on method enhancement, not structural changes
 
 ---
 
-## 🔄 **APDC-AI INTEGRATION - UNIFIED METHODOLOGY**
+## 📋 **AI-SPECIFIC ANTI-PATTERNS**
 
-### **AI Development within APDC Framework**:
-1. **APDC-Analysis**: Enhanced with AI-specific discovery patterns and business context
-2. **APDC-Plan**: AI TDD strategy mapping within comprehensive implementation planning
-3. **APDC-Do**: AI TDD phases (RED-GREEN-REFACTOR) executed within structured Do phase
-4. **APDC-Check**: AI validation integrated with comprehensive result validation
+### **Creating Parallel AI Components**
+**Violation**: Creating new AI service during REFACTOR
+**Rule**: Enhance existing AI methods only
 
-### **AI-Specific Enhancements to APDC**:
-1. **AI Discovery** enhances APDC Analysis with AI-specific search patterns
-2. **AI Interface Reuse** enforced in APDC Plan phase (use `pkg/ai/llm.Client`)
-3. **AI Client Enhancement** guided by APDC Plan and executed in APDC Do phases
-4. **AI Integration** mandatory in APDC-Do-GREEN phase (main app integration)
-5. **AI Validation** integrated into APDC Check phase with AI-specific metrics
+### **AI-Only Testing**
+**Violation**: AI components only used in tests
+**Rule**: MANDATORY integration in `cmd/*/main.go`
 
-### **AI Mock Usage Decision**
-**AUTHORITY**: Follow the comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc#mock-usage-decision-matrix---authoritative-source)
+### **Hardcoded AI Endpoints**
+**Violation**: Hardcoded LLM URLs in code
+**Rule**: Use configuration for all AI endpoints
 
-**AI-Specific Guidance**:
-- **External AI APIs**: Always MOCK in unit tests (use `pkg/testutil/mocks/ai_mocks.go`)
-- **AI Business Logic**: Always REAL - test actual analysis algorithms and business logic
-- **Error Simulation**: MOCK for controlled testing scenarios
-- **Performance Testing**: MOCK for predictable performance scenarios
+### **AI Without Business Validation**
+**Violation**: Testing AI technical function without business outcome
+**Rule**: Validate business value delivered (confidence, accuracy, recommendations)
 
 ---
 
-## 🚨 **AI ANTI-PATTERNS - FORBIDDEN**
+## ⚡ **QUICK REFERENCE**
 
-### **AI Development Anti-Patterns**
-- Creating parallel AI components during REFACTOR
-- AI components only used in tests
-- Hardcoded AI endpoints
-- AI-only testing without business validation
+### **AI TDD Checklist**
 
-### **AI TDD Violations**
-- **AI Discovery Skip**: Creating AI without searching existing → Use AI-specific discovery first
-- **AI Interface Creation**: New AI interfaces in RED → Use existing `pkg/ai/llm.Client`
-- **AI Service Proliferation**: New AI files in GREEN → Enhance existing clients only
-- **AI Structural Changes**: New AI types in REFACTOR → Enhance methods only
+**Discovery**:
+- [ ] Searched existing AI interfaces in `pkg/ai/`
+- [ ] Confirmed main app AI usage in `cmd/`
+- [ ] Chose enhancement over creation
 
----
+**RED**:
+- [ ] Used existing `pkg/ai/llm.Client` interface
+- [ ] Used existing mock factories
+- [ ] Tests failing appropriately
 
-## 📋 **APDC-AI UNIFIED VALIDATION CHECKLIST**
+**GREEN**:
+- [ ] Enhanced existing AI client
+- [ ] Integrated in `cmd/*/main.go`
+- [ ] Minimal implementation passes tests
 
-### **APDC-Analysis Phase (AI Discovery)**
-- [ ] Business requirement mapped (BR-AI-XXX format)
-- [ ] AI technical context analyzed: `grep -r "Client.*interface" pkg/ai/`
-- [ ] AI integration assessment: `grep -r "AI\|LLM\|Holmes" cmd/`
-- [ ] AI decision documented: enhance vs create (following APDC risk evaluation)
-
-### **APDC-Plan Phase (AI Implementation Strategy)**
-- [ ] AI TDD strategy mapped to RED-GREEN-REFACTOR approach
-- [ ] AI interface enhancement plan documented (`pkg/ai/llm.Client`)
-- [ ] AI integration points defined (`cmd/*/main.go`)
-- [ ] AI success criteria established with measurable outcomes
-
-### **APDC-Do-RED Phase (AI Test Creation)**
-- [ ] Used existing AI interfaces (`pkg/ai/llm.Client`)
-- [ ] No new AI interfaces created
-- [ ] Used existing AI mocks from `pkg/testutil/mocks/`
-- [ ] Tests fail appropriately per APDC plan
-
-### **APDC-Do-GREEN Phase (AI Minimal Implementation)**
-- [ ] Enhanced existing AI client implementation
-- [ ] Integrated in main application (`cmd/*/main.go`) - APDC integration requirement
-- [ ] No new AI service files created
-- [ ] Tests pass with minimal implementation per APDC plan
-
-### **APDC-Do-REFACTOR Phase (AI Enhancement)**
-- [ ] Enhanced existing AI method implementations per APDC plan
-- [ ] No new AI types, files, or interfaces
-- [ ] Focused on algorithmic improvements within APDC structure
-- [ ] Maintained integration with main application
-
-### **APDC-Check Phase (AI Validation)**
-- [ ] AI business verification: BR-AI-XXX requirements confirmed met
-- [ ] AI integration validation completed
-- [ ] AI performance impact assessed
-- [ ] AI confidence rating provided (60-100% with AI-specific justification)
+**REFACTOR**:
+- [ ] Enhanced existing AI methods only
+- [ ] No new AI types/files created
+- [ ] Integration preserved
 
 ---
 
-## 🎯 **AI INTEGRATION REQUIREMENTS**
+## 📚 **RELATED DOCUMENTATION**
 
-### **Mandatory AI Integration Points**
-```go
-// cmd/kubernaut/main.go
-llmClient := llm.NewClient(config.LLM)
-workflowEngine.SetLLMClient(llmClient)
-processor := processor.New(llmClient, deps...)
-```
-
-### **AI Configuration Integration**
-```go
-// config/ai.yaml
-ai:
-  provider: "holmesgpt"
-  endpoint: "http://192.168.1.169:8080"
-  model: "hf://ggml-org/gpt-oss-20b-GGUF"
-  timeout: "30s"
-```
-
-### **AI Error Handling Integration**
-```go
-// Integrate AI errors with main error handling
-if err := aiClient.Analyze(ctx, data); err != nil {
-    return fmt.Errorf("AI analysis failed: %w", err)
-}
-```
+- **[Core Rules](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)** - APDC methodology and TDD workflow
+- **[AI/ML Guidelines](mdc:.cursor/rules/04-ai-ml-guidelines.mdc)** - AI provider patterns and integration
+- **[Testing Strategy](mdc:.cursor/rules/03-testing-strategy.mdc)** - Mock strategy and test pyramid
 
 ---
 
-## 🔗 **INTEGRATION WITH OTHER RULES**
-
-**Enforces**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) TDD methodology for AI components
-**Supports**: [04-ai-ml-guidelines.mdc](mdc:.cursor/rules/04-ai-ml-guidelines.mdc) AI service architecture
-**Resolves**: Conflicts between TDD and AI development patterns
-**Priority**: SPECIALIZED - AI-specific TDD methodology that overrides general patterns when developing AI components
+**Remember**: AI components follow the same APDC and TDD rules as all other code. Use existing interfaces, integrate in main apps, enhance rather than create.

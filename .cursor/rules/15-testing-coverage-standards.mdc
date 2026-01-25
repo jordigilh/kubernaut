@@ -1,0 +1,224 @@
+---
+globs: "*.md,*_test.go,*/testing-strategy.md,*/IMPLEMENTATION_PLAN*.md"
+description: "Testing coverage standards - AUTHORITATIVE reference to prevent inconsistencies"
+---
+
+# Testing Coverage Standards - AUTHORITATIVE
+
+## 🚨 **MANDATORY: Single Source of Truth**
+
+**PRIMARY AUTHORITY**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
+
+**This rule exists to prevent documentation inconsistencies discovered on 2025-11-18.**
+
+---
+
+## ✅ **CORRECT Testing Coverage Standards for Kubernaut**
+
+### **MANDATORY Percentages (Microservices Architecture)**
+
+```markdown
+- **Unit Tests**: 70%+ coverage (ALL unit-testable BRs)
+- **Integration Tests**: >50% coverage (microservices coordination)
+- **E2E Tests**: 10-15% coverage (critical user journeys)
+```
+
+### **Why >50% Integration Coverage is Required**
+
+Kubernaut's microservices architecture requires high integration test coverage for:
+- ✅ **CRD-based coordination** between 10+ services
+- ✅ **Watch-based status propagation** (difficult to unit test)
+- ✅ **Owner reference lifecycle management**
+- ✅ **Cross-service error handling**
+- ✅ **Service discovery and communication patterns**
+
+**Authoritative Source**: [03-testing-strategy.mdc lines 72-86](mdc:.cursor/rules/03-testing-strategy.mdc)
+
+---
+
+## ❌ **INCORRECT Standards to AVOID**
+
+### **Old/Monolithic Standards (DO NOT USE)**
+
+```markdown
+❌ Unit Tests: 70%
+❌ Integration Tests: <20% or 20%  ← WRONG FOR MICROSERVICES
+❌ E2E Tests: <10%
+```
+
+**Why This is Wrong**:
+- ❌ Based on monolithic application patterns
+- ❌ Insufficient for CRD controller testing requirements
+- ❌ Does not account for microservices coordination needs
+- ❌ Inadequate for watch-based patterns and K8s API testing
+
+---
+
+## 📋 **Documentation Locations to Keep Consistent**
+
+### **High-Priority User-Facing Documents**
+1. ✅ **`README.md`** - Main project documentation (line ~254)
+2. ✅ **Service READMEs** (effectiveness-monitor, etc.)
+3. ✅ **Test file comments** (e.g., `test/integration/gateway/storm_aggregation_test.go`)
+
+### **Service-Specific Documentation**
+4. ✅ **Implementation Plans** (current versions only, e.g., `IMPLEMENTATION_PLAN_V2.24.md`)
+5. ✅ **Testing Strategy Documents** (per service)
+6. ✅ **Implementation Checklists**
+7. ✅ **BR Coverage Matrix Documents**
+8. ✅ **Service Location Decisions**
+
+### **Archived Documents**
+- ⚠️ **Lower Priority**: Archived implementation plans can remain as historical records
+
+---
+
+## 🔍 **Detection Commands**
+
+### **Find Incorrect "<20%" References**
+```bash
+# Find files with incorrect integration coverage
+grep -r "Integration.*<20%\|Integration.*20%" \
+  --include="*.md" \
+  --include="*_test.go" \
+  --exclude-dir="archive" \
+  . | grep -v "archive/"
+```
+
+### **Verify Correct ">50%" Usage**
+```bash
+# Find files with correct integration coverage
+grep -r "Integration.*>50%" \
+  --include="*.md" \
+  --include="*_test.go" \
+  .
+```
+
+---
+
+## ✍️ **Standard Phrasing for Documentation**
+
+### **For Markdown Documentation**
+```markdown
+### Testing Strategy
+
+Kubernaut follows a **defense-in-depth testing pyramid**:
+
+- **Unit Tests**: **70%+ coverage** - Extensive business logic with external mocks only
+- **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
+- **E2E Tests**: **10-15% coverage** - Critical end-to-end user journeys
+
+**Rationale**: Microservices architecture with CRD-based coordination requires high integration coverage for validating service interactions, watch-based patterns, and Kubernetes API behavior.
+```
+
+### **For Test File Comments**
+```go
+// Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
+// - Unit tests (70%+): Business logic in isolation
+// - Integration tests (>50%): Infrastructure interaction, microservices coordination
+// - E2E tests (10-15%): Complete workflow validation
+```
+
+### **For Service Implementation Plans**
+```markdown
+**Unit Tests (70%+)**:
+- **MOCK**: External dependencies only (Redis, LLM, etc.)
+- **REAL**: All business logic components
+
+**Integration Tests (>50%)**:
+- **MOCK**: NONE - Use real services in Kind cluster
+- **REAL**: Cross-service interactions, CRD coordination, K8s API
+- **RATIONALE**: Microservices architecture with CRD-based coordination requires high integration coverage
+
+**E2E Tests (10-15%)**:
+- **MOCK**: Minimal
+- **REAL**: Complete end-to-end workflows
+```
+
+---
+
+## 🚫 **AI Assistant Enforcement**
+
+### **MANDATORY Pre-Documentation Generation Check**
+
+Before generating or modifying any testing documentation, AI MUST:
+
+```xml
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">Integration.*coverage|integration.*test</parameter>
+<parameter name="path">[target_file]</parameter>
+<parameter name="output_mode">content</parameter>
+<parameter name="-i">true</parameter>
+</invoke>
+</function_calls>
+```
+
+**Validation Checkpoint**:
+```
+✅ TESTING COVERAGE DOCUMENTATION CHECKPOINT:
+- [ ] Used ">50%" for integration tests ✅/❌
+- [ ] Avoided "<20%" or "20%" for integration ✅/❌
+- [ ] Referenced microservices architecture rationale ✅/❌
+- [ ] Cited authoritative source (03-testing-strategy.mdc) ✅/❌
+
+❌ STOP: Cannot generate documentation until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 TESTING COVERAGE STANDARD VIOLATION: Documentation uses incorrect integration coverage - DEVELOPMENT STOPPED"
+
+---
+
+## 🎯 **Quick Reference Card**
+
+| Aspect | Correct Standard | Incorrect (Avoid) | Rationale |
+|--------|-----------------|-------------------|-----------|
+| **Unit** | 70%+ | 70% (exact) | ALL unit-testable BRs, not just 70% |
+| **Integration** | **>50%** | <20% or 20% | **Microservices coordination** |
+| **E2E** | 10-15% | <10% | Range accounts for service type |
+
+---
+
+## 📚 **Reference Authority Hierarchy**
+
+1. **PRIMARY**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) (lines 72-86)
+2. **SECONDARY**: Service-specific `testing-strategy.md` files (must reference primary)
+3. **TERTIARY**: Implementation plans (must reference primary or secondary)
+
+**CONFLICT RESOLUTION**: If any document conflicts with 03-testing-strategy.mdc, the rule file is AUTHORITATIVE.
+
+---
+
+## 🔧 **Maintenance Protocol**
+
+### **When to Update This Rule**
+- Architecture changes (e.g., move from microservices to monolithic)
+- Testing strategy evolution (documented in ADR)
+- Discovery of new inconsistencies
+
+### **Update Process**
+1. Update [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) first (with ADR if significant)
+2. Update this rule file (15-testing-coverage-standards.mdc)
+3. Run detection commands to find affected files
+4. Update all affected documentation systematically
+5. Create PR with "testing-coverage-standards" label
+
+---
+
+## ✅ **Success Criteria**
+
+This rule is successful when:
+- ✅ All new documentation uses ">50%" for integration tests
+- ✅ Zero instances of "<20%" or "20%" in non-archived documentation
+- ✅ All service documentation references microservices rationale
+- ✅ AI assistant blocks incorrect coverage documentation
+
+---
+
+**Document Status**: ✅ Active
+**Created**: 2025-11-18
+**Last Updated**: 2025-11-18
+**Priority Level**: 4 - ENFORCEMENT (per conflict-resolution-matrix)
+**Authority**: Enforces 03-testing-strategy.mdc standards
+

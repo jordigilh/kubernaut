@@ -31,26 +31,37 @@ limitations under the License.
 // - Integration tests (>50%): Real K8s API (envtest) + mock/real HAPI
 // - E2E tests (10-15%): Real K8s API (KIND) + real HAPI
 //
-// Infrastructure (AUTO-STARTED in SynchronizedBeforeSuite):
+// DD-TEST-010: Multi-Controller Architecture (Controller-Per-Process Pattern)
+// Infrastructure (AUTO-STARTED in Phase 1, process 1 only):
 // - PostgreSQL (port 15438): Persistence layer
 // - Redis (port 16384): Caching layer
 // - Data Storage API (port 18095): Audit trail
-// - HolmesGPT API (port 18120): AI analysis service (MOCK_LLM_MODE=true)
-// - All services started via podman-compose programmatically
+// - Mock LLM Service (port 18141): Standalone OpenAI-compatible mock (AIAnalysis-specific)
+// - HolmesGPT API (port 18120): AI analysis service (uses Mock LLM at 18141)
+//
+// Per-Process Setup (Phase 2, all processes):
+// - envtest: In-memory Kubernetes API server (per process)
+// - Controller Manager: AIAnalysis reconciler (per process)
+// - Handlers: Investigating, Analyzing (per process)
+// - Metrics: Isolated Prometheus registry (per process)
+// - Audit Store: Buffered audit client (per process)
 package aianalysis
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,29 +84,44 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+// DD-TEST-010: Per-process variables (no shared state between processes)
 var (
 	ctx        context.Context
 	cancel     context.CancelFunc
 	testEnv    *envtest.Environment
-	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
-	auditStore audit.AuditStore // Audit store for DD-AUDIT-003
+	auditStore audit.AuditStore
 
-	// Real HAPI client for integration tests (with MOCK_LLM_MODE=true inside HAPI)
-	// Per testing strategy: Only LLM is mocked (inside HAPI), all other services are real
+	// Per-process HAPI client (each process gets its own)
 	realHGClient *hgclient.HolmesGPTClient
 
-	// Real Rego evaluator for integration tests
-	// Per user requirement: "real rego evaluator for all 3 tiers"
+	// Per-process Rego evaluator
 	realRegoEvaluator *rego.Evaluator
 	regoCtx           context.Context
 	regoCancel        context.CancelFunc
 
 	// DD-TEST-002: Unique namespace per test for parallel execution
 	testNamespace string
+
+	// DD-METRICS-001: Per-process isolated Prometheus registry
+	testRegistry *prometheus.Registry
+	testMetrics  *metrics.Metrics
+
+	// DD-TEST-010: Per-process reconciler instance for metrics access
+	// WorkflowExecution pattern: Store reconciler to access metrics directly
+	reconciler *aianalysis.AIAnalysisReconciler
+
+	// DD-TEST-010: Track infrastructure for cleanup (shared reference)
+	dsInfra *infrastructure.DSBootstrapInfra
+
+	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
+	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
+	// Example: "oomkill-increase-memory-v1:production" → "02fad812-0ad1-4da6-b3bb-cc322a1fda47"
+	workflowUUIDs map[string]string
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -103,99 +129,316 @@ func TestAIAnalysisIntegration(t *testing.T) {
 	RunSpecs(t, "AIAnalysis Controller Integration Suite (Envtest)")
 }
 
-// SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
-// This follows Gateway/Notification pattern for automated infrastructure startup
+// DD-TEST-010: Multi-Controller Architecture
+// Phase 1: Infrastructure ONLY (Process 1 ONLY)
+// Phase 2: Per-Process Controller Environment (ALL Processes)
 //
 // TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds locally, but up to 3+ minutes in CI.
 // CI environments (GitHub Actions) have slower container startup times, especially HAPI.
 // Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
 // NodeTimeout(5*time.Minute) ensures sufficient time for complete infrastructure startup in CI.
-var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecContext) []byte {
-	// This runs ONCE on process 1 only - creates shared infrastructure
+var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecContext) []byte {
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// Phase 1: Infrastructure ONLY (Process 1 ONLY)
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// Per DD-TEST-010: Phase 1 starts ONLY shared infrastructure containers
+	// NO envtest, NO controller, NO metrics - these are created per-process in Phase 2
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("AIAnalysis Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("AIAnalysis Integration - DD-TEST-010 Multi-Controller Pattern")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("Creating test infrastructure...")
-	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("Phase 1: Infrastructure Startup (process 1 only)")
 	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
-	GinkgoWriter.Println("  • HolmesGPT API (port 18120, MOCK_LLM_MODE=true)")
+	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")
+	GinkgoWriter.Println("  • HolmesGPT-API HTTP service (port 18120, uses Mock LLM)")
+	GinkgoWriter.Println("")
+	GinkgoWriter.Println("Phase 2 will create PER-PROCESS (all processes):")
+	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("  • Controller manager + AIAnalysis reconciler")
+	GinkgoWriter.Println("  • Handlers, metrics, audit store")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	ctx, cancel = context.WithCancel(context.TODO())
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Building DataStorage, Mock LLM, and HAPI images in parallel")
+	var (
+		dsImageName      string
+		mockLLMImageName string
+		hapiImageName    string
+		dsErr            error
+		mockErr          error
+		hapiErr          error
+		wg               sync.WaitGroup
+	)
 
-	By("Starting AIAnalysis integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage, HolmesGPT-API
-	// Per DD-TEST-001: Ports 15438, 16384, 18095, 18120
+	wg.Add(3)
+
+	// Goroutine 1: Build DataStorage image (~60s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		dsImageName, dsErr = infrastructure.BuildDataStorageImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	// Goroutine 2: Build Mock LLM image (~40s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		mockLLMImageName, mockErr = infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	// Goroutine 3: Build HAPI image (~100s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		hapiImageName, hapiErr = infrastructure.BuildHAPIImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	wg.Wait() // Wait for all three builds to complete
+
+	// Check for errors after parallel builds
+	Expect(dsErr).ToNot(HaveOccurred(), "DataStorage image must build successfully")
+	Expect(mockErr).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
+	Expect(hapiErr).ToNot(HaveOccurred(), "HAPI image must build successfully")
+	GinkgoWriter.Printf("✅ All three images built in parallel: DS=%s, MockLLM=%s, HAPI=%s\n", dsImageName, mockLLMImageName, hapiImageName)
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SEQUENTIAL DEPLOYMENT: Start DataStorage, seed workflows, start Mock LLM
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Starting AIAnalysis integration infrastructure (PostgreSQL, Redis, DataStorage)")
+	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
 	var err error
-	err = infrastructure.StartAIAnalysisIntegrationInfrastructure(GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "aianalysis",
+		PostgresPort:    15438, // DD-TEST-001 v2.2
+		RedisPort:       16384, // DD-TEST-001 v2.2
+		DataStoragePort: 18095, // DD-TEST-001 v2.2
+		MetricsPort:     19095,
+		ConfigDir:       "test/integration/aianalysis/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy")
+	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 
-	By("Registering AIAnalysis CRD scheme")
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
+
+	// Seed test workflows into DataStorage BEFORE starting Mock LLM
+	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
+	// Must seed workflows first so Mock LLM can load UUIDs at startup
+	By("Seeding test workflows into DataStorage")
+	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
+
+	// Write Mock LLM config file with workflow UUIDs
+	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
+	// Mock LLM will read this file at startup (no HTTP calls required)
+	By("Writing Mock LLM configuration file with workflow UUIDs")
+	// Use absolute path in test directory (not /tmp which may be cleared)
+	mockLLMConfigPath, err := filepath.Abs("mock-llm-config.yaml")
+	Expect(err).ToNot(HaveOccurred(), "Must get absolute path for config file")
+	err = WriteMockLLMConfigFile(mockLLMConfigPath, workflowUUIDs, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM config file must be written successfully")
+
+	// Clean up config file on exit
+	DeferCleanup(func() {
+		_ = os.Remove(mockLLMConfigPath)
+	})
+
+	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
+	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
+	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
+	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
+	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
+	mockLLMConfig.Network = "aianalysis_test_network" // Join same network as HAPI for container-to-container DNS
+	mockLLMConfig.ConfigFilePath = mockLLMConfigPath  // DD-TEST-011 v2.0: Mount config file
+	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
+	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM service started with config file (port %d)\n", mockLLMConfig.Port)
+
+	// Clean up Mock LLM on exit
+	DeferCleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stopCancel()
+		if err := infrastructure.StopMockLLMContainer(stopCtx, mockLLMConfig, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to stop Mock LLM container: %v\n", err)
+		}
+	})
+
+	By("Starting HolmesGPT-API HTTP service (using pre-built image)")
+	// AA integration tests use OpenAPI HAPI client (HTTP-based)
+	// DD-TEST-001 v2.3: HAPI port 18120, Mock LLM port 18141
+	// OPTIMIZATION: Use pre-built image from parallel build (no BuildContext/BuildDockerfile)
+	hapiConfigDir, err := filepath.Abs("hapi-config")
+	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
+	hapiConfig := infrastructure.GenericContainerConfig{
+		Name:    "aianalysis_hapi_test",
+		Image:   hapiImageName, // Use pre-built image from parallel build
+		Network: "aianalysis_test_network",
+		Ports:   map[int]int{8080: 18120}, // container:host
+		Env: map[string]string{
+			"LLM_ENDPOINT":     infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig), // http://mock-llm-aianalysis:8080 (container-to-container)
+			"LLM_MODEL":        "mock-model",
+			"LLM_PROVIDER":     "openai",                             // Required by litellm
+			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
+			"DATA_STORAGE_URL": "http://host.containers.internal:18095", // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
+			"PORT":             "8080",
+			"LOG_LEVEL":        "DEBUG",
+		},
+		Volumes: map[string]string{
+			hapiConfigDir: "/etc/holmesgpt:ro", // Mount HAPI config directory
+		},
+		// BuildContext and BuildDockerfile removed - image already built in parallel
+		HealthCheck: &infrastructure.HealthCheckConfig{
+			URL:     "http://127.0.0.1:18120/health",
+			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
+		},
+	}
+	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
+	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
+	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
+
+
+	// Clean up HAPI container on exit
+	DeferCleanup(func() {
+		// Capture HAPI logs before stopping container (for HTTP 500 RCA)
+		GinkgoWriter.Println("\n📋 Capturing HAPI container logs before cleanup:")
+		logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
+		logsCmd.Stdout = GinkgoWriter
+		logsCmd.Stderr = GinkgoWriter
+		_ = logsCmd.Run()
+		GinkgoWriter.Println("")
+
+		_ = infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
+	})
+
+	GinkgoWriter.Println("✅ Infrastructure startup complete (Phase 1)")
+	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
+	GinkgoWriter.Println("")
+
+	// DD-TEST-010: Phase 1 → Phase 2 data passing
+	// Serialize workflowUUIDs map so ALL processes can access actual UUIDs
+	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
+	workflowUUIDsJSON, err := json.Marshal(workflowUUIDs)
+	Expect(err).ToNot(HaveOccurred(), "workflowUUIDs must serialize for Phase 2")
+	return workflowUUIDsJSON
+}, func(specCtx SpecContext, data []byte) {
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// Phase 2: Per-Process Controller Environment (ALL Processes)
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// Per DD-TEST-010: Each process gets its own controller, envtest, metrics, etc.
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	// DD-TEST-010: Deserialize workflow UUIDs from Phase 1
+	// All processes receive the same workflow UUID mapping for test assertions
+	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
+	deserializeErr := json.Unmarshal(data, &workflowUUIDs)
+	Expect(deserializeErr).ToNot(HaveOccurred(), "workflowUUIDs must deserialize from Phase 1")
+
+	processNum := GinkgoParallelProcess()
+	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
+	GinkgoWriter.Printf("✅ [Process %d] Received %d workflow UUID mappings from Phase 1\n", processNum, len(workflowUUIDs))
+
+	// Declare Phase 2 variables
+	var err error
+	var cfg *rest.Config
+
+	By(fmt.Sprintf("[Process %d] Creating per-process context", processNum))
+	ctx, cancel = context.WithCancel(context.Background())
+
+	By(fmt.Sprintf("[Process %d] Registering AIAnalysis CRD scheme", processNum))
 	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping test environment")
+	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))
+	// DD-TEST-010: Each process gets its OWN Kubernetes API server (envtest)
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	By("Creating controller-runtime client")
+	By(fmt.Sprintf("[Process %d] Creating per-process K8s client", processNum))
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("Creating required namespaces")
+	By(fmt.Sprintf("[Process %d] Creating per-process namespaces", processNum))
 	// Create kubernaut-system namespace for controller
 	systemNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-system",
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
 	}
 	err = k8sClient.Create(ctx, systemNs)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create default namespace for tests
 	defaultNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: "default"},
 	}
 	_ = k8sClient.Create(ctx, defaultNs) // May already exist
 
-	GinkgoWriter.Println("✅ Namespaces created: kubernaut-system, default")
+	By(fmt.Sprintf("[Process %d] Setting up per-process controller manager", processNum))
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: "0", // Random port per process (no conflicts)
+		},
+	})
+	Expect(err).ToNot(HaveOccurred())
 
-	By("Setting up REAL HolmesGPT-API client")
-	// Integration tests use REAL HAPI service (http://localhost:18120)
-	// HAPI runs with MOCK_LLM_MODE=true to avoid LLM costs (only mock allowed)
-	// The HAPI service has deterministic mock responses for special SignalType values:
-	// - MOCK_NO_WORKFLOW_FOUND → needs_human_review=true, reason="no_matching_workflows"
-	// - MOCK_LOW_CONFIDENCE → needs_human_review=true, reason="low_confidence"
-	// - Other signal types → normal successful responses
-	realHGClient, err = hgclient.NewHolmesGPTClient(hgclient.Config{
+	By(fmt.Sprintf("[Process %d] Creating per-process isolated metrics registry", processNum))
+	// DD-METRICS-001: Each process needs isolated Prometheus registry
+	testRegistry = prometheus.NewRegistry()
+	testMetrics = metrics.NewMetricsWithRegistry(testRegistry)
+
+	By(fmt.Sprintf("[Process %d] Creating per-process audit store", processNum))
+	// Each process connects to shared DataStorage (from Phase 1)
+	// but maintains its own buffer and client
+	auditMockTransport := testauth.NewMockUserTransport(
+		fmt.Sprintf("test-aianalysis@integration.test-p%d", processNum),
+	)
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
+		5*time.Second,
+		auditMockTransport,
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
+
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
+	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
+
+	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
+
+	// Create audit client for handlers
+	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
+
+	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client", processNum))
+	// Each process gets its own HAPI HTTP client (connects to shared HAPI service)
+	hapiMockTransport := testauth.NewMockUserTransport(
+		fmt.Sprintf("aianalysis-service@integration.test-p%d", processNum),
+	)
+	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
-	})
+	}, hapiMockTransport)
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
-	By("Setting up REAL Rego evaluator with production policies")
+	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Per user requirement: "real rego evaluator for all 3 tiers"
-	// Integration tests MUST use real Rego evaluator to validate actual policy behavior
-	// Per TESTING_GUIDELINES.md: Integration tests validate business logic, not infrastructure
 	policyPath := filepath.Join("..", "..", "..", "config", "rego", "aianalysis", "approval.rego")
 	realRegoEvaluator = rego.NewEvaluator(rego.Config{
 		PolicyPath: policyPath,
@@ -208,246 +451,125 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	err = realRegoEvaluator.StartHotReload(regoCtx)
 	Expect(err).NotTo(HaveOccurred(), "Production policy should load successfully in integration tests")
 
-	GinkgoWriter.Println("✅ Real Rego evaluator initialized with production policy")
-	GinkgoWriter.Printf("  • Policy path: %s\n", policyPath)
-	GinkgoWriter.Printf("  • Policy hash: %s\n", realRegoEvaluator.GetPolicyHash())
-
-	By("Setting up audit client for flow-based audit integration tests")
-	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
-	// Per DD-TEST-001: AIAnalysis Data Storage port 18095
-	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
-	GinkgoWriter.Println("📋 Setting up audit store...")
-	dsClient, err := audit.NewOpenAPIClientAdapter(
-		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
-		5*time.Second,
-	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
-
-	auditConfig := audit.DefaultConfig()
-	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
-	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
-
-	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
-	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
-	GinkgoWriter.Println("✅ Audit store configured")
-
-	// Create audit client for handlers
-	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
-
-	By("Setting up the controller manager")
-	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: "0", // Use random port to avoid conflicts in parallel tests
-		},
-	})
-	Expect(err).ToNot(HaveOccurred())
-
-	By("Setting up the AIAnalysis controller with handlers")
-	// DD-METRICS-001: Create metrics instance for integration testing
-	testMetrics := metrics.NewMetrics()
-
+	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
 	// Create handlers with REAL HAPI client, metrics, and REAL audit client
-	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
-	// Integration tests use REAL services (only LLM inside HAPI is mocked for cost)
 	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
 	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
-	// Create controller with wired handlers and audit client
-	// Per DD-AUDIT-003: Audit client MUST be wired for audit trail compliance
-	err = (&aianalysis.AIAnalysisReconciler{
-		Metrics:              testMetrics, // DD-METRICS-001: Inject metrics
+	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
+	// Storing reconciler enables tests to access metrics via reconciler.Metrics
+	reconciler = &aianalysis.AIAnalysisReconciler{
+		Metrics:              testMetrics, // DD-METRICS-001: Per-process metrics
 		Client:               k8sManager.GetClient(),
 		Scheme:               k8sManager.GetScheme(),
 		Recorder:             k8sManager.GetEventRecorderFor("aianalysis-controller"),
 		Log:                  ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:        status.NewManager(k8sManager.GetClient()), // DD-PERF-001: Atomic status updates
+		StatusManager:        status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
 		InvestigatingHandler: investigatingHandler,
 		AnalyzingHandler:     analyzingHandler,
-		AuditClient:          auditClient, // ✅ REAL AUDIT CLIENT WIRED
-	}).SetupWithManager(k8sManager)
+		AuditClient:          auditClient,
+	}
+	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	By("Starting the controller manager")
+	By(fmt.Sprintf("[Process %d] Starting per-process controller manager", processNum))
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 
-	By("Waiting for controller manager to be ready")
-	// Per TESTING_GUIDELINES.md: Use Eventually(), NEVER time.Sleep()
+	By(fmt.Sprintf("[Process %d] Waiting for per-process controller manager to be ready", processNum))
 	Eventually(func() bool {
-		// Check if manager's cache is synced (indicates readiness)
 		return k8sManager.GetCache().WaitForCacheSync(ctx)
 	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue(), "Controller manager cache should sync within 10s")
 
-	// Note: Metrics server uses dynamic port allocation (":0") to prevent conflicts
-	// Port discovery is not exposed by controller-runtime Manager interface
-
-	GinkgoWriter.Println("✅ AIAnalysis integration test environment ready!")
+	GinkgoWriter.Printf("✅ [Process %d] Controller ready\n", processNum)
+	GinkgoWriter.Printf("  • envtest: %s\n", cfg.Host)
+	GinkgoWriter.Printf("  • Controller: AIAnalysisReconciler\n")
+	GinkgoWriter.Printf("  • Metrics: Isolated registry (per-process)\n")
+	GinkgoWriter.Printf("  • Audit: Buffered store → DataStorage\n")
 	GinkgoWriter.Println("")
-	GinkgoWriter.Println("Environment:")
-	GinkgoWriter.Println("  • ENVTEST with real Kubernetes API (etcd + kube-apiserver)")
-	GinkgoWriter.Println("  • AIAnalysis CRD installed")
-	GinkgoWriter.Println("  • AIAnalysis controller with REAL handlers:")
-	GinkgoWriter.Println("    - InvestigatingHandler: REAL HolmesGPT-API client")
-	GinkgoWriter.Println("    - AnalyzingHandler: REAL Rego evaluator (production policies)")
-	GinkgoWriter.Println("  • REAL services (per TESTING_GUIDELINES.md):")
-	GinkgoWriter.Println("    - PostgreSQL: localhost:15438")
-	GinkgoWriter.Println("    - Redis: localhost:16384")
-	GinkgoWriter.Println("    - Data Storage: http://localhost:18095")
-	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM only)")
-	GinkgoWriter.Println("")
-
-	// Serialize REST config to pass to all processes
-	// Each process needs to create its own k8s client
-	configBytes, err := json.Marshal(struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}{
-		Host:     cfg.Host,
-		CAData:   cfg.CAData,
-		CertData: cfg.CertData,
-		KeyData:  cfg.KeyData,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	return configBytes
-}, func(specCtx SpecContext, data []byte) {
-	// This runs on ALL parallel processes (including process 1)
-	// Each process creates its own k8s client and context
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	// Deserialize REST config from process 1
-	var configData struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}
-	err := json.Unmarshal(data, &configData)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register AIAnalysis CRD scheme (MUST be done before creating client)
-	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create per-process REST config
-	cfg = &rest.Config{
-		Host: configData.Host,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   configData.CAData,
-			CertData: configData.CertData,
-			KeyData:  configData.KeyData,
-		},
-	}
-
-	// Create per-process k8s client
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
-
-	// Create per-process context ONLY if not already set (process 1 has it from first function)
-	// Process 1: ctx already set and used by controller manager - don't overwrite!
-	// Processes 2-4: Need ctx for test operations
-	if ctx == nil {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
-
-	// Create per-process REAL HAPI client (each process gets its own client)
-	// Integration tests use REAL HAPI service with MOCK_LLM_MODE=true (only mock allowed)
-	realHGClient, err = hgclient.NewHolmesGPTClient(hgclient.Config{
-		BaseURL: "http://localhost:18120",
-		Timeout: 30 * time.Second,
-	})
-	if err != nil {
-		// Don't fail here - let tests fail if HAPI is not available
-		GinkgoWriter.Printf("⚠️ Warning: failed to create real HAPI client: %v\n", err)
-	}
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution
 var _ = SynchronizedAfterSuite(func() {
-	// This runs on ALL parallel processes - no cleanup needed per process
-}, func() {
-	// This runs ONCE on the last parallel process - cleanup shared infrastructure
-	By("Stopping Rego evaluator")
+	// This runs on ALL parallel processes - cleanup per-process resources
+	processNum := GinkgoParallelProcess()
+	GinkgoWriter.Printf("[Process %d] Cleaning up per-process resources...\n", processNum)
+
+	By(fmt.Sprintf("[Process %d] Stopping Rego evaluator", processNum))
 	if regoCancel != nil {
 		regoCancel() // Stop hot-reload goroutine
-		GinkgoWriter.Println("✅ Rego evaluator stopped")
 	}
 
-	By("Flushing audit store before shutdown")
-	// Per DD-007: Graceful shutdown MUST flush all audit events
-	// AA-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
-	// This prevents "connection refused" errors during cleanup when the
-	// background writer tries to flush buffered events after DataStorage is stopped.
-	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
-	GinkgoWriter.Println("📋 Flushing audit store...")
-
+	By(fmt.Sprintf("[Process %d] Flushing audit store", processNum))
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer flushCancel()
 
-	if err := auditStore.Flush(flushCtx); err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: failed to flush audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	if auditStore != nil {
+		if err := auditStore.Flush(flushCtx); err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Failed to flush audit store: %v\n", processNum, err)
+		}
+		if err := auditStore.Close(); err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Audit store close error: %v\n", processNum, err)
+		}
 	}
 
-	if err := auditStore.Close(); err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: audit store close error: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store closed")
+	By(fmt.Sprintf("[Process %d] Stopping controller manager", processNum))
+	if cancel != nil {
+		cancel()
 	}
 
-	By("Tearing down the test environment")
-	cancel()
-
+	By(fmt.Sprintf("[Process %d] Tearing down envtest environment", processNum))
 	if testEnv != nil {
 		err := testEnv.Stop()
-		Expect(err).NotTo(HaveOccurred())
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop envtest: %v\n", processNum, err)
+		}
+	}
+
+	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete\n", processNum)
+}, func() {
+	// This runs ONCE on the last parallel process - cleanup shared infrastructure
+	GinkgoWriter.Println("━━━ [Last Process] Cleaning up shared infrastructure ━━━")
+
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	if dsInfra != nil {
+		GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+		infrastructure.MustGatherContainerLogs("aianalysis", []string{
+			dsInfra.DataStorageContainer,
+			dsInfra.PostgresContainer,
+			dsInfra.RedisContainer,
+			"mock-llm-aianalysis",  // Mock LLM service
+			"aianalysis_hapi_test", // HolmesGPT-API service
+		}, GinkgoWriter)
 	}
 
 	// Check if containers should be preserved for debugging
-	// Set PRESERVE_CONTAINERS=true to keep containers running after tests
-	// This is useful for inspecting logs when tests fail
 	preserveContainers := os.Getenv("PRESERVE_CONTAINERS") == "true"
 
 	if preserveContainers {
 		GinkgoWriter.Println("⚠️  Tests may have failed - preserving containers for debugging")
 		GinkgoWriter.Println("📋 To inspect container logs:")
-		GinkgoWriter.Println("   podman logs aianalysis_hapi_1")
-		GinkgoWriter.Println("   podman logs aianalysis_datastorage_1")
-		GinkgoWriter.Println("   podman logs aianalysis_postgres_1")
-		GinkgoWriter.Println("   podman logs aianalysis_redis_1")
+		GinkgoWriter.Println("   podman logs aianalysis_hapi_test")
+		GinkgoWriter.Println("   podman logs aianalysis_datastorage_test")
+		GinkgoWriter.Println("   podman logs aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman logs aianalysis_redis_test")
 		GinkgoWriter.Println("📋 To manually clean up:")
-		GinkgoWriter.Println("   podman stop aianalysis_hapi_1 aianalysis_datastorage_1 aianalysis_redis_1 aianalysis_postgres_1")
-		GinkgoWriter.Println("   podman rm aianalysis_hapi_1 aianalysis_datastorage_1 aianalysis_redis_1 aianalysis_postgres_1")
-		GinkgoWriter.Println("   podman network rm aianalysis_test-network")
+		GinkgoWriter.Println("   podman stop aianalysis_hapi_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman rm aianalysis_hapi_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman network rm aianalysis_test_network")
 	} else {
-		By("Stopping AIAnalysis integration infrastructure")
-		err := infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Error stopping infrastructure: %v\n", err)
-		}
-
-		By("Cleaning up infrastructure images to prevent disk space issues")
-		// Prune ONLY infrastructure images for this service
-		// Per DD-TEST-001 v1.1: Use label-based filtering for AIAnalysis integration compose project
-		pruneCmd := exec.Command("podman", "image", "prune", "-f",
-			"--filter", "label=io.podman.compose.project=aianalysis-integration")
-		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n%s\n", pruneErr, pruneOutput)
-		} else {
-			GinkgoWriter.Println("✅ Infrastructure images pruned")
-		}
+		// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
+		// Per DD-TEST-001 v1.3: Image cleanup done automatically by shared functions
+		// - StopDSBootstrap removes DataStorage image by name (line 299 in datastorage_bootstrap.go)
+		// - No label-based pruning needed (programmatic builds don't have podman-compose labels)
 	}
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
 // DD-TEST-002 Compliance: Unique namespace per test for parallel execution
@@ -490,19 +612,3 @@ var _ = AfterEach(func() {
 		}
 	}
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}

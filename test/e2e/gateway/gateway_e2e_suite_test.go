@@ -28,7 +28,12 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -46,9 +51,10 @@ func TestGatewayE2E(t *testing.T) {
 }
 
 var (
-	ctx    context.Context
-	cancel context.CancelFunc
-	logger logr.Logger // DD-005: logr.Logger for unified logging
+	ctx       context.Context
+	cancel    context.CancelFunc
+	logger    logr.Logger   // DD-005: logr.Logger for unified logging
+	k8sClient client.Client // DD-E2E-K8S-CLIENT-001: Suite-level K8s client (1 per process)
 
 	// Cluster configuration (shared across all tests)
 	clusterName      string
@@ -59,13 +65,16 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 
+	// Track if BeforeSuite completed successfully (for setup failure detection)
+	setupSucceeded bool
+
 	// DD-TEST-007: E2E Coverage Mode
 	coverageMode bool
 )
 
-var _ = SynchronizedBeforeSuite(
+var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 	// This runs on process 1 only - create cluster once
-	func() []byte {
+	func(specCtx SpecContext) []byte {
 		// Initialize logger for process 1
 		tempLogger := kubelog.NewLogger(kubelog.Options{
 			Development: true,
@@ -98,7 +107,9 @@ var _ = SynchronizedBeforeSuite(
 		tempKubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 		// Initialize context for infrastructure setup
-		tempCtx, _ := context.WithCancel(context.Background())
+		// Per DD-E2E-PARALLEL: Use Background context directly (no cancel needed)
+		// Other services (SignalProcessing, RO) use this pattern successfully
+		tempCtx := context.Background()
 
 		// Create KIND cluster with appropriate infrastructure setup
 		// Using HYBRID PARALLEL setup (Dec 25, 2025)
@@ -117,7 +128,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Wait for Gateway HTTP endpoint to be ready
 		tempLogger.Info("Waiting for Gateway HTTP endpoint to be ready...")
-		tempURL := "http://localhost:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080)
+		tempURL := "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 
 		// Use Eventually() instead of manual loop (per TESTING_GUIDELINES.md)
@@ -137,18 +148,22 @@ var _ = SynchronizedBeforeSuite(
 		tempLogger.Info(fmt.Sprintf("  • Kubeconfig: %s", tempKubeconfigPath))
 		tempLogger.Info("  • Process 1 will now share kubeconfig with other processes")
 
+		// Mark setup as successful (for setup failure detection in AfterSuite)
+		setupSucceeded = true
+
 		// Return kubeconfig path to all processes
 		return []byte(tempKubeconfigPath)
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
-	func(data []byte) {
+	func(specCtx SpecContext, data []byte) {
 		kubeconfigPath = string(data)
 
 		// DD-TEST-007: Set coverage mode for all processes
 		coverageMode = os.Getenv("COVERAGE_MODE") == "true"
 
-		// Initialize context
-		ctx, cancel = context.WithCancel(context.Background())
+		// Initialize context (use simple WithCancel, will be managed by Ginkgo lifecycle)
+		// Per DD-E2E-PARALLEL: Context managed through entire suite execution
+		ctx, cancel = context.WithCancel(context.TODO())
 
 		// Initialize logger for this process
 		logger = kubelog.NewLogger(kubelog.Options{
@@ -170,9 +185,30 @@ var _ = SynchronizedBeforeSuite(
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// DD-E2E-K8S-CLIENT-001: Create suite-level K8s client (same pattern as RO/AIAnalysis)
+		// This prevents rate limiter contention by reusing 1 client per process instead of
+		// creating ~100 clients (1 per test). See docs/handoff/E2E_RATE_LIMITER_ROOT_CAUSE_JAN13_2026.md
+		logger.Info("Creating Kubernetes client for this process (DD-E2E-K8S-CLIENT-001)")
+		cfg, err := config.GetConfig()
+		Expect(err).ToNot(HaveOccurred(), "Failed to get kubeconfig")
+
+		// Register RemediationRequest CRD scheme
+		scheme := k8sruntime.NewScheme()
+		err = remediationv1alpha1.AddToScheme(scheme)
+		Expect(err).ToNot(HaveOccurred(), "Failed to add RemediationRequest CRD to scheme")
+		err = corev1.AddToScheme(scheme)
+		Expect(err).ToNot(HaveOccurred(), "Failed to add core/v1 to scheme")
+
+		// Create K8s client once for this process (reused across all tests)
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Kubernetes client")
+		logger.Info("✅ Kubernetes client created for process",
+			"process", GinkgoParallelProcess(),
+			"pattern", "suite-level (1 per process)")
+
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
-		gatewayURL = "http://localhost:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080)
+		gatewayURL = "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		gatewayNamespace = "kubernaut-system"
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -182,6 +218,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 		logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
 		logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
+		logger.Info(fmt.Sprintf("  • K8s Client: Suite-level (1 per process)"))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
@@ -200,10 +237,9 @@ var _ = SynchronizedAfterSuite(
 		logger.Info(fmt.Sprintf("Process %d - Cleaning up", GinkgoParallelProcess()))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Cancel context for this process
-		if cancel != nil {
-			cancel()
-		}
+		// NOTE: Do NOT cancel suite-level context here - it's needed for namespace operations
+		// throughout the entire test suite execution. Context will be canceled after all
+		// tests complete (in the second SynchronizedAfterSuite function).
 	},
 	// This runs on process 1 only - delete cluster
 	func() {
@@ -240,9 +276,18 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("✅ E2E coverage extraction complete")
 		}
 
-		// Check if any test failed - preserve cluster for debugging
-		if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != "" {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
+		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
+		setupFailed := !setupSucceeded
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
+		}
+
+		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("To debug:")
 			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
@@ -254,11 +299,13 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// All tests passed - cleanup cluster
-		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Delete cluster (with must-gather log export on failure)
+		logger.Info("🗑️  Cleaning up cluster...")
+		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete cluster")
+		} else {
+			logger.Info("✅ Cluster deleted successfully")
 		}
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
@@ -290,3 +337,11 @@ var _ = SynchronizedAfterSuite(
 )
 
 // Helper functions for tests
+
+// ============================================================================
+// Test Namespace Helpers (Pattern: RemediationOrchestrator E2E)
+// ============================================================================
+
+// createTestNamespace creates a unique namespace for test isolation
+// This prevents "namespace not found" errors that degrade the circuit breaker
+// Pattern: Similar to RO E2E (test/e2e/remediationorchestrator/suite_test.go)

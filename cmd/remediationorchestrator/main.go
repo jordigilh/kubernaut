@@ -193,6 +193,7 @@ func main() {
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	if err = controller.NewReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		mgr.GetScheme(),
 		auditStore,
 		mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
@@ -239,12 +240,4 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("Audit store closed successfully, all events flushed")
-}
-
-// getEnvOrDefault returns the value of an environment variable or a default value.
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

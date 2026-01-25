@@ -58,8 +58,10 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+
+	"github.com/google/uuid"
 )
 
 // Test constants for timeout and polling intervals
@@ -83,6 +85,13 @@ var (
 	kubeconfigPath string
 
 	k8sClient client.Client
+
+	// DataStorage audit client for Gap #8 webhook audit event queries
+	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+	auditClient *ogenclient.Client
+
+	// Track test failures for cluster cleanup decision
+	anyTestFailed bool
 )
 
 func TestRemediationOrchestratorE2E(t *testing.T) {
@@ -169,11 +178,25 @@ var _ = SynchronizedBeforeSuite(
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Setting up DataStorage audit client for Gap #8 webhook tests")
+		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+		dataStorageURL := "http://localhost:8081"
+		auditClient, err = ogenclient.NewClient(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred())
+		GinkgoWriter.Printf("✅ DataStorage audit client configured: %s\n", dataStorageURL)
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Printf("Setup Complete - Process %d ready to run tests\n", GinkgoParallelProcess())
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
+
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
 
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes - cleanup context
@@ -191,16 +214,27 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Cleaning up test environment")
 
-		// Check if we should preserve the cluster for debugging
-		if os.Getenv("PRESERVE_E2E_CLUSTER") == "true" {
-			GinkgoWriter.Println("⚠️  PRESERVE_E2E_CLUSTER=true, keeping cluster for debugging")
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			By("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+
+		if preserveCluster {
+			GinkgoWriter.Println("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
 			return
 		}
 
-		By("Deleting KIND cluster")
-		deleteKindCluster(clusterName)
+		By("Deleting KIND cluster (with must-gather log export on failure)")
+		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", anyFailure, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
+		}
 
 		By("Removing isolated kubeconfig file")
 		// ============================================================================
@@ -239,35 +273,12 @@ var _ = SynchronizedAfterSuite(
 		GinkgoWriter.Println("✅ E2E cleanup complete")
 	},
 )
-
-// ============================================================================
-// Kind Cluster Management Helpers
-// ============================================================================
-
-// ============================================================================
-// Kind Cluster Management Helpers (now handled by hybrid infrastructure)
-// ============================================================================
-// NOTE: Most cluster management is now handled by the hybrid infrastructure
-// (SetupROInfrastructureHybridWithCoverage). These remaining helpers are
-// used only for cleanup in AfterSuite.
-
-func deleteKindCluster(name string) {
-	cmd := exec.Command("kind", "delete", "cluster", "--name", name)
-	cmd.Stdout = GinkgoWriter
-	cmd.Stderr = GinkgoWriter
-
-	err := cmd.Run()
-	if err != nil {
-		GinkgoWriter.Printf("⚠️  Failed to delete cluster (may not exist): %v\n", err)
-	}
-}
-
 // ============================================================================
 // Test Namespace Helpers
 // ============================================================================
 
 func createTestNamespace(prefix string) string {
-	name := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	name := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -278,6 +289,19 @@ func createTestNamespace(prefix string) string {
 	}
 	err := k8sClient.Create(ctx, ns)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Wait for namespace to be Active before proceeding
+	// This prevents race conditions where CRDs are created before namespace is fully ready
+	Eventually(func() bool {
+		updatedNS := &corev1.Namespace{}
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, updatedNS)
+		if err != nil {
+			return false
+		}
+		return updatedNS.Status.Phase == corev1.NamespaceActive
+	}, timeout, interval).Should(BeTrue(), "Namespace should become Active")
+
+	GinkgoWriter.Printf("✅ Namespace ready: %s\n", name)
 	return name
 }
 

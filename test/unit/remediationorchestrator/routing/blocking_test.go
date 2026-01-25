@@ -79,7 +79,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			ExponentialBackoffMax:         600, // 10 minutes
 			ExponentialBackoffMaxExponent: 4,   // 2^4 = 16x
 		}
-		engine = routing.NewRoutingEngine(fakeClient, "default", config)
+		// DD-STATUS-001: Pass fakeClient as both client and apiReader
+		// In unit tests, fake client implements both interfaces
+		engine = routing.NewRoutingEngine(fakeClient, fakeClient, "default", config)
 	})
 
 	// ========================================

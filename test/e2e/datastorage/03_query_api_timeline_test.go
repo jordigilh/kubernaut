@@ -18,17 +18,15 @@ package datastorage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
 // Scenario 3: Query API Timeline - Multi-Filter Retrieval (P0)
@@ -108,7 +106,8 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 
 		// Generate unique correlation ID for this test
 		correlationID = fmt.Sprintf("query-test-%s", testNamespace)
-		startTime = time.Now()
+		// Use timestamp 15 minutes in the past to account for clock skew and event creation time
+		startTime = time.Now().UTC().Add(-15 * time.Minute)
 
 		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -131,258 +130,315 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("📝 Step 1: Creating 10 audit events across 3 services...")
 
 		// Gateway events (4 events)
+		// Use timestamps 10 minutes in the past to avoid clock skew issues between host and container
+		baseTimestamp := time.Now().UTC().Add(-10 * time.Minute)
 		for i := 1; i <= 4; i++ {
-			eventData, err := audit.NewGatewayEvent("signal.received").
-				WithSignalType("prometheus").
-				WithAlertName(fmt.Sprintf("Alert-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalGatewayPayload("prometheus-alert", fmt.Sprintf("Alert-%d", i))
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "gateway", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("gateway_op_%d", i),
-				"event_type":      "gateway.signal.received",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+				EventAction:    fmt.Sprintf("gateway_op_%d", i),
+				EventType:      "gateway.signal.received",
+				EventTimestamp: baseTimestamp.Add(time.Duration(i) * time.Second),
+				CorrelationID:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
 		testLogger.Info("✅ Created 4 Gateway events")
 
 		// AIAnalysis events (3 events)
 		for i := 1; i <= 3; i++ {
-			eventData, err := audit.NewAIAnalysisEvent("analysis.completed").
-				WithAnalysisID(fmt.Sprintf("analysis-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalAIAnalysisPayload(fmt.Sprintf("analysis-%d", i))
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "analysis", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("ai_op_%d", i),
-				"event_type":      "analysis.analysis.completed",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    fmt.Sprintf("ai_op_%d", i),
+				EventType:      "analysis.analysis.completed",
+				EventTimestamp: baseTimestamp.Add(time.Duration(4+i) * time.Second),
+				CorrelationID:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 AIAnalysis events")
 
 		// Workflow events (3 events)
 		for i := 1; i <= 3; i++ {
-			eventData, err := audit.NewWorkflowEvent("workflow.completed").
-				WithWorkflowID(fmt.Sprintf("workflow-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalWorkflowPayload(fmt.Sprintf("workflow-%d", i))
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "workflow", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("workflow_op_%d", i),
-				"event_type":      "workflow.workflow.completed",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
+				EventAction:    fmt.Sprintf("workflow_op_%d", i),
+				EventType:      "workflow.workflow.completed",
+				EventTimestamp: baseTimestamp.Add(time.Duration(7+i) * time.Second),
+				CorrelationID:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 Workflow events")
 		testLogger.Info("✅ Total: 10 audit events created")
 
 		// Step 2: Query by correlation_id → verify all 10 events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 2: Query by correlation_id...")
-		resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
+		var allEventsStep2 []dsgen.AuditEvent
+		offset := 0
+		limit := 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		var queryResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEventsStep2 = append(allEventsStep2, queryResp.Data...)
 
-		data, ok := queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data := allEventsStep2
 		// Note: Self-auditing may add extra events (datastorage.audit.written)
 		// We expect at least 10 events (the ones we created), but may have more
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events")
 		testLogger.Info("✅ Query by correlation_id returned events", "count", len(data))
 
 		// Step 3: Query by event_category=gateway (ADR-034) → verify only Gateway events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 3: Query by event_category=gateway...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&event_category=gateway", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
+		gatewayCategory := "gateway"
+		var allEventsStep3 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(gatewayCategory),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEventsStep3 = append(allEventsStep3, queryResp.Data...)
 
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep3
 		Expect(data).To(HaveLen(4), "Should return 4 Gateway events")
 
 		// Verify all events are from gateway event_category (ADR-034)
-		for _, item := range data {
-			event := item.(map[string]interface{})
-			Expect(event["event_category"]).To(Equal("gateway"))
+		for _, event := range data {
+			Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryGateway))
 		}
 		testLogger.Info("✅ Query by event_category=gateway returned 4 events")
 
 		// Step 4: Query by event_type → verify only matching events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 4: Query by event_type=analysis.analysis.completed...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&event_type=analysis.analysis.completed", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
+		eventType := "analysis.analysis.completed"
+		var allEventsStep4 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventType:     dsgen.NewOptString(eventType),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEventsStep4 = append(allEventsStep4, queryResp.Data...)
 
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep4
 		Expect(data).To(HaveLen(3), "Should return 3 AIAnalysis events")
 
 		// Verify all events have correct event_type
-		for _, item := range data {
-			event := item.(map[string]interface{})
-			Expect(event["event_type"]).To(Equal("analysis.analysis.completed"))
+		for _, event := range data {
+			Expect(event.EventType).To(Equal("analysis.analysis.completed"))
 		}
 		testLogger.Info("✅ Query by event_type returned 3 events")
 
 		// Step 5: Query by time_range → verify only events in range returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 5: Query by time_range...")
 		endTime := time.Now()
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&start_time=%s&end_time=%s",
-			serviceURL, correlationID, startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
+		startTimeStr := startTime.Format(time.RFC3339)
+		endTimeStr := endTime.Format(time.RFC3339)
+		var allEventsStep5 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Since:         dsgen.NewOptString(startTimeStr),
+				Until:         dsgen.NewOptString(endTimeStr),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEventsStep5 = append(allEventsStep5, queryResp.Data...)
 
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep5
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events within time range")
 		testLogger.Info("✅ Query by time_range returned events", "count", len(data))
 
 		// Step 6: Query with pagination (limit=5, offset=0) → verify first 5 events
+		// NOTE: This step explicitly tests the pagination API feature (not a bug fix)
 		testLogger.Info("🔍 Step 6: Query with pagination (limit=5, offset=0)...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&limit=5&offset=0", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		// DD-API-001: Use typed OpenAPI client with pagination parameters
+		limit = 5
+		offset = 0
+		queryRespStep6, errStep6 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
+		})
+		Expect(errStep6).ToNot(HaveOccurred())
+		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
+		Expect(queryRespStep6).ToNot(BeNil())
+		Expect(queryRespStep6.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = queryRespStep6.Data
 		Expect(data).To(HaveLen(5), "Should return first 5 events")
 
 		// Store first event ID for comparison
-		firstPageFirstEventID := data[0].(map[string]interface{})["event_id"].(string)
+		firstPageFirstEventID := data[0].EventID.Value.String()
 		testLogger.Info("✅ Pagination (limit=5, offset=0) returned 5 events")
 
 		// Step 7: Query with pagination (limit=5, offset=5) → verify next 5 events
+		// NOTE: This step explicitly tests the pagination API feature (not a bug fix)
 		testLogger.Info("🔍 Step 7: Query with pagination (limit=5, offset=5)...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&limit=5&offset=5", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		// DD-API-001: Use typed OpenAPI client with offset pagination
+		offset = 5
+		queryRespStep7, errStep7 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
+		})
+		Expect(errStep7).ToNot(HaveOccurred())
+		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
+		Expect(queryRespStep7).ToNot(BeNil())
+		Expect(queryRespStep7.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = queryRespStep7.Data
 		Expect(data).To(HaveLen(5), "Should return next 5 events")
 
 		// Verify second page has different events
-		secondPageFirstEventID := data[0].(map[string]interface{})["event_id"].(string)
+		secondPageFirstEventID := data[0].EventID.Value.String()
 		Expect(secondPageFirstEventID).ToNot(Equal(firstPageFirstEventID), "Second page should have different events")
 		testLogger.Info("✅ Pagination (limit=5, offset=5) returned next 5 events")
 
 		// Step 8: Verify chronological order
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 8: Verifying chronological order...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
+		var allEventsStep8 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
 			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
+			allEventsStep8 = append(allEventsStep8, queryResp.Data...)
 
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep8
 
 		// Sort events by timestamp (API doesn't guarantee order)
 		sort.Slice(data, func(i, j int) bool {
-			eventI := data[i].(map[string]interface{})
-			eventJ := data[j].(map[string]interface{})
-			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
-			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
-			return timestampI.Before(timestampJ)
+			return data[i].EventTimestamp.Before(data[j].EventTimestamp)
 		})
 
 		var previousTimestamp time.Time
-		for i, item := range data {
-			event := item.(map[string]interface{})
-			timestampStr := event["event_timestamp"].(string)
-			timestamp, err := time.Parse(time.RFC3339, timestampStr)
-			Expect(err).ToNot(HaveOccurred())
+		for i, event := range data {
+			timestamp := event.EventTimestamp
 
 			if i > 0 {
 				Expect(timestamp.After(previousTimestamp) || timestamp.Equal(previousTimestamp)).To(BeTrue(),

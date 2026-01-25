@@ -39,7 +39,7 @@ limitations under the License.
 // NOTE: These tests duplicate some integration test scenarios intentionally
 // for defense-in-depth coverage. E2E tests run against real Kind cluster
 // while integration tests use ENVTEST.
-package signalprocessing_e2e
+package signalprocessing
 
 import (
 	"context"
@@ -47,10 +47,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -76,7 +79,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-node-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-node-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNs},
 		}
@@ -132,7 +135,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 					Name:         "NodeEnrichTest",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -189,7 +192,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
 					Name:         "DegradedModeTest",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -240,7 +243,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var testNs string
 
 		BeforeEach(func() {
-			testNs = fmt.Sprintf("e2e-prod-%d", time.Now().UnixNano())
+			testNs = fmt.Sprintf("e2e-prod-%s", uuid.New().String()[:8])
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: testNs,
@@ -327,7 +330,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 						Name:         "MemoryPressure",
-						Severity:     "warning",
+						Severity: "high",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -359,8 +362,8 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var stagingNs, devNs string
 
 		BeforeEach(func() {
-			stagingNs = fmt.Sprintf("e2e-staging-%d", time.Now().UnixNano())
-			devNs = fmt.Sprintf("e2e-dev-%d", time.Now().UnixNano())
+			stagingNs = fmt.Sprintf("e2e-staging-%s", uuid.New().String()[:8])
+			devNs = fmt.Sprintf("e2e-dev-%s", uuid.New().String()[:8])
 
 			// Create staging namespace
 			Expect(k8sClient.Create(ctx, &corev1.Namespace{
@@ -444,7 +447,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
 						Name:         "DevInfo",
-						Severity:     "info",
+						Severity: "low",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -482,7 +485,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-env-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-env-%s", uuid.New().String()[:8])
 	})
 
 	AfterEach(func() {
@@ -518,7 +521,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
 					Name:         "TestAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -577,7 +580,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
 					Name:         "UnclassifiedAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -615,7 +618,7 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-owner-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-owner-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNs},
 		}
@@ -736,7 +739,7 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-detect-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-detect-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNs},
 		}
@@ -905,7 +908,7 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
 					Name:         "HPAAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -943,7 +946,7 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-custom-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-custom-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1022,7 +1025,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-audit-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-audit-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1145,7 +1148,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 
 		Eventually(func() bool {
 			// Query audit events from DataStorage
-			auditEvents, err := queryAuditEvents(fingerprint)
+			auditEvents, err := queryAuditEvents("e2e-audit-test-rr")
 			if err != nil {
 				GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", err)
 				return false
@@ -1159,8 +1162,8 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 					eventType = event.EventType
 				}
 				resourceId := "unknown"
-				if event.ResourceId != nil {
-					resourceId = *event.ResourceId
+				if event.ResourceID.Set {
+					resourceId = event.ResourceID.Value
 				}
 				GinkgoWriter.Printf("    [%d] type=%s resource=%s\n", i, eventType, resourceId)
 			}
@@ -1178,15 +1181,15 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 			hasClassificationDecision := false
 			for _, event := range auditEvents {
 				// Only check events for this specific test resource
-				// OpenAPI types use pointers for optional fields
-				if event.ResourceId == nil || *event.ResourceId != "e2e-audit-test" {
+				// OpenAPI types use OptString for optional fields
+				if !event.ResourceID.Set || event.ResourceID.Value != "e2e-audit-test" {
 					continue
 				}
-				GinkgoWriter.Printf("    • Event: %s (resource: %s)\n", event.EventType, *event.ResourceId)
-				if event.EventType == "signalprocessing.signal.processed" {
+				GinkgoWriter.Printf("    • Event: %s (resource: %s)\n", event.EventType, event.ResourceID.Value)
+				if event.EventType == spaudit.EventTypeSignalProcessed {
 					hasSignalProcessed = true
 				}
-				if event.EventType == "signalprocessing.classification.decision" {
+				if event.EventType == spaudit.EventTypeClassificationDecision {
 					hasClassificationDecision = true
 				}
 			}
@@ -1196,14 +1199,14 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 			"Expected signalprocessing.signal.processed AND signalprocessing.classification.decision audit events")
 
 		By("Verifying audit event data integrity")
-		auditEvents, err := queryAuditEvents(fingerprint)
+		auditEvents, err := queryAuditEvents("e2e-audit-test-rr")
 		Expect(err).ToNot(HaveOccurred())
 
 		// Filter events for our specific resource
 		var resourceEvents []dsgen.AuditEvent
 		for _, event := range auditEvents {
-			// Handle OpenAPI pointer types
-			if event.ResourceId != nil && *event.ResourceId == "e2e-audit-test" {
+			// Handle OpenAPI OptString types
+			if event.ResourceID.Set && event.ResourceID.Value == "e2e-audit-test" {
 				resourceEvents = append(resourceEvents, event)
 			}
 		}
@@ -1213,19 +1216,19 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		// Find signalprocessing.signal.processed event and validate data
 		var signalEvent *dsgen.AuditEvent
 		for i := range resourceEvents {
-			if resourceEvents[i].EventType == "signalprocessing.signal.processed" {
+			if resourceEvents[i].EventType == spaudit.EventTypeSignalProcessed {
 				signalEvent = &resourceEvents[i]
 				break
 			}
 		}
 		Expect(signalEvent).ToNot(BeNil(), "signalprocessing.signal.processed event should exist")
-		// OpenAPI types use pointers for optional fields
-		Expect(signalEvent.ActorId).ToNot(BeNil())
-		Expect(*signalEvent.ActorId).To(Equal("signalprocessing-controller"))
-		Expect(signalEvent.ResourceType).ToNot(BeNil())
-		Expect(*signalEvent.ResourceType).To(Equal("SignalProcessing"))
-		Expect(signalEvent.ResourceId).ToNot(BeNil())
-		Expect(*signalEvent.ResourceId).To(Equal("e2e-audit-test"))
+		// OpenAPI types use OptString for optional fields
+		Expect(signalEvent.ActorID.Set).To(BeTrue())
+		Expect(signalEvent.ActorID.Value).To(Equal("signalprocessing-controller"))
+		Expect(signalEvent.ResourceType.Set).To(BeTrue())
+		Expect(signalEvent.ResourceType.Value).To(Equal("SignalProcessing"))
+		Expect(signalEvent.ResourceID.Set).To(BeTrue())
+		Expect(signalEvent.ResourceID.Value).To(Equal("e2e-audit-test"))
 		// Note: Namespace may be empty in current implementation
 	})
 })
@@ -1241,7 +1244,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-workload-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-workload-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1297,8 +1300,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1339,7 +1342,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
 					Name:         "StatefulSetPodAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1390,8 +1393,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1485,8 +1488,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1543,7 +1546,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
 					Name:         "ServicePodAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1586,7 +1589,7 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-deploy-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-deploy-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1627,8 +1630,8 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "api",
-							Image: "busybox:1.36",
+							Name:    "api",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1662,7 +1665,7 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
 					Name:         "DeploymentRolloutAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1706,7 +1709,7 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-sts-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-sts-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1766,8 +1769,8 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "db",
-							Image: "busybox:1.36",
+							Name:    "db",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1845,7 +1848,7 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-ds-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-ds-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -1885,8 +1888,8 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "collector",
-							Image: "busybox:1.36",
+							Name:    "collector",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1920,7 +1923,7 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1a2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "DaemonSetNodeAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1964,7 +1967,7 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-rs-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-rs-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -2005,8 +2008,8 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "busybox:1.36",
+							Name:    "worker",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2040,7 +2043,7 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
 					Name:         "ReplicaSetAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2084,7 +2087,7 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-svc-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-svc-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -2122,8 +2125,8 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "api",
-							Image: "busybox:1.36",
+							Name:    "api",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2229,7 +2232,7 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p0-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-p0-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -2267,8 +2270,8 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2333,7 +2336,7 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p2-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-p2-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -2361,8 +2364,8 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{
-					Name:  "app",
-					Image: "busybox:1.36",
+					Name:    "app",
+					Image:   "busybox:1.36",
 					Command: []string{"sleep", "3600"},
 				}},
 			},
@@ -2385,7 +2388,7 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 					Name:         "StagingWarningAlert",
-					Severity:     "warning", // Warning severity
+					Severity: "high", // Warning severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2425,7 +2428,7 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p3-%d", time.Now().UnixNano())
+		testNs = fmt.Sprintf("e2e-p3-%s", uuid.New().String()[:8])
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNs,
@@ -2453,8 +2456,8 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{
-					Name:  "app",
-					Image: "busybox:1.36",
+					Name:    "app",
+					Image:   "busybox:1.36",
 					Command: []string{"sleep", "3600"},
 				}},
 			},
@@ -2477,7 +2480,7 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "ExperimentalInfoAlert",
-					Severity:     "info", // Info severity
+					Severity: "low", // Info severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2522,48 +2525,40 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 //
 // Per architectural fix: Uses RemediationRequestRef for correlation_id
 // Authority: docs/handoff/TRIAGE_RO_DATASTORAGE_OPENAPI_CLIENT.md
-func queryAuditEvents(fingerprint string) ([]dsgen.AuditEvent, error) {
+func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
 	// We use the host port mapping: localhost:30081 → NodePort 30081
 	dataStorageURL := "http://localhost:30081"
 
 	// Create OpenAPI client with 10s timeout
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	client, err := dsgen.NewClientWithResponses(dataStorageURL, dsgen.WithHTTPClient(httpClient))
+	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
 	}
 
-	// Query all audit events with typed parameters
-	// Limit 100 events (same as previous raw HTTP implementation)
-	limit := 100
-	params := &dsgen.QueryAuditEventsParams{
-		Limit: &limit,
+	// Query audit events filtered by correlation_id + event_category to avoid getting events from other parallel tests
+	// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS filter by correlationID + eventCategory
+	// In parallel E2E runs, there can be 100+ events from other tests, so filtering is critical
+	params := dsgen.QueryAuditEventsParams{
+		CorrelationID: dsgen.NewOptString(correlationID),
+		EventCategory: dsgen.NewOptString(spaudit.CategorySignalProcessing),
 	}
 
 	// Call OpenAPI-generated query method
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := client.QueryAuditEventsWithResponse(ctx, params)
+	resp, err := client.QueryAuditEvents(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query audit API: %w", err)
 	}
 
-	// Check response status
-	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("audit API returned status %d: %s", resp.StatusCode(), string(resp.Body))
-	}
-
-	// Access typed response
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("unexpected response format: JSON200 is nil")
-	}
-
-	if resp.JSON200.Data == nil {
+	// Access typed response directly (ogen pattern)
+	if len(resp.Data) == 0 {
 		return []dsgen.AuditEvent{}, nil // No events found
 	}
 
 	// Return typed audit events
-	return *resp.JSON200.Data, nil
+	return resp.Data, nil
 }

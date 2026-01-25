@@ -31,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 var skipMetricsSeeding bool
@@ -87,7 +89,7 @@ func seedMetricsWithRemediation() {
 // randomSuffix generates a random suffix for unique resource names
 // Uses nanoseconds to prevent collisions in parallel Ginkgo processes
 func randomSuffix() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return fmt.Sprintf("%s", uuid.New().String()[:8])
 }
 
 var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"), func() {
@@ -326,4 +328,3 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		})
 	})
 })
-

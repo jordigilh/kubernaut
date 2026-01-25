@@ -1,0 +1,40 @@
+{
+  "receiver": "kubernaut-gateway",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "ProductionOutage",
+        "severity": "Sev1",
+        "namespace": "production",
+        "pod": "api-server-xyz",
+        "deployment": "api-server",
+        "priority": "P0"
+      },
+      "annotations": {
+        "summary": "Production API server is down",
+        "description": "API server pod api-server-xyz in production namespace has been down for 5 minutes. Customer impact: all API requests failing.",
+        "runbook_url": "https://runbooks.example.com/api-server-outage"
+      },
+      "startsAt": "2026-01-15T12:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.com/graph?g0.expr=up%7Bjob%3D%22api-server%22%7D+%3D%3D+0&g0.tab=1",
+      "fingerprint": "enterprise-sev1-test-fingerprint-001"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "ProductionOutage"
+  },
+  "commonLabels": {
+    "alertname": "ProductionOutage",
+    "severity": "Sev1"
+  },
+  "commonAnnotations": {
+    "summary": "Production API server is down"
+  },
+  "externalURL": "http://alertmanager.example.com",
+  "version": "4",
+  "groupKey": "{}/{severity=\"Sev1\"}:{alertname=\"ProductionOutage\"}",
+  "truncatedAlerts": 0
+}

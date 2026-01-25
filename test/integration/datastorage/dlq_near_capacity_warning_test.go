@@ -53,7 +53,7 @@ import (
 // ----------------------------------------------
 // These tests MUST run serially because they validate specific DLQ depth thresholds
 // (70%, 80%, 90%, 95%) using the DLQ client's hardcoded stream name "audit:dlq:events".
-// 
+//
 // Why Serial is necessary here:
 // 1. Tests verify exact depth values (700, 800, 900, 950 events)
 // 2. DLQ client API doesn't support custom stream names per call
@@ -69,7 +69,7 @@ import (
 // in < 5 seconds total.
 // ========================================
 
-var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-3.3", "p0"),  func() {
+var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-3.3", "p0"), func() {
 	var (
 		// Test constants
 		dlqMaxLen         int64 = 1000 // From config

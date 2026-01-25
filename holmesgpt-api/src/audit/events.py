@@ -67,12 +67,17 @@ import uuid  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 from typing import Any, Dict, List, Optional  # noqa: E402
 
+# OpenAPI-generated DataStorage client types (DD-API-001)
+from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
+from datastorage.models.audit_event_request_event_data import AuditEventRequestEventData  # noqa: E402
+
 # Local imports - structured audit event data models (ADR-034 compliance)
 from src.models.audit_models import (  # noqa: E402
     LLMRequestEventData,
     LLMResponseEventData,
     LLMToolCallEventData,
-    WorkflowValidationEventData
+    WorkflowValidationEventData,
+    HAPIResponseEventData  # DD-AUDIT-005: HAPI response complete event
 )
 
 
@@ -94,10 +99,12 @@ def _create_adr034_event(
     operation: str,
     outcome: str,
     correlation_id: str,
-    event_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    event_data: Any  # Pydantic model (LLMRequestEventData, etc.)
+) -> AuditEventRequest:
     """
-    Create an ADR-034 compliant audit event envelope.
+    Create an ADR-034 compliant audit event envelope using OpenAPI types.
+
+    V3.0: OGEN MIGRATION - Returns OpenAPI-generated Pydantic model instead of dict.
 
     This is the canonical format for all audit events per ADR-034.
     Data Storage expects this exact structure.
@@ -107,22 +114,28 @@ def _create_adr034_event(
         operation: Action performed (e.g., "llm_request_sent")
         outcome: Result status ("success", "failure", "pending")
         correlation_id: Remediation ID for correlation
-        event_data: Service-specific payload (JSONB)
+        event_data: Service-specific Pydantic payload (LLMRequestEventData, etc.)
 
     Returns:
-        ADR-034 compliant event dictionary
+        AuditEventRequest (OpenAPI-generated Pydantic model)
     """
-    return {
-        # ADR-034 Required Fields (OpenAPI spec field names per Data Storage Service)
-        "version": AUDIT_VERSION,
-        "event_category": SERVICE_NAME,       # Service name (OpenAPI: event_category)
-        "event_type": event_type,
-        "event_timestamp": _get_utc_timestamp(),
-        "correlation_id": correlation_id,
-        "event_action": operation,            # Action performed (OpenAPI: event_action)
-        "event_outcome": outcome,             # Result status (OpenAPI: event_outcome)
-        "event_data": event_data,             # Service-specific JSONB payload
-    }
+    # Wrap event_data in discriminated union type
+    # OpenAPI client expects AuditEventRequestEventData (discriminated union)
+    event_data_union = AuditEventRequestEventData(actual_instance=event_data)
+
+    return AuditEventRequest(
+        # ADR-034 Required Fields (OpenAPI spec per Data Storage Service)
+        version=AUDIT_VERSION,
+        event_category=SERVICE_NAME,  # Service name (OpenAPI: event_category)
+        event_type=event_type,
+        event_timestamp=_get_utc_timestamp(),
+        correlation_id=correlation_id,
+        event_action=operation,  # Action performed (OpenAPI: event_action)
+        event_outcome=outcome,  # Result status (OpenAPI: event_outcome)
+        event_data=event_data_union,  # Discriminated union wrapper
+        actor_type="Service",  # Actor type per ADR-034
+        actor_id="holmesgpt-api",  # Service identifier per DD-AUDIT-005
+    )
 
 
 def create_llm_request_event(
@@ -132,7 +145,7 @@ def create_llm_request_event(
     prompt: str,
     toolsets_enabled: List[str],
     mcp_servers: Optional[List[str]] = None
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create an LLM request audit event (ADR-034 compliant)
 
@@ -154,6 +167,7 @@ def create_llm_request_event(
     prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
 
     event_data_model = LLMRequestEventData(
+        event_type="llm_request",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         model=model,
@@ -164,12 +178,14 @@ def create_llm_request_event(
         mcp_servers=mcp_servers or []
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
+    # AuditEventRequestEventData expects actual_instance to be a Pydantic model
     return _create_adr034_event(
         event_type="llm_request",
         operation="llm_request_sent",
         outcome="success",
-        correlation_id=remediation_id or "",
-        event_data=event_data_model.model_dump()
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -180,7 +196,7 @@ def create_llm_response_event(
     analysis_length: int,
     analysis_preview: str,
     tool_call_count: int
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create an LLM response audit event (ADR-034 compliant)
 
@@ -200,6 +216,7 @@ def create_llm_response_event(
     """
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMResponseEventData(
+        event_type="llm_response",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         has_analysis=has_analysis,
@@ -209,12 +226,13 @@ def create_llm_response_event(
         tool_call_count=tool_call_count
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="llm_response",
         operation="llm_response_received",
         outcome="success" if has_analysis else "failure",
-        correlation_id=remediation_id or "",
-        event_data=event_data_model.model_dump()
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -225,7 +243,7 @@ def create_tool_call_event(
     tool_name: str,
     tool_arguments: Dict[str, Any],
     tool_result: Any
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create a tool call audit event (ADR-034 compliant)
 
@@ -249,6 +267,7 @@ def create_tool_call_event(
 
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMToolCallEventData(
+        event_type="llm_tool_call",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         tool_call_index=tool_call_index,
@@ -258,12 +277,13 @@ def create_tool_call_event(
         tool_result_preview=tool_result_preview
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="llm_tool_call",
         operation="tool_invoked",
         outcome="success",
-        correlation_id=remediation_id or "",
-        event_data=event_data_model.model_dump()
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -276,7 +296,7 @@ def create_validation_attempt_event(
     errors: List[str],
     workflow_id: Optional[str] = None,
     human_review_reason: Optional[str] = None
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create a workflow validation attempt audit event (ADR-034 compliant)
 
@@ -306,6 +326,7 @@ def create_validation_attempt_event(
     validation_errors_str = "; ".join(errors) if errors else None
 
     event_data_model = WorkflowValidationEventData(
+        event_type="workflow_validation_attempt",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         attempt=attempt,
@@ -327,11 +348,70 @@ def create_validation_attempt_event(
     else:
         outcome = "pending"  # Will retry
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="workflow_validation_attempt",
         operation="validation_executed",
         outcome=outcome,
-        correlation_id=remediation_id or "",
-        event_data=event_data_model.model_dump()
+        correlation_id=remediation_id or "unknown",
+        event_data=event_data_model  # ← Pass model, not model_dump()
+    )
+
+
+def create_hapi_response_complete_event(
+    incident_id: str,
+    remediation_id: str,
+    response_data: Dict[str, Any]
+) -> AuditEventRequest:
+    """
+    Create HAPI response completion audit event (ADR-034 compliant)
+
+    Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+    Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+
+    This event captures the COMPLETE HolmesGPT API response (provider perspective)
+    for SOC2 Type II compliance and RemediationRequest reconstruction.
+
+    Hybrid Audit Approach:
+    - HAPI emits: holmesgpt.response.complete (full IncidentResponse - provider perspective)
+    - AI Analysis emits: aianalysis.analysis.completed (summary + business context - consumer perspective)
+
+    This provides defense-in-depth auditing with both provider and consumer perspectives.
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID for audit correlation
+        response_data: Complete IncidentResponse structure (all fields)
+
+    Returns:
+        ADR-034 compliant audit event dictionary
+
+    Example response_data:
+        {
+            "incident_id": "inc-123",
+            "analysis": "Root cause analysis text...",
+            "root_cause_analysis": {...},
+            "selected_workflow": {...},
+            "alternative_workflows": [...],
+            "confidence": 0.85,
+            "needs_human_review": false,
+            "warnings": [...]
+        }
+    """
+    # Create structured event_data using Pydantic model for validation
+    event_data_model = HAPIResponseEventData(
+        event_type="holmesgpt.response.complete",  # Discriminator for OpenAPI validation
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        response_data=response_data  # Full IncidentResponse
+    )
+
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
+    return _create_adr034_event(
+        event_type="holmesgpt.response.complete",
+        operation="response_sent",
+        outcome="success",
+        correlation_id=remediation_id,
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 

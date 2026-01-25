@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -66,10 +65,6 @@ var (
 
 	// Shared Notification Controller configuration (deployed ONCE for all tests)
 	controllerNamespace string = "notification-e2e"
-
-	// Test failure tracking (for keeping cluster alive on failure)
-	suiteHadFailures bool //nolint:unused
-
 	// E2E file output directory (for FileService validation)
 	e2eFileOutputDir string
 
@@ -80,33 +75,6 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )
-
-// convertHostPathToPodPath converts a host path to the equivalent pod path.
-//
-// The controller runs inside a Kind pod where:
-//   - Host: /Users/me/.kubernaut/e2e-notifications/* → Pod: /tmp/notifications/*
-//   - Host: /tmp/kubernaut-e2e-notifications/*       → Pod: /tmp/notifications/*
-//
-// This function replaces the host base path with the pod mount path.
-//
-// Example:
-//   - Input:  "/Users/me/.kubernaut/e2e-notifications/priority-test-abc123"
-//   - Output: "/tmp/notifications/priority-test-abc123"
-func convertHostPathToPodPath(hostPath string) string {
-	// Extract the relative path from the host base directory
-	relPath, err := filepath.Rel(e2eFileOutputDir, hostPath)
-	if err != nil {
-		// Fallback: if we can't compute relative path, return as-is
-		// This will cause test failure but makes debugging clearer
-		return hostPath
-	}
-
-	// Pod mount path (from notification-deployment.yaml)
-	podBasePath := "/tmp/notifications"
-
-	// Combine pod base with relative path
-	return filepath.Join(podBasePath, relPath)
-}
 
 // SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process connects
 var _ = SynchronizedBeforeSuite(
@@ -153,17 +121,20 @@ var _ = SynchronizedBeforeSuite(
 		// E2E file delivery directory is created by infrastructure.CreateNotificationCluster
 		// No need to create it here - it's done before Kind cluster creation
 
-		// Create Kind cluster (ONCE for all tests)
-		err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Create Kind cluster (ONCE for all tests) - returns notification image name
+		var notificationImageName string
+		notificationImageName, err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(notificationImageName).ToNot(BeEmpty(), "Notification image name must not be empty")
 
 		// Set KUBECONFIG environment variable
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Deploy shared Notification Controller (ONCE for all tests)
+		// Deploy shared Notification Controller (ONCE for all tests) - pass image name from setup
 		logger.Info("Deploying shared Notification Controller...")
-		err = infrastructure.DeployNotificationController(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		logger.Info("  • Using image: " + notificationImageName)
+		err = infrastructure.DeployNotificationController(ctx, controllerNamespace, kubeconfigPath, notificationImageName, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Wait for controller pod to be ready
@@ -187,6 +158,18 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
 		logger.Info("✅ Audit infrastructure ready")
+
+		// Deploy AuthWebhook manifests (using pre-built + pre-loaded image from PHASE 1 & 3)
+		// Per DD-WEBHOOK-001: Required for NotificationRequest DELETE operations
+		// Per SOC2 CC8.1: Captures WHO cancelled notifications
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("🔐 Deploying AuthWebhook Manifests")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		awImage := os.Getenv("E2E_AUTHWEBHOOK_IMAGE")
+		Expect(awImage).ToNot(BeEmpty(), "AuthWebhook image should be set by infrastructure")
+		err = infrastructure.DeployAuthWebhookManifestsOnly(ctx, clusterName, controllerNamespace, kubeconfigPath, awImage, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "AuthWebhook manifest deployment should succeed")
+		logger.Info("✅ AuthWebhook deployed - SOC2 CC8.1 cancellation attribution enabled")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Ready for parallel processes")
@@ -291,6 +274,13 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
+
 // SynchronizedAfterSuite runs process cleanup then cluster cleanup
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes - cleans up per-process resources
@@ -317,9 +307,19 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Notification E2E Cluster Cleanup (ONCE - Process 1)")
 
-		// Keep cluster alive on failure for debugging (per DS team request)
-		if CurrentSpecReport().Failed() || os.Getenv("KEEP_CLUSTER") == "true" {
-			logger.Info("⚠️  KEEPING cluster for debugging (test failed or KEEP_CLUSTER=true)")
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine test results for log export decision
+		anyFailure := setupFailed || anyTestFailed
+		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
+
+		// Keep cluster alive only if explicitly requested for manual debugging
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("🔍 CLUSTER DEBUGGING INFORMATION:")
 			logger.Info("  Cluster name: notification-e2e")
@@ -340,9 +340,9 @@ var _ = SynchronizedAfterSuite(
 			return // Skip cluster deletion
 		}
 
-		// Always clean up Kind cluster on successful test runs
+		// Delete cluster (with must-gather log export on failure)
 		logger.Info("Deleting Kind cluster...")
-		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete Kind cluster (non-fatal)")
 		} else {

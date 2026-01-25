@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // AuditStore provides non-blocking audit event storage with asynchronous buffered writes.
@@ -37,7 +37,7 @@ type AuditStore interface {
 	// the event is dropped and an error is returned, but the service continues operating.
 	//
 	// DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
-	StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error
+	StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error
 
 	// Flush forces an immediate write of all buffered events to DataStorage.
 	//
@@ -81,32 +81,7 @@ type DataStorageClient interface {
 	// Returns an error if the write fails. The caller is responsible for retry logic.
 	//
 	// DD-AUDIT-002 V2.0: Uses OpenAPI-generated types
-	StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error
-}
-
-// DLQClient is the interface for writing audit events to the Dead Letter Queue.
-//
-// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
-// Related: ADR-032 ("No Audit Loss" mandate)
-//
-// This interface is used as a fallback when the primary Data Storage write fails
-// after max retries. Events written to DLQ are later processed by the async retry worker.
-//
-// DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
-//
-// Implementation: pkg/datastorage/dlq.Client
-type DLQClient interface {
-	// EnqueueAuditEvent adds an audit event to the DLQ for async retry.
-	//
-	// Parameters:
-	// - ctx: Context for cancellation
-	// - event: The audit event that failed to write (OpenAPI type)
-	// - originalError: The error that caused the primary write to fail
-	//
-	// Returns an error if the DLQ write fails.
-	//
-	// DD-AUDIT-002 V2.0: Uses OpenAPI-generated types
-	EnqueueAuditEvent(ctx context.Context, event *dsgen.AuditEventRequest, originalError error) error
+	StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error
 }
 
 // BufferedAuditStore implements AuditStore with asynchronous buffered writes.
@@ -117,17 +92,17 @@ type DLQClient interface {
 // - Retries failed writes with exponential backoff
 // - Flushes partial batches periodically
 // - Drops events if buffer is full (graceful degradation)
-// - Falls back to DLQ if primary write fails (GAP-10, DD-009)
+// - Drops events if DataStorage write fails after retries (infrastructure problem)
 //
 // Authority: DD-AUDIT-002 (Audit Shared Library Design)
-// Related: DD-009 (Dead Letter Queue Pattern), ADR-032 ("No Audit Loss")
+// Related: ADR-032 ("No Audit Loss" - server-side DLQ in DataStorage handles persistence failures)
 //
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
+// DD-AUDIT-002 V3.0: Removed client-side DLQ (over-engineered, server-side DLQ sufficient)
 type BufferedAuditStore struct {
-	buffer     chan *dsgen.AuditEventRequest
+	buffer     chan *ogenclient.AuditEventRequest
 	flushChan  chan chan error // Channel to signal flush request and receive completion
 	client     DataStorageClient
-	dlqClient  DLQClient // GAP-10: Optional DLQ fallback for failed writes (DD-009)
 	logger     logr.Logger
 	config     Config
 	metrics    MetricsLabels
@@ -140,7 +115,6 @@ type BufferedAuditStore struct {
 	droppedCount     int64
 	writtenCount     int64
 	failedBatchCount int64
-	dlqEnqueueCount  int64 // GAP-10: Track events sent to DLQ
 }
 
 // NewBufferedStore creates a new buffered audit store.
@@ -170,7 +144,7 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	}
 
 	store := &BufferedAuditStore{
-		buffer:    make(chan *dsgen.AuditEventRequest, config.BufferSize),
+		buffer:    make(chan *ogenclient.AuditEventRequest, config.BufferSize),
 		flushChan: make(chan chan error, 1), // Buffered to prevent deadlock
 		client:    client,
 		logger:    logger.WithName("audit-store"),
@@ -197,44 +171,6 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	return store, nil
 }
 
-// NewBufferedStoreWithDLQ creates a buffered audit store with DLQ fallback.
-//
-// This constructor is used when you want to enable Dead Letter Queue fallback
-// for audit events that fail to write to the Data Storage Service after max retries.
-//
-// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
-// Related: ADR-032 ("No Audit Loss" mandate)
-//
-// Parameters:
-// - client: Data Storage Service client for writing events
-// - dlqClient: DLQ client for fallback writes (nil to disable DLQ)
-// - config: Configuration for buffer size, batch size, flush interval, etc.
-// - serviceName: Name of the service using this store (for metrics labels)
-// - logger: Structured logger for audit store operations
-//
-// When DLQ is enabled:
-// - Events that fail after max retries are written to DLQ instead of being dropped
-// - DLQ events are later processed by the async retry worker (cmd/audit-retry-worker)
-// - ADR-032 "No Audit Loss" mandate is satisfied
-func NewBufferedStoreWithDLQ(client DataStorageClient, dlqClient DLQClient, config Config, serviceName string, logger logr.Logger) (AuditStore, error) {
-	store, err := NewBufferedStore(client, config, serviceName, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	// Inject DLQ client
-	bufferedStore := store.(*BufferedAuditStore)
-	bufferedStore.dlqClient = dlqClient
-
-	if dlqClient != nil {
-		logger.Info("Audit store DLQ fallback enabled (DD-009)",
-			"service", serviceName,
-		)
-	}
-
-	return store, nil
-}
-
 // StoreAudit adds an event to the buffer (non-blocking).
 //
 // This method validates the event and adds it to the buffer.
@@ -243,12 +179,12 @@ func NewBufferedStoreWithDLQ(client DataStorageClient, dlqClient DLQClient, conf
 // Returns an error if:
 // - The event fails validation (missing required fields)
 // - The buffer is full (event is dropped, but service continues)
-func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	// DEBUG: Log entry to StoreAudit (E2E debugging - Dec 28, 2025)
 	s.logger.Info("🔍 StoreAudit called",
 		"event_type", event.EventType,
 		"event_action", event.EventAction,
-		"correlation_id", event.CorrelationId,
+		"correlation_id", event.CorrelationID,
 		"buffer_capacity", cap(s.buffer),
 		"buffer_current_size", len(s.buffer))
 
@@ -272,7 +208,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditE
 		// DEBUG: Event successfully added to buffer
 		s.logger.Info("✅ Event buffered successfully",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 			"buffer_size_after", len(s.buffer),
 			"total_buffered", newCount)
 		return nil
@@ -284,14 +220,14 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditE
 
 		s.logger.Info("Audit buffer full, event dropped",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
 			"dropped_count", atomic.LoadInt64(&s.droppedCount),
 		)
 
-		// GAP-9: ADR-032 requires callers to know about dropped events
-		// so they can implement DLQ fallback
-		return fmt.Errorf("audit buffer full: event dropped (correlation_id=%s)", event.CorrelationId)
+		// DD-AUDIT-002 V3.0: Return error to inform caller of data loss
+		// Buffer full indicates system overload - fix by increasing buffer size or reducing load
+		return fmt.Errorf("audit buffer full: event dropped (correlation_id=%s)", event.CorrelationID)
 	}
 }
 
@@ -418,7 +354,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 		"buffer_size", s.config.BufferSize,
 		"start_time", startTime.Format(time.RFC3339Nano))
 
-	batch := make([]*dsgen.AuditEventRequest, 0, s.config.BatchSize)
+	batch := make([]*ogenclient.AuditEventRequest, 0, s.config.BatchSize)
 
 	for {
 		select {
@@ -521,9 +457,35 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 		case done := <-s.flushChan:
 			// Explicit flush requested (typically from tests or graceful shutdown prep)
+			initialBatchSize := len(batch)
+			initialBufferSize := len(s.buffer)
+
 			s.logger.V(1).Info("🔄 Processing explicit flush request",
-				"batch_size", len(batch),
-				"buffer_size", len(s.buffer))
+				"batch_size_before_drain", initialBatchSize,
+				"buffer_size_before_drain", initialBufferSize)
+
+			// BUG FIX (SP-AUDIT-001): Drain s.buffer channel into batch BEFORE flushing
+			// The explicit flush was only writing the batch array, missing events in s.buffer channel
+			// This caused test failures where events were "buffered successfully" but never written
+			drainedCount := 0
+		drainLoop:
+			for {
+				select {
+				case event := <-s.buffer:
+					batch = append(batch, event)
+					drainedCount++
+				default:
+					// Buffer drained (no more events available without blocking)
+					break drainLoop
+				}
+			}
+
+			if drainedCount > 0 {
+				s.logger.V(1).Info("🔄 Drained buffer channel into batch",
+					"drained_count", drainedCount,
+					"batch_size_after_drain", len(batch),
+					"buffer_size_after_drain", len(s.buffer))
+			}
 
 			if len(batch) > 0 {
 				batchSizeBeforeFlush := len(batch)
@@ -532,10 +494,12 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				batch = batch[:0] // Reset batch
 				s.logger.V(1).Info("✅ Explicit flush completed",
 					"flushed_count", batchSizeBeforeFlush,
+					"drained_from_buffer", drainedCount,
 					"buffer_size_after", len(s.buffer))
 				done <- nil // Signal success
 			} else {
-				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)")
+				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)",
+					"buffer_was_empty", initialBufferSize == 0)
 				done <- nil // Signal success (nothing to flush)
 			}
 		}
@@ -555,7 +519,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 // - Attempt 3: 4 seconds delay
 // - Attempt 4: 9 seconds delay
 // - After MaxRetries: Drop batch and log
-func (s *BufferedAuditStore) writeBatchWithRetry(batch []*dsgen.AuditEventRequest) {
+func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	ctx := context.Background()
 
 	start := time.Now()
@@ -593,21 +557,20 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*dsgen.AuditEventReques
 				continue
 			}
 
-			// Final failure after max retries
-			atomic.AddInt64(&s.failedBatchCount, 1)
-			s.metrics.RecordBatchFailed()
+		// Final failure after max retries
+		atomic.AddInt64(&s.failedBatchCount, 1)
+		s.metrics.RecordBatchFailed()
 
-			// GAP-10: DLQ fallback (DD-009, ADR-032 "No Audit Loss")
-			// Write failed events to DLQ for async retry
-			if s.dlqClient != nil {
-				s.enqueueBatchToDLQ(ctx, batch, err)
-			} else {
-				s.logger.Error(nil, "AUDIT DATA LOSS: Dropping batch, no DLQ configured (violates ADR-032)",
-					"batch_size", len(batch),
-					"max_retries", s.config.MaxRetries,
-				)
-			}
-			return
+		// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
+		// Server-side DLQ (in DataStorage) handles persistence failures
+		// Client-side audit loss is acceptable for transport failures (fix infrastructure)
+		s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
+			"batch_size", len(batch),
+			"max_retries", s.config.MaxRetries,
+			"error_type", "transport_failure",
+			"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
+		)
+		return
 		}
 
 		// Success
@@ -630,35 +593,4 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*dsgen.AuditEventReques
 
 		return
 	}
-}
-
-// enqueueBatchToDLQ writes all events in the batch to the DLQ for async retry.
-//
-// GAP-10: DLQ Fallback (DD-009, ADR-032 "No Audit Loss")
-//
-// This method is called when the primary write to Data Storage fails after max retries.
-// Events are written to DLQ individually to maximize recovery (partial success is better
-// than total loss if some DLQ writes fail).
-func (s *BufferedAuditStore) enqueueBatchToDLQ(ctx context.Context, batch []*dsgen.AuditEventRequest, originalError error) {
-	dlqSuccessCount := 0
-	dlqFailCount := 0
-
-	for _, event := range batch {
-		if err := s.dlqClient.EnqueueAuditEvent(ctx, event, originalError); err != nil {
-			s.logger.Error(err, "DLQ fallback failed for event",
-				"event_type", event.EventType,
-				"correlation_id", event.CorrelationId,
-			)
-			dlqFailCount++
-		} else {
-			atomic.AddInt64(&s.dlqEnqueueCount, 1)
-			dlqSuccessCount++
-		}
-	}
-
-	s.logger.Info("Batch enqueued to DLQ (DD-009 fallback)",
-		"batch_size", len(batch),
-		"dlq_success", dlqSuccessCount,
-		"dlq_failed", dlqFailCount,
-	)
 }

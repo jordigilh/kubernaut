@@ -144,9 +144,9 @@ def create_data_storage_client(app_config: Optional[AppConfig]):
         WorkflowCatalogAPIApi or None if configuration is missing
     """
     try:
-        from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
-        from src.clients.datastorage.api_client import ApiClient
-        from src.clients.datastorage.configuration import Configuration
+        from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+        from datastorage.api_client import ApiClient
+        from datastorage.configuration import Configuration
 
         # Get Data Storage URL from config or environment
         ds_url = None
@@ -199,81 +199,12 @@ async def analyze_incident(
         "signal_type": request_data.get("signal_type")
     })
 
-    # BR-AUDIT-005: Initialize audit store BEFORE mock check
-    # Per ADR-032 §1: Audit is MANDATORY for ALL LLM interactions (including mocked)
+    # BR-AUDIT-005: Initialize audit store
+    # Per ADR-032 §1: Audit is MANDATORY for ALL LLM interactions
     audit_store = get_audit_store()
     remediation_id = request_data.get("remediation_id", "")
 
-    # BR-HAPI-212: Check mock mode with audit event generation
-    from src.mock_responses import is_mock_mode_enabled, generate_mock_incident_response
-    if is_mock_mode_enabled():
-        logger.info({
-            "event": "mock_mode_active",
-            "incident_id": incident_id,
-            "message": "Returning deterministic mock response with audit (MOCK_LLM_MODE=true)"
-        })
-
-        # BR-AUDIT-005: Generate audit events even for mock responses (E2E testing requirement)
-        # AUDIT: LLM REQUEST
-        audit_store.store_audit(create_llm_request_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            model="mock://test-model",
-            prompt="MOCK LLM REQUEST (BR-HAPI-212)",
-            toolsets_enabled=["mock"],
-            mcp_servers=None
-        ))
-
-        # Generate mock response
-        result = generate_mock_incident_response(request_data)
-
-        # Extract workflow ID for audit events
-        workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
-
-        # AUDIT: MOCK TOOL CALL (simulate workflow catalog search for integration tests)
-        # BR-AUDIT-005: Tool call events are required for complete audit trail
-        if workflow_id:
-            audit_store.store_audit(create_tool_call_event(
-                incident_id=incident_id,
-                remediation_id=remediation_id,
-                tool_call_index=0,
-                tool_name="search_workflow_catalog",
-                tool_arguments={"signal_type": request_data.get("signal_type", "unknown")},
-                tool_result={"workflow_id": workflow_id, "found": True}
-            ))
-
-        # AUDIT: LLM RESPONSE
-        analysis = result.get("analysis", "")
-        audit_store.store_audit(create_llm_response_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            has_analysis=True,
-            analysis_length=len(analysis),
-            analysis_preview=analysis[:500] if analysis else "",
-            tool_call_count=1 if workflow_id else 0  # Reflect mock tool call count
-        ))
-
-        # AUDIT: VALIDATION ATTEMPT (mock always validates successfully)
-        audit_store.store_audit(create_validation_attempt_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            attempt=1,
-            max_attempts=3,
-            is_valid=True,
-            errors=[],
-            workflow_id=workflow_id
-        ))
-
-        logger.info({
-            "event": "mock_mode_audit_complete",
-            "incident_id": incident_id,
-            "remediation_id": remediation_id,
-            "audit_events_generated": 4 if workflow_id else 3  # llm_request, llm_tool_call (if workflow), llm_response, workflow_validation_attempt
-        })
-
-        return result
-
-    # Use HolmesGPT SDK for AI-powered analysis
+    # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
     try:
         # Create base investigation prompt
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage

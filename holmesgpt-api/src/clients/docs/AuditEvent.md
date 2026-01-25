@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **version** | **str** | Schema version (e.g., \&quot;1.0\&quot;) | 
 **event_type** | **str** | Event type identifier (e.g., gateway.signal.received) | 
 **event_timestamp** | **datetime** | ISO 8601 timestamp when the event occurred | 
-**event_category** | **str** | Service-level event category (ADR-034 v1.2). Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - execution: Remediation Execution Service - orchestration: Remediation Orchestrator Service  | 
+**event_category** | **str** | Service-level event category (ADR-034 v1.4). Per ADR-034 v1.2: event_category MUST match the service name that emits the event. Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - execution: Remediation Execution Service - orchestration: Remediation Orchestrator Service - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)  | 
 **event_action** | **str** | Action performed (ADR-034) | 
 **event_outcome** | **str** | Result of the event | 
 **actor_type** | **str** |  | [optional] 
@@ -21,7 +21,7 @@ Name | Type | Description | Notes
 **cluster_name** | **str** |  | [optional] 
 **severity** | **str** |  | [optional] 
 **duration_ms** | **int** |  | [optional] 
-**event_data** | **object** | Service-specific event data as structured Go type. Accepts any JSON-marshalable type (structs, maps, etc.). V1.0: Eliminates map[string]interface{} - use structured types directly. See DD-AUDIT-004 for structured type requirements.  | 
+**event_data** | [**AuditEventRequestEventData**](AuditEventRequestEventData.md) |  | 
 **event_id** | **UUID** |  | [optional] 
 **event_date** | **date** | Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage. | [optional] 
 

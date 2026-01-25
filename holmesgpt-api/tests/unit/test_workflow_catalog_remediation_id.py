@@ -111,14 +111,14 @@ class TestWorkflowCatalogRemediationId:
             remediation_id=remediation_id
         )
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+                workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
                 title="OOM Remediation",
                 description="OOMKilled critical: Remediate memory issues",
                 signal_type="OOMKilled",
@@ -172,14 +172,14 @@ class TestWorkflowCatalogRemediationId:
             remediation_id=remediation_id
         )
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+                workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
                 title="OOM Remediation",
                 description="OOMKilled critical: Remediate memory issues",
                 signal_type="OOMKilled",
@@ -226,14 +226,14 @@ class TestWorkflowCatalogRemediationId:
             remediation_id="req-2025-11-27-abc123"
         )
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+                workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
                 title="OOM Remediation",
                 description="OOMKilled critical: Remediate memory issues",
                 signal_type="OOMKilled",
@@ -276,14 +276,14 @@ class TestWorkflowCatalogRemediationId:
             # Note: No remediation_id provided
         )
 
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
+        with patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_search:
             # Mock OpenAPI response
-            from src.clients.datastorage.models.workflow_search_response import WorkflowSearchResponse
-            from src.clients.datastorage.models.workflow_search_result import WorkflowSearchResult
+            from datastorage.models.workflow_search_response import WorkflowSearchResponse
+            from datastorage.models.workflow_search_result import WorkflowSearchResult
             from uuid import UUID
 
             mock_workflow = WorkflowSearchResult(
-                workflow_id=UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd"),
+                workflow_id=str(UUID("1c7fcb0c-d22b-4e7c-b994-749dd1a591bd")),
                 title="OOM Remediation",
                 description="OOMKilled critical: Remediate memory issues",
                 signal_type="OOMKilled",

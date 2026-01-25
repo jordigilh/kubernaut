@@ -93,7 +93,7 @@ class TestSDKErrorHandling:
 class TestEndToEndFlow:
     """End-to-end integration tests"""
 
-    def test_recovery_endpoint_end_to_end(self, client, sample_recovery_request):
+    def test_recovery_endpoint_end_to_end(self, client, sample_recovery_request, mock_analyze_recovery):
         """
         Business Requirement: Complete recovery flow
         Expected: Request flows through all layers successfully

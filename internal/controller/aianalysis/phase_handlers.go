@@ -112,19 +112,21 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			// Capture phase after ATOMIC refetch
 			phaseBefore = analysis.Status.Phase
 
-			// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
+		// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
 			// InvestigationTime > 0 means handler already executed for this Investigating phase
 			// This prevents duplicate holmesgpt.call audit events from concurrent reconciles
 			if phaseBefore != PhaseInvestigating {
-				log.V(1).Info("Phase already changed, skipping handler",
-					"expected", PhaseInvestigating, "actual", phaseBefore)
+				log.Info("AA-HAPI-001: Phase already changed, skipping handler",
+					"expected", PhaseInvestigating, "actual", phaseBefore,
+					"observedGeneration", analysis.Status.ObservedGeneration)
 				handlerExecuted = false
 				return nil
 			}
-			
+
 			if analysis.Status.InvestigationTime > 0 {
-				log.V(1).Info("Handler already executed (InvestigationTime set), skipping handler",
-					"investigationTime", analysis.Status.InvestigationTime)
+				log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
+					"investigationTime", analysis.Status.InvestigationTime,
+					"phase", phaseBefore)
 				handlerExecuted = false
 				return nil
 			}

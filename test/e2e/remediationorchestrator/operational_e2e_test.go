@@ -68,7 +68,7 @@ var _ = Describe("Operational Performance E2E Tests", Label("e2e", "operational"
 		})
 
 		It("should complete initial reconcile loop quickly (<1s baseline)", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO.")
+			Skip("PENDING: Requires SignalProcessing controller deployment. Full Phase 2 E2E to be planned in new sprint.")
 
 			// Scenario: Measure time for RR creation → SignalProcessing creation
 			// Business Outcome: Validates reconcile loop isn't blocked
@@ -131,7 +131,7 @@ var _ = Describe("Operational Performance E2E Tests", Label("e2e", "operational"
 	// ========================================
 	Describe("Namespace Isolation (Gap 3.3)", func() {
 		It("should process RRs in different namespaces independently", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO.")
+			Skip("PENDING: Requires SignalProcessing controller deployment. Full Phase 2 E2E to be planned in new sprint.")
 
 			// Scenario: RR in ns-a fails, RR in ns-b succeeds
 			// Business Outcome: No cross-namespace interference
@@ -281,4 +281,3 @@ var _ = Describe("Operational Performance E2E Tests", Label("e2e", "operational"
 		})
 	})
 })
-

@@ -54,10 +54,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"encoding/json"
-
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -83,7 +81,7 @@ var (
 	k8sClient client.Client
 
 	// DataStorage OpenAPI client (DD-API-001: MANDATORY)
-	dsClient *dsgen.ClientWithResponses
+	dsClient *dsgen.Client
 
 	// Service URLs (per DD-TEST-001)
 	healthURL  string
@@ -130,6 +128,9 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 		logger.Info("  • Infrastructure: kubernaut-system")
 		logger.Info("  • Tests will create dynamic namespaces per test")
+		logger.Info("  • DD-TEST-011: Workflows seeded and ConfigMap created in infrastructure setup")
+		logger.Info("  • Mock LLM will mount ConfigMap with workflow UUIDs at startup")
+
 		logger.Info("  • Process 1 will now share kubeconfig with other processes")
 
 		// Return kubeconfig path to all processes
@@ -184,15 +185,14 @@ var _ = SynchronizedBeforeSuite(
 		// Wait for all services to be ready
 		// Per DD-TEST-002: Coverage-instrumented binaries take longer to start
 		// Increase timeout from 60s to 300s for coverage builds (5 min)
-		// Initial delay to allow HTTP servers to start accepting connections
-		healthTimeout := 60 * time.Second
-		initialDelay := 0 * time.Second
-		if os.Getenv("E2E_COVERAGE") == "true" {
-			healthTimeout = 300 * time.Second // 5 minutes for coverage builds
-			initialDelay = 10 * time.Second   // Give servers 10s to start
-			logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
-			time.Sleep(initialDelay)
-		}
+	// Initial delay to allow HTTP servers to start accepting connections
+	healthTimeout := 60 * time.Second
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		healthTimeout = 300 * time.Second // 5 minutes for coverage builds
+		initialDelay := 10 * time.Second  // Give servers 10s to start
+		logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
+		time.Sleep(initialDelay)
+	}
 		logger.Info("Waiting for services to be ready...")
 		Eventually(func() bool {
 			ready := checkServicesReady()
@@ -206,7 +206,7 @@ var _ = SynchronizedBeforeSuite(
 		// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN
 		// All queries MUST use generated OpenAPI client for type safety
 		dataStorageURL := "http://localhost:8091" // DataStorage NodePort 30081
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = dsgen.NewClient(dataStorageURL)
 		if err != nil {
 			logger.Error(err, "Failed to create DataStorage OpenAPI client")
 			Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
@@ -247,18 +247,29 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("AIAnalysis E2E Test Suite - Teardown (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Check if any test failed - preserve cluster for debugging
-		if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != "" {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("Reason:")
-			if anyTestFailed {
-				logger.Info("  • At least one test failed")
-			}
 			if os.Getenv("SKIP_CLEANUP") == "true" {
 				logger.Info("  • SKIP_CLEANUP=true")
 			}
 			if os.Getenv("KEEP_CLUSTER") != "" {
 				logger.Info("  • KEEP_CLUSTER set")
+			}
+			if setupFailed {
+				logger.Info("  • Setup failed (BeforeSuite failure)")
+			}
+			if anyTestFailed {
+				logger.Info("  • Tests failed")
 			}
 			logger.Info("")
 			logger.Info("To debug:")
@@ -272,9 +283,11 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// All tests passed - cleanup cluster
-		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Delete cluster (with must-gather log export on failure)
+		// Pass true for testsFailed if EITHER setup failed OR any test failed
+		anyFailure := setupFailed || anyTestFailed
+		logger.Info("🗑️  Cleaning up cluster...")
+		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		}
@@ -347,30 +360,4 @@ func createTestNamespace(prefix string) string {
 	err := k8sClient.Create(ctx, ns)
 	Expect(err).ToNot(HaveOccurred())
 	return name
-}
-
-// deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(name string) { //nolint:unused
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-	}
-	_ = k8sClient.Delete(ctx, ns)
-}
-
-// convertJSONToAuditEvent converts a raw JSON audit event to dsgen.AuditEvent.
-// This enables E2E tests to use testutil.ValidateAuditEvent() helper (P0 - MANDATORY).
-//
-// Rationale: E2E tests query Data Storage via HTTP, which returns JSON.
-// Converting to typed structs allows testutil helpers for consistent validation.
-func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent { //nolint:unused
-	// Marshal back to JSON, then unmarshal into typed struct
-	// This ensures proper type conversion for all fields
-	data, err := json.Marshal(jsonEvent)
-	Expect(err).ToNot(HaveOccurred(), "Failed to marshal JSON event")
-
-	var typedEvent dsgen.AuditEvent
-	err = json.Unmarshal(data, &typedEvent)
-	Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal into dsgen.AuditEvent")
-
-	return typedEvent
 }

@@ -42,7 +42,7 @@ aiAnalysis := &aianalysisv1.AIAnalysis{
     Spec: aianalysisv1.AIAnalysisSpec{
         // ... other fields ...
         TimeoutConfig: &aianalysisv1.AIAnalysisTimeoutConfig{
-            InvestigatingTimeout: rr.Spec.TimeoutConfig.AIAnalysisTimeout,
+            InvestigatingTimeout: rr.Status.TimeoutConfig.AIAnalysisTimeout,
         },
     },
 }
@@ -60,7 +60,7 @@ aiAnalysis := &aianalysisv1.AIAnalysis{
 ### Option B: AIAnalysis Uses Own Defaults (No Passthrough)
 
 ```go
-// AIAnalysis uses its own defaults, ignores RR.Spec.TimeoutConfig.AIAnalysisTimeout
+// AIAnalysis uses its own defaults, ignores RR.Status.TimeoutConfig.AIAnalysisTimeout
 // RO only uses AIAnalysisTimeout for its own phase timeout detection
 ```
 
@@ -69,7 +69,7 @@ aiAnalysis := &aianalysisv1.AIAnalysis{
 - ✅ AIAnalysis is self-contained
 
 **Cons**:
-- ⚠️ RR.Spec.TimeoutConfig.AIAnalysisTimeout only affects RO's phase detection, not AIAnalysis behavior
+- ⚠️ RR.Status.TimeoutConfig.AIAnalysisTimeout only affects RO's phase detection, not AIAnalysis behavior
 
 ---
 
@@ -130,9 +130,9 @@ REQUIRED CHANGES:
 2. RO Team adds to pkg/remediationorchestrator/creator/aianalysis.go (after line 117):
 
    // Pass through timeout from RR if configured
-   if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.AIAnalysisTimeout.Duration > 0 {
-       ai.Spec.TimeoutConfig = &aianalysisv1.AIAnalysisTimeoutConfig{
-           InvestigatingTimeout: rr.Spec.TimeoutConfig.AIAnalysisTimeout,
+   if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.AIAnalysisTimeout.Duration > 0 {
+       ai.Status.TimeoutConfig = &aianalysisv1.AIAnalysisTimeoutConfig{
+           InvestigatingTimeout: rr.Status.TimeoutConfig.AIAnalysisTimeout,
        }
    }
 

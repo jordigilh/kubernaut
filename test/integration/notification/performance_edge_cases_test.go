@@ -65,8 +65,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -90,7 +90,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			// BEHAVIOR: Small notification delivered quickly
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -121,8 +121,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -146,7 +146,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			// BEHAVIOR: Large notification delivered successfully
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -162,7 +162,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			// CORRECTNESS: Large payload delivered without truncation
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(freshNotif.Spec.Body)).To(Equal(bodySize),
 				"Body should not be truncated")
@@ -194,8 +194,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -220,7 +220,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -246,12 +246,12 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -269,8 +269,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -294,7 +294,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			// BEHAVIOR: Fast delivery with fast webhook
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -358,8 +358,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -385,7 +385,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -413,12 +413,12 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 
@@ -439,8 +439,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -465,7 +465,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -484,8 +484,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
@@ -499,7 +499,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			Eventually(func() int {
 				list := &notificationv1alpha1.NotificationRequestList{}
 				// Filter by namespace to avoid interference from other concurrent tests
-				err := k8sClient.List(ctx, list, client.InNamespace(testNamespace))
+				err := k8sManager.GetAPIReader().List(ctx, list, client.InNamespace(testNamespace))
 				if err != nil {
 					return -1
 				}

@@ -18,7 +18,6 @@ package adapters
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -115,12 +114,12 @@ func (a *KubernetesEventAdapter) GetSourceService() string {
 	return "kubernetes-events"
 }
 
-// GetSourceType returns the signal type identifier
+// GetSourceType returns the signal type identifier (BR-GATEWAY-027)
 //
-// Returns "kubernetes-event" to distinguish Kubernetes events from other signal types.
-// Used for metrics, logging, and signal classification.
+// Returns "kubernetes-event" per OpenAPI enum validation and authoritative documentation.
+// Used for metrics, logging, signal classification, and audit events.
 func (a *KubernetesEventAdapter) GetSourceType() string {
-	return "kubernetes-event"
+	return SourceTypeKubernetesEvent // Kubernetes events
 }
 
 // Parse converts Kubernetes Event JSON to NormalizedSignal
@@ -163,8 +162,14 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		return nil, fmt.Errorf("unsupported event type: %s (expected Warning or Error)", event.Type)
 	}
 
-	// 4. Map event severity
-	severity := a.mapSeverity(event.Type, event.Reason)
+	// 4. BR-GATEWAY-111: Pass through event type as severity (no transformation)
+	// Gateway acts as "dumb pipe" - extract and preserve, never transform
+	// Examples: "Warning" → "Warning", "Error" → "Error"
+	// SignalProcessing Rego will normalize via BR-SP-105 based on reason+type
+	severity := event.Type
+	if severity == "" {
+		severity = "unknown" // Only default if missing entirely
+	}
 
 	// 5. Extract resource information
 	resource := types.ResourceIdentifier{
@@ -173,11 +178,10 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Namespace: event.InvolvedObject.Namespace,
 	}
 
-	// 6. Generate fingerprint for deduplication
+	// 6. Generate fingerprint for deduplication (shared utility)
 	// Format: SHA256(reason:namespace:kind:name)
 	// Same resource + same reason = same fingerprint = deduplicated
-	fingerprint := a.generateFingerprint(event.Reason, event.InvolvedObject.Namespace,
-		event.InvolvedObject.Kind, event.InvolvedObject.Name)
+	fingerprint := types.CalculateFingerprint(event.Reason, resource)
 
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{
@@ -212,8 +216,10 @@ func (a *KubernetesEventAdapter) Validate(signal *types.NormalizedSignal) error 
 	if signal.Fingerprint == "" {
 		return fmt.Errorf("fingerprint is required")
 	}
-	if signal.Severity != "critical" && signal.Severity != "warning" && signal.Severity != "info" {
-		return fmt.Errorf("invalid severity: %s (must be critical/warning/info)", signal.Severity)
+	// BR-GATEWAY-181: Gateway passes through raw severity. SignalProcessing will validate.
+	// Only validate if severity is completely empty, otherwise accept any string.
+	if signal.Severity == "" {
+		return fmt.Errorf("severity is required (cannot be empty)")
 	}
 	if signal.Resource.Kind == "" {
 		return fmt.Errorf("resource kind is required")
@@ -236,38 +242,6 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 	}
 }
 
-// mapSeverity maps Kubernetes Event types to normalized severity levels
-//
-// Mapping rules:
-// - Error + critical reasons (OOMKilled, NodeNotReady) → "critical"
-// - Warning + high-impact reasons (FailedScheduling) → "critical"
-// - Warning + normal reasons (BackOff, Unhealthy) → "warning"
-// - All other warnings → "warning"
-func (a *KubernetesEventAdapter) mapSeverity(eventType, reason string) string {
-	// Critical event reasons (require immediate attention)
-	criticalReasons := map[string]bool{
-		"OOMKilled":        true, // Pod killed due to memory
-		"NodeNotReady":     true, // Node unavailable
-		"FailedScheduling": true, // Pod cannot be scheduled
-		"Evicted":          true, // Pod evicted from node
-		"FailedMount":      true, // Volume mount failed
-		"NetworkNotReady":  true, // Network plugin issue
-	}
-
-	// Check if reason is critical
-	if criticalReasons[reason] {
-		return "critical"
-	}
-
-	// Error events are critical by default
-	if eventType == "Error" {
-		return "critical"
-	}
-
-	// All other warnings
-	return "warning"
-}
-
 // generateFingerprint creates a unique identifier for deduplication
 //
 // Fingerprint format: SHA256(reason:namespace:kind:name)
@@ -280,14 +254,6 @@ func (a *KubernetesEventAdapter) mapSeverity(eventType, reason string) string {
 // - Same resource can have multiple failure types simultaneously
 // - Example: Pod can be OOMKilled AND BackOff at same time
 // - Different reasons = different remediation strategies
-func (a *KubernetesEventAdapter) generateFingerprint(reason, namespace, kind, name string) string {
-	// Build fingerprint string
-	fingerprintStr := fmt.Sprintf("%s:%s:%s:%s", reason, namespace, kind, name)
-
-	// Hash with SHA256
-	hash := sha256.Sum256([]byte(fingerprintStr))
-	return fmt.Sprintf("%x", hash)
-}
 
 // extractLabels extracts labels from Kubernetes Event for CRD propagation
 //

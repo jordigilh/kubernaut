@@ -1,0 +1,45 @@
+# Data Storage Configuration for Auth Webhook Integration Tests
+# Per DD-TEST-001 v2.1: Port allocations for Auth Webhook service
+#
+# Note: Environment variables override these settings in the container
+# The DSBootstrap infrastructure passes connection details via env vars
+
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+
+server:
+  port: 8080  # Container port (mapped to 18099 on host)
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+
+database:
+  host: host.containers.internal  # Podman limitation: use host access, not container names
+  port: 15442  # DD-TEST-001 v2.1: Auth Webhook PostgreSQL port
+  name: action_history
+  user: slm_user
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+  secretsFile: "/etc/datastorage/db-secrets.yaml"  # ADR-030 Section 6
+  usernameKey: "username"
+  passwordKey: "password"
+
+redis:
+  addr: host.containers.internal:16386  # DD-TEST-001 v2.2: Auth Webhook Redis port
+  db: 0
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
+  secretsFile: "/etc/datastorage/redis-secrets.yaml"  # ADR-030 Section 6
+  passwordKey: "password"
+
+logging:
+  level: debug
+  format: json
+

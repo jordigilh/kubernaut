@@ -50,7 +50,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -72,6 +72,8 @@ type Reconciler struct {
 	scheme              *runtime.Scheme
 	statusAggregator    *aggregator.StatusAggregator
 	aiAnalysisHandler   *handler.AIAnalysisHandler
+	spHandler           *handler.SignalProcessingHandler     // Handler Consistency Refactoring (2026-01-22)
+	weHandler           *handler.WorkflowExecutionHandler    // Handler Consistency Refactoring (2026-01-22)
 	notificationCreator *creator.NotificationCreator
 	spCreator           *creator.SignalProcessingCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
@@ -130,7 +132,8 @@ type TimeoutConfig struct {
 // Tests must provide a non-nil audit store (use NoOpStore or mock).
 // The timeouts parameter configures all timeout durations (global and per-phase).
 // Zero values use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m.
-func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
+// DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch in atomic updates.
+func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
 	// DD-METRICS-001: Metrics are REQUIRED (dependency injection pattern)
 	// Metrics are initialized in main.go via rometrics.NewMetrics()
 	// If nil is passed here, it's a programming error in main.go
@@ -167,7 +170,8 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 		// TODO: Get namespace from controller-runtime manager or environment variable
 		// For now, using empty string which means all namespaces
 		routingNamespace := ""
-		routingEngine = routing.NewRoutingEngine(c, routingNamespace, routingConfig)
+		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
+		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig)
 	}
 
 	// ========================================
@@ -175,13 +179,12 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 	// Status Manager for reducing K8s API calls by 85-90%
 	// Consolidates multiple status field updates into single atomic operations
 	// ========================================
-	statusManager := status.NewManager(c)
+	statusManager := status.NewManager(c, apiReader)
 
-	return &Reconciler{
+	r := &Reconciler{
 		client:              c,
 		scheme:              s,
 		statusAggregator:    aggregator.NewStatusAggregator(c),
-		aiAnalysisHandler:   handler.NewAIAnalysisHandler(c, s, nc, m),
 		notificationCreator: nc,
 		spCreator:           creator.NewSignalProcessingCreator(c, s, m),
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s, m),
@@ -196,6 +199,149 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 		Metrics:             m,
 		Recorder:            recorder,
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+	}
+
+	// ========================================
+	// HANDLER INITIALIZATION (Handler Consistency Refactoring 2026-01-22)
+	// Initialize handlers with transition callbacks for audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// ========================================
+
+	// SignalProcessingHandler: delegates phase transitions
+	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
+
+	// AIAnalysisHandler: delegates failure transitions
+	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
+
+	// WorkflowExecutionHandler: delegates completion and failure transitions
+	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToCompleted)
+
+	return r
+}
+
+// ========================================
+// TIMEOUT CONFIGURATION INITIALIZATION
+// BR-ORCH-027/028, BR-AUDIT-005 Gap #8
+// ========================================
+
+// populateTimeoutDefaults populates status.timeoutConfig with controller defaults.
+// This is a pure function that modifies the RR in-place without performing status updates.
+// Designed to be called from within AtomicStatusUpdate callbacks (DD-PERF-001).
+//
+// Per Gap #8 (BR-AUDIT-005): RO owns timeout initialization, operators can override later.
+// This ensures:
+// - Fresh RRs get controller defaults immediately
+// - Operator modifications are preserved across reconciles
+// - Audit trail can track initial configuration (Gap #8: orchestrator.lifecycle.created)
+//
+// Validation (REFACTOR enhancement):
+// - Ensures all timeouts are positive (>0)
+// - Logs warnings for unusual timeout values
+// - Per-phase timeouts should not exceed global timeout
+//
+// Reference:
+// - BR-ORCH-027 (Global timeout)
+// - BR-ORCH-028 (Per-phase timeouts)
+// - Gap #8: TimeoutConfig moved to status for operator mutability
+// - DD-PERF-001: No status updates in helper methods
+//
+// Parameters:
+// - ctx: Context for logging
+// - rr: RemediationRequest to populate (modified in-place)
+//
+// Returns:
+// - bool: true if TimeoutConfig was populated, false if already initialized
+func (r *Reconciler) populateTimeoutDefaults(ctx context.Context, rr *remediationv1.RemediationRequest) bool {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "namespace", rr.Namespace)
+
+	// Only initialize if status.timeoutConfig is nil (first reconcile)
+	if rr.Status.TimeoutConfig != nil {
+		logger.V(2).Info("TimeoutConfig already initialized, skipping",
+			"global", rr.Status.TimeoutConfig.Global,
+			"processing", rr.Status.TimeoutConfig.Processing,
+			"analyzing", rr.Status.TimeoutConfig.Analyzing,
+			"executing", rr.Status.TimeoutConfig.Executing)
+		return false // Already initialized, preserve existing values
+	}
+
+	// REFACTOR: Validate controller timeouts before applying
+	// This prevents configuration errors from propagating to RRs
+	if err := r.validateControllerTimeouts(); err != nil {
+		logger.Error(err, "Controller timeout configuration invalid, using safe defaults")
+		// Fallback to safe defaults if controller config is invalid
+		rr.Status.TimeoutConfig = r.getSafeDefaultTimeouts()
+		return true
+	}
+
+	// Set defaults from controller config
+	rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+		Global:     &metav1.Duration{Duration: r.timeouts.Global},
+		Processing: &metav1.Duration{Duration: r.timeouts.Processing},
+		Analyzing:  &metav1.Duration{Duration: r.timeouts.Analyzing},
+		Executing:  &metav1.Duration{Duration: r.timeouts.Executing},
+	}
+
+	logger.Info("Populated timeout defaults in status.timeoutConfig",
+		"global", r.timeouts.Global,
+		"processing", r.timeouts.Processing,
+		"analyzing", r.timeouts.Analyzing,
+		"executing", r.timeouts.Executing)
+
+	return true
+}
+
+// validateControllerTimeouts validates that controller-level timeout configuration is sane.
+// REFACTOR enhancement: Prevents invalid configuration from affecting RRs.
+//
+// Validation rules:
+// - All timeouts must be positive (>0)
+// - Per-phase timeouts should not exceed global timeout
+// - Global timeout should be at least 1 minute
+//
+// Returns:
+// - error: Non-nil if validation fails
+func (r *Reconciler) validateControllerTimeouts() error {
+	if r.timeouts.Global <= 0 {
+		return fmt.Errorf("global timeout must be positive, got %v", r.timeouts.Global)
+	}
+	if r.timeouts.Global < 1*time.Minute {
+		return fmt.Errorf("global timeout too short (%v), must be at least 1 minute", r.timeouts.Global)
+	}
+	if r.timeouts.Processing <= 0 {
+		return fmt.Errorf("processing timeout must be positive, got %v", r.timeouts.Processing)
+	}
+	if r.timeouts.Analyzing <= 0 {
+		return fmt.Errorf("analyzing timeout must be positive, got %v", r.timeouts.Analyzing)
+	}
+	if r.timeouts.Executing <= 0 {
+		return fmt.Errorf("executing timeout must be positive, got %v", r.timeouts.Executing)
+	}
+
+	// Warn if per-phase timeouts exceed global (not fatal, but suspicious)
+	if r.timeouts.Processing > r.timeouts.Global {
+		return fmt.Errorf("processing timeout (%v) exceeds global timeout (%v)", r.timeouts.Processing, r.timeouts.Global)
+	}
+	if r.timeouts.Analyzing > r.timeouts.Global {
+		return fmt.Errorf("analyzing timeout (%v) exceeds global timeout (%v)", r.timeouts.Analyzing, r.timeouts.Global)
+	}
+	if r.timeouts.Executing > r.timeouts.Global {
+		return fmt.Errorf("executing timeout (%v) exceeds global timeout (%v)", r.timeouts.Executing, r.timeouts.Global)
+	}
+
+	return nil
+}
+
+// getSafeDefaultTimeouts returns safe fallback timeout values.
+// Used when controller configuration is invalid.
+// REFACTOR enhancement: Ensures system never operates with zero timeouts.
+//
+// Returns:
+// - *remediationv1.TimeoutConfig: Safe default configuration
+func (r *Reconciler) getSafeDefaultTimeouts() *remediationv1.TimeoutConfig {
+	return &remediationv1.TimeoutConfig{
+		Global:     &metav1.Duration{Duration: 1 * time.Hour},
+		Processing: &metav1.Duration{Duration: 5 * time.Minute},
+		Analyzing:  &metav1.Duration{Duration: 10 * time.Minute},
+		Executing:  &metav1.Duration{Duration: 30 * time.Minute},
 	}
 }
 
@@ -224,6 +370,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		).Observe(time.Since(startTime).Seconds())
 		r.Metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
+
+	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
+	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
+	if err := r.validateTimeoutConfig(ctx, rr); err != nil {
+		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
+		return r.transitionToFailed(ctx, rr, "configuration", err.Error())
+	}
 
 	// ========================================
 	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001 Pattern B - Phase-Aware)
@@ -280,17 +433,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Initialize phase + StartTime in single API call
+		// Initialize phase + StartTime + TimeoutConfig in single API call
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
+		// Gap #8: Initialize TimeoutConfig defaults on first reconcile
+		// REFACTOR: Use extracted helper method for timeout initialization
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to initialize RemediationRequest status")
-			return ctrl.Result{}, err
-		}
+
+		// Gap #8: Initialize TimeoutConfig with controller defaults
+		// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
+		r.populateTimeoutDefaults(ctx, rr)
+
+		return nil
+	}); err != nil {
+		logger.Error(err, "Failed to initialize RemediationRequest status")
+		return ctrl.Result{}, err
+	}
+
+	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
+	// The rr object passed to AtomicStatusUpdate is updated with the persisted status
+	// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
+	// Refetching here would risk getting a cached/stale version.
+
+	// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
+		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
+		// This happens AFTER status initialization to capture actual defaults
+		r.emitRemediationCreatedAudit(ctx, rr)
+
 		// Requeue immediately to process the Pending phase
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -316,7 +487,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			logger.Info("RemediationRequest exceeded global timeout",
 				"timeSinceStart", timeSinceStart,
 				"globalTimeout", globalTimeout,
-				"overridden", rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil,
+				"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
 				"startTime", rr.Status.StartTime.Time)
 			return r.handleGlobalTimeout(ctx, rr)
 		}
@@ -467,20 +638,21 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing not found")
 	}
 
-	switch agg.SignalProcessingPhase {
-	case string(signalprocessingv1.PhaseCompleted):
-		logger.Info("SignalProcessing completed, creating AIAnalysis")
+	// Fetch SignalProcessing CRD
+	sp := &signalprocessingv1.SignalProcessing{}
+	err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.SignalProcessingRef.Name,
+		Namespace: rr.Status.SignalProcessingRef.Namespace,
+	}, sp)
+	if err != nil {
+		logger.Error(err, "Failed to fetch SignalProcessing CRD")
+		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+	}
 
-		// Fetch SignalProcessing CRD to pass enrichment data to AIAnalysis
-		sp := &signalprocessingv1.SignalProcessing{}
-		err := r.client.Get(ctx, client.ObjectKey{
-			Name:      rr.Status.SignalProcessingRef.Name,
-			Namespace: rr.Status.SignalProcessingRef.Namespace,
-		}, sp)
-		if err != nil {
-			logger.Error(err, "Failed to fetch SignalProcessing CRD")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
+	// Special handling for Completed status: create AIAnalysis before transitioning
+	// This is unique to SP because AIAnalysis creation requires SP enrichment data
+	if sp.Status.Phase == signalprocessingv1.PhaseCompleted {
+		logger.Info("SignalProcessing completed, creating AIAnalysis")
 
 		// Create AIAnalysis CRD (BR-ORCH-025, BR-ORCH-031)
 		// DD-CRD-002-RR: Creator sets AIAnalysisReady condition in-memory
@@ -539,16 +711,12 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			logger.Error(err, "Failed to update SignalProcessingComplete condition")
 			// Continue - condition update is best-effort
 		}
+	}
 
-		// Transition to Analyzing phase
-		return r.transitionPhase(ctx, rr, phase.Analyzing)
-
-	case string(signalprocessingv1.PhaseFailed):
+	// Handle SignalProcessing failure before delegating
+	if sp.Status.Phase == signalprocessingv1.PhaseFailed {
 		logger.Info("SignalProcessing failed, transitioning to Failed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set SignalProcessingComplete condition
-		// ========================================
+		// Set SignalProcessingComplete condition (false)
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetSignalProcessingComplete(rr, false,
 				remediationrequest.ReasonSignalProcessingFailed,
@@ -559,21 +727,11 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			// Continue - condition update is best-effort
 		}
 		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
-	case "":
-		// Empty phase could mean: 1) not created yet, or 2) missing/deleted
-		// Check if the child is actually missing (AllChildrenHealthy=false)
-		if !agg.AllChildrenHealthy {
-			// Child is missing - this is an error
-			logger.Error(nil, "SignalProcessing CRD not found",
-				"signalProcessingRef", rr.Status.SignalProcessingRef.Name)
-			return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing not found")
-		}
-		// SignalProcessing not created yet, requeue
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	default:
-		// Still in progress
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	// Delegate to SignalProcessingHandler for status-based transitions
+	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
+	return r.spHandler.HandleStatus(ctx, rr, sp)
 }
 
 // handleAnalyzingPhase handles the Analyzing phase.
@@ -960,14 +1118,27 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
 	}
 
-	// Phase values per api/workflowexecution/v1alpha1: Pending|Running|Completed|Failed|Skipped
-	switch agg.WorkflowExecutionPhase {
-	case "Completed":
-		logger.Info("WorkflowExecution completed, transitioning to Completed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set WorkflowExecutionComplete condition
-		// ========================================
+	// Check if child is missing (AllChildrenHealthy=false)
+	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
+		logger.Error(nil, "WorkflowExecution CRD not found",
+			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
+		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+	}
+
+	// Fetch WorkflowExecution CRD
+	we := &workflowexecutionv1.WorkflowExecution{}
+	err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.WorkflowExecutionRef.Name,
+		Namespace: rr.Status.WorkflowExecutionRef.Namespace,
+	}, we)
+	if err != nil {
+		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
+		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+	}
+
+	// Set WorkflowExecutionComplete condition before delegating to handler
+	// DD-PERF-001: Atomic status updates with conditions
+	if we.Status.Phase == workflowexecutionv1.PhaseCompleted {
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, true,
 				remediationrequest.ReasonWorkflowSucceeded,
@@ -977,13 +1148,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToCompleted(ctx, rr, "Remediated")
-	case "Failed":
-		logger.Info("WorkflowExecution failed, transitioning to Failed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set WorkflowExecutionComplete condition
-		// ========================================
+	} else if we.Status.Phase == workflowexecutionv1.PhaseFailed {
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, false,
 				remediationrequest.ReasonWorkflowFailed,
@@ -993,22 +1158,11 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution failed")
-	case "":
-		// Empty phase could mean: 1) not created yet, or 2) missing/deleted
-		// Check if the child is actually missing (AllChildrenHealthy=false)
-		if !agg.AllChildrenHealthy {
-			// Child is missing - this is an error
-			logger.Error(nil, "WorkflowExecution CRD not found",
-				"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-			return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
-		}
-		// WorkflowExecution not created yet, requeue
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	default:
-		// Still in progress
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	// Delegate to WorkflowExecutionHandler for status-based transitions
+	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
+	return r.weHandler.HandleStatus(ctx, rr, we)
 }
 
 // handleBlocked updates RR status when routing is blocked and requeues appropriately.
@@ -1470,6 +1624,60 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 // AUDIT EVENT EMISSION (DD-AUDIT-003)
 // ========================================
 
+// emitRemediationCreatedAudit emits an audit event for RemediationRequest creation with TimeoutConfig.
+// Per BR-AUDIT-005 Gap #8: Captures initial TimeoutConfig for RR reconstruction.
+// Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
+// This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
+// Per ADR-034: orchestrator.lifecycle.created event
+// Non-blocking - failures are logged but don't affect business logic.
+func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+
+	// Per ADR-032 §2: Audit is MANDATORY - controller crashes at startup if nil.
+	// This check should never trigger in production (defensive programming only).
+	if r.auditStore == nil {
+		logger.Error(fmt.Errorf("auditStore is nil"),
+			"CRITICAL: Cannot record audit event - violates ADR-032 §1 mandatory requirement",
+			"remediationRequest", rr.Name,
+			"namespace", rr.Namespace,
+			"event", "orchestrator.lifecycle.created")
+		// Note: In production, this never happens due to main.go:128 crash check.
+		// If we reach here, it's a programming error (e.g., test misconfiguration).
+		return
+	}
+
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
+
+	// Convert TimeoutConfig for audit event (Gap #8)
+	// Direct pointer assignment - roaudit.TimeoutConfig uses same *metav1.Duration type
+	var auditTimeoutConfig *roaudit.TimeoutConfig
+	if rr.Status.TimeoutConfig != nil {
+		auditTimeoutConfig = &roaudit.TimeoutConfig{
+			Global:     rr.Status.TimeoutConfig.Global,
+			Processing: rr.Status.TimeoutConfig.Processing,
+			Analyzing:  rr.Status.TimeoutConfig.Analyzing,
+			Executing:  rr.Status.TimeoutConfig.Executing,
+		}
+	}
+
+	event, err := r.auditManager.BuildRemediationCreatedEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		auditTimeoutConfig,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build remediation created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store remediation created audit event")
+	}
+}
+
 // emitLifecycleStartedAudit emits an audit event for remediation lifecycle started.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
@@ -1490,7 +1698,9 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 		// If we reach here, it's a programming error (e.g., test misconfiguration).
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildLifecycleStartedEvent(
 		correlationID,
@@ -1528,7 +1738,9 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildPhaseTransitionEvent(
 		correlationID,
@@ -1567,7 +1779,9 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildCompletionEvent(
 		correlationID,
@@ -1607,7 +1821,9 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildFailureEvent(
 		correlationID,
@@ -1646,7 +1862,9 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Build routing blocked data
 	requeueSeconds := int(blocked.RequeueAfter.Seconds())
@@ -1710,34 +1928,30 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
-	// Build approval requested event data
-	approvalData := map[string]interface{}{
-		"workflow_id":      workflowID,
-		"confidence_score": confidence,
-		"approval_reason":  approvalReason, // From AIAnalysis.Status.ApprovalReason
-		"namespace":        rr.Namespace,
-		"rr_name":          rr.Name,
-		"signal_name":      rr.Spec.SignalName,
-		"severity":         rr.Spec.Severity,
+	// Calculate RAR name using deterministic naming pattern
+	rarName := fmt.Sprintf("rar-%s", rr.Name)
+
+	// Calculate requiredBy timestamp (7 days from now per ADR-040)
+	requiredBy := metav1.Now().Add(7 * 24 * time.Hour)
+
+	// Build event using audit manager's build method (refactored per TODO comment)
+	event, err := r.auditManager.BuildApprovalRequestedEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		rarName,
+		workflowID,
+		fmt.Sprintf("%.2f", confidence),
+		requiredBy,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build approval requested audit event")
+		return
 	}
-
-	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
-	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-	event.EventType = "orchestrator.approval.requested"
-	event.EventCategory = dsgen.AuditEventRequestEventCategoryOrchestration
-	event.EventAction = "approval_requested"
-	event.EventOutcome = audit.OutcomePending
-	// Use canonical service name constant (roaudit.ServiceName = "remediationorchestrator-controller")
-	// Pattern: CRD controllers use "<service>-controller", stateless services use "<service>"
-	actorID := roaudit.ServiceName
-	actorType := "service"
-	event.ActorId = &actorID
-	event.ActorType = &actorType
-	event.CorrelationId = correlationID
-	event.EventData = approvalData
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store approval requested audit event")
@@ -1759,45 +1973,60 @@ func (r *Reconciler) emitApprovalDecisionAudit(ctx context.Context, rr *remediat
 		return
 	}
 
-	correlationID := string(rr.UID)
-
-	// Build approval decision event data
-	decisionData := map[string]interface{}{
-		"decision":         decision,
-		"decided_by":       decidedBy,
-		"decision_message": decisionMessage,
-		"namespace":        rr.Namespace,
-		"rr_name":          rr.Name,
-		"signal_name":      rr.Spec.SignalName,
-	}
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Determine event type and outcome based on decision
 	var eventType string
-	var outcome dsgen.AuditEventRequestEventOutcome
+	var outcome api.AuditEventRequestEventOutcome
+	var action string
 
 	switch decision {
 	case "Approved":
-		eventType = "orchestrator.approval.approved"
+		eventType = roaudit.EventTypeApprovalApproved
 		outcome = audit.OutcomeSuccess
+		action = roaudit.ActionApproved
 	case "Rejected":
-		eventType = "orchestrator.approval.rejected"
+		eventType = roaudit.EventTypeApprovalRejected
 		outcome = audit.OutcomeFailure
+		action = roaudit.ActionRejected
 	default:
 		logger.Info("Unknown approval decision", "decision", decision)
 		return
 	}
 
-	actorType := "user"
-	event := &dsgen.AuditEventRequest{
-		Version:       "1.0", // OpenAPI schema requires minLength: 1
-		EventType:     eventType,
-		EventCategory: dsgen.AuditEventRequestEventCategoryOrchestration,
-		EventAction:   strings.ToLower(decision), // "approved" or "rejected"
-		EventOutcome:  outcome,
-		ActorId:       &decidedBy,
-		ActorType:     &actorType,
-		CorrelationId: correlationID,
-		EventData:     decisionData,
+	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, eventType)
+	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
+	audit.SetEventAction(event, action)
+	audit.SetEventOutcome(event, outcome)
+	audit.SetActor(event, "user", decidedBy)
+	audit.SetResource(event, "RemediationRequest", rr.Name)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, rr.Namespace)
+
+	// Build payload using ogen types
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventType(eventType),
+		RrName:    rr.Name,
+		Namespace: rr.Namespace,
+		Decision:  roaudit.ToOptDecision(decision), // ToOptDecision returns Opt type, assign directly
+	}
+	if decision == "Approved" {
+		payload.ApprovedBy.SetTo(decidedBy)
+	} else {
+		payload.RejectedBy.SetTo(decidedBy)
+		payload.RejectionReason.SetTo(decisionMessage)
+	}
+
+	// Use the correct union constructor based on decision
+	if decision == "Approved" {
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
+	} else {
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
 	}
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1820,35 +2049,35 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
-	// Build timeout event data (reuse lifecycle.completed format with outcome=failure)
-	timeoutData := map[string]interface{}{
-		"outcome":        "failure",
-		"failure_phase":  timeoutPhase,
-		"failure_reason": fmt.Sprintf("%s timeout", timeoutType),
-		"timeout_type":   timeoutType,
-		"duration_ms":    durationMs,
-		"namespace":      rr.Namespace,
-		"rr_name":        rr.Name,
-		"signal_name":    rr.Spec.SignalName,
-	}
+	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
+	// Reuse lifecycle.completed event type with outcome=failure for timeouts
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, roaudit.EventTypeLifecycleCompleted)
+	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
+	audit.SetEventAction(event, roaudit.ActionCompleted)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", roaudit.ServiceName)
+	audit.SetResource(event, "RemediationRequest", rr.Name)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, rr.Namespace)
+	audit.SetDuration(event, int(durationMs))
 
-	actorID := "remediation-orchestrator"
-	actorType := "service"
-	durationMsInt := int(durationMs)
-	event := &dsgen.AuditEventRequest{
-		Version:       "1.0", // OpenAPI schema requires minLength: 1
-		EventType:     "orchestrator.lifecycle.completed",
-		EventCategory: dsgen.AuditEventRequestEventCategoryOrchestration,
-		EventAction:   "completed",
-		EventOutcome:  audit.OutcomeFailure,
-		ActorId:       &actorID,
-		ActorType:     &actorType,
-		CorrelationId: correlationID,
-		DurationMs:    &durationMsInt,
-		EventData:     timeoutData,
+	// Build payload using ogen types (timeout is represented as failure)
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+		RrName:    rr.Name,
+		Namespace: rr.Namespace,
 	}
+	payload.FailurePhase = roaudit.ToOptFailurePhase(timeoutPhase)
+	payload.FailureReason = roaudit.ToOptFailureReason(fmt.Sprintf("%s timeout", timeoutType))
+	payload.DurationMs.SetTo(durationMs)
+
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload)
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store timeout audit event", "timeoutType", timeoutType)
@@ -1939,8 +2168,8 @@ func safeFormatTime(t *metav1.Time) string {
 // Checks for per-RR override in spec.timeoutConfig.global (AC-027-4).
 // Falls back to controller-level default if not overridden.
 func (r *Reconciler) getEffectiveGlobalTimeout(rr *remediationv1.RemediationRequest) time.Duration {
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil {
-		return rr.Spec.TimeoutConfig.Global.Duration
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil {
+		return rr.Status.TimeoutConfig.Global.Duration
 	}
 	return r.timeouts.Global
 }
@@ -1949,19 +2178,19 @@ func (r *Reconciler) getEffectiveGlobalTimeout(rr *remediationv1.RemediationRequ
 // Checks for per-RR override in spec.timeoutConfig (AC-028-5).
 // Falls back to controller-level default if not overridden.
 func (r *Reconciler) getEffectivePhaseTimeout(rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase) time.Duration {
-	if rr.Spec.TimeoutConfig != nil {
+	if rr.Status.TimeoutConfig != nil {
 		switch phase {
 		case remediationv1.PhaseProcessing:
-			if rr.Spec.TimeoutConfig.Processing != nil {
-				return rr.Spec.TimeoutConfig.Processing.Duration
+			if rr.Status.TimeoutConfig.Processing != nil {
+				return rr.Status.TimeoutConfig.Processing.Duration
 			}
 		case remediationv1.PhaseAnalyzing:
-			if rr.Spec.TimeoutConfig.Analyzing != nil {
-				return rr.Spec.TimeoutConfig.Analyzing.Duration
+			if rr.Status.TimeoutConfig.Analyzing != nil {
+				return rr.Status.TimeoutConfig.Analyzing.Duration
 			}
 		case remediationv1.PhaseExecuting:
-			if rr.Spec.TimeoutConfig.Executing != nil {
-				return rr.Spec.TimeoutConfig.Executing.Duration
+			if rr.Status.TimeoutConfig.Executing != nil {
+				return rr.Status.TimeoutConfig.Executing.Duration
 			}
 		}
 	}
@@ -2022,7 +2251,7 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 			"timeSincePhaseStart", timeSincePhaseStart,
 			"phaseTimeout", phaseTimeout,
 			"phaseStartTime", phaseStartTime.Time,
-			"overridden", rr.Spec.TimeoutConfig != nil)
+			"overridden", rr.Status.TimeoutConfig != nil)
 		return r.handlePhaseTimeout(ctx, rr, currentPhase, phaseTimeout)
 	}
 
@@ -2250,10 +2479,34 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 	return 3 // default
 }
 
-// safeStringValue safely dereferences a string pointer.
-func safeStringValue(s *string) string { //nolint:unused
-	if s == nil {
-		return ""
+// validateTimeoutConfig validates the timeout configuration in RemediationRequest.Status.TimeoutConfig.
+// BR-AUDIT-005 Gap #7: Validates that all timeouts are non-negative.
+// Gap #8: TimeoutConfig moved from Spec to Status for operator mutability.
+// Returns error with ERR_INVALID_TIMEOUT_CONFIG code if validation fails.
+func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+	if rr.Status.TimeoutConfig == nil {
+		return nil // No custom timeout config, use defaults
 	}
-	return *s
+
+	// Validate Global timeout
+	if rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Global timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Global.Duration)
+	}
+
+	// Validate Processing timeout
+	if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Processing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Processing.Duration)
+	}
+
+	// Validate Analyzing timeout
+	if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Analyzing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Analyzing.Duration)
+	}
+
+	// Validate Executing timeout
+	if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Executing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Executing.Duration)
+	}
+
+	return nil
 }

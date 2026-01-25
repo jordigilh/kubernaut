@@ -204,5 +204,169 @@ func CreateHostDirectoryIfNeeded(path string, perm os.FileMode, writer io.Writer
 	return nil
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PHASE 1 REFACTORING: Unified Kind Cluster Creation
+// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// KindClusterOptions configures Kind cluster creation behavior
+type KindClusterOptions struct {
+	// ClusterName is the name of the Kind cluster (e.g., "gateway-e2e")
+	ClusterName string
 
+	// KubeconfigPath is where the kubeconfig will be written
+	KubeconfigPath string
+
+	// ConfigPath is the path to the Kind config YAML (relative to workspace root)
+	// Example: "test/infrastructure/kind-gateway-config.yaml"
+	ConfigPath string
+
+	// WaitTimeout is the duration to wait for cluster readiness (default: "60s")
+	WaitTimeout string
+
+	// ReuseExisting skips creation if cluster already exists
+	ReuseExisting bool
+
+	// DeleteExisting deletes existing cluster before creating new one
+	DeleteExisting bool
+
+	// CleanupOrphanedContainers removes leftover Podman containers (useful on macOS)
+	CleanupOrphanedContainers bool
+
+	// UsePodman sets KIND_EXPERIMENTAL_PROVIDER=podman
+	UsePodman bool
+
+	// ProjectRootAsWorkingDir sets working directory to project root (for ./coverdata resolution)
+	ProjectRootAsWorkingDir bool
+}
+
+// CreateKindClusterWithConfig creates a Kind cluster with the specified configuration
+//
+// This is the SINGLE AUTHORITATIVE function for all E2E test Kind cluster creation.
+// It consolidates patterns from 8+ duplicate functions across the codebase.
+//
+// Benefits:
+//   - ✅ Single source of truth for cluster creation
+//   - ✅ Consistent error handling across all E2E tests
+//   - ✅ Easier to add features (e.g., coverage support, Podman cleanup)
+//   - ✅ Reduces code by ~500 lines across the codebase
+//
+// Example Usage:
+//
+//	opts := infrastructure.KindClusterOptions{
+//	    ClusterName:    "gateway-e2e",
+//	    KubeconfigPath: "/tmp/gateway-kubeconfig",
+//	    ConfigPath:     "test/infrastructure/kind-gateway-config.yaml",
+//	    WaitTimeout:    "5m",
+//	    DeleteExisting: true,
+//	    UsePodman:      true,
+//	    ProjectRootAsWorkingDir: true,
+//	}
+//	err := infrastructure.CreateKindClusterWithConfig(opts, writer)
+//
+// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
+func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
+
+	// 1. Check if cluster already exists
+	checkCmd := exec.Command("kind", "get", "clusters")
+	checkOutput, _ := checkCmd.CombinedOutput()
+	clusterExists := strings.Contains(string(checkOutput), opts.ClusterName)
+
+	if clusterExists {
+		if opts.ReuseExisting {
+			_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, reusing...\n", opts.ClusterName)
+			return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+		}
+		if opts.DeleteExisting {
+			_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster already exists, deleting...\n")
+			delCmd := exec.Command("kind", "delete", "cluster", "--name", opts.ClusterName)
+			if output, err := delCmd.CombinedOutput(); err != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to delete existing cluster: %s\n", output)
+			}
+		}
+	}
+
+	// 2. Clean up orphaned Podman containers (macOS fix)
+	if opts.CleanupOrphanedContainers {
+		_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up any leftover Podman containers...")
+		// Only control-plane node (single-node clusters for resource efficiency)
+		cleanupCmd := exec.Command("podman", "rm", "-f", opts.ClusterName+"-control-plane")
+		_ = cleanupCmd.Run() // Ignore errors - container may not exist
+	}
+
+	// 3. Resolve config path relative to workspace root
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+	absoluteConfigPath := filepath.Join(workspaceRoot, opts.ConfigPath)
+	if _, err := os.Stat(absoluteConfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("kind config file not found: %s", absoluteConfigPath)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", absoluteConfigPath)
+
+	// 4. Ensure kubeconfig directory exists
+	kubeconfigDir := filepath.Dir(opts.KubeconfigPath)
+	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
+	}
+
+	// 5. Remove any leftover kubeconfig lock file
+	lockFile := opts.KubeconfigPath + ".lock"
+	_ = os.Remove(lockFile) // Ignore errors - file may not exist
+
+	// 6. Build Kind create command
+	waitTimeout := opts.WaitTimeout
+	if waitTimeout == "" {
+		waitTimeout = "60s"
+	}
+
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", opts.ClusterName,
+		"--config", absoluteConfigPath,
+		"--kubeconfig", opts.KubeconfigPath,
+		"--wait", waitTimeout)
+
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	// 7. Set working directory to project root if requested (for ./coverdata resolution)
+	if opts.ProjectRootAsWorkingDir {
+		cmd.Dir = workspaceRoot
+	}
+
+	// 8. Set Podman provider if requested
+	if opts.UsePodman {
+		cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	}
+
+	// 9. Create cluster
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kind create cluster failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created successfully")
+
+	// 10. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
+	return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+}
+
+// exportKubeconfigIfNeeded exports the kubeconfig for a Kind cluster
+// This is a workaround for unreliable --kubeconfig flag behavior
+func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writer) error {
+	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
+	kubeconfigOutput, err := kubeconfigCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	// Write kubeconfig to file
+	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
+		return fmt.Errorf("failed to write kubeconfig: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig exported to %s\n", kubeconfigPath)
+	return nil
+}

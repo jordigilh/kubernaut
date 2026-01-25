@@ -190,15 +190,15 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]*repo
 		// Unmarshal event_data JSONB
 		if len(eventDataJSON) > 0 {
 			if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
-				d.logger.Error(err, "Failed to unmarshal event_data",
-					"event_id", event.EventID,
-				)
-				// Continue with empty EventData rather than failing the entire query
-				event.EventData = make(map[string]interface{})
-			}
-		} else {
-			event.EventData = make(map[string]interface{})
+			d.logger.Error(err, "Failed to unmarshal event_data",
+				"event_id", event.EventID,
+			)
+			// Continue with nil EventData rather than failing the entire query
+			event.EventData = nil
 		}
+	} else {
+		event.EventData = nil
+	}
 
 		results = append(results, event)
 	}
@@ -296,7 +296,7 @@ func (d *DBAdapter) Get(id int) (*repository.AuditEvent, error) {
 	// V1.0: Query unified audit_events table (not legacy resource_action_traces)
 	// ADR-034: Unified audit table schema
 	sqlQuery := `
-		SELECT 
+		SELECT
 			event_id, event_version, event_timestamp, event_date, event_type,
 			event_category, event_action, event_outcome,
 			correlation_id, parent_event_id, parent_event_date,
@@ -398,15 +398,15 @@ func (d *DBAdapter) Get(id int) (*repository.AuditEvent, error) {
 	// Unmarshal event_data JSONB
 	if len(eventDataJSON) > 0 {
 		if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
-			d.logger.Error(err, "Failed to unmarshal event_data",
-				"event_id", event.EventID,
-			)
-			// Continue with empty EventData rather than failing
-			event.EventData = make(map[string]interface{})
-		}
-	} else {
-		event.EventData = make(map[string]interface{})
+		d.logger.Error(err, "Failed to unmarshal event_data",
+			"event_id", event.EventID,
+		)
+		// Continue with nil EventData rather than failing
+		event.EventData = nil
 	}
+} else {
+	event.EventData = nil
+}
 
 	d.logger.Info("Audit event retrieved successfully",
 		"id", id,
