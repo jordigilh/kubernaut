@@ -550,32 +550,31 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-			By("Waiting for controller to process and generate audit events")
+		By("Waiting for controller to process and generate audit events")
 
-			// Flush audit buffer before polling (ensures events are available)
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		correlationID := analysis.Spec.RemediationID
+		eventCategory := "analysis"
 
-			correlationID := analysis.Spec.RemediationID
-			eventCategory := "analysis"
-
-			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-			var events []ogenclient.AuditEvent
-			Eventually(func() int {
-				params := ogenclient.QueryAuditEventsParams{
-					CorrelationID: ogenclient.NewOptString(correlationID),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-				}
-				resp, err := dsClient.QueryAuditEvents(ctx, params)
-				if err != nil {
-					return 0
-				}
-				events = resp.Data
-				return len(events)
-			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
-				"Controller MUST generate audit events even during error scenarios")
+		// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+		// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
+		// Rationale: Controller buffers events asynchronously AFTER test starts waiting
+		var events []ogenclient.AuditEvent
+		Eventually(func() int {
+			// Flush on each retry to catch events buffered by controller since last check
+			_ = auditStore.Flush(ctx)
+			
+			params := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+			}
+			resp, err := dsClient.QueryAuditEvents(ctx, params)
+			if err != nil {
+				return 0
+			}
+			events = resp.Data
+			return len(events)
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
+			"Controller MUST generate audit events even during error scenarios")
 
 			// DD-TESTING-001: Validate specific event types even in error scenarios
 			// Business Value: Operators have audit trail regardless of success/failure
@@ -654,32 +653,37 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis within 60 seconds")
 
-			By("Verifying approval decision was automatically audited")
+		By("Verifying approval decision was automatically audited")
 
-			// Flush audit buffer to ensure events are persisted
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypeApprovalDecision
+		eventCategory := "analysis"
 
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeApprovalDecision
-			eventCategory := "analysis"
+		// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
+		// Rationale: Controller buffers events asynchronously AFTER test starts waiting
+		var events []ogenclient.AuditEvent
+		Eventually(func() int {
+			// Flush on each retry to catch events buffered by controller since last check
+			_ = auditStore.Flush(ctx)
+			
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 			}
 			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Data).ToNot(BeNil())
+			if err != nil {
+				return 0
+			}
+			events = resp.Data
+			return len(events)
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
+			"Controller MUST generate approval decision audit events")
 
-			events := resp.Data
-
-			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
-			eventCounts := countEventsByType(events)
-			Expect(eventCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
-				"Expected exactly 1 approval decision event per analysis")
+		// DD-TESTING-001: Deterministic count validation instead of weak null-testing
+		eventCounts := countEventsByType(events)
+		Expect(eventCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
+			"Expected exactly 1 approval decision event per analysis")
 
 			// Business Value: Compliance teams can audit approval decisions
 			event := events[0]
