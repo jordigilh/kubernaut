@@ -65,23 +65,17 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Common fingerprint
 			fingerprint := "c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3"
 
-			// Create first two Failed RRs
-			rr1 := createRemediationRequestWithFingerprint(ns, "rr-fail-1", fingerprint)
-			simulateFailedPhase(ns, rr1.Name)
-
-			rr2 := createRemediationRequestWithFingerprint(ns, "rr-fail-2", fingerprint)
-			simulateFailedPhase(ns, rr2.Name)
+			// Create first two Failed RRs (race-free: sets Failed immediately)
+			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-1", fingerprint)
+			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-2", fingerprint)
 
 			// Create a Completed RR - this should reset the counter
 			rr3 := createRemediationRequestWithFingerprint(ns, "rr-success", fingerprint)
 			simulateCompletedPhase(ns, rr3.Name)
 
 			// Create two more Failed RRs - should NOT trigger blocking (counter reset)
-			rr4 := createRemediationRequestWithFingerprint(ns, "rr-fail-4", fingerprint)
-			simulateFailedPhase(ns, rr4.Name)
-
-			rr5 := createRemediationRequestWithFingerprint(ns, "rr-fail-5", fingerprint)
-			simulateFailedPhase(ns, rr5.Name)
+			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-4", fingerprint)
+			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-5", fingerprint)
 
 			// Verify all RRs exist
 			rrList := &remediationv1.RemediationRequestList{}
@@ -271,14 +265,15 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 			// Given: 3 failed RRs in namespace A (use existing helpers for proper handling)
+			// CRITICAL: Set Failed status IMMEDIATELY after creation to prevent controller race
+			// Bug: If we create RR then later call simulateFailedPhase(), controller starts
+			// orchestration in the gap → RR transitions to Processing before we set Failed
 			for i := 0; i < 3; i++ {
-				rr := createRemediationRequestWithFingerprint(namespace, fmt.Sprintf("ns-a-fail-%d", i), sharedFP)
-				simulateFailedPhase(namespace, rr.Name)
+				createFailedRemediationRequestWithFingerprint(namespace, fmt.Sprintf("ns-a-fail-%d", i), sharedFP)
 			}
 
 			// And: 1 failed RR in namespace B (same fingerprint, different namespace)
-			rrB := createRemediationRequestWithFingerprint(nsB, "ns-b-fail-1", sharedFP)
-			simulateFailedPhase(nsB, rrB.Name)
+			createFailedRemediationRequestWithFingerprint(nsB, "ns-b-fail-1", sharedFP)
 
 			// When: Counting failures per namespace (validates field index isolation)
 			// Use Eventually() to account for status propagation timing
@@ -362,6 +357,44 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 	GinkgoWriter.Printf("✅ Created RR with fingerprint: %s/%s (fingerprint: %s...)\n",
 		namespace, name, fingerprint[:16])
+	return rr
+}
+
+// createFailedRemediationRequestWithFingerprint creates an RR and sets it to Failed.
+// Uses same approach as simulateFailedPhase but in single function to minimize race window.
+// Used for blocking tests that need RRs pre-Failed (not transitioning during test).
+func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) *remediationv1.RemediationRequest {
+	// Step 1: Create RR (starts in Pending)
+	rr := createRemediationRequestWithFingerprint(namespace, name, fingerprint)
+
+	// Step 2: Set to Failed using Eventually (same as simulateFailedPhase)
+	// This acknowledges the race exists and retries until successful or timeout
+	Eventually(func() error {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+			return err
+		}
+
+		failPhase := "workflow_execution"
+		failReason := "Simulated failure for blocking test"
+
+		fetched.Status.OverallPhase = "Failed"
+		fetched.Status.FailurePhase = &failPhase
+		fetched.Status.FailureReason = &failReason
+
+		return k8sClient.Status().Update(ctx, fetched)
+	}, timeout, interval).Should(Succeed(), "Should set Failed status for %s/%s", namespace, name)
+
+	// Step 3: Verify Failed status durably persisted
+	Eventually(func() string {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+			return ""
+		}
+		return string(fetched.Status.OverallPhase)
+	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase for %s/%s", namespace, name)
+
+	GinkgoWriter.Printf("✅ Created Failed RR (verified durable): %s/%s\n", namespace, name)
 	return rr
 }
 
