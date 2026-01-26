@@ -49,26 +49,28 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	})
 
 	Context("BR-STORAGE-032: Audit Event Storage", func() {
-		// ================================================================
-		// BEHAVIOR: System can store audit events
-		// ================================================================
-		It("should store audit events with all required fields", func() {
-			eventID := uuid.New().String()
-			eventTimestamp := time.Now().UTC()
-			eventDate := eventTimestamp.Truncate(24 * time.Hour)
+	// ================================================================
+	// BEHAVIOR: System can store audit events
+	// ================================================================
+	It("should store audit events with all required fields", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-store-%s", uuid.New().String()[:8])
+		eventID := uuid.New().String()
+		eventTimestamp := time.Now().UTC()
+		eventDate := eventTimestamp.Truncate(24 * time.Hour)
 
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES (
-					$1, $2, $3, 'gateway.signal.received', 'gateway', 'test-store-001',
-					'remediationrequest', 'rr-001', 'receive_signal', 'success', 'service', 'gateway-service',
-					'{"version": "1.0", "status": "success"}'::jsonb
-				)
-			`, eventID, eventTimestamp, eventDate)
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES (
+				$1, $2, $3, 'gateway.signal.received', 'gateway', $4,
+				'remediationrequest', 'rr-001', 'receive_signal', 'success', 'service', 'gateway-service',
+				'{"version": "1.0", "status": "success"}'::jsonb
+			)
+		`, eventID, eventTimestamp, eventDate, correlationID)
 
-			Expect(err).ToNot(HaveOccurred(), "Should store audit event successfully")
+		Expect(err).ToNot(HaveOccurred(), "Should store audit event successfully")
 
 			// Verify we can retrieve it
 			var retrievedID string
@@ -77,24 +79,26 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 			Expect(retrievedID).To(Equal(eventID))
 		})
 
-		// ================================================================
-		// BEHAVIOR: System can store events for current and future months
-		// ================================================================
-		It("should accept audit events for current month", func() {
-			eventID := uuid.New().String()
-			now := time.Now().UTC()
+	// ================================================================
+	// BEHAVIOR: System can store events for current and future months
+	// ================================================================
+	It("should accept audit events for current month", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-current-month-%s", uuid.New().String()[:8])
+		eventID := uuid.New().String()
+		now := time.Now().UTC()
 
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'test.current.month', 'test', 'test-current-month',
-					'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
-			`, eventID, now, now.Truncate(24*time.Hour))
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'test.current.month', 'test', $4,
+				'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
+		`, eventID, now, now.Truncate(24*time.Hour), correlationID)
 
-			Expect(err).ToNot(HaveOccurred(),
-				fmt.Sprintf("Should accept audit events for %s", now.Format("January 2006")))
-		})
+		Expect(err).ToNot(HaveOccurred(),
+			fmt.Sprintf("Should accept audit events for %s", now.Format("January 2006")))
+	})
 
 		It("should accept audit events for next 3 months", func() {
 			now := time.Now().UTC()
@@ -119,26 +123,27 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 			}
 		})
 
-		// ================================================================
-		// BEHAVIOR: System can query events by correlation ID
-		// ================================================================
-		It("should retrieve events by correlation_id efficiently", func() {
-			correlationID := "test-correlation-query-001"
+	// ================================================================
+	// BEHAVIOR: System can query events by correlation ID
+	// ================================================================
+	It("should retrieve events by correlation_id efficiently", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-correlation-%s", uuid.New().String()[:8])
 
-			// Insert multiple events with same correlation ID
-			for i := 0; i < 3; i++ {
-				eventID := uuid.New().String()
-				now := time.Now().UTC()
-				_, err := db.Exec(`
-					INSERT INTO audit_events (
-						event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-						resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-					) VALUES ($1, $2, $3, $4, 'test', $5,
-						'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
-				`, eventID, now, now.Truncate(24*time.Hour),
-					fmt.Sprintf("test.event.%d", i), correlationID)
-				Expect(err).ToNot(HaveOccurred())
-			}
+		// Insert multiple events with same correlation ID
+		for i := 0; i < 3; i++ {
+			eventID := uuid.New().String()
+			now := time.Now().UTC()
+			_, err := db.Exec(`
+				INSERT INTO audit_events (
+					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+				) VALUES ($1, $2, $3, $4, 'test', $5,
+					'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
+			`, eventID, now, now.Truncate(24*time.Hour),
+				fmt.Sprintf("test.event.%d", i), correlationID)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 			// Query by correlation ID
 			rows, err := db.Query(`
@@ -158,63 +163,67 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 			Expect(count).To(Equal(3), "Should retrieve all events with matching correlation_id")
 		})
 
-		// ================================================================
-		// BEHAVIOR: System can query JSONB event_data
-		// ================================================================
-		It("should support JSONB queries on event_data", func() {
-			eventID := uuid.New().String()
-			now := time.Now().UTC()
+	// ================================================================
+	// BEHAVIOR: System can query JSONB event_data
+	// ================================================================
+	It("should support JSONB queries on event_data", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-jsonb-%s", uuid.New().String()[:8])
+		eventID := uuid.New().String()
+		now := time.Now().UTC()
 
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'ai.analysis.completed', 'aianalysis', 'test-jsonb-query',
-					'investigation', 'inv-001', 'analyze', 'success', 'service', 'analysis-service',
-					'{"analysis": {"confidence": 0.95, "model": "gpt-4"}}'::jsonb)
-			`, eventID, now, now.Truncate(24*time.Hour))
-			Expect(err).ToNot(HaveOccurred())
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'ai.analysis.completed', 'aianalysis', $4,
+				'investigation', 'inv-001', 'analyze', 'success', 'service', 'analysis-service',
+				'{"analysis": {"confidence": 0.95, "model": "gpt-4"}}'::jsonb)
+		`, eventID, now, now.Truncate(24*time.Hour), correlationID)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Query using JSONB containment
-			var foundID string
-			err = db.QueryRow(`
-				SELECT event_id FROM audit_events
-				WHERE event_data @> '{"analysis": {"confidence": 0.95}}'
-				AND correlation_id = 'test-jsonb-query'
-			`).Scan(&foundID)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(foundID).To(Equal(eventID), "JSONB query should find matching event")
-		})
+		// Query using JSONB containment
+		var foundID string
+		err = db.QueryRow(`
+			SELECT event_id FROM audit_events
+			WHERE event_data @> '{"analysis": {"confidence": 0.95}}'
+			AND correlation_id = $1
+		`, correlationID).Scan(&foundID)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(foundID).To(Equal(eventID), "JSONB query should find matching event")
+	})
 
-		// ================================================================
-		// BEHAVIOR: Parent-child relationships are enforced (immutability)
-		// ================================================================
-		It("should prevent deletion of parent events with children (immutability)", func() {
-			parentID := uuid.New().String()
-			childID := uuid.New().String()
-			now := time.Now().UTC()
-			eventDate := now.Truncate(24 * time.Hour)
+	// ================================================================
+	// BEHAVIOR: Parent-child relationships are enforced (immutability)
+	// ================================================================
+	It("should prevent deletion of parent events with children (immutability)", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-immutability-%s", uuid.New().String()[:8])
+		parentID := uuid.New().String()
+		childID := uuid.New().String()
+		now := time.Now().UTC()
+		eventDate := now.Truncate(24 * time.Hour)
 
-			// Insert parent event
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'gateway.signal.received', 'gateway', 'test-immutability',
-					'alert', 'alert-001', 'receive', 'success', 'service', 'gateway-service', '{}'::jsonb)
-			`, parentID, now, eventDate)
-			Expect(err).ToNot(HaveOccurred())
+		// Insert parent event
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'gateway.signal.received', 'gateway', $4,
+				'alert', 'alert-001', 'receive', 'success', 'service', 'gateway-service', '{}'::jsonb)
+		`, parentID, now, eventDate, correlationID)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Insert child event referencing parent
-			_, err = db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					parent_event_id, parent_event_date, resource_type, resource_id, event_action,
-					event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'ai.investigation.started', 'aianalysis', 'test-immutability',
-					$4, $5, 'investigation', 'inv-001', 'start', 'success', 'service', 'analysis-service', '{}'::jsonb)
-			`, childID, now.Add(time.Second), eventDate, parentID, eventDate)
-			Expect(err).ToNot(HaveOccurred())
+		// Insert child event referencing parent
+		_, err = db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				parent_event_id, parent_event_date, resource_type, resource_id, event_action,
+				event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'ai.investigation.started', 'aianalysis', $4,
+				$5, $6, 'investigation', 'inv-001', 'start', 'success', 'service', 'analysis-service', '{}'::jsonb)
+		`, childID, now.Add(time.Second), eventDate, correlationID, parentID, eventDate)
+		Expect(err).ToNot(HaveOccurred())
 
 			// Attempt to delete parent - should fail
 			_, err = db.Exec(`DELETE FROM audit_events WHERE event_id = $1`, parentID)
@@ -229,35 +238,37 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 			Expect(exists).To(BeTrue(), "Parent event should still exist (immutability enforced)")
 		})
 
-		// ================================================================
-		// BEHAVIOR: Child events correctly reference parents
-		// ================================================================
-		It("should maintain parent-child relationships", func() {
-			parentID := uuid.New().String()
-			childID := uuid.New().String()
-			now := time.Now().UTC()
-			eventDate := now.Truncate(24 * time.Hour)
+	// ================================================================
+	// BEHAVIOR: Child events correctly reference parents
+	// ================================================================
+	It("should maintain parent-child relationships", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-parent-child-%s", uuid.New().String()[:8])
+		parentID := uuid.New().String()
+		childID := uuid.New().String()
+		now := time.Now().UTC()
+		eventDate := now.Truncate(24 * time.Hour)
 
-			// Insert parent
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'parent.event', 'test', 'test-parent-child',
-					'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
-			`, parentID, now, eventDate)
-			Expect(err).ToNot(HaveOccurred())
+		// Insert parent
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'parent.event', 'test', $4,
+				'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
+		`, parentID, now, eventDate, correlationID)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Insert child referencing parent
-			_, err = db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					parent_event_id, parent_event_date, resource_type, resource_id, event_action,
-					event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'child.event', 'test', 'test-parent-child',
-					$4, $5, 'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
-			`, childID, now.Add(time.Second), eventDate, parentID, eventDate)
-			Expect(err).ToNot(HaveOccurred())
+		// Insert child referencing parent
+		_, err = db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				parent_event_id, parent_event_date, resource_type, resource_id, event_action,
+				event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'child.event', 'test', $4,
+				$5, $6, 'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
+		`, childID, now.Add(time.Second), eventDate, correlationID, parentID, eventDate)
+		Expect(err).ToNot(HaveOccurred())
 
 			// Verify relationship
 			var retrievedParentID sql.NullString
@@ -267,22 +278,24 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 			Expect(retrievedParentID.String).To(Equal(parentID))
 		})
 
-		// ================================================================
-		// BEHAVIOR: Event date is correctly stored
-		// ================================================================
-		It("should store and retrieve event_date correctly", func() {
-			eventID := uuid.New().String()
-			testTimestamp := time.Date(2025, 11, 15, 10, 30, 0, 0, time.UTC)
-			testDate := testTimestamp.Truncate(24 * time.Hour)
+	// ================================================================
+	// BEHAVIOR: Event date is correctly stored
+	// ================================================================
+	It("should store and retrieve event_date correctly", func() {
+		// Use unique correlation ID per test run for parallel execution safety
+		correlationID := fmt.Sprintf("test-date-check-%s", uuid.New().String()[:8])
+		eventID := uuid.New().String()
+		testTimestamp := time.Date(2025, 11, 15, 10, 30, 0, 0, time.UTC)
+		testDate := testTimestamp.Truncate(24 * time.Hour)
 
-			_, err := db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
-					resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
-				) VALUES ($1, $2, $3, 'test.date.check', 'test', 'test-date-check',
-					'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
-			`, eventID, testTimestamp, testDate)
-			Expect(err).ToNot(HaveOccurred())
+		_, err := db.Exec(`
+			INSERT INTO audit_events (
+				event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES ($1, $2, $3, 'test.date.check', 'test', $4,
+				'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
+		`, eventID, testTimestamp, testDate, correlationID)
+		Expect(err).ToNot(HaveOccurred())
 
 			var retrievedDate time.Time
 			err = db.QueryRow(`SELECT event_date FROM audit_events WHERE event_id = $1`, eventID).Scan(&retrievedDate)
