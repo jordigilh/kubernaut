@@ -84,6 +84,7 @@ var (
 	cancel      context.CancelFunc
 	schemaName  string // Schema name for this parallel process (test_process_N)
 )
+
 // This enables parallel test execution by ensuring each test has unique data
 // Uses UUID for guaranteed uniqueness across parallel processes and fast CI environments.
 // UnixNano() has ~100ns resolution which can cause collisions in parallel tests.
@@ -378,6 +379,7 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	GinkgoWriter.Printf("✅ [Process %d] Schema created with %d tables, search_path set: %s\n", processNum, len(tables), schemaName)
 	return schemaName, nil
 }
+
 // preflightCheck validates the test environment before running tests
 // This ensures we have a clean slate and prevents test failures due to corrupted data
 func preflightCheck() error {
@@ -656,6 +658,19 @@ var _ = SynchronizedAfterSuite(func() {
 	}
 
 	if redisClient != nil {
+		// DD-008: Flush Redis DLQ streams before closing to prevent duplicate key errors
+		// Problem: DLQ streams persist across test runs. When tests run consecutively:
+		// 1. Test inserts events → graceful shutdown drains to DB → DLQ cleared
+		// 2. NEXT run: Fresh PostgreSQL but OLD Redis DLQ streams still present
+		// 3. Graceful shutdown drains OLD messages → duplicate key errors (events already in DB)
+		// Solution: FLUSHALL ensures each test run starts with clean Redis state
+		GinkgoWriter.Println("🧹 Flushing Redis DLQ streams (DD-008: Idempotent drain support)...")
+		if err := redisClient.FlushAll(context.Background()).Err(); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to flush Redis: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Redis DLQ streams flushed")
+		}
+
 		_ = redisClient.Close()
 		GinkgoWriter.Println("✅ Closed Redis connection")
 	}
@@ -1005,7 +1020,13 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 
 	GinkgoWriter.Println("  ✅ All migrations applied successfully")
 
-	// 4. Create dynamic partitions for current month (prevents time-based test failures)
+	// 4. Verify and create critical constraints in public schema
+	// Migration 019 should create uq_workflow_name_version, but verify it exists
+	// This prevents test failures when workflow repository tests use public schema
+	GinkgoWriter.Println("  🔍 Verifying critical constraints in public schema...")
+	verifyAndCreatePublicSchemaConstraints(ctx, targetDB)
+
+	// 5. Create dynamic partitions for current month (prevents time-based test failures)
 	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
 	createDynamicPartitions(ctx, targetDB)
 
@@ -1020,6 +1041,49 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
 }
+
+// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema
+// Migration 019 should create these, but this provides a safety net for test reliability
+// Authority: Migration 019 (uq_workflow_name_version constraint)
+// Business Requirement: BR-STORAGE-012 (Workflow Catalog Immutability)
+func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.DB) {
+	// Check if uq_workflow_name_version constraint exists
+	var constraintExists bool
+	checkQuery := `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_constraint con
+			JOIN pg_class rel ON rel.oid = con.conrelid
+			JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+			WHERE nsp.nspname = 'public'
+			  AND rel.relname = 'remediation_workflow_catalog'
+			  AND con.conname = 'uq_workflow_name_version'
+		)
+	`
+	err := targetDB.QueryRowContext(ctx, checkQuery).Scan(&constraintExists)
+	if err != nil {
+		GinkgoWriter.Printf("  ⚠️  Failed to check constraint existence: %v\n", err)
+		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
+	}
+
+	if constraintExists {
+		GinkgoWriter.Println("  ✅ Constraint uq_workflow_name_version exists in public schema")
+		return
+	}
+
+	// Constraint missing - create it (defensive programming for test reliability)
+	GinkgoWriter.Println("  ⚠️  Constraint uq_workflow_name_version missing - creating...")
+	createConstraintSQL := `
+		ALTER TABLE public.remediation_workflow_catalog
+		ADD CONSTRAINT uq_workflow_name_version UNIQUE (workflow_name, version)
+	`
+	_, err = targetDB.ExecContext(ctx, createConstraintSQL)
+	if err != nil {
+		GinkgoWriter.Printf("  ❌ Failed to create constraint: %v\n", err)
+		Fail(fmt.Sprintf("Failed to create uq_workflow_name_version constraint: %v", err))
+	}
+	GinkgoWriter.Println("  ✅ Created constraint uq_workflow_name_version in public schema")
+}
+
 // NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)
 // removed as part of refactoring to in-process testing pattern (consistent with other services).
 // DataStorage now runs via httptest.Server with server.NewServer() for integration tests.

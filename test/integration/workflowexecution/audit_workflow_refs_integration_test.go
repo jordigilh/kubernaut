@@ -96,12 +96,12 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			_ = resp.Body.Close()
 		}
 
-		// Create test namespace
-		namespace = fmt.Sprintf("we-gap56-test-%d", time.Now().Unix())
-		testNs := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		}
-		Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
+	// Create test namespace with UUID for parallelism safety
+	namespace = fmt.Sprintf("we-gap56-test-%s", uuid.New().String()[:8])
+	testNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespace},
+	}
+	Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
 		// Data Storage client (use shared infrastructure port from suite_test.go)
 		dsClient, err = ogenclient.NewClient(dataStorageBaseURL)
