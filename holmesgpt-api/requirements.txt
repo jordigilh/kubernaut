@@ -47,6 +47,11 @@ urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 fastapi>=0.116
 uvicorn[standard]>=0.30
 
+# Kubernetes Python client for TokenReview and SAR APIs (DD-AUTH-014)
+# Note: HolmesGPT SDK includes kubernetes client, but we explicitly specify
+# it here for clarity and to ensure the correct version for TokenReview/SAR
+kubernetes>=29.0.0
+
 # HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
 aiohttp>=3.9.1
 aiodns>=3.1.1

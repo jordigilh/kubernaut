@@ -3,6 +3,8 @@
 package client
 
 import (
+	"io"
+
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 )
@@ -392,9 +394,6 @@ func (s *HTTPValidationError) SetDetail(val []ValidationError) {
 	s.Detail = val
 }
 
-func (*HTTPValidationError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
-func (*HTTPValidationError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
-
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200
 // Design Decision: DD-HAPI-002 v1.2
@@ -474,6 +473,50 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPValidationError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity HTTPValidationError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 // Request model for initial incident analysis endpoint
@@ -2337,6 +2380,50 @@ func (s *PreviousExecution) SetFailure(val ExecutionFailure) {
 // SetNaturalLanguageSummary sets the value of NaturalLanguageSummary.
 func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPValidationError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity HTTPValidationError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
 // Request model for recovery analysis endpoint

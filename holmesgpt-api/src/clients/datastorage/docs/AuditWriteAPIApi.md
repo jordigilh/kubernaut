@@ -84,6 +84,8 @@ No authorization required
 **201** | Audit event created successfully |  -  |
 **202** | Database write failed, queued to DLQ |  -  |
 **400** | Validation error |  -  |
+**401** | Authentication failed - Invalid or missing Bearer token.  **Source**: DataStorage auth middleware (DD-AUTH-014)  **Cause**:  - No Authorization header - Invalid Bearer token - Expired token - TokenReview API rejection  **Resolution**: Provide valid Kubernetes ServiceAccount token via &#x60;Authorization: Bearer &lt;token&gt;&#x60; header.  **Authority**: DD-AUTH-014 (Middleware-based authentication)  |  -  |
+**403** | Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.  **Source**: DataStorage auth middleware (DD-AUTH-014)  **Cause**: ServiceAccount lacks required RBAC permission on data-storage-service resource.  **Resolution**: Grant ServiceAccount the &#x60;data-storage-client&#x60; ClusterRole via RoleBinding.  **Authority**: DD-AUTH-014 (Middleware-based authorization)  |  -  |
 **500** | Internal server error |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

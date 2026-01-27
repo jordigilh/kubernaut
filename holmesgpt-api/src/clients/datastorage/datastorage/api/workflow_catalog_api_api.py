@@ -110,6 +110,8 @@ class WorkflowCatalogAPIApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -179,6 +181,8 @@ class WorkflowCatalogAPIApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -248,6 +252,8 @@ class WorkflowCatalogAPIApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(

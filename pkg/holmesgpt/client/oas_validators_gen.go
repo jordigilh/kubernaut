@@ -213,6 +213,22 @@ func (s HumanReviewReason) Validate() error {
 	}
 }
 
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Validate() error {
+	alias := (*HTTPValidationError)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Validate() error {
+	alias := (*HTTPValidationError)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *IncidentRequest) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -404,6 +420,22 @@ func (s *PreviousExecution) Validate() error {
 	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Validate() error {
+	alias := (*HTTPValidationError)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Validate() error {
+	alias := (*HTTPValidationError)(s)
+	if err := alias.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
