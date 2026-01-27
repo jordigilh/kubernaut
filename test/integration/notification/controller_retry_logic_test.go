@@ -157,7 +157,9 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			By("Waiting for exponential backoff retries (up to 5 attempts)")
 		// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
+		// DD-AUTH-014: Increased timeout from 25s to 40s to account for:
 		// + 5s for controller reconciliation and status propagation
+		// + 15s additional margin for authenticated audit writes (TokenReview + SAR overhead)
 		Eventually(func() int {
 			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 				Name:      notification.Name,
@@ -167,24 +169,25 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 				return 0
 			}
 			return len(notification.Status.DeliveryAttempts)
-		}, 25*time.Second, 500*time.Millisecond).Should(Equal(6),
-			"BR-NOT-054: 6 attempts total (1 console + 5 file with backoff 0+1s+2s+4s+8s=15s) + 5-10s reconcile latency")
+		}, 40*time.Second, 500*time.Millisecond).Should(Equal(6),
+			"BR-NOT-054: 6 attempts total (1 console + 5 file with backoff 0+1s+2s+4s+8s=15s) + reconcile + auth overhead")
 
 			// ========================================
 			// PHASE 3: Verify final state after max attempts
 			// ========================================
-			By("Verifying notification marked as PartiallySent after max retries")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
+		By("Verifying notification marked as PartiallySent after max retries")
+		// DD-AUTH-014: Increased timeout from 30s to 45s (retry exhaustion + auth overhead)
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 45*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+			"DD-E2E-003: After retry exhaustion (15s backoff + status propagation + auth overhead) → PartiallySent")
 
 			// ========================================
 			// ASSERTIONS: Retry Logic Validation
