@@ -394,11 +394,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
-			// V1.0 MANDATORY: Use ogen OpenAPI client (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-			// Query real DataStorage service (Defense-in-Depth: validate field values)
-			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create ogen audit client")
+		By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
 			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
@@ -459,10 +457,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
-			// V1.0 MANDATORY: Use ogen OpenAPI client
-			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
 			eventCategory := "workflowexecution"
@@ -518,10 +515,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
-			// V1.0 MANDATORY: Use ogen OpenAPI client
-			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
 			eventCategory := "workflowexecution"
@@ -579,10 +575,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for audit events with correlation ID via ogen client")
-			// V1.0 MANDATORY: Use ogen OpenAPI client
-			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for audit events with correlation ID via ogen client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Use "workflowexecution" category
 			eventCategory := "workflowexecution"
