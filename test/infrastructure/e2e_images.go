@@ -40,6 +40,48 @@ type E2EImageConfig struct {
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
 }
 
+// PullImageFromRegistry pulls a container image from a registry (ghcr.io for CI/CD).
+// This is used in GitHub Actions CI/CD to avoid building images locally (saves ~60% disk space).
+//
+// Registry Configuration (Environment Variables):
+//   - IMAGE_REGISTRY: Registry URL (e.g., "ghcr.io/jordigilh/kubernaut")
+//   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
+//
+// Returns the full image name for later loading to Kind.
+//
+// Example (CI/CD):
+//
+//	IMAGE_REGISTRY=ghcr.io/jordigilh/kubernaut IMAGE_TAG=pr-123
+//	imageName, err := PullImageFromRegistry("datastorage", writer)
+//	// Returns: "ghcr.io/jordigilh/kubernaut/datastorage:pr-123"
+func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error) {
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+
+	if registry == "" || tag == "" {
+		return "", fmt.Errorf("IMAGE_REGISTRY or IMAGE_TAG not set (required for registry pull)")
+	}
+
+	fullImageName := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+	_, _ = fmt.Fprintf(writer, "📥 Pulling image from registry: %s\n", fullImageName)
+
+	// Pull image using podman (GitHub Actions uses podman for Kind)
+	pullCmd := exec.Command("podman", "pull", fullImageName)
+	pullCmd.Stdout = writer
+	pullCmd.Stderr = writer
+	pullStartTime := time.Now()
+	_, _ = fmt.Fprintf(writer, "   ⏱️  Pull started: %s\n", pullStartTime.Format("15:04:05"))
+
+	if err := pullCmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to pull image from registry: %w", err)
+	}
+
+	pullDuration := time.Since(pullStartTime)
+	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled in %s: %s\n", pullDuration.Round(time.Second), fullImageName)
+
+	return fullImageName, nil
+}
+
 // BuildImageForKind builds a container image for E2E testing.
 // Returns the image name (with localhost/ prefix) for later loading to Kind.
 //
@@ -49,18 +91,44 @@ type E2EImageConfig struct {
 //	Phase 2: Create Kind cluster
 //	Phase 3: Load images to cluster (using LoadImageToKind)
 //
+// CI/CD Optimization (Fallback Strategy):
+//   - If IMAGE_REGISTRY + IMAGE_TAG are set: Pull from registry (ghcr.io)
+//   - Otherwise: Build locally (existing behavior for local dev)
+//
 // Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
 // Performance: Eliminates cluster idle time during image builds
 //
-// Example:
+// Example (CI/CD with registry):
 //
-//	// Phase 1: Build images in parallel (no cluster yet)
+//	IMAGE_REGISTRY=ghcr.io/jordigilh/kubernaut IMAGE_TAG=pr-123
 //	imageName, err := BuildImageForKind(cfg, writer)
-//	// Phase 2: Create Kind cluster
-//	createKindCluster(...)
-//	// Phase 3: Load image to cluster
-//	err = LoadImageToKind(imageName, cfg.ServiceName, clusterName, writer)
+//	// Pulls from registry instead of building
+//
+// Example (Local dev):
+//
+//	// No IMAGE_REGISTRY/IMAGE_TAG set
+//	imageName, err := BuildImageForKind(cfg, writer)
+//	// Builds locally as before
 func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
+	// CI/CD Optimization: Pull from registry if configured
+	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
+		_, _ = fmt.Fprintf(writer, "🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
+		_, _ = fmt.Fprintf(writer, "   Skipping local build, will pull from registry\n")
+		
+		// Extract service name from ImageName (remove repo prefix if present)
+		// e.g., "kubernaut/datastorage" → "datastorage"
+		parts := strings.Split(cfg.ImageName, "/")
+		serviceName := parts[len(parts)-1]
+		
+		imageName, err := PullImageFromRegistry(serviceName, writer)
+		if err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
+			// Continue with local build below
+		} else {
+			return imageName, nil
+		}
+	}
 	projectRoot := getProjectRoot()
 
 	if cfg.BuildContextPath == "" {
