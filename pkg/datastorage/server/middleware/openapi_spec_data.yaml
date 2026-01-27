@@ -172,6 +172,24 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: |
+            Authentication failed - Invalid or missing Bearer token.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authentication)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '403':
+          description: |
+            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authorization)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
           content:
@@ -388,6 +406,40 @@ paths:
                 $ref: '#/components/schemas/AuditEventResponse'
         '400':
           description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: |
+            Authentication failed - Invalid or missing Bearer token.
+            
+            **Source**: DataStorage auth middleware (DD-AUTH-014)
+            
+            **Cause**: 
+            - No Authorization header
+            - Invalid Bearer token
+            - Expired token
+            - TokenReview API rejection
+            
+            **Resolution**: Provide valid Kubernetes ServiceAccount token via `Authorization: Bearer <token>` header.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authentication)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '403':
+          description: |
+            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
+            
+            **Source**: DataStorage auth middleware (DD-AUTH-014)
+            
+            **Cause**: ServiceAccount lacks required RBAC permission on data-storage-service resource.
+            
+            **Resolution**: Grant ServiceAccount the `data-storage-client` ClusterRole via RoleBinding.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authorization)
           content:
             application/problem+json:
               schema:
