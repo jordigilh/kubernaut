@@ -63,7 +63,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
-		httpClient    *http.Client
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		correlationID string
@@ -73,7 +73,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "query-api")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 3: Query API Timeline - Setup")
@@ -88,7 +88,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health")
+			resp, err := HTTPClient.Get(serviceURL + "/health")
 			if err != nil {
 				return err
 			}
@@ -147,7 +147,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
@@ -170,7 +170,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
@@ -193,7 +193,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
@@ -209,7 +209,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		limit := 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				Limit:         dsgen.NewOptInt(limit),
 				Offset:        dsgen.NewOptInt(offset),
@@ -245,7 +245,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		limit = 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				EventCategory: dsgen.NewOptString(gatewayCategory),
 				Limit:         dsgen.NewOptInt(limit),
@@ -285,7 +285,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		limit = 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				EventType:     dsgen.NewOptString(eventType),
 				Limit:         dsgen.NewOptInt(limit),
@@ -327,7 +327,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		limit = 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				Since:         dsgen.NewOptString(startTimeStr),
 				Until:         dsgen.NewOptString(endTimeStr),
@@ -360,7 +360,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// DD-API-001: Use typed OpenAPI client with pagination parameters
 		limit = 5
 		offset = 0
-		queryRespStep6, errStep6 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+		queryRespStep6, errStep6 := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 			CorrelationID: dsgen.NewOptString(correlationID),
 			Limit:         dsgen.NewOptInt(limit),
 			Offset:        dsgen.NewOptInt(offset),
@@ -382,7 +382,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("🔍 Step 7: Query with pagination (limit=5, offset=5)...")
 		// DD-API-001: Use typed OpenAPI client with offset pagination
 		offset = 5
-		queryRespStep7, errStep7 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+		queryRespStep7, errStep7 := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 			CorrelationID: dsgen.NewOptString(correlationID),
 			Limit:         dsgen.NewOptInt(limit),
 			Offset:        dsgen.NewOptInt(offset),
@@ -408,7 +408,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		limit = 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				Limit:         dsgen.NewOptInt(limit),
 				Offset:        dsgen.NewOptInt(offset),

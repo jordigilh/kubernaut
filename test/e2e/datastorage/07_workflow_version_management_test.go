@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -70,7 +69,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
-		httpClient    *http.Client
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -86,7 +85,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "workflow-version-management")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 7: Workflow Version Management - Setup")
@@ -104,7 +103,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health/ready")
+			resp, err := HTTPClient.Get(serviceURL + "/health/ready")
 			if err != nil {
 				return err
 			}
@@ -171,7 +170,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-		createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+		createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
 		Expect(err).ToNot(HaveOccurred())
 		testLogger.Info("Create v1.0.0 response", "status", 201)
 
@@ -222,7 +221,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.1.0 response", "status", 201)
 
@@ -281,7 +280,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
@@ -322,7 +321,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				TopK: dsgen.NewOptInt(topK),
 			}
 
-			resp, err := dsClient.SearchWorkflows(ctx, &searchReq)
+			resp, err := DSClient.SearchWorkflows(ctx, &searchReq)
 			Expect(err).ToNot(HaveOccurred())
 			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
@@ -363,7 +362,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("🔍 Getting workflow by UUID...")
 
 			// DD-WORKFLOW-002 v3.0: Get by UUID only (no version parameter)
-			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s", serviceURL, workflowV3UUID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s", serviceURL, workflowV3UUID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -387,7 +386,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("🔍 Listing versions by workflow_name...")
 
 			// DD-WORKFLOW-002 v3.0: List versions by workflow_name
-			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions", serviceURL, workflowName))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions", serviceURL, workflowName))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 

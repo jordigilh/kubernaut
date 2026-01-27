@@ -179,9 +179,10 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
+				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
+				// (no manual header setting needed - middleware extracts from authenticated ServiceAccount)
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -198,7 +199,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response["correlation_id"]).To(Equal(correlationID))
 				Expect(response["events_affected"]).To(BeNumerically("==", 5))
-				Expect(response["placed_by"]).To(Equal("legal-team@company.com"))
+				// DD-AUTH-014: placed_by is now the authenticated ServiceAccount user
+				Expect(response["placed_by"]).To(ContainSubstring("system:serviceaccount:datastorage-e2e:"))
 
 				// 4. Query database to verify legal hold is set
 				var count int
@@ -217,7 +219,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				`
 				err = testDB.QueryRowContext(ctx, metadataQuery, correlationID).Scan(&placedBy, &reason)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(placedBy).To(Equal("legal-team@company.com"))
+				// DD-AUTH-014: placed_by is now the authenticated ServiceAccount user
+				Expect(placedBy).To(ContainSubstring("system:serviceaccount:datastorage-e2e:"))
 				Expect(reason).To(Equal("Litigation: Case #2026-GAP8-002"))
 			})
 
@@ -233,9 +236,9 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
+				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -277,20 +280,21 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Auth-Request-User", "compliance-officer@company.com")
+				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				// 3. Verify X-Auth-Request-User was captured in database
+				// DD-AUTH-014: placed_by is now the authenticated ServiceAccount user
 				var placedBy string
 				query := `SELECT legal_hold_placed_by FROM audit_events WHERE correlation_id = $1`
 				err = testDB.QueryRowContext(ctx, query, correlationID).Scan(&placedBy)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(placedBy).To(Equal("compliance-officer@company.com"))
+				Expect(placedBy).To(ContainSubstring("system:serviceaccount:datastorage-e2e:"))
 			})
 		})
 
@@ -331,9 +335,9 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("DELETE", dataStorageURL+"/api/v1/audit/legal-hold/"+correlationID, bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
+				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -345,7 +349,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response["correlation_id"]).To(Equal(correlationID))
 				Expect(response["events_released"]).To(BeNumerically("==", 3))
-				Expect(response["released_by"]).To(Equal("legal-team@company.com"))
+				// DD-AUTH-014: released_by is now the authenticated ServiceAccount user
+				Expect(response["released_by"]).To(ContainSubstring("system:serviceaccount:datastorage-e2e:"))
 
 				// 4. Verify legal hold is released in database
 				var count int
@@ -394,9 +399,9 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 2. List legal holds via API
 				req, err := http.NewRequest("GET", dataStorageURL+"/api/v1/audit/legal-hold", nil)
 				Expect(err).ToNot(HaveOccurred())
-				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
+				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 

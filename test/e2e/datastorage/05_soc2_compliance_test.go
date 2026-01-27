@@ -106,6 +106,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		// Step 5: Warm-up signing certificate generation
 		// The DataStorage service generates self-signed certificates on-demand during the first export.
 		// We need to trigger this generation and wait for it to complete before running tests.
+		// DD-AUTH-014: Increased timeout to 90s to handle cert-manager load (Option C best practice)
 		logger.Info("📋 Step 5/5: Warming up certificate generation...")
 		logger.Info("   Triggering initial export to generate self-signed certificate...")
 
@@ -124,16 +125,17 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "warmup"),
 		}
 
-		_, err = dsClient.CreateAuditEvent(testCtx, &warmupEvent)
+		_, err = DSClient.CreateAuditEvent(testCtx, &warmupEvent)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create warmup audit event")
 		logger.Info("   ✅ Warmup event created")
 
 		// Attempt export with retry to allow certificate generation to complete
-		logger.Info("   ⏳ Waiting for certificate generation (up to 30s)...")
+		// DD-AUTH-014: Increased from 60s to 90s (Option C: no parallel contention yet)
+		logger.Info("   ⏳ Waiting for certificate generation (up to 90s, no parallel load)...")
 		var lastError string
-		var lastResponseBody string
+		var lastResponseType string
 		Eventually(func() int {
-			exportResp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			exportResp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(warmupCorrelationID),
 				Limit:         dsgen.NewOptInt(10),
 			})
@@ -145,7 +147,9 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Type assert to success response
 			result, ok := exportResp.(*dsgen.AuditExportResponse)
 			if !ok {
-				logger.Info("   Export returned non-success response (retrying...)")
+				// Log the actual response type for debugging
+				lastResponseType = fmt.Sprintf("%T", exportResp)
+				logger.Info("   Export returned non-success response (retrying...)", "type", lastResponseType)
 				return 0
 			}
 			// Success - check we have events
@@ -154,9 +158,9 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				return 0
 			}
 			return 200
-		}, 30*time.Second, 2*time.Second).Should(Equal(200),
-			fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s",
-				lastError, lastResponseBody))
+		}, 90*time.Second, 2*time.Second).Should(Equal(200),
+			fmt.Sprintf("Certificate generation should complete within 90s. Last error: %s, Last response type: %s",
+				lastError, lastResponseType))
 
 		logger.Info("   ✅ Certificate generation complete and validated")
 		logger.Info("✅ SOC2 E2E infrastructure ready")
@@ -196,7 +200,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 2: Call /api/v1/audit/export endpoint
 			logger.Info("Step 2: Exporting audit events via API")
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(exportCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred(), "Export API call should succeed")
@@ -252,7 +256,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			logger.Info("Exporting with filters", "correlation_id", testCorrelationID)
 			limit := 10
 			offset := 0
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(testCorrelationID),
 				Limit:         dsgen.NewOptInt(limit),
 				Offset:        dsgen.NewOptInt(offset),
@@ -299,7 +303,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 2: Export events
 			logger.Info("Step 2: Exporting events with hash chain verification")
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(chainCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -370,7 +374,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 3: Export events and verify tampering is detected
 			logger.Info("Step 3: Exporting tampered events")
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(tamperCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -435,7 +439,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Step 2: Place legal hold via API
 			logger.Info("Step 2: Placing legal hold", "correlation_id", testCorrelationID)
 			reason := "SOC2 E2E Test - Legal Hold Validation"
-			_, err := dsClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
+			_, err := DSClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
 				CorrelationID: testCorrelationID,
 				Reason:        reason,
 			})
@@ -444,7 +448,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 3: Export events and verify legal_hold flag
 			logger.Info("Step 3: Exporting events to verify legal_hold flag")
-			exportResp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			exportResp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(testCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -462,7 +466,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 5: List active legal holds
 			logger.Info("Step 5: Listing active legal holds")
-			listResp, err := dsClient.ListLegalHolds(testCtx)
+			listResp, err := DSClient.ListLegalHolds(testCtx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(listResp).ToNot(BeNil())
 			Expect(listResp.Holds).ToNot(BeNil(), "Holds list should not be nil")
@@ -503,7 +507,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			_ = createTestAuditEvents(testCtx, releaseCorrelationID, 2)
 
 			reason := "SOC2 E2E Test - Release Validation"
-			_, err := dsClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
+			_, err := DSClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
 				CorrelationID: releaseCorrelationID,
 				Reason:        reason,
 			})
@@ -513,7 +517,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Step 2: Release legal hold
 			logger.Info("Step 2: Releasing legal hold", "correlation_id", releaseCorrelationID)
 			releaseReason := "E2E test completed - case closed"
-			_, err = dsClient.ReleaseLegalHold(testCtx,
+			_, err = DSClient.ReleaseLegalHold(testCtx,
 				&dsgen.ReleaseLegalHoldReq{
 					ReleaseReason: releaseReason,
 				},
@@ -525,7 +529,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 3: Export and verify legal_hold=false
 			logger.Info("Step 3: Exporting events to verify legal_hold released")
-			exportResp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			exportResp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(releaseCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -542,7 +546,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 5: Verify hold no longer in active holds list
 			logger.Info("Step 5: Verifying hold removed from active holds list")
-			listResp, err := dsClient.ListLegalHolds(testCtx)
+			listResp, err := DSClient.ListLegalHolds(testCtx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Ensure our correlation_id is NOT in active holds
@@ -581,7 +585,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Step 2: Enable legal hold (AU-9 requirement)
 			logger.Info("Step 2: Placing legal hold for litigation/investigation")
 			holdReason := "SOC2 Compliance Audit - Complete Workflow Test"
-			_, err := dsClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
+			_, err := DSClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
 				CorrelationID: workflowCorrelationID,
 				Reason:        holdReason,
 			})
@@ -590,7 +594,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 3: Export audit events with full SOC2 validation
 			logger.Info("Step 3: Exporting audit trail with SOC2 validation")
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(workflowCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -725,7 +729,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			_ = createTestAuditEvents(testCtx, testCorrelationID, 2)
 
 			logger.Info("Exporting with current certificate...")
-			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+			resp, err := DSClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(testCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -791,7 +795,7 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "soc2-compliance"),
 		}
 
-		resp, err := dsClient.CreateAuditEvent(ctx, &req)
+		resp, err := DSClient.CreateAuditEvent(ctx, &req)
 		Expect(err).ToNot(HaveOccurred())
 
 		// UUID type is already a string wrapper, just convert directly

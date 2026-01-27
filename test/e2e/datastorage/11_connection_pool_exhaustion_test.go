@@ -140,11 +140,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						}
 
 						// POST to audit events endpoint
-						resp, err := http.Post(
-							dataStorageURL+"/api/v1/audit/events",
-							"application/json",
-							bytes.NewReader(payloadBytes),
-						)
+						req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+						req.Header.Set("Content-Type", "application/json")
+
+						resp, err := HTTPClient.Do(req)
 
 						results[index].duration = time.Since(requestStart)
 						results[index].err = err
@@ -263,11 +263,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 					}
 
 					payloadBytes, _ := json.Marshal(auditEvent)
-					resp, err := http.Post(
-						dataStorageURL+"/api/v1/audit/events",
-						"application/json",
-						bytes.NewReader(payloadBytes),
-					)
+					req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+					req.Header.Set("Content-Type", "application/json")
+
+					resp, err := HTTPClient.Do(req)
 					if err == nil {
 						_ = resp.Body.Close()
 					}
@@ -307,11 +307,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				}
 
 				normalStart := time.Now()
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				normalDuration = time.Since(normalStart)
 
 				if err != nil || resp == nil {

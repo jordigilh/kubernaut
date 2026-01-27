@@ -36,21 +36,15 @@ import (
 
 var _ = Describe("Audit Event Validation Helper", func() {
 	var (
-		baseURL string
-		client  *ogenclient.Client
-		ctx     context.Context
+		client *ogenclient.Client
+		ctx    context.Context
 	)
 
 	BeforeEach(func() {
-		var err error
 		ctx = context.Background()
 
-		// Use dataStorageURL from suite_test.go (DD-TEST-001)
-		baseURL = dataStorageURL
-
-		// Create OpenAPI client
-		client, err = ogenclient.NewClient(baseURL)
-		Expect(err).ToNot(HaveOccurred())
+		// DD-AUTH-014: Use shared authenticated DSClient from suite setup
+		client = DSClient
 	})
 
 	Context("validators.ValidateAuditEvent usage", func() {

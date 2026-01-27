@@ -40,7 +40,7 @@ import (
 
 var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Ordered, func() {
 	var (
-		client     *http.Client
+		// DD-AUTH-014: Use shared authenticated HTTPClient from suite setup
 		validAudit *models.NotificationAudit
 	)
 
@@ -50,7 +50,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 		// not parallel process schemas. If tests insert/query data in test_process_X
 		// schemas, the API won't find the data and tests will fail.
 
-		client = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 	})
 
 	BeforeEach(func() {
@@ -75,7 +75,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 	Context("Successful write (Behavior + Correctness)", func() {
 		It("should accept valid audit record and persist to PostgreSQL", func() {
 			// ✅ BEHAVIOR TEST: HTTP 201 Created
-			resp := postAudit(client, validAudit)
+			resp := postAudit(HTTPClient, validAudit)
 			if resp.StatusCode != 201 {
 			// Debug: Print response body on failure
 			body, _ := io.ReadAll(resp.Body)
@@ -123,7 +123,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			}
 
 			// ✅ BEHAVIOR TEST: HTTP 400 Bad Request
-			resp := postAudit(client, invalidAudit)
+			resp := postAudit(HTTPClient, invalidAudit)
 			Expect(resp.StatusCode).To(Equal(400), "Expected 400 Bad Request for invalid audit")
 			Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"),
 				"RFC 7807 requires application/problem+json content type")
@@ -155,11 +155,11 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 	Context("Conflict errors (RFC 7807)", func() {
 		It("should return RFC 7807 error for duplicate notification_id", func() {
 			// First write - should succeed
-			resp1 := postAudit(client, validAudit)
+			resp1 := postAudit(HTTPClient, validAudit)
 			Expect(resp1.StatusCode).To(Equal(201), "First write should succeed")
 
 			// Duplicate write - should fail with 409 Conflict
-			resp2 := postAudit(client, validAudit)
+			resp2 := postAudit(HTTPClient, validAudit)
 			Expect(resp2.StatusCode).To(Equal(409), "Duplicate notification_id should return 409 Conflict")
 			Expect(resp2.Header.Get("Content-Type")).To(Equal("application/problem+json"))
 

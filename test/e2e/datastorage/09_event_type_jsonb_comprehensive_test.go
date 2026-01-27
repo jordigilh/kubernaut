@@ -1386,7 +1386,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 					auditEvent := tc.CreateEvent()
 
 					// ACT: Send event using OpenAPI client (replaces raw HTTP POST)
-					resp, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+					resp, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
 					Expect(resp).ToNot(BeNil())
 
@@ -1415,7 +1415,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 						auditEvent := tc.CreateEvent()
 
 						// ⚠️ CRITICAL: Must send event BEFORE querying it!
-						_, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+						_, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 						Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
 
 						correlationID := auditEvent.CorrelationID
