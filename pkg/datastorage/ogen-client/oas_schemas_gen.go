@@ -3866,9 +3866,17 @@ type CreateAuditEventCreated AuditEventResponse
 
 func (*CreateAuditEventCreated) createAuditEventRes() {}
 
+type CreateAuditEventForbidden RFC7807Problem
+
+func (*CreateAuditEventForbidden) createAuditEventRes() {}
+
 type CreateAuditEventInternalServerError RFC7807Problem
 
 func (*CreateAuditEventInternalServerError) createAuditEventRes() {}
+
+type CreateAuditEventUnauthorized RFC7807Problem
+
+func (*CreateAuditEventUnauthorized) createAuditEventRes() {}
 
 type CreateNotificationAuditAccepted struct {
 	Status  CreateNotificationAuditAcceptedStatus `json:"status"`
@@ -3947,9 +3955,17 @@ type CreateWorkflowBadRequest RFC7807Problem
 
 func (*CreateWorkflowBadRequest) createWorkflowRes() {}
 
+type CreateWorkflowForbidden RFC7807Problem
+
+func (*CreateWorkflowForbidden) createWorkflowRes() {}
+
 type CreateWorkflowInternalServerError RFC7807Problem
 
 func (*CreateWorkflowInternalServerError) createWorkflowRes() {}
+
+type CreateWorkflowUnauthorized RFC7807Problem
+
+func (*CreateWorkflowUnauthorized) createWorkflowRes() {}
 
 // Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format.
 // Ref: #/components/schemas/CustomLabels

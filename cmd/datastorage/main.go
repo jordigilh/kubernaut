@@ -21,12 +21,19 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // ========================================
@@ -94,6 +101,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// DD-AUTH-014: Allow PORT environment variable to override config (SME Option D)
+	// This enables --network=host mode in integration tests where container must listen on external port
+	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md (Option D)
+	if portEnv := os.Getenv("PORT"); portEnv != "" {
+		if port, err := strconv.Atoi(portEnv); err == nil {
+			cfg.Server.Port = port
+			logger.Info("Port overridden by PORT environment variable (DD-AUTH-014)",
+				"port", port,
+				"reason", "integration test host networking",
+			)
+		} else {
+			logger.Error(err, "Invalid PORT environment variable, using config value",
+				"port_env", portEnv,
+				"config_port", cfg.Server.Port,
+			)
+		}
+	}
+
 	logger.Info("Configuration loaded successfully (ADR-030)",
 		"service", "data-storage",
 		"port", cfg.Server.Port,
@@ -109,6 +134,81 @@ func main() {
 
 	// Build PostgreSQL connection string from config
 	dbConnStr := cfg.Database.GetConnectionString()
+
+	// DD-AUTH-014: Create Kubernetes client for authentication and authorization
+	// Priority:
+	//   1. KUBECONFIG env var (integration tests with envtest)
+	//   2. In-cluster config (production with ServiceAccount)
+	logger.Info("Creating Kubernetes client for auth middleware (DD-AUTH-014)")
+	var k8sConfig *rest.Config
+	if kubeconfigPath := os.Getenv("KUBECONFIG"); kubeconfigPath != "" {
+		logger.Info("Using KUBECONFIG from environment (DD-AUTH-014)",
+			"kubeconfig_path", kubeconfigPath,
+			"use_case", "integration tests with envtest",
+		)
+		k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			logger.Error(err, "Failed to load kubeconfig from KUBECONFIG env var (DD-AUTH-014)",
+				"kubeconfig_path", kubeconfigPath,
+			)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("Using in-cluster config (DD-AUTH-014)",
+			"service_account_path", "/var/run/secrets/kubernetes.io/serviceaccount/",
+			"use_case", "production deployment",
+		)
+		k8sConfig, err = rest.InClusterConfig()
+		if err != nil {
+			logger.Error(err, "Failed to load in-cluster Kubernetes config (DD-AUTH-014)",
+				"error", err.Error(),
+				"note", "Ensure ServiceAccount is mounted and has TokenReview/SAR permissions",
+			)
+			os.Exit(1)
+		}
+	}
+
+	k8sClient, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		logger.Error(err, "Failed to create Kubernetes client (DD-AUTH-014)")
+		os.Exit(1)
+	}
+
+	// DD-AUTH-014: Create authenticator and authorizer with real Kubernetes APIs
+	authenticator := auth.NewK8sAuthenticator(k8sClient)
+	authorizer := auth.NewK8sAuthorizer(k8sClient)
+
+	// Determine namespace for auth operations
+	// Priority:
+	//   1. POD_NAMESPACE env var (integration tests)
+	//   2. ServiceAccount mount (production)
+	//   3. Default to "default" as fallback
+	var authNamespace string
+	if envNs := os.Getenv("POD_NAMESPACE"); envNs != "" {
+		authNamespace = envNs
+		logger.Info("Using namespace from POD_NAMESPACE env var (DD-AUTH-014)",
+			"namespace", authNamespace,
+			"use_case", "integration tests",
+		)
+	} else if podNamespace, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		authNamespace = strings.TrimSpace(string(podNamespace))
+		logger.Info("Using namespace from ServiceAccount mount (DD-AUTH-014)",
+			"namespace", authNamespace,
+			"use_case", "production deployment",
+		)
+	} else {
+		authNamespace = "default"
+		logger.Info("Using default namespace (DD-AUTH-014)",
+			"namespace", authNamespace,
+			"reason", "ServiceAccount mount not found, POD_NAMESPACE not set",
+		)
+	}
+
+	logger.Info("Kubernetes authenticator and authorizer created (DD-AUTH-014)",
+		"type", "K8sAuthenticator + K8sAuthorizer",
+		"api_server", k8sConfig.Host,
+		"auth_namespace", authNamespace,
+	)
 
 	// Create HTTP server with database connection + Redis for DLQ
 	serverCfg := &server.Config{
@@ -133,7 +233,8 @@ func main() {
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		var err error
-		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, cfg, serverCfg, dlqMaxLen)
+		// DD-AUTH-014: Pass authenticator, authorizer, and auth namespace to server
+		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, cfg, serverCfg, dlqMaxLen, authenticator, authorizer, authNamespace)
 		if err == nil {
 			logger.Info("Successfully connected to PostgreSQL and Redis",
 				"attempt", attempt)

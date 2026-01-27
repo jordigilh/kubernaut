@@ -6968,6 +6968,44 @@ func (s *CreateAuditEventCreated) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreateAuditEventForbidden as json.
+func (s *CreateAuditEventForbidden) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateAuditEventForbidden from json.
+func (s *CreateAuditEventForbidden) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateAuditEventForbidden to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateAuditEventForbidden(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateAuditEventForbidden) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateAuditEventForbidden) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateAuditEventInternalServerError as json.
 func (s *CreateAuditEventInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -7002,6 +7040,44 @@ func (s *CreateAuditEventInternalServerError) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateAuditEventInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CreateAuditEventUnauthorized as json.
+func (s *CreateAuditEventUnauthorized) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateAuditEventUnauthorized from json.
+func (s *CreateAuditEventUnauthorized) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateAuditEventUnauthorized to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateAuditEventUnauthorized(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateAuditEventUnauthorized) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateAuditEventUnauthorized) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -7307,6 +7383,44 @@ func (s *CreateWorkflowBadRequest) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreateWorkflowForbidden as json.
+func (s *CreateWorkflowForbidden) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowForbidden from json.
+func (s *CreateWorkflowForbidden) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowForbidden to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowForbidden(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowForbidden) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowForbidden) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateWorkflowInternalServerError as json.
 func (s *CreateWorkflowInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -7341,6 +7455,44 @@ func (s *CreateWorkflowInternalServerError) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateWorkflowInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CreateWorkflowUnauthorized as json.
+func (s *CreateWorkflowUnauthorized) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowUnauthorized from json.
+func (s *CreateWorkflowUnauthorized) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowUnauthorized to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowUnauthorized(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowUnauthorized) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowUnauthorized) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

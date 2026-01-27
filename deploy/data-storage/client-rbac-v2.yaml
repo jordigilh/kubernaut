@@ -1,0 +1,383 @@
+---
+# ========================================
+# DD-AUTH-011: Granular RBAC for DataStorage Access
+# OAuth2-Proxy SAR: verb:"create" (single global check)
+# Authority: DD-AUTH-011 (User Approved: January 26, 2026)
+# ========================================
+#
+# This RBAC configuration enables 8 services to authenticate with DataStorage
+# via the oauth2-proxy sidecar using ServiceAccount tokens.
+#
+# Flow:
+# 1. Service → oauth-proxy (with ServiceAccount token in Authorization header)
+# 2. oauth-proxy validates token
+# 3. oauth-proxy performs Subject Access Review (SAR) with verb:"create"
+# 4. oauth-proxy injects X-Auth-Request-User header
+# 5. DataStorage receives authenticated request
+#
+# Services (8 total):
+# - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator (kubernaut-system)
+# - Notification (kubernaut-notifications namespace)
+# - AuthWebhook, SignalProcessing, holmesgpt-api (kubernaut-system)
+#
+# Audit Tracking:
+# - DataStorage audit logs capture all workflow endpoint access
+# - User mandate: "use audit traces to track who interacts with these endpoints"
+# ========================================
+
+---
+# ClusterRole: Defines permissions to access DataStorage service
+# DD-AUTH-014: Full CRUD permissions for middleware-based SAR
+# Authority: DD-AUTH-014 (Middleware-based authentication) - User Approved: January 26, 2026
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-client
+  labels:
+    app: data-storage-service
+    component: rbac
+    authorization: dd-auth-014
+rules:
+  # Middleware SAR check: Full CRUD permissions for DataStorage REST API
+  # 
+  # Verb mapping to HTTP operations:
+  # - create: POST /api/v1/* (audit writes, workflow creation)
+  # - get: GET /api/v1/{resource}/{id} (single resource retrieval)
+  # - list: GET /api/v1/{resource} (query endpoints with filters)
+  # - update: PUT/PATCH /api/v1/* (workflow updates, metadata changes)
+  # - delete: DELETE /api/v1/* (workflow deletion, cleanup)
+  #
+  # Zero Trust: All interactions secured with Bearer token + SAR validation
+  # Workflow access visibility: Audit logs track all endpoint access with user attribution
+  # Authority: User mandate (Jan 26, 2026) - "All interaction needs to be secured"
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["create", "get", "list", "update", "delete"]
+
+---
+# RoleBinding: Grant Gateway ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant AIAnalysis ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: aianalysis
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant WorkflowExecution ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: workflowexecution
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant RemediationOrchestrator ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remediationorchestrator-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: remediationorchestrator
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant Notification ServiceAccount access to DataStorage
+# NOTE: Notification controller is deployed in kubernaut-notifications namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: notification-controller
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: kubernaut-notifications
+
+---
+# RoleBinding: Grant AuthWebhook ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authwebhook-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: authwebhook
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant SignalProcessing ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: signalprocessing-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant HolmesGPT API ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant DataStorage ServiceAccount self-access (self-auditing)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datastorage-self-client
+  namespace: kubernaut-system
+  labels:
+    app: data-storage-service
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# E2E TEST RBAC (Separate ServiceAccounts per Suite)
+# ========================================
+
+---
+# RoleBinding: Grant DataStorage E2E ServiceAccount full access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datastorage-e2e-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: datastorage-e2e
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: datastorage-e2e-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant AIAnalysis E2E ServiceAccount access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-e2e-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: aianalysis-e2e
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-e2e-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant Gateway E2E ServiceAccount access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-e2e-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: gateway-e2e
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway-e2e-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant WorkflowExecution E2E ServiceAccount access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-e2e-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: workflowexecution-e2e
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-e2e-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant RemediationOrchestrator E2E ServiceAccount access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remediationorchestrator-e2e-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: remediationorchestrator-e2e
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-e2e-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# NOTE: Notification E2E RBAC (NOT INCLUDED HERE)
+# ========================================
+#
+# Notification E2E tests deploy to DYNAMIC namespaces (notification-e2e, test-*, etc.)
+# and deploy DataStorage in the SAME namespace as the Notification controller.
+#
+# ⚠️ CRITICAL: RoleBinding MUST be created PROGRAMMATICALLY by E2E infrastructure
+# in test/infrastructure/notification_e2e.go during audit infrastructure deployment.
+#
+# Why not static?
+# 1. Namespace is dynamic (DD-TEST-001)
+# 2. DataStorage is in same namespace as Notification controller
+# 3. RoleBinding must reference correct namespace for both SA and DataStorage
+#
+# E2E Infrastructure creates:
+#   RoleBinding: notification-controller-datastorage-access
+#   Namespace: <dynamic> (e.g., notification-e2e)
+#   ServiceAccount: notification-controller
+#   ClusterRole: data-storage-client
+#
+# Authority: DD-AUTH-011-E2E-RBAC-ISSUE.md
+# ========================================
+
+---
+# ========================================
+# USAGE NOTES
+# ========================================
+#
+# This RBAC configuration is required for oauth-proxy to authorize service requests.
+# Without these bindings, services will receive 403 Forbidden from oauth-proxy.
+#
+# OAuth-proxy SAR check flow:
+# 1. Service sends request with ServiceAccount token
+# 2. OAuth-proxy validates token (ensures it's a valid Kubernetes SA token)
+# 3. OAuth-proxy performs SAR: "Can <ServiceAccount> CREATE service/data-storage-service?"
+# 4. If SAR passes → inject X-Auth-Request-User, proxy to DataStorage
+# 5. If SAR fails → return 403 Forbidden to service
+#
+# Workflow Endpoint Access Tracking:
+# - All workflow operations (create, search, update) are logged in DataStorage audit events
+# - Audit events capture: user (X-Auth-Request-User), operation, timestamp, parameters
+# - Security teams can query audit logs to identify workflow catalog access patterns
+# - Authority: DD-AUTH-011 (User mandate: "use audit traces to track who interacts")
+#
+# ServiceAccount Naming Convention:
+# - Each service must have a ServiceAccount named <service>-sa
+# - ServiceAccounts must be in kubernaut-system namespace
+# - If ServiceAccount name differs, update the RoleBinding subjects accordingly
+#
+# Authority: DD-AUTH-011 (Granular RBAC & SAR Verb Mapping)
+# Related: DD-AUTH-010 (E2E Real Authentication), DD-AUTH-009 (OAuth2-Proxy Migration)
+# ========================================
