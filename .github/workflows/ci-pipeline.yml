@@ -52,6 +52,11 @@ env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
   KIND_EXPERIMENTAL_PROVIDER: podman
+  
+  # Image registry configuration for E2E tests
+  # NOTE: ghcr.io is for CI/CD ONLY (ephemeral images, 14-day cleanup)
+  # Production releases use Quay.io (separate workflow)
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
 
 jobs:
   # ========================================
@@ -209,8 +214,105 @@ jobs:
           retention-days: 7
 
   # ========================================
-  # STAGE 2: INTEGRATION TESTS
-  # Matrix strategy: 8 services (all use same pattern: envtest + Podman)
+  # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
+  # Matrix job: Build all service images and push to GitHub Container Registry
+  # Purpose: E2E tests pull from registry (saves ~60% disk space)
+  # Retention: Images auto-cleanup after 14 days (GitHub policy)
+  # Production: NOT used for production (Quay.io for production releases)
+  # ========================================
+
+  build-and-push-images:
+    name: Build & Push (${{ matrix.service }})
+    needs: [unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write  # Required for ghcr.io push
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Go Services (8)
+          - service: datastorage
+            dockerfile: docker/data-storage.Dockerfile
+            image_name: datastorage
+          - service: gateway
+            dockerfile: docker/gateway-ubi9.Dockerfile
+            image_name: gateway
+          - service: aianalysis
+            dockerfile: docker/aianalysis.Dockerfile
+            image_name: aianalysis
+          - service: authwebhook
+            dockerfile: docker/authwebhook.Dockerfile
+            image_name: authwebhook
+          - service: notification
+            dockerfile: docker/notification-controller-ubi9.Dockerfile
+            image_name: notification
+          - service: remediationorchestrator
+            dockerfile: docker/remediationorchestrator-controller.Dockerfile
+            image_name: remediationorchestrator
+          - service: signalprocessing
+            dockerfile: docker/signalprocessing-controller.Dockerfile
+            image_name: signalprocessing
+          - service: workflowexecution
+            dockerfile: docker/workflowexecution-controller.Dockerfile
+            image_name: workflowexecution
+          # Python Services (1)
+          - service: holmesgpt-api
+            dockerfile: holmesgpt-api/Dockerfile
+            image_name: holmesgpt-api
+          # Test Fixtures (1)
+          - service: mock-llm
+            dockerfile: test/services/mock-llm/Dockerfile
+            image_name: mock-llm
+            context: test/services/mock-llm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push ${{ matrix.service }} image
+        run: |
+          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}
+          IMAGE_TAG=${{ steps.tag.outputs.tag }}
+          CONTEXT=${{ matrix.context || '.' }}
+          
+          echo "🔨 Building ${{ matrix.service }} image..."
+          echo "   Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+          echo "   Dockerfile: ${{ matrix.dockerfile }}"
+          echo "   Context: ${CONTEXT}"
+          
+          docker build \
+            -t ${IMAGE_NAME}:${IMAGE_TAG} \
+            -f ${{ matrix.dockerfile }} \
+            ${CONTEXT}
+          
+          echo "📤 Pushing to ghcr.io..."
+          docker push ${IMAGE_NAME}:${IMAGE_TAG}
+          
+          echo "✅ Image pushed successfully!"
+
+  # ========================================
+  # STAGE 3: INTEGRATION TESTS
+  # Matrix strategy: 9 services (all use same pattern: envtest + Podman)
   #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
   #     remediationorchestrator, notification, gateway, datastorage
   #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
@@ -226,7 +328,7 @@ jobs:
 
   integration-tests:
     name: integration (${{ matrix.service }})
-    needs: [unit-tests]
+    needs: [unit-tests]  # Integration tests don't need images
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     strategy:
@@ -312,11 +414,27 @@ jobs:
   # ========================================
   # SUMMARY
   # ========================================
+  # ========================================
+  # STAGE 4: E2E TESTS (TODO - Not yet enabled)
+  # E2E tests will use images from ghcr.io (built in Stage 2)
+  # This saves ~60% disk space on GitHub Actions runners
+  # ========================================
+  # e2e-tests:
+  #   name: E2E (${{ matrix.service }})
+  #   needs: [build-and-push-images]
+  #   env:
+  #     IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
+  #     IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+  #   ...
+
+  # ========================================
+  # SUMMARY
+  # ========================================
   summary:
     name: Test Suite Summary
     needs: [
       build-and-lint-go, build-and-lint-python, unit-tests,
-      integration-tests
+      build-and-push-images, integration-tests
     ]
     if: always()
     runs-on: ubuntu-latest
@@ -334,8 +452,12 @@ jobs:
           echo "STAGE 1B - Unit Tests (Parallel Matrix):"
           echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
-          echo "STAGE 2 - Integration Tests (Parallel Matrix):"
-          echo "  All Services (8 services):  ${{ needs.integration-tests.result }}"
+          echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
+          echo "  All Images (10 services): ${{ needs.build-and-push-images.result }}"
+          echo "  Registry: ghcr.io (CI/CD ephemeral images only)"
+          echo ""
+          echo "STAGE 3 - Integration Tests (Parallel Matrix):"
+          echo "  All Services (9 services):  ${{ needs.integration-tests.result }}"
           echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
@@ -346,10 +468,11 @@ jobs:
           echo "Optimizations:"
           echo "  ✅ Parallel build & lint (Go + Python)"
           echo "  ✅ Build & lint separated from tests"
-          echo "  ✅ Parallel unit tests (matrix: 8 services)"
-          echo "  ✅ Parallel integration tests (matrix: 8 services)"
+          echo "  ✅ Parallel unit tests (matrix: 9 services)"
+          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 10 images)"
+          echo "  ✅ Parallel integration tests (matrix: 9 services)"
           echo "  ✅ Matrix strategy for test tiers"
-          echo "  ⏭️  E2E tests temporarily disabled (focusing on integration stability)"
+          echo "  ⏭️  E2E tests temporarily disabled (will use ghcr.io images when enabled)"
           echo "═══════════════════════════════════════════════════════════"
 
           # Check for build & lint failure (critical)
@@ -362,7 +485,17 @@ jobs:
           # Check for unit tests failure (critical)
           if [ "${{ needs.unit-tests.result }}" != "success" ]; then
             echo ""
-            echo "❌ Unit tests failed - integration tests skipped"
+            echo "❌ Unit tests failed - subsequent stages skipped"
+            exit 1
+          fi
+
+          # Check for image build & push failure (critical for E2E)
+          if [ "${{ needs.build-and-push-images.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Image builds failed - check individual service builds in the matrix"
+            echo "   Services: datastorage, gateway, aianalysis, authwebhook, notification,"
+            echo "             remediationorchestrator, signalprocessing, workflowexecution,"
+            echo "             holmesgpt-api, mock-llm"
             exit 1
           fi
 
