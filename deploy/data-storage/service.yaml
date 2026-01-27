@@ -1,24 +1,21 @@
 # ========================================
-# DD-AUTH-004: DataStorage Service with OAuth-Proxy
-# DD-AUTH-005: All 8 services connect via this service endpoint
+# DD-AUTH-014: DataStorage Service with Middleware-Based Auth
+# No oauth-proxy sidecar - auth handled in DataStorage middleware
 # ========================================
 #
-# Service routes external requests to oauth-proxy sidecar:
-# - External clients → Service:8080 → oauth-proxy:8080 → DataStorage:8081
+# Service routes external requests directly to DataStorage:
+# - External clients → Service:8081 → DataStorage:8081
 #
 # Port Routing:
-# - Service port 8080 → Pod oauth-proxy container port 8080
-# - OAuth-proxy proxies to → Pod data-storage container port 8081
+# - Service port 8081 → Pod data-storage container port 8081 (direct)
 # - Metrics port 9090 → Pod data-storage container port 9090 (direct, no auth)
 #
-# Authentication Flow:
-# 1. Services send requests to data-storage-service:8080
-# 2. Service routes to oauth-proxy sidecar (pod port 8080)
-# 3. OAuth-proxy validates ServiceAccount token
-# 4. OAuth-proxy performs SAR (Subject Access Review)
-# 5. OAuth-proxy injects X-Auth-Request-User header
-# 6. OAuth-proxy proxies to DataStorage (localhost:8081)
-# 7. DataStorage receives authenticated request
+# Authentication Flow (in DataStorage middleware):
+# 1. Services send requests to data-storage-service:8081 with Bearer token
+# 2. Service routes directly to DataStorage container (port 8081)
+# 3. DataStorage middleware validates token (TokenReview API)
+# 4. DataStorage middleware checks permissions (SubjectAccessReview API)
+# 5. User identity injected into request context for audit logging
 # ========================================
 apiVersion: v1
 kind: Service
@@ -32,11 +29,10 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    # DD-AUTH-004: HTTP traffic routes to oauth-proxy (port 8080)
-    # OAuth-proxy then proxies to DataStorage (localhost:8081)
+    # DD-AUTH-014: HTTP traffic routes directly to DataStorage (no proxy)
     - name: http
-      port: 8080
-      targetPort: proxy  # Routes to oauth-proxy container 'proxy' port (8080)
+      port: 8081
+      targetPort: http  # Routes directly to data-storage container 'http' port (8081)
       protocol: TCP
     # Metrics port routes directly to DataStorage (no authentication)
     - name: metrics
