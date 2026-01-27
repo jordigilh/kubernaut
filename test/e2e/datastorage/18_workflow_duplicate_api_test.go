@@ -42,12 +42,10 @@ const (
 )
 
 var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
-	var (
-		httpClient *http.Client
-	)
+	// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 	BeforeAll(func() {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 	})
 
 	Context("DS-BUG-001: Duplicate workflow creation", func() {
@@ -58,7 +56,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			uniqueWorkflowName := fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano())
 			workflow := createTestWorkflowRequest(uniqueWorkflowName, "1.0.0")
 
-			resp1, err := createWorkflowHTTP(httpClient, dataStorageURL, workflow)
+			resp1, err := createWorkflowHTTP(HTTPClient, dataStorageURL, workflow)
 			Expect(err).ToNot(HaveOccurred(), "First workflow creation should not error")
 			defer func() { _ = resp1.Body.Close() }()
 
@@ -73,7 +71,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 
 			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
 			GinkgoWriter.Printf("\n🔄 Creating duplicate workflow (expecting 409 Conflict)...\n")
-			resp2, err := createWorkflowHTTP(httpClient, dataStorageURL, workflow)
+			resp2, err := createWorkflowHTTP(HTTPClient, dataStorageURL, workflow)
 			Expect(err).ToNot(HaveOccurred(), "Second workflow creation should not error at HTTP level")
 			defer func() { _ = resp2.Body.Close() }()
 
@@ -111,12 +109,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
 			GinkgoWriter.Printf("   - Error detail: '%s'\n", detail)
 
-			// Step 4: Verify only one workflow exists in database using ListWorkflows API
-			listClient, err := ogenclient.NewClient(dataStorageURL)
-			Expect(err).ToNot(HaveOccurred())
-
-			listResp, err := listClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
-			Expect(err).ToNot(HaveOccurred())
+		// Step 4: Verify only one workflow exists in database using ListWorkflows API
+		// DD-AUTH-014: Use shared authenticated DSClient from suite setup
+		listResp, err := DSClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+		Expect(err).ToNot(HaveOccurred())
 
 			// Type assert the response
 			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
@@ -144,7 +140,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 				"1.0.0",
 			)
 
-			resp, err := createWorkflowHTTP(httpClient, dataStorageURL, invalidWorkflow)
+			resp, err := createWorkflowHTTP(HTTPClient, dataStorageURL, invalidWorkflow)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 

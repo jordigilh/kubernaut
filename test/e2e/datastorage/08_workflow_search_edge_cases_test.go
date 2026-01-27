@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -63,7 +62,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
-		httpClient    *http.Client
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -73,7 +72,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "workflow-search-edge-cases")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 8: Workflow Search Edge Cases - Setup")
@@ -90,7 +89,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health/ready")
+			resp, err := HTTPClient.Get(serviceURL + "/health/ready")
 			if err != nil {
 				return err
 			}
@@ -148,7 +147,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// ACT: POST workflow search
 			testLogger.Info("🔍 Posting workflow search with non-existent signal_type...")
-			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
+			resp, err := DSClient.SearchWorkflows(ctx, &searchRequest)
 			Expect(err).ToNot(HaveOccurred())
 			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
@@ -198,7 +197,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			}
 
 			// ACT: POST workflow search
-			_, err := dsClient.SearchWorkflows(ctx, &searchRequest)
+			_, err := DSClient.SearchWorkflows(ctx, &searchRequest)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ASSERT: Audit event generated (BR-AUDIT-023 to BR-AUDIT-028)
@@ -261,7 +260,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			_, err := dsClient.CreateWorkflow(ctx, &workflow1)
+			_, err := DSClient.CreateWorkflow(ctx, &workflow1)
 			Expect(err).ToNot(HaveOccurred())
 
 			time.Sleep(100 * time.Millisecond) // Ensure different created_at
@@ -287,7 +286,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			_, err = dsClient.CreateWorkflow(ctx, &workflow2)
+			_, err = DSClient.CreateWorkflow(ctx, &workflow2)
 			Expect(err).ToNot(HaveOccurred())
 
 			time.Sleep(100 * time.Millisecond)
@@ -313,7 +312,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			_, err = dsClient.CreateWorkflow(ctx, &workflow3)
+			_, err = DSClient.CreateWorkflow(ctx, &workflow3)
 			Expect(err).ToNot(HaveOccurred())
 
 			testLogger.Info("✅ Created 3 workflows with identical labels")
@@ -349,7 +348,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			// Execute search multiple times to verify consistency
 			var firstResultID string
 			for i := 0; i < 5; i++ {
-				resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
+				resp, err := DSClient.SearchWorkflows(ctx, &searchRequest)
 				Expect(err).ToNot(HaveOccurred())
 				searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 				Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
@@ -411,7 +410,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			resp1, err := dsClient.CreateWorkflow(ctx, &wildcardWorkflow)
+			resp1, err := DSClient.CreateWorkflow(ctx, &wildcardWorkflow)
 			Expect(err).ToNot(HaveOccurred())
 			// Extract workflow_id from response
 			createdWildcard, ok := resp1.(*dsgen.RemediationWorkflow)
@@ -440,7 +439,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			resp2, err := dsClient.CreateWorkflow(ctx, &specificWorkflow)
+			resp2, err := DSClient.CreateWorkflow(ctx, &specificWorkflow)
 			Expect(err).ToNot(HaveOccurred())
 			// Extract workflow_id from response
 			createdSpecific, ok := resp2.(*dsgen.RemediationWorkflow)
@@ -479,7 +478,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				TopK: dsgen.NewOptInt(topK),
 			}
 
-			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
+			resp, err := DSClient.SearchWorkflows(ctx, &searchRequest)
 			Expect(err).ToNot(HaveOccurred())
 			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
@@ -520,7 +519,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				TopK: dsgen.NewOptInt(topK),
 			}
 
-			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
+			resp, err := DSClient.SearchWorkflows(ctx, &searchRequest)
 			Expect(err).ToNot(HaveOccurred())
 			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")

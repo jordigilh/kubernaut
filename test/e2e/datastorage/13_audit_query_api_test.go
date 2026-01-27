@@ -224,7 +224,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// Use Eventually() to wait for events to be visible (async buffer may delay persistence)
 			var data []interface{}
 			Eventually(func() int {
-				resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
+				resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
 				if err != nil {
 					return 0
 				}
@@ -260,7 +260,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 			// ASSERT: Pagination metadata is present
 			// Query one more time to get full response with pagination metadata
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -365,7 +365,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 			// ACT: Query by event_type and correlation_id for test isolation
 			targetEventType := gateway.EventTypeSignalReceived
-			resp, err := http.Get(fmt.Sprintf("%s?event_type=%s&correlation_id=%s", baseURL, targetEventType, correlationID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?event_type=%s&correlation_id=%s", baseURL, targetEventType, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -409,7 +409,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 			// ACT: Query by event_category (ADR-034) and correlation_id for test isolation
 			targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
-			resp, err := http.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -449,7 +449,7 @@ var _ = Describe("Audit Events Query API", func() {
 			}
 
 			// ACT: Query with since=24h
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&since=24h", baseURL, correlationID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&since=24h", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -489,7 +489,7 @@ var _ = Describe("Audit Events Query API", func() {
 			now := time.Now()
 			since := now.Add(-1 * time.Hour).Format(time.RFC3339)
 			until := now.Add(1 * time.Hour).Format(time.RFC3339)
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&since=%s&until=%s",
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&since=%s&until=%s",
 				baseURL, correlationID, since, until))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -555,7 +555,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 		// ACT: Query with multiple filters (ADR-034 field names)
 		// FIX: Include correlation_id to isolate this test's events in parallel execution
-		resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&event_category=gateway&event_outcome=failure", baseURL, correlationID))
+		resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&event_category=gateway&event_outcome=failure", baseURL, correlationID))
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
@@ -618,7 +618,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// - Schema isolation overhead in parallel mode
 			var response map[string]interface{}
 			Eventually(func() float64 {
-				resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
+				resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
 				if err != nil {
 					return 0
 				}
@@ -647,7 +647,7 @@ var _ = Describe("Audit Events Query API", func() {
 				"should have at least 75 events after write completes")
 
 			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -672,7 +672,7 @@ var _ = Describe("Audit Events Query API", func() {
 			Expect(pagination["has_more"]).To(BeTrue())
 
 			// ACT: Query page 2 (limit=50, offset=50)
-			resp2, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=50", baseURL, correlationID))
+			resp2, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=50", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp2.Body.Close() }()
 
@@ -702,7 +702,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-023: Pagination validation (limit: 1-1000)
 
 			// ACT: Query with invalid limit=0
-			resp, err := http.Get(fmt.Sprintf("%s?limit=0", baseURL))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?limit=0", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -725,7 +725,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-023: Pagination validation (limit: 1-1000)
 
 			// ACT: Query with invalid limit=1001
-			resp, err := http.Get(fmt.Sprintf("%s?limit=1001", baseURL))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?limit=1001", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -745,7 +745,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-023: Pagination validation (offset: ≥0)
 
 			// ACT: Query with invalid offset=-1
-			resp, err := http.Get(fmt.Sprintf("%s?offset=-1", baseURL))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?offset=-1", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -767,7 +767,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// DD-STORAGE-010: Time parsing validation
 
 			// ACT: Query with invalid since format
-			resp, err := http.Get(fmt.Sprintf("%s?since=invalid", baseURL))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?since=invalid", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -790,7 +790,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-021: Empty result handling
 
 			// ACT: Query for non-existent correlation_id
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=rr-9999-999", baseURL))
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=rr-9999-999", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 

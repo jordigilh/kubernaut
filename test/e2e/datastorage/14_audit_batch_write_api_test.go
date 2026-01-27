@@ -61,7 +61,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 
 		// Ensure service is ready before each test
 		Eventually(func() int {
-			resp, err := http.Get(dataStorageURL + "/health")
+			resp, err := HTTPClient.Get(dataStorageURL + "/health")
 			if err != nil || resp == nil {
 				return 0
 			}
@@ -230,7 +230,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -282,7 +282,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -307,7 +307,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 

@@ -99,11 +99,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: POST malformed event
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -153,11 +153,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -197,11 +197,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -245,11 +245,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -293,11 +293,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -342,11 +342,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -391,11 +391,13 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 			payloadBytes, err := json.Marshal(malformedEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			resp, err := http.Post(
-				dataStorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewReader(payloadBytes),
-			)
+			req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+
+			req.Header.Set("Content-Type", "application/json")
+
+
+			resp, err := HTTPClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -430,11 +432,11 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT
-			resp, err := http.Post(
-				dataStorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewReader(payloadBytes),
-			)
+			req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := HTTPClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 

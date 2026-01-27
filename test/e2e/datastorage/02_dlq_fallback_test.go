@@ -68,7 +68,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
-		httpClient    *http.Client
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -78,7 +78,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "dlq-fallback")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 2: DLQ Fallback - Setup")
@@ -93,7 +93,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health")
+			resp, err := HTTPClient.Get(serviceURL + "/health")
 			if err != nil {
 				return err
 			}
@@ -168,7 +168,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
-		eventID := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
+		eventID := createAuditEventOpenAPI(ctx, DSClient, baselineEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
@@ -215,7 +215,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "NodeNotReady"),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, outageEvent)
 		// During network partition, the service should accept the event (DLQ fallback)
 		Expect(eventID).ToNot(BeEmpty(), "Event should be accepted during network partition (DLQ fallback)")
 		testLogger.Info("✅ Event accepted during network partition (DLQ fallback)")

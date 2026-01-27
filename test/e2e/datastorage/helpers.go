@@ -210,9 +210,14 @@ func generateTestID() string {
 	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 }
 
-// createOpenAPIClient creates an ogen client for the DataStorage API
+// createOpenAPIClient returns the shared authenticated DSClient from suite setup (DD-AUTH-014)
+// The baseURL parameter is ignored - all E2E tests use the same DataStorage deployment
+// with authentication provided by ServiceAccount Bearer token.
+//
+// Authority: DD-AUTH-014 (Middleware-based Authentication)
 func createOpenAPIClient(baseURL string) (*ogenclient.Client, error) {
-	return ogenclient.NewClient(baseURL)
+	// DD-AUTH-014: Return shared authenticated DSClient instead of creating new unauthenticated client
+	return DSClient, nil
 }
 
 // postAuditEvent posts an audit event using the ogen client and returns the event ID

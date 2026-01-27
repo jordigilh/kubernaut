@@ -65,7 +65,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 
 		// Ensure service is ready before each test
 		Eventually(func() int {
-			resp, err := http.Get(serviceURL + "/health")
+			resp, err := HTTPClient.Get(serviceURL + "/health")
 			if err != nil || resp == nil {
 				return 0
 			}
@@ -365,7 +365,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBuffer(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -394,7 +394,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBufferString("{invalid json"))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -422,7 +422,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBuffer(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := HTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 

@@ -54,7 +54,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 	Context("Metrics Endpoint", func() {
 		It("should expose Prometheus metrics at /metrics", func() {
 			// Business Outcome: Prometheus can scrape metrics from /metrics endpoint
-			resp, err := http.Get(dataStorageURL + "/metrics")
+			resp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -92,7 +92,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Expected: Metrics track successful writes by service and status
 
 			// Get baseline metric value
-			baselineResp, err := http.Get(dataStorageURL + "/metrics")
+			baselineResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = baselineResp.Body.Close() }()
 
@@ -135,7 +135,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred(), "Audit write MUST succeed with 201 Created")
 
 			// Get updated metrics
-			updatedResp, err := http.Get(dataStorageURL + "/metrics")
+			updatedResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = updatedResp.Body.Close() }()
 
@@ -203,7 +203,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get metrics
-			metricsResp, err := http.Get(dataStorageURL + "/metrics")
+			metricsResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = metricsResp.Body.Close() }()
 
@@ -227,7 +227,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Expected: Metrics track validation failures for monitoring
 
 			// Get baseline
-			baselineResp, err := http.Get(dataStorageURL + "/metrics")
+			baselineResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = baselineResp.Body.Close() }()
 
@@ -245,11 +245,9 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			}
 
 			payload, _ := json.Marshal(invalidPayload)
-			resp, err := http.Post(
-				dataStorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
+			req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payload))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := HTTPClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -258,7 +256,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				"Invalid audit MUST be rejected with 400 Bad Request")
 
 			// Get updated metrics
-			updatedResp, err := http.Get(dataStorageURL + "/metrics")
+			updatedResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = updatedResp.Body.Close() }()
 
@@ -323,7 +321,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get metrics
-			metricsResp, err := http.Get(dataStorageURL + "/metrics")
+			metricsResp, err := HTTPClient.Get(dataStorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = metricsResp.Body.Close() }()
 
