@@ -188,23 +188,42 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 	}
 
 	// DD-HAPI-003: Type-assert response interface to concrete type
-	// The generated client returns an interface; we need the concrete type.
-	response, ok := res.(*IncidentResponse)
-	if !ok {
-		// Handle non-200 responses (e.g., 422 validation error)
-		if validationErr, ok := res.(*HTTPValidationError); ok {
-			return nil, &APIError{
-				StatusCode: http.StatusUnprocessableEntity,
-				Message:    fmt.Sprintf("HAPI validation error: %+v", validationErr),
-			}
+	// DD-AUTH-013: Handle all HTTP status codes (200, 401, 403, 422, 500)
+	switch v := res.(type) {
+	case *IncidentResponse:
+		// 200 OK - Success
+		return v, nil
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized:
+		// 401 Unauthorized - Authentication failed (ose-oauth-proxy)
+		return nil, &APIError{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Authentication failed: invalid or missing Bearer token",
 		}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden:
+		// 403 Forbidden - Authorization failed (ose-oauth-proxy SAR denied)
+		return nil, &APIError{
+			StatusCode: http.StatusForbidden,
+			Message:    "Authorization failed: ServiceAccount lacks 'get' permission on holmesgpt-api resource",
+		}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity:
+		// 422 Unprocessable Entity - Validation error (FastAPI/Pydantic)
+		return nil, &APIError{
+			StatusCode: http.StatusUnprocessableEntity,
+			Message:    fmt.Sprintf("HAPI validation error: %+v", v),
+		}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError:
+		// 500 Internal Server Error - HAPI application error
+		return nil, &APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "HAPI internal server error",
+		}
+	default:
+		// Unexpected response type
 		return nil, &APIError{
 			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("unexpected response type from HAPI: %T", res),
 		}
 	}
-
-	return response, nil
 }
 
 // InvestigateRecovery calls the HolmesGPT-API recovery analyze endpoint.
@@ -250,22 +269,42 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 	}
 
 	// DD-HAPI-003: Type-assert response interface to concrete type
-	response, ok := res.(*RecoveryResponse)
-	if !ok {
-		// Handle non-200 responses (e.g., 422 validation error)
-		if validationErr, ok := res.(*HTTPValidationError); ok {
-			return nil, &APIError{
-				StatusCode: http.StatusUnprocessableEntity,
-				Message:    fmt.Sprintf("HAPI recovery validation error: %+v", validationErr),
-			}
+	// DD-AUTH-013: Handle all HTTP status codes (200, 401, 403, 422, 500)
+	switch v := res.(type) {
+	case *RecoveryResponse:
+		// 200 OK - Success
+		return v, nil
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized:
+		// 401 Unauthorized - Authentication failed (ose-oauth-proxy)
+		return nil, &APIError{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Authentication failed: invalid or missing Bearer token",
 		}
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden:
+		// 403 Forbidden - Authorization failed (ose-oauth-proxy SAR denied)
+		return nil, &APIError{
+			StatusCode: http.StatusForbidden,
+			Message:    "Authorization failed: ServiceAccount lacks 'get' permission on holmesgpt-api resource",
+		}
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity:
+		// 422 Unprocessable Entity - Validation error (FastAPI/Pydantic)
+		return nil, &APIError{
+			StatusCode: http.StatusUnprocessableEntity,
+			Message:    fmt.Sprintf("HAPI recovery validation error: %+v", v),
+		}
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError:
+		// 500 Internal Server Error - HAPI application error
+		return nil, &APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "HAPI recovery internal server error",
+		}
+	default:
+		// Unexpected response type
 		return nil, &APIError{
 			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("unexpected response type from HAPI recovery endpoint: %T", res),
 		}
 	}
-
-	return response, nil
 }
 
 // ========================================

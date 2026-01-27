@@ -1,0 +1,60 @@
+---
+# HolmesGPT API Service - RBAC for Auth Middleware
+# Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
+#
+# This ServiceAccount and ClusterRole enable the HolmesGPT API service pod
+# to perform TokenReview and SubjectAccessReview (SAR) operations.
+#
+# Business Requirements:
+# - BR-HAPI-067: JWT token authentication (via TokenReview)
+# - BR-HAPI-068: Role-based access control (via SAR)
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api-sa
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: auth-middleware
+    authority: DD-AUTH-014
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-auth-middleware
+  labels:
+    app: holmesgpt-api
+    component: auth-middleware
+    authority: DD-AUTH-014
+rules:
+# TokenReview API - Required for authenticating Bearer tokens
+# Authority: https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+
+# SubjectAccessReview API - Required for authorization (SAR)
+# Authority: https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-auth-middleware
+  labels:
+    app: holmesgpt-api
+    component: auth-middleware
+    authority: DD-AUTH-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-auth-middleware
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api-sa
+  namespace: kubernaut-system

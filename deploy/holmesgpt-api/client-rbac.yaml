@@ -1,0 +1,47 @@
+---
+# HolmesGPT API Client - RBAC for E2E Tests
+# Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
+#
+# This ClusterRole defines the permissions that E2E test clients need
+# to interact with the HolmesGPT API service endpoints.
+#
+# Business Requirements:
+# - BR-HAPI-197: E2E testing with real authentication
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-client
+  labels:
+    app: holmesgpt-api
+    component: e2e-client
+    authority: DD-AUTH-014
+rules:
+# HolmesGPT API Service - Full CRUD permissions
+# Allows E2E tests to invoke all REST API endpoints
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["holmesgpt-api-service"]
+  verbs:
+    - "create"  # POST /api/v1/recovery, /api/v1/incident
+    - "get"     # GET /health, /ready, /metrics
+    - "list"    # List operations (if any)
+    - "update"  # PUT/PATCH operations (if any)
+    - "delete"  # DELETE operations (if any)
+
+---
+# Example ClusterRoleBinding for E2E tests
+# E2E test suite should create a ServiceAccount and bind this role
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: holmesgpt-api-e2e-client
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: holmesgpt-api-client
+# subjects:
+# - kind: ServiceAccount
+#   name: holmesgpt-api-e2e-client
+#   namespace: holmesgpt-api-e2e

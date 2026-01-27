@@ -57,6 +57,9 @@ from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
+# Import auth components for dependency injection (DD-AUTH-014)
+from src.auth import K8sAuthenticator, K8sAuthorizer, MockAuthenticator, MockAuthorizer
+
 
 # ========================================
 # GRACEFUL SHUTDOWN STATE (GREEN Phase)
@@ -161,7 +164,7 @@ def load_config() -> AppConfig:
             "service_name": "holmesgpt-api",
             "version": "1.0.0",
             "dev_mode": False,
-            "auth_enabled": False,
+            "auth_enabled": True,  # DD-AUTH-014: Auth always enabled via middleware
             "api_host": "0.0.0.0",
             "api_port": 8080,
             "llm": {
@@ -301,12 +304,83 @@ app.add_middleware(
 app.add_middleware(PrometheusMetricsMiddleware)
 logger.info("Prometheus metrics middleware enabled")
 
-# Add authentication middleware
-if config["auth_enabled"]:
-    app.add_middleware(AuthenticationMiddleware, config=config)
-    logger.info("Authentication middleware enabled (K8s ServiceAccount tokens)")
+# Add authentication middleware with dependency injection (DD-AUTH-014)
+# Production: Real K8s TokenReview + SAR APIs
+# Integration/E2E: Mock implementations (configurable via ENV_MODE)
+ENV_MODE = os.getenv("ENV_MODE", "production").lower()
+
+if ENV_MODE == "production":
+    # Production: Real Kubernetes TokenReview + SAR APIs
+    # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
+    try:
+        authenticator = K8sAuthenticator()
+        authorizer = K8sAuthorizer()
+        logger.info({
+            "event": "auth_initialized",
+            "mode": "production",
+            "authenticator": "K8sAuthenticator",
+            "authorizer": "K8sAuthorizer"
+        })
+    except Exception as e:
+        logger.error({
+            "event": "auth_init_failed",
+            "mode": "production",
+            "error": str(e)
+        })
+        # In production, fail fast if K8s auth cannot be initialized
+        raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
 else:
-    logger.warning("Authentication middleware DISABLED (dev mode only)")
+    # Integration/E2E tests: Mock implementations
+    # Authority: DD-AUTH-014 (Testable auth via dependency injection)
+    authenticator = MockAuthenticator(
+        valid_users={
+            "test-token-authorized": "system:serviceaccount:test:authorized-sa",
+            "test-token-readonly": "system:serviceaccount:test:readonly-sa",
+        }
+    )
+    authorizer = MockAuthorizer(
+        default_allow=True  # Permissive for integration tests
+    )
+    logger.info({
+        "event": "auth_initialized",
+        "mode": ENV_MODE,
+        "authenticator": "MockAuthenticator",
+        "authorizer": "MockAuthorizer",
+        "note": "Using mock auth for testing"
+    })
+
+# Get pod namespace dynamically (for SAR checks)
+# In production, read from ServiceAccount namespace file
+# In integration/E2E, use environment variable or default
+POD_NAMESPACE = os.getenv("POD_NAMESPACE")
+if not POD_NAMESPACE:
+    namespace_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+    if namespace_path.exists():
+        POD_NAMESPACE = namespace_path.read_text().strip()
+    else:
+        POD_NAMESPACE = "kubernaut-system"  # Default fallback
+
+logger.info({"event": "sar_namespace_configured", "namespace": POD_NAMESPACE})
+
+# Apply auth middleware with dependency injection
+# Authority: DD-AUTH-014 - SAR authorization enforced on all endpoints
+app.add_middleware(
+    AuthenticationMiddleware,
+    authenticator=authenticator,
+    authorizer=authorizer,
+    config={
+        "namespace": POD_NAMESPACE,
+        "resource": "services",
+        "resource_name": "holmesgpt-api-service",
+        "verb": "create",  # Default verb, will be mapped per HTTP method
+    }
+)
+logger.info({
+    "event": "auth_middleware_enabled",
+    "authority": "DD-AUTH-014",
+    "mode": ENV_MODE,
+    "namespace": POD_NAMESPACE
+})
 
 # Add RFC 7807 exception handlers
 add_rfc7807_exception_handlers(app)
@@ -346,7 +420,7 @@ async def startup_event():
     logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
     logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
     logger.info(f"Dev mode: {config.get('dev_mode', False)}")
-    logger.info(f"Auth enabled: {config.get('auth_enabled', False)}")
+    logger.info(f"Auth mode: {ENV_MODE} (DD-AUTH-014)")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # MANDATORY: Validate audit initialization (ADR-032 §2)

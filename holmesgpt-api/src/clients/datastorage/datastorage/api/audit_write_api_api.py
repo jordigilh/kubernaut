@@ -119,6 +119,8 @@ class AuditWriteAPIApi:
             '201': "AuditEventResponse",
             '202': "AuditEventResponse",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -189,6 +191,8 @@ class AuditWriteAPIApi:
             '201': "AuditEventResponse",
             '202': "AuditEventResponse",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -259,6 +263,8 @@ class AuditWriteAPIApi:
             '201': "AuditEventResponse",
             '202': "AuditEventResponse",
             '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '403': "RFC7807Problem",
             '500': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(

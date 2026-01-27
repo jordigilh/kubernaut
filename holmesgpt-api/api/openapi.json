@@ -35,8 +35,40 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-013)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-013 (HTTP Status Codes for OAuth-Proxy)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "example": "<html><body><h1>401 Authorization Required</h1></body></html>"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-006, DD-AUTH-013)\n\n**Cause**: ServiceAccount lacks 'get' permission on holmesgpt-api resource.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-006 (HAPI OAuth-Proxy), DD-AUTH-013 (HTTP Status Codes)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "example": "<html><body><h1>403 Forbidden</h1></body></html>"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: DD-AUTH-013",
             "content": {
               "application/json": {
                 "schema": {
@@ -77,8 +109,40 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-013)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-013 (HTTP Status Codes for OAuth-Proxy)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "example": "<html><body><h1>401 Authorization Required</h1></body></html>"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-006, DD-AUTH-013)\n\n**Cause**: ServiceAccount lacks 'get' permission on holmesgpt-api resource.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-006 (HAPI OAuth-Proxy), DD-AUTH-013 (HTTP Status Codes)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "example": "<html><body><h1>403 Forbidden</h1></body></html>"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: DD-AUTH-013",
             "content": {
               "application/json": {
                 "schema": {

@@ -3,6 +3,7 @@
 package client
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
@@ -58,10 +59,53 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *HTTPValidationError:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(401)
+		span.SetStatus(codes.Error, http.StatusText(401))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(403)
+		span.SetStatus(codes.Error, http.StatusText(403))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(422)
 		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -107,10 +151,53 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *HTTPValidationError:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(401)
+		span.SetStatus(codes.Error, http.StatusText(401))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(403)
+		span.SetStatus(codes.Error, http.StatusText(403))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(422)
 		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
 
 		e := new(jx.Encoder)
 		response.Encode(e)

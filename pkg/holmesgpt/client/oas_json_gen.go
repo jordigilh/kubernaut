@@ -934,6 +934,82 @@ func (s *HumanReviewReason) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPValidationError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError to nil")
+	}
+	var unwrapped HTTPValidationError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPValidationError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity to nil")
+	}
+	var unwrapped HTTPValidationError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *IncidentRequest) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -3249,6 +3325,82 @@ func (s *PreviousExecution) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PreviousExecution) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPValidationError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError to nil")
+	}
+	var unwrapped HTTPValidationError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPValidationError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity to nil")
+	}
+	var unwrapped HTTPValidationError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

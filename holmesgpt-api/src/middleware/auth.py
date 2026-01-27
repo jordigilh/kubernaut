@@ -15,49 +15,38 @@ limitations under the License.
 """
 
 """
-Authentication Middleware - Minimal Internal Service
+Authentication Middleware with SAR Authorization
 
-⚠️  **DEPRECATED** (January 7, 2026) ⚠️
-This middleware is DEPRECATED in favor of oauth-proxy sidecar (DD-AUTH-006).
+Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
 
-**Current Status**: auth_enabled=False (middleware disabled)
-**Replacement**: OAuth-proxy sidecar handles authentication/authorization
-**Reason**: Keep auth logic OUTSIDE business code (separation of concerns)
+This middleware implements a secure, testable auth framework using dependency injection:
+1. Accepts Authenticator and Authorizer via constructor (enables testing)
+2. Validates Bearer tokens using TokenReview API
+3. Checks authorization using SubjectAccessReview (SAR) API
+4. Injects user identity into request.state (for audit logging)
 
-**Why Kept**:
-- Emergency fallback if oauth-proxy has issues
-- Reference implementation for token validation
-- May be useful for local development without K8s
+Design Decision: Auth logic is in middleware (not sidecar) for better testability.
+- Production: Real K8s TokenReview + SAR APIs
+- Integration: Mock implementations (no K8s API calls)
+- E2E: Real K8s APIs in Kind clusters
 
-**Migration**: DD-AUTH-006 - OAuth-Proxy Sidecar Pattern
-- OAuth-proxy validates ServiceAccount tokens
-- OAuth-proxy performs Subject Access Review (SAR)
-- OAuth-proxy injects X-Auth-Request-User header
-- Python code extracts user for logging (see user_context.py)
+Business Requirements:
+- BR-HAPI-066: API key authentication
+- BR-HAPI-067: JWT token authentication (via TokenReview)
+- BR-HAPI-068: Role-based access control (via SAR)
 
----
-
-Business Requirements: BR-HAPI-066, BR-HAPI-067 (Basic Authentication Only)
-
-Provides Kubernetes ServiceAccount token authentication for internal service.
-
-Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
-- No rate limiting (network policies handle access control)
-- No complex RBAC (K8s RBAC handles authorization)
-- No multiple auth methods (K8s ServiceAccount only)
-
-Production Implementation: Uses K8s TokenReviewer API with resilience
+Security: No runtime disable flags - auth is always enforced via interface implementations.
 """
 
 import logging
-import os
-import asyncio
-from typing import Dict, Any, List, Optional
-import aiohttp
-from fastapi import Request, HTTPException, status
+from typing import Dict, Any
+
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from pathlib import Path
+
+# Import auth interfaces (dependency injection)
+from src.auth.interfaces import Authenticator, Authorizer
 
 logger = logging.getLogger(__name__)
 
@@ -68,357 +57,260 @@ except ImportError:
     # Graceful degradation if metrics not available
     def record_auth_failure(reason: str, endpoint: str):
         pass
+
     def record_auth_success(username: str, role: str):
         pass
-
-# Kubernetes ServiceAccount paths
-K8S_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-K8S_SA_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-K8S_SA_NAMESPACE_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-
-
-class User:
-    def __init__(self, username: str, role: str = "readonly"):
-        self.username = username
-        self.role = role
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     """
-    Kubernetes ServiceAccount token authentication middleware
+    Kubernetes ServiceAccount token authentication + authorization middleware.
+
+    This middleware implements a secure, testable auth framework using dependency injection:
+    1. Authenticates using TokenReview API (via injected Authenticator)
+    2. Authorizes using SubjectAccessReview API (via injected Authorizer)
+    3. Injects validated user identity into request.state for audit logging
+
+    Authority: DD-AUTH-014
 
     Business Requirements:
     - BR-HAPI-066: API key authentication
     - BR-HAPI-067: JWT token authentication
     - BR-HAPI-068: Role-based access control
 
-    Production Implementation: Uses K8s TokenReviewer API with ServiceAccount
+    Request Flow:
+    1. Skip public endpoints (/health, /metrics, etc.)
+    2. Extract Bearer token from Authorization header
+    3. Authenticate token using Authenticator (TokenReview)
+    4. Authorize user using Authorizer (SAR)
+    5. Inject validated user identity into request.state (for audit logging)
+    6. Pass request to next handler
+
+    Error Responses:
+    - 401 Unauthorized: Missing/invalid Bearer token (RFC 7807)
+    - 403 Forbidden: Insufficient RBAC permissions (RFC 7807)
+    - 500 Internal Server Error: TokenReview/SAR API failure (RFC 7807)
     """
 
     PUBLIC_ENDPOINTS = ["/health", "/ready", "/metrics", "/docs", "/redoc", "/openapi.json"]
 
-    def __init__(self, app, config: Dict[str, Any]):
-        super().__init__(app)
-        self.config = config
-        self.dev_mode = config.get("dev_mode", False)
+    def __init__(
+        self,
+        app,
+        authenticator: Authenticator,
+        authorizer: Authorizer,
+        config: Dict[str, Any],
+    ):
+        """
+        Initialize authentication middleware with dependency injection.
 
-        # Load ServiceAccount token for authenticating to K8s API
-        self.sa_token = self._load_serviceaccount_token()
-        self.k8s_api_url = self._get_k8s_api_url()
-        self.ca_cert_path = K8S_SA_CA_CERT_PATH if Path(K8S_SA_CA_CERT_PATH).exists() else None
+        Args:
+            app: FastAPI application instance
+            authenticator: Token validator (K8sAuthenticator or MockAuthenticator)
+            authorizer: Permission checker (K8sAuthorizer or MockAuthorizer)
+            config: Configuration dict with keys:
+                - namespace: K8s namespace for SAR checks
+                - resource: Resource type (e.g., "services")
+                - resource_name: Specific resource name
+                - verb: Default RBAC verb (can be overridden per endpoint)
+
+        Example (Production):
+            from src.auth import K8sAuthenticator, K8sAuthorizer
+            app.add_middleware(
+                AuthenticationMiddleware,
+                authenticator=K8sAuthenticator(),
+                authorizer=K8sAuthorizer(),
+                config={
+                    "namespace": "kubernaut-system",
+                    "resource": "services",
+                    "resource_name": "holmesgpt-api-service",
+                    "verb": "create",
+                }
+            )
+
+        Example (Integration Tests):
+            from src.auth import MockAuthenticator, MockAuthorizer
+            app.add_middleware(
+                AuthenticationMiddleware,
+                authenticator=MockAuthenticator(
+                    valid_users={"test-token": "system:serviceaccount:test:sa"}
+                ),
+                authorizer=MockAuthorizer(default_allow=True),
+                config={...}
+            )
+        """
+        super().__init__(app)
+        self.authenticator = authenticator
+        self.authorizer = authorizer
+        self.config = config
 
         logger.info({
             "event": "auth_middleware_initialized",
-            "dev_mode": self.dev_mode,
-            "sa_token_loaded": self.sa_token is not None,
-            "k8s_api_url": self.k8s_api_url,
-            "ca_cert_available": self.ca_cert_path is not None
+            "authenticator_type": type(authenticator).__name__,
+            "authorizer_type": type(authorizer).__name__,
+            "namespace": config.get("namespace"),
+            "resource": config.get("resource"),
+            "resource_name": config.get("resource_name"),
+            "verb": config.get("verb")
         })
-
-    def _load_serviceaccount_token(self) -> Optional[str]:
-        """
-        Load ServiceAccount token from mounted volume.
-
-        Business Requirement: BR-HAPI-067 (Token authentication)
-
-        Returns None in dev mode or if file doesn't exist.
-        """
-        # Guard clause: Skip in dev mode
-        if self.dev_mode:
-            logger.info({"event": "skipping_sa_token_load", "reason": "dev_mode"})
-            return None
-
-        # Guard clause: Check file existence
-        token_path = Path(K8S_SA_TOKEN_PATH)
-        if not token_path.exists():
-            logger.warning({
-                "event": "sa_token_not_found",
-                "path": K8S_SA_TOKEN_PATH,
-                "note": "Running outside Kubernetes cluster"
-            })
-            return None
-
-        # Load token from file
-        try:
-            with open(token_path, "r") as f:
-                token = f.read().strip()
-            logger.info({
-                "event": "sa_token_loaded",
-                "path": K8S_SA_TOKEN_PATH,
-                "token_length": len(token)
-            })
-            return token
-        except Exception as e:
-            logger.error({
-                "event": "sa_token_load_failed",
-                "error": str(e),
-                "path": K8S_SA_TOKEN_PATH
-            })
-            return None
-
-    def _get_k8s_api_url(self) -> str:
-        """
-        Get Kubernetes API server URL.
-
-        Uses environment variables set by Kubernetes or falls back to default.
-        """
-        host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
-        port = os.getenv("KUBERNETES_SERVICE_PORT", "443")
-
-        # Construct full URL
-        if not host.startswith("http"):
-            url = f"https://{host}:{port}"
-        else:
-            url = f"{host}:{port}"
-
-        return url
 
     async def dispatch(self, request: Request, call_next):
         """
-        Main middleware dispatch
+        Main middleware dispatch with TokenReview + SAR.
 
-        Business Requirement: BR-HAPI-068 (Permission checking)
+        Authority: DD-AUTH-014
+
+        Request Flow:
+        1. Skip public endpoints
+        2. Extract Bearer token
+        3. Authenticate (TokenReview via authenticator)
+        4. Authorize (SAR via authorizer)
+        5. Inject validated user identity into request.state
+        6. Continue to handler
+
+        Error Responses (RFC 7807):
+        - 401: Missing/invalid token
+        - 403: Insufficient permissions
+        - 500: K8s API failure
         """
-        # Skip auth for public endpoints
+        # Step 1: Skip auth for public endpoints
         if request.url.path in self.PUBLIC_ENDPOINTS:
             return await call_next(request)
 
         try:
-            # Validate request and extract user
-            user = await self._validate_request(request)
+            # Step 2: Extract Bearer token from Authorization header
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                record_auth_failure("missing_auth_header", request.url.path)
+                return self._create_rfc7807_response(
+                    status_code=401,
+                    title="Unauthorized",
+                    detail="Missing Authorization header with Bearer token",
+                )
+
+            token = auth_header[7:]  # Remove "Bearer " prefix
+
+            # Step 3: Authenticate token using TokenReview API
+            # Authority: DD-AUTH-014 (uses injected Authenticator)
+            user = await self.authenticator.validate_token(token)
+
+            # Step 4: Authorize user using SubjectAccessReview (SAR) API
+            # Authority: DD-AUTH-014 (uses injected Authorizer)
+            allowed = await self.authorizer.check_access(
+                user=user,
+                namespace=self.config.get("namespace", "kubernaut-system"),
+                resource=self.config.get("resource", "services"),
+                resource_name=self.config.get("resource_name", "holmesgpt-api-service"),
+                verb=self._get_verb_for_request(request),
+            )
+
+            if not allowed:
+                record_auth_failure("insufficient_permissions", request.url.path)
+                return self._create_rfc7807_response(
+                    status_code=403,
+                    title="Forbidden",
+                    detail=f"Insufficient RBAC permissions for {request.method} {request.url.path}",
+                )
+
+            # Step 5: Inject validated user identity into request.state
+            # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
+            # This allows handlers to access the authenticated user via:
+            #   - user_context.get_authenticated_user(request)
+            #   - request.state.user (direct access)
             request.state.user = user
 
-            # Record authentication success
-            record_auth_success(user.username, user.role)
+            # Step 6: Record success metrics
+            record_auth_success(user, "authenticated")
 
-            # Check permissions (BR-HAPI-068)
-            if not self._check_permissions(user, request):
-                record_auth_failure("insufficient_permissions", request.url.path)
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions"
-                )
-
+            # Step 7: Pass request to next handler
             return await call_next(request)
 
-        except HTTPException as e:
-            # Record authentication failure for 401/403 errors
-            if e.status_code in [401, 403]:
-                reason = "invalid_credentials" if e.status_code == 401 else "forbidden"
-                record_auth_failure(reason, request.url.path)
-
-            return JSONResponse(
-                status_code=e.status_code,
-                content={"detail": e.detail}
-            )
         except Exception as e:
-            logger.error({"event": "auth_error", "error": str(e)})
-            record_auth_failure("internal_error", request.url.path)
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"detail": "Internal server error"}
+            # Handle authentication/authorization exceptions
+            logger.error({
+                "event": "auth_middleware_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "path": request.url.path
+            })
+
+            # Extract status code from HTTPException if available
+            status_code = getattr(e, "status_code", 500)
+            detail = getattr(e, "detail", str(e))
+
+            record_auth_failure(f"error_{status_code}", request.url.path)
+
+            # Return RFC 7807 Problem Details
+            return self._create_rfc7807_response(
+                status_code=status_code,
+                title=self._get_title_for_status(status_code),
+                detail=detail,
             )
 
-    async def _validate_request(self, request: Request) -> User:
+    def _get_verb_for_request(self, request: Request) -> str:
         """
-        Validate authentication credentials
+        Map HTTP method to RBAC verb.
 
-        Production Implementation: Uses K8s TokenReviewer API
+        Authority: DD-AUTH-014 (Granular RBAC SAR Verb Mapping)
+
+        Mapping:
+        - GET: "get" (single resource) or "list" (collection)
+        - POST: "create"
+        - PUT/PATCH: "update"
+        - DELETE: "delete"
+
+        Returns default verb from config if method not recognized.
         """
-        auth_header = request.headers.get("Authorization", "")
+        method = request.method.upper()
 
-        # Guard clause: Early return for missing/invalid auth header
-        if not auth_header.startswith("Bearer "):
-            record_auth_failure("no_credentials", request.url.path)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="No valid authentication credentials provided"
-            )
+        # Map HTTP methods to RBAC verbs
+        if method == "GET":
+            # Heuristic: List operations typically have plural paths or query params
+            # For now, default to "get" and let config override if needed
+            return "get"
+        elif method == "POST":
+            return "create"
+        elif method in ["PUT", "PATCH"]:
+            return "update"
+        elif method == "DELETE":
+            return "delete"
+        else:
+            # Fallback to config default
+            return self.config.get("verb", "create")
 
-        # Extract and validate token
-        token = auth_header[7:]
-        return await self._validate_k8s_token(token)
-
-    async def _validate_k8s_token(self, token: str) -> User:
-        """
-        Validate Kubernetes ServiceAccount token using TokenReviewer API.
-
-        Business Requirement: BR-HAPI-067
-
-        REFACTOR phase: Production implementation with resilience.
-        Design Decision: DD-HOLMESGPT-011, DD-HOLMESGPT-012
-        """
-        # GREEN phase stub for dev mode
-        if self.dev_mode and token.startswith("test-token-"):
-            parts = token.split("-")
-            if len(parts) >= 4:
-                username = parts[2]
-                role = parts[3] if len(parts) > 3 else "readonly"
-                logger.info({
-                    "event": "dev_token_validated",
-                    "username": username,
-                    "role": role
-                })
-                return User(username=username, role=role)
-
-        # REFACTOR phase: Real K8s TokenReviewer API
-        try:
-            user_info = await self._call_token_reviewer_api(token)
-            return User(username=user_info["username"], role=user_info["role"])
-        except Exception as e:
-            logger.error({"event": "k8s_token_validation_failed", "error": str(e)})
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Kubernetes token validation failed: {str(e)}"
-            )
-
-    async def _call_token_reviewer_api(self, token: str) -> Dict[str, Any]:
-        """
-        Call the Kubernetes TokenReviewer API to validate a token.
-
-        Business Requirement: BR-HAPI-067 (Token validation)
-
-        Production Implementation:
-        - Uses ServiceAccount token to authenticate to K8s API
-        - Handles SSL certificate validation
-        - Includes retry logic with exponential backoff
-        - Provides detailed error logging
-        """
-        token_reviewer_url = f"{self.k8s_api_url}/apis/authentication.k8s.io/v1/tokenreviews"
-
-        request_body = {
-            "apiVersion": "authentication.k8s.io/v1",
-            "kind": "TokenReview",
-            "spec": {
-                "token": token
-            }
+    def _get_title_for_status(self, status_code: int) -> str:
+        """Get human-readable title for HTTP status code."""
+        titles = {
+            401: "Unauthorized",
+            403: "Forbidden",
+            500: "Internal Server Error",
+            503: "Service Unavailable",
         }
+        return titles.get(status_code, "Error")
 
-        headers = {"Content-Type": "application/json"}
+    def _create_rfc7807_response(
+        self, status_code: int, title: str, detail: str
+    ) -> JSONResponse:
+        """
+        Create RFC 7807 Problem Details response.
 
-        # Add ServiceAccount token for authentication to K8s API
-        if self.sa_token:
-            headers["Authorization"] = f"Bearer {self.sa_token}"
+        Authority: BR-HAPI-200 (RFC 7807 Error Response Standard)
 
-        # Configure SSL
-        ssl_context = None
-        if self.ca_cert_path:
-            import ssl
-            ssl_context = ssl.create_default_context(cafile=self.ca_cert_path)
-        else:
-            # Dev mode or no CA cert available
-            ssl_context = False
-
-        # Retry logic with exponential backoff
-        max_retries = 3
-        retry_delay = 0.1  # Start with 100ms
-
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        token_reviewer_url,
-                        json=request_body,
-                        headers=headers,
-                        ssl=ssl_context,
-                        timeout=aiohttp.ClientTimeout(total=5.0)
-                    ) as response:
-                        response_text = await response.text()
-
-                        if response.status != 201:  # TokenReview creation returns 201
-                            logger.error({
-                                "event": "token_review_failed",
-                                "status": response.status,
-                                "response": response_text[:200],
-                                "attempt": attempt + 1
-                            })
-
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(retry_delay)
-                                retry_delay *= 2  # Exponential backoff
-                                continue
-
-                            raise HTTPException(
-                                status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail=f"Kubernetes TokenReview failed: HTTP {response.status}"
-                            )
-
-                        result = await response.json()
-
-                        # Check if token is authenticated
-                        if not result.get("status", {}).get("authenticated", False):
-                            error_msg = result.get("status", {}).get("error", "Token not authenticated")
-                            logger.warning({
-                                "event": "token_not_authenticated",
-                                "error": error_msg
-                            })
-                            raise HTTPException(
-                                status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail=f"Token not authenticated by Kubernetes: {error_msg}"
-                            )
-
-                        # Extract user info
-                        user_info = result.get("status", {}).get("user", {})
-                        username = user_info.get("username", "unknown")
-                        groups = user_info.get("groups", [])
-
-                        # Map K8s groups to application roles
-                        role = self._map_k8s_groups_to_role(groups)
-
-                        logger.info({
-                            "event": "k8s_token_validated",
-                            "username": username,
-                            "role": role,
-                            "groups_count": len(groups)
-                        })
-
-                        return {"username": username, "role": role}
-
-            except aiohttp.ClientError as e:
-                logger.error({
-                    "event": "token_review_connection_error",
-                    "error": str(e),
-                    "attempt": attempt + 1,
-                    "max_retries": max_retries
-                })
-
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
-
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Cannot reach Kubernetes API: {str(e)}"
-                )
-
-        # Should not reach here, but just in case
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="TokenReviewer API call failed after retries"
+        Format:
+        {
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401,
+            "detail": "Missing Authorization header with Bearer token"
+        }
+        """
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "type": "about:blank",
+                "title": title,
+                "status": status_code,
+                "detail": detail,
+            },
+            headers={"Content-Type": "application/problem+json"},
         )
-
-    def _map_k8s_groups_to_role(self, groups: List[str]) -> str:
-        """
-        Map Kubernetes groups to application roles
-
-        Business Requirement: BR-HAPI-068 (RBAC)
-        """
-        # Simple mapping for internal service
-        # Production: Use more sophisticated RBAC
-        if "system:masters" in groups:
-            return "admin"
-        elif "kubernaut:operators" in groups:
-            return "operator"
-        else:
-            return "readonly"
-
-    def _check_permissions(self, user: User, request: Request) -> bool:
-        """
-        Check if user has permission for requested operation
-
-        Business Requirement: BR-HAPI-068 (Permission checking)
-        """
-        # Minimal permission check for internal service
-        # All authenticated users can call investigation endpoints
-        return True  # K8s RBAC handles authorization at network level
