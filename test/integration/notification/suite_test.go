@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -452,6 +453,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Create controller with all dependencies including REAL audit (Defense-in-Depth Layer 4)
 	// Patterns 1-3: Metrics, StatusManager, DeliveryOrchestrator wired in
+	//
+	// DD-AUTH-014: Configure 5 concurrent workers to handle extreme load tests (100 concurrent notifications)
+	// - Single worker (default=1) caused queue saturation: 94 concurrent reconciles observed
+	// - 5 workers provides 5x throughput while maintaining test realism
+	// - Matches production-recommended configuration for high-traffic scenarios
 	err = (&notification.NotificationRequestReconciler{
 		Client:               k8sManager.GetClient(),
 		APIReader:            k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
@@ -466,7 +472,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
 		StatusManager:        statusManager,                                             // Pattern 2: Status Manager
 		DeliveryOrchestrator: deliveryOrchestrator,                                      // Pattern 3: Delivery Orchestrator
-	}).SetupWithManager(k8sManager)
+	}).SetupWithManager(k8sManager, controller.Options{
+		MaxConcurrentReconciles: 5, // DD-AUTH-014: 5 workers for extreme load tests
+	})
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Starting the controller manager")

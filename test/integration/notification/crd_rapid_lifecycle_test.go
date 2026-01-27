@@ -344,9 +344,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					// Create
 					if err := k8sClient.Create(ctx, notif); err == nil {
 					// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
-					// DD-AUTH-014: Increased timeout from 2s to 10s to account for:
-					// - Single-worker controller under load (20 concurrent create-delete operations)
-					// - Real K8s authentication adds latency to status updates
+					// DD-AUTH-014: 2s timeout sufficient with 5 concurrent workers
 					// Wait for controller to start processing (status phase set) before deletion
 					processed := Eventually(func() bool {
 						var checkNotif notificationv1alpha1.NotificationRequest
@@ -356,7 +354,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						}
 						// Processing started when phase is set
 						return checkNotif.Status.Phase != ""
-					}, 10*time.Second, 50*time.Millisecond).Should(BeTrue())
+					}, 2*time.Second, 50*time.Millisecond).Should(BeTrue())
 
 						// Only delete if we confirmed processing started (rapid lifecycle stress test)
 						if processed {
