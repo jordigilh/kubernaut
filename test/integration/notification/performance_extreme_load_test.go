@@ -115,14 +115,18 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 
 					Expect(k8sClient.Create(ctx, notif)).Should(Succeed())
 
-					// BEHAVIOR: Wait for delivery completion
-					Eventually(func() notificationv1alpha1.NotificationPhase {
-						_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
-						return notif.Status.Phase
-					}, 30*time.Second, 500*time.Millisecond).Should(Or(
-						Equal(notificationv1alpha1.NotificationPhaseSent),
-						Equal(notificationv1alpha1.NotificationPhaseFailed),
-					))
+			// BEHAVIOR: Wait for delivery completion
+			// DD-AUTH-014: Increased timeout from 30s to 60s to account for:
+			// - Real Kubernetes authentication (TokenReview + SAR API calls)
+			// - Single-worker controller under extreme load (100 concurrent notifications)
+			// - Queue saturation: 94 concurrent reconciles observed in testing
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				return notif.Status.Phase
+			}, 60*time.Second, 500*time.Millisecond).Should(Or(
+				Equal(notificationv1alpha1.NotificationPhaseSent),
+				Equal(notificationv1alpha1.NotificationPhaseFailed),
+			))
 
 					// CORRECTNESS: Track success/failure
 					if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
@@ -233,14 +237,18 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 
 					Expect(k8sClient.Create(ctx, notif)).Should(Succeed())
 
-					// BEHAVIOR: Wait for delivery completion
-					Eventually(func() notificationv1alpha1.NotificationPhase {
-						_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
-						return notif.Status.Phase
-					}, 30*time.Second, 500*time.Millisecond).Should(Or(
-						Equal(notificationv1alpha1.NotificationPhaseSent),
-						Equal(notificationv1alpha1.NotificationPhaseFailed),
-					))
+			// BEHAVIOR: Wait for delivery completion
+			// DD-AUTH-014: Increased timeout from 30s to 60s to account for:
+			// - Real Kubernetes authentication (TokenReview + SAR API calls)
+			// - Single-worker controller under extreme load (100 concurrent notifications)
+			// - Queue saturation: 94 concurrent reconciles observed in testing
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				return notif.Status.Phase
+			}, 60*time.Second, 500*time.Millisecond).Should(Or(
+				Equal(notificationv1alpha1.NotificationPhaseSent),
+				Equal(notificationv1alpha1.NotificationPhaseFailed),
+			))
 
 					// CORRECTNESS: Track success/failure
 					if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {

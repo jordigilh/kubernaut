@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -56,9 +55,8 @@ import (
 
 var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", func() {
 	var (
-		dsClient       *ogenclient.Client
-		dataStorageURL string
-		queryCtx       context.Context
+		dsClient *ogenclient.Client
+		queryCtx context.Context
 	)
 
 	// Setup Data Storage REST API client for querying audit events
@@ -66,17 +64,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	BeforeEach(func() {
 		queryCtx = context.Background()
 
-		// Get Data Storage URL from environment or use NT integration port
-		// MUST match the port in suite_test.go (line 252)
-		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
-		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18096" // NT integration port (IPv4 explicit, matches suite_test.go)
-		}
-
-		// Create REST API client for querying audit events
-		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage REST API client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		// Creating a new client here would bypass authentication!
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	// Helper function to query audit events from Data Storage REST API

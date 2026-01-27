@@ -58,7 +58,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
 )
@@ -82,6 +82,9 @@ var (
 
 	// Audit store for testing controller audit emission (Defense-in-Depth Layer 4)
 	realAuditStore audit.AuditStore // REAL audit store (DD-AUDIT-003 mandate compliance)
+
+	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
+	dsClients *integration.AuthenticatedDataStorageClients
 
 	// DeliveryOrchestrator exposed for mock service injection in tests
 	// Tests can RegisterChannel() and UnregisterChannel() to inject mocks
@@ -170,21 +173,89 @@ func TestNotificationIntegration(t *testing.T) {
 }
 
 var _ = SynchronizedBeforeSuite(func() []byte {
-	// Phase 1: Runs ONCE on parallel process #1
-	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
-	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	// ======================================================================
+	// PHASE 1: INFRASTRUCTURE SETUP (ONCE - GLOBAL)
+	// ======================================================================
+	// Runs ONCE on process 1 only
+	// Starts shared infrastructure + envtest for DataStorage auth
+	//
+	// DD-AUTH-014: Real Kubernetes authentication via envtest
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// ======================================================================
+	
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("Starting Notification integration infrastructure (Process #1 only, DD-TEST-002)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("PHASE 1: Infrastructure Setup (DD-TEST-010 + DD-AUTH-014)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("Starting shared infrastructure...")
+	GinkgoWriter.Println("  • Shared envtest (for DataStorage auth)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15440)")
+	GinkgoWriter.Println("  • Redis (port 16385)")
+	GinkgoWriter.Println("  • Data Storage API (port 18096)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	var err error
+
+	// DD-AUTH-014: Start shared envtest for DataStorage auth
+	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
+	
+	// DD-AUTH-014: Force envtest to bind to IPv4 (critical for macOS!)
+	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
+	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
+	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md
+	os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
+	
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+		ControlPlane: envtest.ControlPlane{
+			APIServer: &envtest.APIServer{
+				// Force IPv4 binding (DD-TEST-012)
+				SecureServing: envtest.SecureServing{
+					ListenAddr: envtest.ListenAddr{
+						Address: "127.0.0.1", // NOT "localhost"!
+					},
+				},
+			},
+		},
+	}
+	sharedCfg, err := sharedTestEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(sharedCfg).NotTo(BeNil())
+	
+	GinkgoWriter.Printf("✅ Shared envtest started\n")
+	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
+	GinkgoWriter.Printf("   ℹ️  Forced IPv4 binding (127.0.0.1)\n")
+
+	DeferCleanup(func() {
+		By("Stopping shared envtest")
+		err := sharedTestEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	// DD-AUTH-014: Create ServiceAccount + RBAC for DataStorage access
+	By("Creating ServiceAccount with DataStorage RBAC in shared envtest")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedCfg,
+		"notification-ds-client",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created in shared envtest")
+
+	By("Starting Notification integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, DataStorage
 	// Per DD-TEST-001 v2.6: PostgreSQL=15440, Redis=16385, DS=18096
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:     "notification",
-		PostgresPort:    15440, // DD-TEST-001 v2.2
-		RedisPort:       16385, // DD-TEST-001 v2.2
-		DataStoragePort: 18096, // DD-TEST-001 v2.2
-		MetricsPort:     19096,
-		ConfigDir:       "test/integration/notification/config",
+		ServiceName:       "notification",
+		PostgresPort:      15440, // DD-TEST-001 v2.2
+		RedisPort:         16385, // DD-TEST-001 v2.2
+		DataStoragePort:   18096, // DD-TEST-001 v2.2
+		MetricsPort:       19096,
+		ConfigDir:         "test/integration/notification/config",
+		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
 	}, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
 	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, DataStorage - shared across all processes)")
@@ -194,7 +265,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
-	return []byte{} // No data to share between processes
+	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// DD-AUTH-014: Serialize token for Phase 2 DataStorage client
+	return []byte(authConfig.Token)
 }, func(data []byte) {
 	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
 	// Set up envtest, K8s client, and controller manager per process
@@ -305,19 +380,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			"Per DD-AUDIT-003: Audit infrastructure is MANDATORY\n"+
 			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageURL)
 
-	// Create Data Storage client with OpenAPI generated client (DD-API-001)
-	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testauth.NewMockUserTransport("test-notification@integration.test")
-	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		dataStorageURL,
-		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
-	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
+	// DD-AUTH-014: Parse token from Phase 1 and create authenticated clients
+	token := string(data)
+	if token == "" {
+		Fail("ServiceAccount token from Phase 1 is empty")
+	}
+	GinkgoWriter.Printf("✅ Received ServiceAccount token from Phase 1 (length: %d bytes)\n", len(token))
 
-	// Create REAL buffered audit store
+	// DD-AUTH-014: Create authenticated DataStorage clients
+	// Uses ServiceAccount Bearer token for all DataStorage API calls
+	dsClients = integration.NewAuthenticatedDataStorageClients(
+		dataStorageURL,
+		token,
+		5*time.Second,
+	)
+	GinkgoWriter.Println("✅ Authenticated DataStorage clients created")
+
+	// Create REAL buffered audit store with authenticated client
 	realAuditStore, err = audit.NewBufferedStore(
-		dsClient,
+		dsClients.AuditClient, // ← Authenticated with ServiceAccount token!
 		audit.DefaultConfig(),
 		"notification-controller",
 		ctrl.Log.WithName("audit"),
