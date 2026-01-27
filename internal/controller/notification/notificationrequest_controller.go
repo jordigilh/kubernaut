@@ -30,6 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -786,7 +787,16 @@ func countSuccessfulAttempts(attempts []notificationv1alpha1.DeliveryAttempt) in
 
 // SetupWithManager sets up the controller with the Manager.
 // BR-NOT-067: Watches ConfigMap for routing configuration hot-reload
-func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+//
+// Optional opts parameter allows configuring controller behavior:
+//   - MaxConcurrentReconciles: Number of concurrent workers (default: 1)
+//
+// Example (integration tests with high concurrency):
+//
+//	reconciler.SetupWithManager(mgr, controller.Options{
+//	    MaxConcurrentReconciles: 5,  // 5 workers for 100 concurrent notifications
+//	})
+func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager, opts ...controller.Options) error {
 	// Initialize router with default config if not provided
 	if r.Router == nil {
 		r.Router = routing.NewRouter(ctrl.Log.WithName("routing"))
@@ -798,7 +808,8 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error
 		ctrl.Log.Info("Using default routing config", "error", err)
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	// Build controller with optional configuration
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&notificationv1alpha1.NotificationRequest{}).
 		// BR-NOT-067: Watch ConfigMaps for routing configuration hot-reload
 		Watches(
@@ -808,8 +819,14 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error
 				// Only watch the routing ConfigMap
 				return routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace())
 			})),
-		).
-		Complete(r)
+		)
+
+	// Apply options if provided
+	if len(opts) > 0 {
+		ctrlBuilder = ctrlBuilder.WithOptions(opts[0])
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 // ========================================
