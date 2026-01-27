@@ -62,11 +62,10 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 	)
 
 	BeforeEach(func() {
-		// Create Data Storage OpenAPI client using shared dataStorageBaseURL from suite_test.go
-		// Per DD-TEST-001 v2.2: Avoids brittle hardcoded ports
-		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageBaseURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage OpenAPI client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from shared setup
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		// Creating a new client here would bypass authentication!
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	Context("Gap #7 Scenario 1: Timeout Configuration Error", func() {
