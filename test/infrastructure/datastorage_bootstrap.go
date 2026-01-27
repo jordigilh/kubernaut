@@ -40,6 +40,11 @@ type DSBootstrapConfig struct {
 
 	// Service-specific configuration directory
 	ConfigDir string // Path to DataStorage config.yaml (e.g., "test/integration/gateway/config")
+
+	// EnvtestKubeconfig is the path to kubeconfig for envtest Kubernetes API server (DD-AUTH-014)
+	// If provided, DataStorage will use envtest for TokenReview/SAR validation (real K8s APIs)
+	// Optional: Only needed when using real middleware auth in integration tests
+	EnvtestKubeconfig string // Path to envtest kubeconfig (e.g., "/tmp/envtest-kubeconfig-ds-client.yaml")
 }
 
 // Internal constants - shared across all services, not exposed in config
@@ -439,11 +444,16 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 
 // startDSBootstrapService starts the DataStorage container using a pre-built image
 // The image should be built using BuildDataStorageImage() before calling this function
+//
+// DD-AUTH-014: Option A (macOS) - Bridge network + kubeconfig rewrite to IPv4
+// Requires IPv6 disabled on macOS: sudo networksetup -setv6off Wi-Fi
+// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
 
-	cmd := exec.Command("podman", "run", "-d",
+	// Always use bridge network (--network=host doesn't work on macOS Podman)
+	args := []string{"run", "-d",
 		"--name", infra.DataStorageContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
@@ -455,11 +465,24 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
-		"-e", "CONN_MAX_LIFETIME=30m", // Fix for Notification/WorkflowExecution BeforeSuite failures
+		"-e", "CONN_MAX_LIFETIME=30m",
 		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", infra.RedisContainer),
 		"-e", "PORT=8080",
-		imageName,
-	)
+	}
+
+	// DD-AUTH-014: If EnvtestKubeconfig provided, mount it for real K8s auth
+	if cfg.EnvtestKubeconfig != "" {
+		_, _ = fmt.Fprintf(writer, "   🔐 Mounting envtest kubeconfig (IPv4-rewritten): %s\n", cfg.EnvtestKubeconfig)
+		args = append(args,
+			"-v", fmt.Sprintf("%s:/tmp/kubeconfig:ro", cfg.EnvtestKubeconfig),
+			"-e", "KUBECONFIG=/tmp/kubeconfig",
+			"-e", "POD_NAMESPACE=default",
+		)
+	}
+
+	args = append(args, imageName)
+
+	cmd := exec.Command("podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {

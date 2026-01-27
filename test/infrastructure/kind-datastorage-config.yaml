@@ -2,6 +2,11 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  # DD-AUTH-014: Allocate more resources for API server under SAR middleware load
+  # SAR middleware adds 2 K8s API calls per HTTP request (TokenReview + SAR)
+  # With 12 parallel test processes, API server needs more CPU/memory
+  image: kindest/node:v1.27.3  # Explicit version for reproducibility
+  
   # Expose Data Storage NodePort to host machine
   # This eliminates kubectl port-forward instability
   # Per DD-TEST-001: E2E tests use 25433-28139 range
@@ -22,18 +27,45 @@ nodes:
     kind: ClusterConfiguration
     apiServer:
       extraArgs:
-        # Increase API server rate limits for parallel integration testing
-        # Default max-requests-inflight: 400
-        # Default max-mutating-requests-inflight: 200
-        # With 4 parallel test processes × 100 concurrent requests = 400 QPS
-        # These limits provide 2x headroom for test stability
-        max-requests-inflight: "800"
-        max-mutating-requests-inflight: "400"
+        # DD-AUTH-014: Tuned for SAR middleware with 12 parallel E2E processes
+        # 
+        # Load calculation:
+        # - 12 parallel test processes
+        # - Each HTTP request → 2 K8s API calls (TokenReview + SubjectAccessReview)
+        # - Peak: ~50 HTTP req/sec × 2 = 100 K8s API calls/sec
+        # - Burst scenarios: 12 processes × 20 concurrent requests × 2 API calls = 480 concurrent
+        #
+        # Defaults (too low for SAR middleware):
+        #   max-requests-inflight: 400
+        #   max-mutating-requests-inflight: 200
+        #
+        # DD-AUTH-014 tuning (3x headroom for SAR load):
+        max-requests-inflight: "1200"           # 3x default (400 → 1200)
+        max-mutating-requests-inflight: "600"   # 3x default (200 → 600)
+        
+        # Authentication/Authorization tuning for high TokenReview/SAR load
+        # These prevent queueing delays during burst authentication requests
+        authentication-token-webhook-cache-ttl: "10s"  # Cache TokenReview for 10s (reduces load)
+        authorization-webhook-cache-authorized-ttl: "5m"     # Cache SAR "allowed" for 5min
+        authorization-webhook-cache-unauthorized-ttl: "30s"  # Cache SAR "denied" for 30s
+        
+        # Event rate limiting (prevent event spam from overwhelming etcd)
+        event-ttl: "1h"                          # Shorter event retention for E2E
+    
+    etcd:
+      local:
+        extraArgs:
+          # Increase etcd performance for high API server load
+          # DD-AUTH-014: SAR checks generate more etcd reads/writes
+          quota-backend-bytes: "8589934592"      # 8GB quota (default: 2GB)
+          snapshot-count: "100000"               # Snapshot every 100k ops (default: 10k)
+          heartbeat-interval: "500"              # 500ms heartbeat (default: 100ms, reduce overhead)
+          election-timeout: "5000"               # 5s election timeout (default: 1s)
+    
     controllerManager:
       extraArgs:
         # Increase controller manager QPS for CRD operations
-        # Default kube-api-qps: 20, kube-api-burst: 30
-        # Higher limits prevent CRD creation delays during parallel testing
+        # DD-AUTH-014: Higher limits prevent delays during parallel testing
         kube-api-qps: "100"
         kube-api-burst: "200"
 
