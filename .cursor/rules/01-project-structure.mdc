@@ -37,6 +37,49 @@ The project follows a layered architecture with clear separation of concerns:
 - Use interfaces defined in [pkg/workflow/engine/interfaces.go](mdc:pkg/workflow/engine/interfaces.go)
 - Follow dependency injection patterns established in [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go)
 
+## Documentation Structure
+- **Complete Guide**: [docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md](mdc:docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md) - Authoritative reference for documentation organization
+
+### Key Documentation Directories
+
+- **[docs/architecture/decisions/](mdc:docs/architecture/decisions/)** - Permanent design decisions (DD-*, ADR-*)
+  - Format: `DD-[CATEGORY]-NNN-title.md` (e.g., `DD-AUTH-013-http-status-codes.md`)
+  - Use for: Architectural decisions with long-term impact, technical choices affecting multiple services
+  - Examples: DD-AUTH-011 (RBAC strategy), DD-WORKFLOW-002 (workflow catalog), ADR-036 (auth/authz strategy)
+
+- **[docs/handoff/](mdc:docs/handoff/)** - Session summaries and implementation status (~2,776 files)
+  - Format: `[SERVICE]_[TOPIC]_[STATUS]_[DATE].md` (e.g., `DS_E2E_COMPLETE_JAN_26_2026.md`)
+  - Use for: AI session summaries, implementation status, triage reports, work-in-progress snapshots
+  - **CRITICAL**: AI assistants must ALWAYS create session handoffs here, NEVER in project root
+
+- **[docs/development/](mdc:docs/development/)** - Development guides and standards
+  - `methodology/` - APDC, TDD, development processes
+  - `business-requirements/` - BR-* requirements
+  - `testing/` - Test plans and strategies
+  
+- **[docs/testing/](mdc:docs/testing/)** - Test documentation and scenarios
+
+- **[docs/plans/](mdc:docs/plans/)** - Implementation plans and roadmaps
+
+- **[docs/services/](mdc:docs/services/)** - Service-specific documentation
+
+### Documentation Rules for AI Assistants
+
+**CRITICAL**: 
+- ❌ **NEVER** create documents in project root (except README.md, LICENSE, PROJECT)
+- ✅ **Session summaries** → `docs/handoff/[TOPIC]_[STATUS]_[DATE].md`
+- ✅ **Design decisions** → `docs/architecture/decisions/DD-[CATEGORY]-NNN-title.md`
+- ✅ **Triage reports** → `docs/handoff/` or `docs/triage/`
+
+**Quick Decision**:
+```
+Design decision with long-term impact? → docs/architecture/decisions/
+Session summary or implementation status? → docs/handoff/
+Service-specific guide? → docs/services/[service-name]/
+Development standard? → docs/development/
+Temporary triage? → docs/triage/ (later consolidate)
+```
+
 ## Build System
 - Use [Makefile](mdc:Makefile) for all build operations
 - Development workflow: `make bootstrap-dev`, `make test-integration-dev`, `make cleanup-dev`
