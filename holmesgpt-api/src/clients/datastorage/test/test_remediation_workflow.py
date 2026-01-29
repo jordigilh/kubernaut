@@ -53,7 +53,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                     signal_type = 'OOMKilled', 
                     severity = 'critical', 
                     component = 'pod', 
-                    environment = 'production', 
+                    environment = ["staging","production"], 
                     priority = 'P0', ),
                 custom_labels = {"team":["name=payments"],"constraint":["cost-constrained","stateful-safe"]},
                 detected_labels = datastorage.models.detected_labels.DetectedLabels(
@@ -100,7 +100,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                     signal_type = 'OOMKilled', 
                     severity = 'critical', 
                     component = 'pod', 
-                    environment = 'production', 
+                    environment = ["staging","production"], 
                     priority = 'P0', ),
                 status = 'active',
         )

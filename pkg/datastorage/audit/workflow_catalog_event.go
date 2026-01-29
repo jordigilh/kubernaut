@@ -68,7 +68,8 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	if workflow.Labels.Component != "" {
 		labelsMap["component"] = workflow.Labels.Component
 	}
-	if workflow.Labels.Environment != "" {
+	// DD-WORKFLOW-001 v2.5: Environment is []string
+	if len(workflow.Labels.Environment) > 0 {
 		labelsMap["environment"] = workflow.Labels.Environment
 	}
 	if workflow.Labels.Priority != "" {

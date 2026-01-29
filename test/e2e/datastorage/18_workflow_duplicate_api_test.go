@@ -177,7 +177,7 @@ func createTestWorkflowRequest(workflowName, version string) *ogenclient.Remedia
 	// Create mandatory labels (per ADR-033)
 	labels := ogenclient.MandatoryLabels{
 		Component:   "pod",
-		Environment: "test",
+		Environment: []ogenclient.MandatoryLabelsEnvironmentItem{ogenclient.MandatoryLabelsEnvironmentItem("test")},
 		Priority:    "P2",
 		Severity:    "medium",
 		SignalType:  "OOMKilled",

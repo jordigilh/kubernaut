@@ -1835,7 +1835,7 @@ components:
           example: "pod"
         environment:
           type: string
-          description: "Environment (mandatory: production, staging, development)"
+          description: "Environment filter (mandatory, single value from Signal Processing)"
           example: "production"
         priority:
           type: string
@@ -1855,7 +1855,7 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)"
+      description: "5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)"
       required:
         - signal_type
         - severity
@@ -1877,9 +1877,13 @@ components:
           description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"
           example: "pod"
         environment:
-          type: string
-          description: "Target environment (production, staging, development, test, * for any)"
-          example: "production"
+          type: array
+          items:
+            type: string
+            enum: ["production", "staging", "development", "test", "*"]
+          minItems: 1
+          description: "Target environments (workflow can declare multiple, '*' matches all)"
+          example: ["staging", "production"]
         priority:
           type: string
           description: "Business priority level (P0, P1, P2, P3, * for any)"

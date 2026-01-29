@@ -266,8 +266,9 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		filters.Status = []string{status}
 	}
 
-	// DD-WORKFLOW-001 v1.6: 5 mandatory labels (environment and priority are now mandatory)
-	// Environment filter (mandatory)
+	// DD-WORKFLOW-001 v2.4: Multi-environment support (accepts multiple values)
+	// Parse environment filter from query parameters
+	// DD-WORKFLOW-001 v2.5: Single environment value (workflows store arrays, searches use single value)
 	if env := r.URL.Query().Get("environment"); env != "" {
 		filters.Environment = env
 	}
@@ -703,6 +704,7 @@ func (h *Handler) validateWorkflowSearchRequest(req *models.WorkflowSearchReques
 	if req.Filters.Component == "" {
 		return fmt.Errorf("filters.component is required")
 	}
+	// DD-WORKFLOW-001 v2.5: Environment validation (single value required)
 	if req.Filters.Environment == "" {
 		return fmt.Errorf("filters.environment is required")
 	}

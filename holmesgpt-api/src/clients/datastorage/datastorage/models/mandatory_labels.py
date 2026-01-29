@@ -21,6 +21,7 @@ import json
 from typing import Any, ClassVar, Dict, List
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
+from typing_extensions import Annotated
 try:
     from typing import Self
 except ImportError:
@@ -28,12 +29,12 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)
+    5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)
     """ # noqa: E501
     signal_type: StrictStr = Field(description="Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)")
     severity: StrictStr = Field(description="Severity level this workflow is designed for")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
-    environment: StrictStr = Field(description="Target environment (production, staging, development, test, * for any)")
+    environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
     __properties: ClassVar[List[str]] = ["signal_type", "severity", "component", "environment", "priority"]
 
@@ -42,6 +43,14 @@ class MandatoryLabels(BaseModel):
         """Validates the enum"""
         if value not in ('critical', 'high', 'medium', 'low'):
             raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low')")
+        return value
+
+    @field_validator('environment')
+    def environment_validate_enum(cls, value):
+        """Validates the enum"""
+        for i in value:
+            if i not in ('production', 'staging', 'development', 'test', '*'):
+                raise ValueError("each list item must be one of ('production', 'staging', 'development', 'test', '*')")
         return value
 
     @field_validator('priority')

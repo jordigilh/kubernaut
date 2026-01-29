@@ -313,11 +313,30 @@ if ENV_MODE == "production":
     # Production: Real Kubernetes TokenReview + SAR APIs
     # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
     try:
-        authenticator = K8sAuthenticator()
-        authorizer = K8sAuthorizer()
+        # DD-AUTH-014: Support file-based kubeconfig for integration tests
+        # If KUBECONFIG env var is set, load from file (integration tests with envtest)
+        # Otherwise, load in-cluster config (production)
+        import os
+        from kubernetes import client as k8s_client, config as k8s_config
+        
+        if os.getenv("KUBECONFIG"):
+            logger.info({
+                "event": "loading_kubeconfig",
+                "path": os.getenv("KUBECONFIG"),
+                "mode": "file-based (integration tests)"
+            })
+            k8s_config.load_kube_config()
+            api_client = k8s_client.ApiClient()
+            authenticator = K8sAuthenticator(api_client)
+            authorizer = K8sAuthorizer(api_client)
+        else:
+            logger.info({"event": "loading_incluster_config", "mode": "production"})
+            authenticator = K8sAuthenticator()
+            authorizer = K8sAuthorizer()
+        
         logger.info({
             "event": "auth_initialized",
-            "mode": "production",
+            "mode": "production" if not os.getenv("KUBECONFIG") else "integration",
             "authenticator": "K8sAuthenticator",
             "authorizer": "K8sAuthorizer"
         })

@@ -39,7 +39,7 @@ class TestMandatoryLabels(unittest.TestCase):
                 signal_type = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
-                environment = 'production',
+                environment = ["staging","production"],
                 priority = 'P0'
             )
         else:
@@ -47,7 +47,7 @@ class TestMandatoryLabels(unittest.TestCase):
                 signal_type = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
-                environment = 'production',
+                environment = ["staging","production"],
                 priority = 'P0',
         )
         """

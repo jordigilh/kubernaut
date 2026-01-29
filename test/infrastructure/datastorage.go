@@ -486,13 +486,19 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service with OAuth2-Proxy and custom NodePort (TD-E2E-001 Phase 1 - image from quay.io)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy from quay.io (NodePort %d)...\n", nodePort)
+	// 5. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
+	// 6. Deploy Data Storage Service with middleware-based auth and custom NodePort (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
-	// 6. Wait for all services ready
+	// 7. Wait for all services ready
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)

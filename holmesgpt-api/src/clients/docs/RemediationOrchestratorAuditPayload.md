@@ -1,6 +1,6 @@
 # RemediationOrchestratorAuditPayload
 
-Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned)
+Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
 
 ## Properties
 
@@ -17,6 +17,19 @@ Name | Type | Description | Notes
 **from_phase** | **str** | Phase being transitioned from | [optional] 
 **to_phase** | **str** | Phase being transitioned to | [optional] 
 **transition_reason** | **str** | Reason for the transition | [optional] 
+**rar_name** | **str** | Name of the RemediationApprovalRequest | [optional] 
+**required_by** | **datetime** | Approval deadline (RFC3339) | [optional] 
+**workflow_id** | **str** | Selected workflow identifier | [optional] 
+**confidence_str** | **str** | Workflow selection confidence as string | [optional] 
+**decision** | **str** | Approval decision | [optional] 
+**approved_by** | **str** | User who approved the request | [optional] 
+**rejected_by** | **str** | User who rejected the request | [optional] 
+**rejection_reason** | **str** | Reason for rejection | [optional] 
+**message** | **str** | Additional message or context for the event | [optional] 
+**reason** | **str** | Reason for manual review or other actions | [optional] 
+**sub_reason** | **str** | Sub-categorization of the reason | [optional] 
+**notification_name** | **str** | Associated notification name | [optional] 
+**timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 
 ## Example
 

@@ -165,7 +165,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
 					Component:   "deployment",                          // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -216,7 +216,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
 					Component:   "deployment",                          // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -275,7 +275,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
 					Component:   "deployment",                          // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}

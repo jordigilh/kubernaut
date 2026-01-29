@@ -3,7 +3,6 @@
 package client
 
 import (
-	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
@@ -60,30 +59,26 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 		return nil
 
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(401)
 		span.SetStatus(codes.Error, http.StatusText(401))
 
-		writer := w
-		if closer, ok := response.Data.(io.Closer); ok {
-			defer closer.Close()
-		}
-		if _, err := io.Copy(writer, response); err != nil {
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
 			return errors.Wrap(err, "write")
 		}
 
 		return nil
 
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(403)
 		span.SetStatus(codes.Error, http.StatusText(403))
 
-		writer := w
-		if closer, ok := response.Data.(io.Closer); ok {
-			defer closer.Close()
-		}
-		if _, err := io.Copy(writer, response); err != nil {
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
 			return errors.Wrap(err, "write")
 		}
 
@@ -152,30 +147,26 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 		return nil
 
 	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(401)
 		span.SetStatus(codes.Error, http.StatusText(401))
 
-		writer := w
-		if closer, ok := response.Data.(io.Closer); ok {
-			defer closer.Close()
-		}
-		if _, err := io.Copy(writer, response); err != nil {
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
 			return errors.Wrap(err, "write")
 		}
 
 		return nil
 
 	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden:
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(403)
 		span.SetStatus(codes.Error, http.StatusText(403))
 
-		writer := w
-		if closer, ok := response.Data.(io.Closer); ok {
-			defer closer.Close()
-		}
-		if _, err := io.Copy(writer, response); err != nil {
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
 			return errors.Wrap(err, "write")
 		}
 

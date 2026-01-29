@@ -36,23 +36,21 @@
             }
           },
           "401": {
-            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-013)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-013 (HTTP Status Codes for OAuth-Proxy)",
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "text/html": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "string",
-                  "example": "<html><body><h1>401 Authorization Required</h1></body></html>"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
           },
           "403": {
-            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-006, DD-AUTH-013)\n\n**Cause**: ServiceAccount lacks 'get' permission on holmesgpt-api resource.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-006 (HAPI OAuth-Proxy), DD-AUTH-013 (HTTP Status Codes)",
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "text/html": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "string",
-                  "example": "<html><body><h1>403 Forbidden</h1></body></html>"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
@@ -110,23 +108,21 @@
             }
           },
           "401": {
-            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-013)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-013 (HTTP Status Codes for OAuth-Proxy)",
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "text/html": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "string",
-                  "example": "<html><body><h1>401 Authorization Required</h1></body></html>"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
           },
           "403": {
-            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: ose-oauth-proxy sidecar (DD-AUTH-006, DD-AUTH-013)\n\n**Cause**: ServiceAccount lacks 'get' permission on holmesgpt-api resource.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-006 (HAPI OAuth-Proxy), DD-AUTH-013 (HTTP Status Codes)",
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "text/html": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "string",
-                  "example": "<html><body><h1>403 Forbidden</h1></body></html>"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
@@ -435,6 +431,40 @@
         ],
         "title": "ExecutionFailure",
         "description": "Structured failure information using Kubernetes reason codes.\n\nCRITICAL: The 'reason' field uses canonical Kubernetes reason codes as the API contract.\nThis is NOT natural language - it's a structured enum-like value.\n\nValid reason codes include:\n- Resource: OOMKilled, InsufficientCPU, InsufficientMemory, Evicted\n- Scheduling: FailedScheduling, Unschedulable\n- Image: ImagePullBackOff, ErrImagePull, InvalidImageName\n- Execution: DeadlineExceeded, BackoffLimitExceeded, Error\n- Permission: Unauthorized, Forbidden\n- Volume: FailedMount, FailedAttachVolume\n- Node: NodeNotReady, NodeUnreachable\n- Network: NetworkNotReady"
+      },
+      "HTTPError": {
+        "type": "object",
+        "description": "RFC 7807 Problem Details for HTTP APIs - Authentication/Authorization errors.\nSee: https://www.rfc-editor.org/rfc/rfc7807.html",
+        "required": ["type", "title", "status"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "description": "URI reference identifying the problem type",
+            "example": "https://kubernaut.io/problems/authentication-failed"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short, human-readable summary of the problem type",
+            "example": "Authentication Failed"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTP status code for this occurrence",
+            "example": 401
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation specific to this occurrence",
+            "example": "Token cannot be empty"
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri",
+            "description": "URI reference identifying the specific occurrence of the problem"
+          }
+        }
       },
       "HTTPValidationError": {
         "properties": {

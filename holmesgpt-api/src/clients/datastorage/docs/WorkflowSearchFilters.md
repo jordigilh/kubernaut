@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **signal_type** | **str** | Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.) | 
 **severity** | **str** | Severity level (mandatory: critical, high, medium, low) | 
 **component** | **str** | Component type (mandatory: pod, node, deployment, etc.) | 
-**environment** | **str** | Environment (mandatory: production, staging, development) | 
+**environment** | **str** | Environment filter (mandatory, single value from Signal Processing) | 
 **priority** | **str** | Priority level (mandatory: P0, P1, P2, P3) | 
 **custom_labels** | **Dict[str, List[str]]** | Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format | [optional] 
 **detected_labels** | [**DetectedLabels**](DetectedLabels.md) |  | [optional] 

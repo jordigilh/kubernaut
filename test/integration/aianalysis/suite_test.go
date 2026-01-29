@@ -51,6 +51,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,6 +65,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -82,9 +85,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
 // DD-TEST-010: Per-process variables (no shared state between processes)
@@ -95,6 +100,9 @@ var (
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
+
+	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
+	dsClients *integration.AuthenticatedDataStorageClients
 
 	// Per-process HAPI client (each process gets its own)
 	realHGClient *hgclient.HolmesGPTClient
@@ -146,9 +154,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("AIAnalysis Integration - DD-TEST-010 Multi-Controller Pattern")
+	GinkgoWriter.Println("AIAnalysis Integration - DD-TEST-010 + DD-AUTH-014")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("Phase 1: Infrastructure Startup (process 1 only)")
+	GinkgoWriter.Println("  • Shared envtest (for DataStorage auth)")
 	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
@@ -160,6 +169,114 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  • Controller manager + AIAnalysis reconciler")
 	GinkgoWriter.Println("  • Handlers, metrics, audit store")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// DD-AUTH-014: Start shared envtest FIRST (before building images)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
+	
+	// Force envtest to bind to IPv4 (critical for macOS!)
+	os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
+	
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+		ControlPlane: envtest.ControlPlane{
+			APIServer: &envtest.APIServer{
+				SecureServing: envtest.SecureServing{
+					ListenAddr: envtest.ListenAddr{
+						Address: "127.0.0.1", // Force IPv4 binding (DD-TEST-012)
+					},
+				},
+			},
+		},
+	}
+	sharedCfg, err := sharedTestEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(sharedCfg).NotTo(BeNil())
+	
+	GinkgoWriter.Printf("✅ Shared envtest started\n")
+	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
+
+	DeferCleanup(func() {
+		By("Stopping shared envtest")
+		err := sharedTestEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	// Create ServiceAccount + RBAC for DataStorage access
+	// This creates:
+	// - aianalysis-ds-client ServiceAccount (for AIAnalysis controller to call DataStorage)
+	// - datastorage-service ServiceAccount (for DataStorage to validate tokens)
+	By("Creating ServiceAccount with DataStorage RBAC in shared envtest")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedCfg,
+		"aianalysis-ds-client",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for AIAnalysis → DataStorage")
+	
+	// DD-AUTH-014: Grant AIAnalysis controller SA permission to call HAPI
+	// In production: holmesgpt-api-client ClusterRole grants `get` verb on holmesgpt-api resource
+	// In integration: Create similar RBAC for envtest
+	By("Granting AIAnalysis controller SA permission to call HAPI")
+	k8sClient, err := client.New(sharedCfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	
+	hapiClientRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "holmesgpt-api-client",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"services"},
+				ResourceNames: []string{"holmesgpt-api-service"}, // Must match HAPI middleware config (main.py)
+				Verbs: []string{"create"}, // HAPI checks "create" verb (default in main.py)
+			},
+		},
+	}
+	err = k8sClient.Create(context.Background(), hapiClientRole)
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
+	
+	hapiClientBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "aianalysis-holmesgpt-api-client",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "holmesgpt-api-client",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "aianalysis-ds-client",
+				Namespace: "default",
+			},
+		},
+	}
+	err = k8sClient.Create(context.Background(), hapiClientBinding)
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
+	GinkgoWriter.Println("✅ AIAnalysis controller granted HAPI access permissions")
+	
+	// DD-AUTH-014: Create ServiceAccount for HAPI service (for TokenReview/SAR validation)
+	// HAPI is an HTTP server (like DataStorage) that validates incoming Bearer tokens
+	By("Creating ServiceAccount for HAPI service with TokenReview/SAR permissions")
+	hapiServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
+		sharedCfg,
+		"holmesgpt-service",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for HAPI → envtest")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
@@ -211,14 +328,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	By("Starting AIAnalysis integration infrastructure (PostgreSQL, Redis, DataStorage)")
 	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
-	var err error
-	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:     "aianalysis",
-		PostgresPort:    15438, // DD-TEST-001 v2.2
-		RedisPort:       16384, // DD-TEST-001 v2.2
-		DataStoragePort: 18095, // DD-TEST-001 v2.2
-		MetricsPort:     19095,
-		ConfigDir:       "test/integration/aianalysis/config",
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:       "aianalysis",
+		PostgresPort:      15438, // DD-TEST-001 v2.2
+		RedisPort:         16384, // DD-TEST-001 v2.2
+		DataStoragePort:   18095, // DD-TEST-001 v2.2
+		MetricsPort:       19095,
+		ConfigDir:         "test/integration/aianalysis/config",
+		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
@@ -228,12 +345,25 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	// DD-AUTH-014: Create authenticated DataStorage client for workflow seeding
+	By("Creating authenticated DataStorage client for workflow seeding")
+	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
+	seedClient, err := ogenclient.NewClient(
+		dataStorageURL,
+		ogenclient.WithClient(&http.Client{
+			Transport: testauth.NewServiceAccountTransport(authConfig.Token),
+			Timeout:   30 * time.Second,
+		}),
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage client")
+	GinkgoWriter.Println("✅ Authenticated DataStorage client created for workflow seeding")
+
 	// Seed test workflows into DataStorage BEFORE starting Mock LLM
 	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
 	// Must seed workflows first so Mock LLM can load UUIDs at startup
-	By("Seeding test workflows into DataStorage")
-	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	// DD-AUTH-014: Now uses authenticated client
+	By("Seeding test workflows into DataStorage (with authentication)")
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
 	// Write Mock LLM config file with workflow UUIDs
@@ -286,14 +416,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Env: map[string]string{
 			"LLM_ENDPOINT":     infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig), // http://mock-llm-aianalysis:8080 (container-to-container)
 			"LLM_MODEL":        "mock-model",
-			"LLM_PROVIDER":     "openai",                             // Required by litellm
-			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
-			"DATA_STORAGE_URL": "http://host.containers.internal:18095", // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
+			"LLM_PROVIDER":     "openai",                                  // Required by litellm
+			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
+			"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
+			"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real auth with envtest (same as DataStorage pattern)
+			"POD_NAMESPACE":    "default",                                 // Required for K8s client
 		},
 		Volumes: map[string]string{
-			hapiConfigDir: "/etc/holmesgpt:ro", // Mount HAPI config directory
+			hapiConfigDir:                          "/etc/holmesgpt:ro",      // Mount HAPI config directory
+			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro", // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
 		},
 		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
@@ -324,12 +457,19 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
 	GinkgoWriter.Println("")
 
-	// DD-TEST-010: Phase 1 → Phase 2 data passing
-	// Serialize workflowUUIDs map so ALL processes can access actual UUIDs
-	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
-	workflowUUIDsJSON, err := json.Marshal(workflowUUIDs)
-	Expect(err).ToNot(HaveOccurred(), "workflowUUIDs must serialize for Phase 2")
-	return workflowUUIDsJSON
+	// DD-AUTH-014 + DD-TEST-010: Phase 1 → Phase 2 data passing
+	// Serialize BOTH token and workflowUUIDs for ALL processes
+	type Phase1Data struct {
+		Token         string            `json:"token"`
+		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
+	}
+	phase1Data := Phase1Data{
+		Token:         authConfig.Token,
+		WorkflowUUIDs: workflowUUIDs,
+	}
+	phase1DataJSON, err := json.Marshal(phase1Data)
+	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
+	return phase1DataJSON
 }, func(specCtx SpecContext, data []byte) {
 	// ═══════════════════════════════════════════════════════════════════════════════
 	// Phase 2: Per-Process Controller Environment (ALL Processes)
@@ -337,14 +477,26 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per DD-TEST-010: Each process gets its own controller, envtest, metrics, etc.
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// DD-TEST-010: Deserialize workflow UUIDs from Phase 1
-	// All processes receive the same workflow UUID mapping for test assertions
-	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
-	deserializeErr := json.Unmarshal(data, &workflowUUIDs)
-	Expect(deserializeErr).ToNot(HaveOccurred(), "workflowUUIDs must deserialize from Phase 1")
+	// DD-AUTH-014 + DD-TEST-010: Deserialize token and workflow UUIDs from Phase 1
+	type Phase1Data struct {
+		Token         string            `json:"token"`
+		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
+	}
+	var phase1Data Phase1Data
+	deserializeErr := json.Unmarshal(data, &phase1Data)
+	Expect(deserializeErr).ToNot(HaveOccurred(), "Phase 1 data must deserialize successfully")
+	
+	// Extract values
+	token := phase1Data.Token
+	workflowUUIDs = phase1Data.WorkflowUUIDs
+	
+	if token == "" {
+		Fail("ServiceAccount token from Phase 1 is empty")
+	}
 
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
+	GinkgoWriter.Printf("✅ [Process %d] Received ServiceAccount token (length: %d bytes)\n", processNum, len(token))
 	GinkgoWriter.Printf("✅ [Process %d] Received %d workflow UUID mappings from Phase 1\n", processNum, len(workflowUUIDs))
 
 	// Declare Phase 2 variables
@@ -404,37 +556,33 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	testMetrics = metrics.NewMetricsWithRegistry(testRegistry)
 
 	By(fmt.Sprintf("[Process %d] Creating per-process audit store", processNum))
-	// Each process connects to shared DataStorage (from Phase 1)
-	// but maintains its own buffer and client
-	auditMockTransport := testauth.NewMockUserTransport(
-		fmt.Sprintf("test-aianalysis@integration.test-p%d", processNum),
-	)
-	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
+	// DD-AUTH-014: Create authenticated DataStorage clients (assign to global variable)
+	// Each process gets its own client but uses the same ServiceAccount token from Phase 1
+	dsClients = integration.NewAuthenticatedDataStorageClients(
+		"http://127.0.0.1:18095", // AIAnalysis integration test DS port
+		token,
 		5*time.Second,
-		auditMockTransport,
 	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
+	GinkgoWriter.Printf("✅ [Process %d] Authenticated DataStorage clients created\n", processNum)
 
 	auditConfig := audit.DefaultConfig()
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+	auditStore, err = audit.NewBufferedStore(dsClients.AuditClient, auditConfig, "aianalysis", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
 
 	// Create audit client for handlers
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
-	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client", processNum))
-	// Each process gets its own HAPI HTTP client (connects to shared HAPI service)
-	hapiMockTransport := testauth.NewMockUserTransport(
-		fmt.Sprintf("aianalysis-service@integration.test-p%d", processNum),
-	)
+	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client with authentication", processNum))
+	// DD-AUTH-014: HAPI middleware requires Bearer token even in ENV_MODE=integration
+	// Use ServiceAccount transport (HAPI will mock-validate the token)
+	hapiAuthTransport := testauth.NewServiceAccountTransport(token)
 	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
-	}, hapiMockTransport)
+	}, hapiAuthTransport)
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))

@@ -210,8 +210,8 @@ type WorkflowSearchFilters struct {
 	Component string `json:"component" validate:"required"`
 
 	// Environment filters by deployment environment (MANDATORY)
-	// Example: "production", "staging", "development", "test"
-	// DD-WORKFLOW-001 v1.4: Moved from optional to mandatory
+	// Source: Single value from Signal Processing
+	// DD-WORKFLOW-001 v2.5: Single string (searches workflows with array containing this value)
 	Environment string `json:"environment" validate:"required"`
 
 	// Priority filters by priority level (MANDATORY)

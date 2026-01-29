@@ -244,7 +244,7 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 			SignalType:  wf.SignalType,
 			Severity:    severity,
 			Component:   wf.Component,
-			Environment: wf.Environment,
+			Environment: []ogenclient.MandatoryLabelsEnvironmentItem{ogenclient.MandatoryLabelsEnvironmentItem(wf.Environment)}, // DD-WORKFLOW-001 v2.5: Environment is []string
 			Priority:    priority,
 		},
 		Status: "active",
