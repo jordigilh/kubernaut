@@ -268,6 +268,14 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to deploy service RBAC: %w", err)
 	}
 
+	// 4c2. Create RoleBinding for Gateway ServiceAccount to access DataStorage (DD-AUTH-014)
+	// This grants Gateway pod permission to emit audit events to DataStorage
+	// Without this, Gateway's audit client will get 403 Forbidden from DataStorage middleware
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for Gateway → DataStorage access (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "gateway", writer); err != nil {
+		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
+	}
+
 	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
@@ -431,6 +439,13 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Data Storage infrastructure deployed")
+
+	// PHASE 5: Create RoleBinding for Gateway ServiceAccount to access DataStorage (DD-AUTH-014)
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Creating RoleBinding for Gateway → DataStorage access (DD-AUTH-014)...")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "gateway", writer); err != nil {
+		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Gateway can now emit audit events to DataStorage")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Gateway WITH COVERAGE (requires DataStorage)
@@ -611,6 +626,12 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	// 3c. Create RoleBinding for Gateway ServiceAccount to access DataStorage (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for Gateway → DataStorage access (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "gateway", writer); err != nil {
+		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -1007,7 +1028,8 @@ data:
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
       # Service name: data-storage-service (matches production, required for SAR)
-      data_storage_url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      # Port 8081: DataStorage container port (Service also exposes 8081)
+      data_storage_url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081"
 
     processing:
       deduplication:
