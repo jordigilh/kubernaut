@@ -224,11 +224,19 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 3 Duration: %.1f seconds\n", phase3Duration.Seconds())
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3.5: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintf(writer, "\n🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	// Step 1: Deploy DataStorage ServiceAccount + auth middleware RBAC
+	// Required for DataStorage to call TokenReview and SubjectAccessReview APIs
+	_, _ = fmt.Fprintf(writer, "\n🔐 Creating DataStorage ServiceAccount + auth middleware RBAC (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RBAC: %w", err)
+	}
+
+	// Step 2: Create RoleBinding for DataStorage to access its own service (client RBAC)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage client access (DD-AUTH-014)...\n")
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
-		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
+		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
