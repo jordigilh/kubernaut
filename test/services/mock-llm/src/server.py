@@ -280,17 +280,15 @@ def load_scenarios_from_file(config_path: str):
             workflow_name_from_config = parts[0]
             env_from_config = parts[1]
 
-            # Match against MOCK_SCENARIOS by workflow_name + environment
+            # Match against MOCK_SCENARIOS by workflow_name (environment-agnostic)
+            # DD-TEST-011 v2.2: Match workflows for all environments (staging/production/test)
+            # Tests may use different environments but expect same Mock LLM scenarios
             for scenario_name, scenario in MOCK_SCENARIOS.items():
                 if not scenario.workflow_name:
                     continue  # Skip scenarios without workflow_name
 
-                # Determine expected environment for this scenario
-                # Default to production, except test_signal uses test
-                expected_env = "test" if scenario_name == "test_signal" else "production"
-
-                # Match if workflow names match AND environments match
-                if scenario.workflow_name == workflow_name_from_config and expected_env == env_from_config:
+                # Match if workflow names match (ignore environment - use workflow from any environment)
+                if scenario.workflow_name == workflow_name_from_config:
                     scenario.workflow_id = workflow_uuid
                     synced_count += 1
                     print(f"  ✅ Loaded {scenario_name} ({workflow_name_from_config}:{env_from_config}) → {workflow_uuid}")

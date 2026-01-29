@@ -3,7 +3,7 @@
 package client
 
 import (
-	"io"
+	"net/url"
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
@@ -379,6 +379,72 @@ func (s *ExecutionFailure) SetExecutionTime(val string) {
 	s.ExecutionTime = val
 }
 
+// RFC 7807 Problem Details for HTTP APIs - Authentication/Authorization errors.
+// See: https://www.rfc-editor.org/rfc/rfc7807.html.
+// Ref: #/components/schemas/HTTPError
+type HTTPError struct {
+	// URI reference identifying the problem type.
+	Type url.URL `json:"type"`
+	// Short, human-readable summary of the problem type.
+	Title string `json:"title"`
+	// HTTP status code for this occurrence.
+	Status int32 `json:"status"`
+	// Human-readable explanation specific to this occurrence.
+	Detail OptString `json:"detail"`
+	// URI reference identifying the specific occurrence of the problem.
+	Instance OptURI `json:"instance"`
+}
+
+// GetType returns the value of Type.
+func (s *HTTPError) GetType() url.URL {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *HTTPError) GetTitle() string {
+	return s.Title
+}
+
+// GetStatus returns the value of Status.
+func (s *HTTPError) GetStatus() int32 {
+	return s.Status
+}
+
+// GetDetail returns the value of Detail.
+func (s *HTTPError) GetDetail() OptString {
+	return s.Detail
+}
+
+// GetInstance returns the value of Instance.
+func (s *HTTPError) GetInstance() OptURI {
+	return s.Instance
+}
+
+// SetType sets the value of Type.
+func (s *HTTPError) SetType(val url.URL) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *HTTPError) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetStatus sets the value of Status.
+func (s *HTTPError) SetStatus(val int32) {
+	s.Status = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *HTTPError) SetDetail(val OptString) {
+	s.Detail = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *HTTPError) SetInstance(val OptURI) {
+	s.Instance = val
+}
+
 // Ref: #/components/schemas/HTTPValidationError
 type HTTPValidationError struct {
 	Detail []ValidationError `json:"detail"`
@@ -475,19 +541,7 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	}
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden struct {
-	Data io.Reader
-}
-
-// Read reads data from the Data reader.
-//
-// Kept to satisfy the io.Reader interface.
-func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) Read(p []byte) (n int, err error) {
-	if s.Data == nil {
-		return 0, io.EOF
-	}
-	return s.Data.Read(p)
-}
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden HTTPError
 
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
@@ -497,19 +551,7 @@ type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPVali
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized struct {
-	Data io.Reader
-}
-
-// Read reads data from the Data reader.
-//
-// Kept to satisfy the io.Reader interface.
-func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) Read(p []byte) (n int, err error) {
-	if s.Data == nil {
-		return 0, io.EOF
-	}
-	return s.Data.Read(p)
-}
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized HTTPError
 
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
@@ -2260,6 +2302,52 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
+// NewOptURI returns new OptURI with value set to v.
+func NewOptURI(v url.URL) OptURI {
+	return OptURI{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptURI is optional url.URL.
+type OptURI struct {
+	Value url.URL
+	Set   bool
+}
+
+// IsSet returns true if OptURI was set.
+func (o OptURI) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptURI) Reset() {
+	var v url.URL
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptURI) SetTo(v url.URL) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptURI) Get() (v url.URL, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptURI) Or(d url.URL) url.URL {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Summary of the original root cause analysis from initial AIAnalysis.
 // Ref: #/components/schemas/OriginalRCA
 type OriginalRCA struct {
@@ -2382,19 +2470,7 @@ func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden struct {
-	Data io.Reader
-}
-
-// Read reads data from the Data reader.
-//
-// Kept to satisfy the io.Reader interface.
-func (s RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) Read(p []byte) (n int, err error) {
-	if s.Data == nil {
-		return 0, io.EOF
-	}
-	return s.Data.Read(p)
-}
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
@@ -2404,19 +2480,7 @@ type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPVali
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized struct {
-	Data io.Reader
-}
-
-// Read reads data from the Data reader.
-//
-// Kept to satisfy the io.Reader interface.
-func (s RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) Read(p []byte) (n int, err error) {
-	if s.Data == nil {
-		return 0, io.EOF
-	}
-	return s.Data.Read(p)
-}
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }

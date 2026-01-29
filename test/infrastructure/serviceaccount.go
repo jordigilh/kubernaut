@@ -991,6 +991,176 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	return authConfig, nil
 }
 
+// CreateServiceAccountForHTTPService creates a ServiceAccount for HTTP services (like HAPI)
+// that need to validate incoming tokens via TokenReview/SAR APIs.
+//
+// This is similar to the datastorage-service setup but reusable for any HTTP service.
+// DD-AUTH-014: HTTP services need their own ServiceAccount to call TokenReview/SAR APIs
+//
+// Parameters:
+//   - cfg: envtest REST config
+//   - saName: ServiceAccount name (e.g., "holmesgpt-service")
+//   - namespace: Namespace for ServiceAccount (typically "default")
+//   - writer: Output writer for logging
+//
+// Returns:
+//   - IntegrationAuthConfig with token and kubeconfig path for the service
+func CreateServiceAccountForHTTPService(
+	cfg *rest.Config,
+	saName string,
+	namespace string,
+	writer io.Writer,
+) (*IntegrationAuthConfig, error) {
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Creating HTTP Service ServiceAccount for Token Validation\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "  ServiceAccount: %s\n", saName)
+	_, _ = fmt.Fprintf(writer, "  Purpose: Validate incoming Bearer tokens (TokenReview + SAR)\n")
+	_, _ = fmt.Fprintf(writer, "  Authority: DD-AUTH-014 (HTTP service authentication)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	ctx := context.Background()
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Create ServiceAccount
+	_, _ = fmt.Fprintf(writer, "🔐 Creating ServiceAccount: %s\n", saName)
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":       "http-service",
+				"component": "auth",
+				"rbac":      "dd-auth-014",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+	if apierrors.IsAlreadyExists(err) {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  ServiceAccount already exists\n")
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ ServiceAccount created\n")
+	}
+
+	// Reuse existing datastorage-tokenreview ClusterRole (it's generic)
+	// This ClusterRole grants: create on tokenreviews + subjectaccessreviews
+	
+	// Create ClusterRoleBinding for service ServiceAccount
+	bindingName := fmt.Sprintf("%s-tokenreview", saName)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating ClusterRoleBinding: %s\n", bindingName)
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: bindingName,
+			Labels: map[string]string{
+				"app":       "http-service",
+				"component": "rbac",
+				"test":      "integration",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "datastorage-tokenreview", // Reuse existing ClusterRole
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      saName,
+				Namespace: namespace,
+			},
+		},
+	}
+
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("failed to create ClusterRoleBinding: %w", err)
+	}
+	if apierrors.IsAlreadyExists(err) {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  ClusterRoleBinding already exists\n")
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ ClusterRoleBinding created\n")
+	}
+
+	// Get ServiceAccount token via TokenRequest API
+	_, _ = fmt.Fprintf(writer, "🎫 Requesting ServiceAccount token for %s\n", saName)
+	tokenRequest := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			ExpirationSeconds: int64Ptr(3600), // 1 hour
+		},
+	}
+	tokenResp, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
+		ctx,
+		saName,
+		tokenRequest,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service account token: %w", err)
+	}
+	token := tokenResp.Status.Token
+	_, _ = fmt.Fprintf(writer, "   ✅ Token retrieved (length: %d bytes)\n", len(token))
+
+	// Generate kubeconfig for Podman container
+	_, _ = fmt.Fprintf(writer, "📄 Generating kubeconfig for Podman container (envtest → host.containers.internal)\n")
+	
+	// Rewrite envtest URL for Podman bridge networking
+	containerAPIServer := strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
+	_, _ = fmt.Fprintf(writer, "   🔄 API server URL: %s → %s\n", cfg.Host, containerAPIServer)
+
+	kubeconfig := clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"envtest": {
+				Server:                containerAPIServer,
+				InsecureSkipTLSVerify: true, // Required: TLS cert is for "localhost", not "host.containers.internal"
+			},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			saName: {
+				Token: token,
+			},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"envtest": {
+				Cluster:  "envtest",
+				AuthInfo: saName,
+			},
+		},
+		CurrentContext: "envtest",
+	}
+
+	kubeconfigBytes, err := clientcmd.Write(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode kubeconfig: %w", err)
+	}
+
+	kubeconfigPath := filepath.Join(os.TempDir(), fmt.Sprintf("envtest-kubeconfig-%s.yaml", saName))
+	err = os.WriteFile(kubeconfigPath, kubeconfigBytes, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write kubeconfig file: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Kubeconfig generated: %s\n", kubeconfigPath)
+
+	authConfig := &IntegrationAuthConfig{
+		Token:              token,
+		KubeconfigPath:     kubeconfigPath,
+		ServiceAccountName: saName,
+		Namespace:          namespace,
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ HTTP service auth configured (TokenReview + SAR enabled)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	return authConfig, nil
+}
+
 // int64Ptr is a helper to get a pointer to an int64 value
 func int64Ptr(i int64) *int64 {
 	return &i

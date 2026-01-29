@@ -178,7 +178,7 @@ execution:
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  uniqueSignalType,                      // mandatory - unique per process
 					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
-					Environment: "production",                          // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},                          // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
 					Component:   "deployment",                          // mandatory
 				},

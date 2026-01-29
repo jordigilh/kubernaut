@@ -149,7 +149,8 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 //
 // Returns: map[workflow_name]workflow_id (UUID) for Mock LLM configuration
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
-func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (map[string]string, error) {
+// DD-AUTH-014: Updated to accept authenticated client for real K8s authentication
+func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding Test Workflows in DataStorage\n")
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -161,7 +162,7 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (ma
 	workflowUUIDs := make(map[string]string)
 
 	for _, wf := range workflows {
-		workflowID, err := registerWorkflowInDataStorage(dataStorageURL, wf, output)
+		workflowID, err := registerWorkflowInDataStorage(client, wf, output)
 		if err != nil {
 			return nil, fmt.Errorf("failed to register workflow %s: %w", wf.WorkflowID, err)
 		}
@@ -183,19 +184,13 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (ma
 // Authority: .cursor/rules/* - All Go services must use OpenAPI clients
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
 // Returns the actual UUID assigned by DataStorage
-func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, output io.Writer) (string, error) {
+// DD-AUTH-014: Updated to accept authenticated client instead of creating unauthenticated one
+func registerWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
 	version := "1.0.0"
 	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", wf.WorkflowID, version, wf.Description)
 	contentBytes := []byte(content)
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
-
-	// DD-API-001: Create OpenAPI client (type-safe, spec-validated)
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	client, err := ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
-	if err != nil {
-		return "", fmt.Errorf("failed to create OpenAPI client: %w", err)
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

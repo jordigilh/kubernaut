@@ -709,7 +709,7 @@ class SearchWorkflowCatalogTool(Tool):
                 severity = sev
                 break
 
-        # Build filters with 5 MANDATORY fields (DD-WORKFLOW-001 v1.6)
+        # Build filters with 5 MANDATORY fields (DD-WORKFLOW-001 v2.5)
         filters = {
             "signal_type": signal_type,
             "severity": severity,
@@ -717,7 +717,8 @@ class SearchWorkflowCatalogTool(Tool):
             # NOTE: Wildcards should be in workflow labels (DB), not search filters
             # Default to most common values when RCA resource unavailable
             "component": self._extract_component_from_rca(rca_resource) or "pod",  # Most common K8s resource
-            "environment": self._extract_environment_from_rca(rca_resource) or "production",  # Most common environment
+            # DD-WORKFLOW-001 v2.5: Single environment value from Signal Processing
+            "environment": self._extract_environment_from_rca(rca_resource) or "production",  # Single environment
             "priority": self._map_severity_to_priority(severity),  # Map severity → priority
         }
 
@@ -737,7 +738,9 @@ class SearchWorkflowCatalogTool(Tool):
 
             for llm_key, api_key in filter_mapping.items():
                 if llm_key in additional_filters:
-                    filters[api_key] = additional_filters[llm_key]
+                    value = additional_filters[llm_key]
+                    # DD-WORKFLOW-001 v2.5: Environment is single string (not array)
+                    filters[api_key] = value
 
         return filters
 

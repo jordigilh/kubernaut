@@ -116,7 +116,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Severity:    "critical",
 					Component:   "kube-apiserver",
 					Priority:    "P0",
-					Environment: "production",
+					Environment: []string{"production"},
 				}
 
 				testWorkflow := &models.RemediationWorkflow{
@@ -186,13 +186,18 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(dbCreatedAt).ToNot(BeZero())
 				Expect(dbUpdatedAt).ToNot(BeZero())
 
-				// CRITICAL: Verify JSONB labels persisted correctly
-				Expect(dbLabels).ToNot(BeEmpty(), "Labels should be persisted as JSONB")
-				var persistedLabels map[string]string
-				err = json.Unmarshal(dbLabels, &persistedLabels)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(persistedLabels).To(HaveKeyWithValue("signal_type", "prometheus"))
-				Expect(persistedLabels).To(HaveKeyWithValue("severity", "critical"))
+			// CRITICAL: Verify JSONB labels persisted correctly
+			Expect(dbLabels).ToNot(BeEmpty(), "Labels should be persisted as JSONB")
+			// DD-WORKFLOW-001 v2.5: environment is now []string, use map[string]interface{}
+			var persistedLabels map[string]interface{}
+			err = json.Unmarshal(dbLabels, &persistedLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(persistedLabels).To(HaveKeyWithValue("signal_type", "prometheus"))
+			Expect(persistedLabels).To(HaveKeyWithValue("severity", "critical"))
+			// Verify environment is an array
+			Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
+			envArray := persistedLabels["environment"].([]interface{})
+			Expect(envArray).To(ContainElement("production"))
 			})
 		})
 
@@ -209,7 +214,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Severity:    "low",
 					Component:   "test",
 					Priority:    "P3",
-					Environment: "test",
+					Environment: []string{"test"},
 				}
 
 				testWorkflow := &models.RemediationWorkflow{
@@ -273,7 +278,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Severity:    "low",
 				Component:   "test",
 				Priority:    "P3",
-				Environment: "test",
+				Environment: []string{"test"},
 			}
 
 			testWorkflow := &models.RemediationWorkflow{
@@ -315,12 +320,13 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
 
-				// CRITICAL: Verify structured labels deserialized correctly
-				Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
-				Expect(retrievedWorkflow.Labels.Severity).To(Equal("low"))
-				Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
-				Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
-				Expect(retrievedWorkflow.Labels.Environment).To(Equal("test"))
+			// CRITICAL: Verify structured labels deserialized correctly
+			Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
+			Expect(retrievedWorkflow.Labels.Severity).To(Equal("low"))
+			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
+			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
+			// DD-WORKFLOW-001 v2.5: Environment is now []string
+			Expect(retrievedWorkflow.Labels.Environment).To(Equal([]string{"test"}))
 			})
 		})
 	})
@@ -372,7 +378,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Severity:    "low",
 					Component:   "test",
 					Priority:    "P3",
-					Environment: "test",
+					Environment: []string{"test"},
 				}
 
 				testWorkflow := &models.RemediationWorkflow{
@@ -510,7 +516,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Severity:    "low",
 				Component:   "test",
 				Priority:    "P3",
-				Environment: "test",
+				Environment: []string{"test"},
 			}
 
 			testWorkflow := &models.RemediationWorkflow{

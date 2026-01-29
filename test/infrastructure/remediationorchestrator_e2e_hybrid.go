@@ -280,7 +280,15 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		dsImage := builtImages["DataStorage"]
-		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar (image from quay.io)
+		
+		// DD-AUTH-014: Deploy ServiceAccount and RBAC FIRST (required for pod creation)
+		_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
+			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy service RBAC: %w", rbacErr)}
+			return
+		}
+		
+		// DD-AUTH-014: Deploy DataStorage with middleware-based auth
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()

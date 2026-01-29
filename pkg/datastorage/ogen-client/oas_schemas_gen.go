@@ -5946,7 +5946,7 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 // LivenessCheckOK is response for LivenessCheck operation.
 type LivenessCheckOK struct{}
 
-// 5 mandatory workflow labels (DD-WORKFLOW-001 v2.3).
+// 5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
 	// Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff).
@@ -5955,8 +5955,8 @@ type MandatoryLabels struct {
 	Severity MandatoryLabelsSeverity `json:"severity"`
 	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
 	Component string `json:"component"`
-	// Target environment (production, staging, development, test, * for any).
-	Environment string `json:"environment"`
+	// Target environments (workflow can declare multiple, '*' matches all).
+	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
 	// Business priority level (P0, P1, P2, P3, * for any).
 	Priority MandatoryLabelsPriority `json:"priority"`
 }
@@ -5977,7 +5977,7 @@ func (s *MandatoryLabels) GetComponent() string {
 }
 
 // GetEnvironment returns the value of Environment.
-func (s *MandatoryLabels) GetEnvironment() string {
+func (s *MandatoryLabels) GetEnvironment() []MandatoryLabelsEnvironmentItem {
 	return s.Environment
 }
 
@@ -6002,13 +6002,75 @@ func (s *MandatoryLabels) SetComponent(val string) {
 }
 
 // SetEnvironment sets the value of Environment.
-func (s *MandatoryLabels) SetEnvironment(val string) {
+func (s *MandatoryLabels) SetEnvironment(val []MandatoryLabelsEnvironmentItem) {
 	s.Environment = val
 }
 
 // SetPriority sets the value of Priority.
 func (s *MandatoryLabels) SetPriority(val MandatoryLabelsPriority) {
 	s.Priority = val
+}
+
+type MandatoryLabelsEnvironmentItem string
+
+const (
+	MandatoryLabelsEnvironmentItem_production  MandatoryLabelsEnvironmentItem = "production"
+	MandatoryLabelsEnvironmentItem_staging     MandatoryLabelsEnvironmentItem = "staging"
+	MandatoryLabelsEnvironmentItem_development MandatoryLabelsEnvironmentItem = "development"
+	MandatoryLabelsEnvironmentItem_test        MandatoryLabelsEnvironmentItem = "test"
+	MandatoryLabelsEnvironmentItem_            MandatoryLabelsEnvironmentItem = "*"
+)
+
+// AllValues returns all MandatoryLabelsEnvironmentItem values.
+func (MandatoryLabelsEnvironmentItem) AllValues() []MandatoryLabelsEnvironmentItem {
+	return []MandatoryLabelsEnvironmentItem{
+		MandatoryLabelsEnvironmentItem_production,
+		MandatoryLabelsEnvironmentItem_staging,
+		MandatoryLabelsEnvironmentItem_development,
+		MandatoryLabelsEnvironmentItem_test,
+		MandatoryLabelsEnvironmentItem_,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s MandatoryLabelsEnvironmentItem) MarshalText() ([]byte, error) {
+	switch s {
+	case MandatoryLabelsEnvironmentItem_production:
+		return []byte(s), nil
+	case MandatoryLabelsEnvironmentItem_staging:
+		return []byte(s), nil
+	case MandatoryLabelsEnvironmentItem_development:
+		return []byte(s), nil
+	case MandatoryLabelsEnvironmentItem_test:
+		return []byte(s), nil
+	case MandatoryLabelsEnvironmentItem_:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *MandatoryLabelsEnvironmentItem) UnmarshalText(data []byte) error {
+	switch MandatoryLabelsEnvironmentItem(data) {
+	case MandatoryLabelsEnvironmentItem_production:
+		*s = MandatoryLabelsEnvironmentItem_production
+		return nil
+	case MandatoryLabelsEnvironmentItem_staging:
+		*s = MandatoryLabelsEnvironmentItem_staging
+		return nil
+	case MandatoryLabelsEnvironmentItem_development:
+		*s = MandatoryLabelsEnvironmentItem_development
+		return nil
+	case MandatoryLabelsEnvironmentItem_test:
+		*s = MandatoryLabelsEnvironmentItem_test
+		return nil
+	case MandatoryLabelsEnvironmentItem_:
+		*s = MandatoryLabelsEnvironmentItem_
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Business priority level (P0, P1, P2, P3, * for any).
@@ -14721,7 +14783,7 @@ type WorkflowSearchFilters struct {
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Component type (mandatory: pod, node, deployment, etc.).
 	Component string `json:"component"`
-	// Environment (mandatory: production, staging, development).
+	// Environment filter (mandatory, single value from Signal Processing).
 	Environment string `json:"environment"`
 	// Priority level (mandatory: P0, P1, P2, P3).
 	Priority       WorkflowSearchFiltersPriority `json:"priority"`

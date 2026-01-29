@@ -277,7 +277,7 @@ execution:
 						Severity:    dsgen.MandatoryLabelsSeverity(wf.labels["severity"].(string)),
 						Component:   wf.labels["component"].(string),
 						Priority:    dsgen.MandatoryLabelsPriority(wf.labels["priority"].(string)),
-						Environment: wf.labels["environment"].(string),
+						Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(wf.labels["environment"].(string))},
 					},
 					ContainerImage: dsgen.NewOptString(containerImage),
 					Status:         dsgen.RemediationWorkflowStatusActive,

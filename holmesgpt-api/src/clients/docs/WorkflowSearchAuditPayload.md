@@ -6,6 +6,7 @@ Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**event_type** | **str** | Discriminator for event data union type | 
 **query** | [**QueryMetadata**](QueryMetadata.md) |  | 
 **results** | [**ResultsMetadata**](ResultsMetadata.md) |  | 
 **search_metadata** | [**SearchExecutionMetadata**](SearchExecutionMetadata.md) |  | 

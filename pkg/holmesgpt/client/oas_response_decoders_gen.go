@@ -3,7 +3,6 @@
 package client
 
 import (
-	"bytes"
 	"io"
 	"mime"
 	"net/http"
@@ -153,14 +152,30 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
-		case ct == "text/html":
-			reader := resp.Body
-			b, err := io.ReadAll(reader)
+		case ct == "application/problem+json":
+			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return res, err
 			}
+			d := jx.DecodeBytes(buf)
 
-			response := IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized{Data: bytes.NewReader(b)}
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -172,14 +187,30 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
-		case ct == "text/html":
-			reader := resp.Body
-			b, err := io.ReadAll(reader)
+		case ct == "application/problem+json":
+			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return res, err
 			}
+			d := jx.DecodeBytes(buf)
 
-			response := IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden{Data: bytes.NewReader(b)}
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -372,14 +403,30 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
-		case ct == "text/html":
-			reader := resp.Body
-			b, err := io.ReadAll(reader)
+		case ct == "application/problem+json":
+			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return res, err
 			}
+			d := jx.DecodeBytes(buf)
 
-			response := RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized{Data: bytes.NewReader(b)}
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -391,14 +438,30 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
-		case ct == "text/html":
-			reader := resp.Body
-			b, err := io.ReadAll(reader)
+		case ct == "application/problem+json":
+			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return res, err
 			}
+			d := jx.DecodeBytes(buf)
 
-			response := RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden{Data: bytes.NewReader(b)}
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)

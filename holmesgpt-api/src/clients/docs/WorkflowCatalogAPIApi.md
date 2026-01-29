@@ -82,6 +82,8 @@ No authorization required
 |-------------|-------------|------------------|
 **201** | Workflow created successfully |  -  |
 **400** | Validation error |  -  |
+**401** | Authentication failed - Invalid or missing Bearer token.  **Authority**: DD-AUTH-014 (Middleware-based authentication)  |  -  |
+**403** | Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.  **Authority**: DD-AUTH-014 (Middleware-based authorization)  |  -  |
 **500** | Internal server error |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
@@ -236,7 +238,7 @@ No authorization required
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **list_workflows**
-> WorkflowListResponse list_workflows(status=status, environment=environment, priority=priority, component=component, limit=limit, offset=offset)
+> WorkflowListResponse list_workflows(status=status, environment=environment, priority=priority, component=component, workflow_name=workflow_name, limit=limit, offset=offset)
 
 List workflows
 
@@ -269,12 +271,13 @@ with datastorage.ApiClient(configuration) as api_client:
     environment = 'environment_example' # str |  (optional)
     priority = 'priority_example' # str |  (optional)
     component = 'component_example' # str |  (optional)
+    workflow_name = 'workflow_name_example' # str | Filter by workflow name (exact match for test idempotency) (optional)
     limit = 100 # int |  (optional) (default to 100)
     offset = 0 # int |  (optional) (default to 0)
 
     try:
         # List workflows
-        api_response = api_instance.list_workflows(status=status, environment=environment, priority=priority, component=component, limit=limit, offset=offset)
+        api_response = api_instance.list_workflows(status=status, environment=environment, priority=priority, component=component, workflow_name=workflow_name, limit=limit, offset=offset)
         print("The response of WorkflowCatalogAPIApi->list_workflows:\n")
         pprint(api_response)
     except Exception as e:
@@ -292,6 +295,7 @@ Name | Type | Description  | Notes
  **environment** | **str**|  | [optional] 
  **priority** | **str**|  | [optional] 
  **component** | **str**|  | [optional] 
+ **workflow_name** | **str**| Filter by workflow name (exact match for test idempotency) | [optional] 
  **limit** | **int**|  | [optional] [default to 100]
  **offset** | **int**|  | [optional] [default to 0]
 

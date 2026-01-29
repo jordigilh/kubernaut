@@ -255,8 +255,14 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 4b. Deploy DataStorage with OAuth2-Proxy sidecar (TD-E2E-001 Phase 1)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar...\n")
+	// 4b. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
+	// 4c. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
