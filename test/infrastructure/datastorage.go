@@ -1179,29 +1179,38 @@ password: test_password`,
 								ContainerPort: 9181,
 							},
 						},
-							Env: func() []corev1.EnvVar {
-								envVars := []corev1.EnvVar{
-									{
-										Name:  "CONFIG_PATH",
-										Value: "/etc/datastorage/config.yaml",
-									},
-								}
-								// DD-TEST-007: E2E Coverage Capture Standard
-								// Only add GOCOVERDIR if E2E_COVERAGE=true
-								// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-								_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
-								if coverageEnabled {
-									_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
-									envVars = append(envVars, corev1.EnvVar{
-										Name:  "GOCOVERDIR",
-										Value: "/coverdata",
-									})
-								} else {
-									_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
-								}
-								return envVars
-							}(),
+						Env: func() []corev1.EnvVar {
+							envVars := []corev1.EnvVar{
+								{
+									Name:  "CONFIG_PATH",
+									Value: "/etc/datastorage/config.yaml",
+								},
+								// DD-AUTH-014: POD_NAMESPACE required for SAR namespace context
+								{
+									Name:  "POD_NAMESPACE",
+									Value: namespace,
+								},
+								// DD-AUTH-014: Use in-cluster config (ServiceAccount mounted automatically)
+								// KUBECONFIG env var removed - was causing crashes in E2E (host path doesn't exist in container)
+								// With proper data-storage-sa ServiceAccount + RBAC, in-cluster config works correctly
+							}
+							// DD-TEST-007: E2E Coverage Capture Standard
+							// Only add GOCOVERDIR if E2E_COVERAGE=true
+							// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
+							coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
+							_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
+							if coverageEnabled {
+								_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
+								envVars = append(envVars, corev1.EnvVar{
+									Name:  "GOCOVERDIR",
+									Value: "/coverdata",
+								})
+							} else {
+								_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
+							}
+							_, _ = fmt.Fprintf(writer, "   ✅ DD-AUTH-014: Using in-cluster config with ServiceAccount, POD_NAMESPACE=%s\n", namespace)
+							return envVars
+						}(),
 							VolumeMounts: func() []corev1.VolumeMount {
 								mounts := []corev1.VolumeMount{
 									{

@@ -255,17 +255,37 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 4b. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
+	// 4b. Deploy client ClusterRole for SAR permissions (DD-AUTH-014)
+	// This enables Gateway ServiceAccount to pass SAR checks when calling DataStorage
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// 4c. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
 	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
 	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy service RBAC: %w", err)
 	}
 
-	// 4c. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
+	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
+
+	// 4e. Wait for DataStorage Service DNS + endpoints (Gateway dependency)
+	// Root cause: Gateway starts → tries to emit audit events → "no such host" DNS errors
+	// Pattern: DataStorage E2E (test/infrastructure/datastorage.go:waitForDataStorageServicesReady)
+	// This function waits for:
+	// 1. Pod Running + Ready
+	// 2. Service endpoints populated
+	// 3. Internal cluster DNS resolution working
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage Service readiness (pod + endpoints + DNS)...\n")
+	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage readiness check failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy Gateway (requires DataStorage)
@@ -986,7 +1006,8 @@ data:
     infrastructure:
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
-      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+      # Service name: data-storage-service (matches production, required for SAR)
+      data_storage_url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 
     processing:
       deduplication:
