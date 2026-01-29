@@ -250,6 +250,14 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3.5: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintf(writer, "\n🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	// NOTE: Using dynamically generated image names from consolidated API (BuildImageForKind)
@@ -277,11 +285,19 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
+		// DD-AUTH-014: Deploy client ClusterRole FIRST (required for SAR checks)
+		// This enables all services to pass SAR checks when calling DataStorage
+		_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+		if clientRBACErr := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); clientRBACErr != nil {
+			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy client ClusterRole: %w", clientRBACErr)}
+			return
+		}
+		
 		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		dsImage := builtImages["DataStorage"]
 		
-		// DD-AUTH-014: Deploy ServiceAccount and RBAC FIRST (required for pod creation)
+		// DD-AUTH-014: Deploy ServiceAccount and RBAC (required for pod creation)
 		_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
 		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
 			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy service RBAC: %w", rbacErr)}

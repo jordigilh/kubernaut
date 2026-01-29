@@ -290,6 +290,14 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3.5: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintf(writer, "\n🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, WorkflowExecutionNamespace, kubeconfigPath, "data-storage-service", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per Consolidated API Migration (January 2026):

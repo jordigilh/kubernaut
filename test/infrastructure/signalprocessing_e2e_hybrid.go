@@ -224,6 +224,14 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 3 Duration: %.1f seconds\n", phase3Duration.Seconds())
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3.5: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintf(writer, "\n🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	phase4Start := time.Now()
