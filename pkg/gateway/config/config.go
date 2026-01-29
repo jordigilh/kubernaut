@@ -44,10 +44,11 @@ type ServerConfig struct {
 // ServerSettings contains HTTP server configuration.
 // Single Responsibility: HTTP server behavior
 type ServerSettings struct {
-	ListenAddr   string        `yaml:"listen_addr"`   // Default: ":8080"
-	ReadTimeout  time.Duration `yaml:"read_timeout"`  // Default: 30s
-	WriteTimeout time.Duration `yaml:"write_timeout"` // Default: 30s
-	IdleTimeout  time.Duration `yaml:"idle_timeout"`  // Default: 120s
+	ListenAddr            string        `yaml:"listenAddr"`              // Default: ":8080"
+	MaxConcurrentRequests int           `yaml:"maxConcurrentRequests"`   // Default: 100 (0 = unlimited)
+	ReadTimeout           time.Duration `yaml:"readTimeout"`             // Default: 30s
+	WriteTimeout          time.Duration `yaml:"writeTimeout"`            // Default: 30s
+	IdleTimeout           time.Duration `yaml:"idleTimeout"`             // Default: 120s
 }
 
 // MiddlewareSettings contains middleware configuration.
@@ -69,7 +70,7 @@ type InfrastructureSettings struct {
 
 	// DD-AUDIT-003: Data Storage URL for audit event emission (P0 requirement)
 	// Example: "http://data-storage-service:8080"
-	DataStorageURL string `yaml:"data_storage_url"`
+	DataStorageURL string `yaml:"dataStorageUrl"`
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -111,7 +112,7 @@ type CRDSettings struct {
 	// Default: auto-detect from pod's namespace (/var/run/secrets/kubernetes.io/serviceaccount/namespace)
 	// Override: set explicitly for multi-tenant or special scenarios
 	// If auto-detect fails (non-K8s environment), falls back to "kubernaut-system"
-	FallbackNamespace string `yaml:"fallback_namespace"` // Default: auto-detect pod namespace
+	FallbackNamespace string `yaml:"fallbackNamespace"` // Default: auto-detect pod namespace
 }
 
 // RetrySettings configures retry behavior for transient K8s API errors.
@@ -123,19 +124,19 @@ type RetrySettings struct {
 	// Example: MaxAttempts=3 means 1 original attempt + 2 retries
 	// Default: 3
 	// Reliability-First: Always retry transient errors (429, 503, 504, timeouts, network errors)
-	MaxAttempts int `yaml:"max_attempts"`
+	MaxAttempts int `yaml:"maxAttempts"`
 
 	// Initial backoff duration (doubles with each retry)
 	// Example: 100ms → 200ms → 400ms → 800ms (exponential backoff)
 	// Default: 100ms
 	// Reliability-First: Fast initial retry, exponential backoff for persistent failures
-	InitialBackoff time.Duration `yaml:"initial_backoff"`
+	InitialBackoff time.Duration `yaml:"initialBackoff"`
 
 	// Maximum backoff duration (cap for exponential backoff)
 	// Prevents excessive wait times during retry storms
 	// Default: 5s
 	// Reliability-First: Reasonable cap to avoid blocking too long
-	MaxBackoff time.Duration `yaml:"max_backoff"`
+	MaxBackoff time.Duration `yaml:"maxBackoff"`
 }
 
 // DefaultRetrySettings returns sensible defaults for Phase 1 (synchronous retry).
@@ -158,7 +159,7 @@ func (r *RetrySettings) Validate() error {
 	// MaxAttempts validation with reasonable range
 	if r.MaxAttempts < 1 {
 		err := NewConfigError(
-			"processing.retry.max_attempts",
+			"processing.retry.maxAttempts",
 			fmt.Sprintf("%d", r.MaxAttempts),
 			"must be >= 1",
 			"Use 3-5 for production (recommended: 3)",
@@ -169,7 +170,7 @@ func (r *RetrySettings) Validate() error {
 	}
 	if r.MaxAttempts > 10 {
 		err := NewConfigError(
-			"processing.retry.max_attempts",
+			"processing.retry.maxAttempts",
 			fmt.Sprintf("%d", r.MaxAttempts),
 			"exceeds recommended maximum (10)",
 			"Reduce to 3-5 to avoid excessive retry delays",
@@ -182,7 +183,7 @@ func (r *RetrySettings) Validate() error {
 	// Initial backoff validation
 	if r.InitialBackoff < 0 {
 		err := NewConfigError(
-			"processing.retry.initial_backoff",
+			"processing.retry.initialBackoff",
 			r.InitialBackoff.String(),
 			"must be >= 0",
 			"Use 100ms-500ms (recommended: 100ms)",
@@ -193,7 +194,7 @@ func (r *RetrySettings) Validate() error {
 	}
 	if r.InitialBackoff > 5*time.Second {
 		err := NewConfigError(
-			"processing.retry.initial_backoff",
+			"processing.retry.initialBackoff",
 			r.InitialBackoff.String(),
 			"exceeds recommended maximum (5s)",
 			"Reduce to 100ms-500ms for faster failure detection",
@@ -206,10 +207,10 @@ func (r *RetrySettings) Validate() error {
 	// Max backoff validation
 	if r.MaxBackoff < r.InitialBackoff {
 		err := NewConfigError(
-			"processing.retry.max_backoff",
+			"processing.retry.maxBackoff",
 			fmt.Sprintf("%v (initial: %v)", r.MaxBackoff, r.InitialBackoff),
-			"must be >= initial_backoff",
-			fmt.Sprintf("Set max_backoff to at least %v", r.InitialBackoff),
+			"must be >= initialBackoff",
+			fmt.Sprintf("Set maxBackoff to at least %v", r.InitialBackoff),
 		)
 		err.Impact = "Invalid exponential backoff configuration"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
@@ -217,7 +218,7 @@ func (r *RetrySettings) Validate() error {
 	}
 	if r.MaxBackoff > 30*time.Second {
 		err := NewConfigError(
-			"processing.retry.max_backoff",
+			"processing.retry.maxBackoff",
 			r.MaxBackoff.String(),
 			"exceeds recommended maximum (30s)",
 			"Reduce to 5s (recommended) to avoid long request delays",
@@ -281,16 +282,22 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 		cfg.Processing.Retry = defaults
 	}
 
+	// Apply server defaults for concurrency limiting
+	// ADR-048-ADDENDUM-001: Default to 100 concurrent requests (defense-in-depth with Nginx/HAProxy)
+	// 0 = unlimited (not recommended for production)
+	// 100 = sensible default that prevents per-pod overload
+	if cfg.Server.MaxConcurrentRequests == 0 {
+		cfg.Server.MaxConcurrentRequests = 100
+	}
+
 	return &cfg, nil
 }
 
 // LoadFromEnv overrides configuration values with environment variables
-// This allows secrets and deployment-specific values to override YAML configuration
+// ADR-030: Environment variables ONLY for secrets (never for functional config)
 func (c *ServerConfig) LoadFromEnv() {
-	// Server settings
-	if addr := os.Getenv("GATEWAY_LISTEN_ADDR"); addr != "" {
-		c.Server.ListenAddr = addr
-	}
+	// No environment variable overrides for server settings per ADR-030
+	// Server configuration (listen_addr, max_concurrent_requests, timeouts) comes from YAML only
 
 	// DD-GATEWAY-012: Redis settings REMOVED
 	// DD-AUDIT-003: Data Storage URL for audit integration
@@ -317,7 +324,7 @@ func (c *ServerConfig) Validate() error {
 	// Server validation with comprehensive timeout checks
 	if c.Server.ListenAddr == "" {
 		err := NewConfigError(
-			"server.listen_addr",
+			"server.listenAddr",
 			"(empty)",
 			"is required",
 			"Use ':8080' or '0.0.0.0:8080'",
@@ -327,10 +334,35 @@ func (c *ServerConfig) Validate() error {
 		return err
 	}
 
+	// MaxConcurrentRequests validation (0 = unlimited, >0 = throttle enabled)
+	// ADR-048-ADDENDUM-001: Defense-in-depth with Nginx/HAProxy
+	if c.Server.MaxConcurrentRequests < 0 {
+		err := NewConfigError(
+			"server.maxConcurrentRequests",
+			fmt.Sprintf("%d", c.Server.MaxConcurrentRequests),
+			"must be >= 0",
+			"Use 100 (recommended), 0 for unlimited",
+		)
+		err.Impact = "Invalid throttle configuration"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
+	}
+	if c.Server.MaxConcurrentRequests > 10000 {
+		err := NewConfigError(
+			"server.maxConcurrentRequests",
+			fmt.Sprintf("%d", c.Server.MaxConcurrentRequests),
+			"exceeds recommended maximum (10000)",
+			"Use 100-1000 for production (recommended: 100)",
+		)
+		err.Impact = "May not provide effective overload protection"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
+	}
+
 	// Server timeout validation (prevent misconfiguration)
 	if c.Server.ReadTimeout > 0 && c.Server.ReadTimeout < 5*time.Second {
 		err := NewConfigError(
-			"server.read_timeout",
+			"server.readTimeout",
 			c.Server.ReadTimeout.String(),
 			"is too low (< 5s)",
 			"Use 30s (recommended) to prevent webhook timeouts",
@@ -341,7 +373,7 @@ func (c *ServerConfig) Validate() error {
 	}
 	if c.Server.WriteTimeout > 0 && c.Server.WriteTimeout < 5*time.Second {
 		err := NewConfigError(
-			"server.write_timeout",
+			"server.writeTimeout",
 			c.Server.WriteTimeout.String(),
 			"is too low (< 5s)",
 			"Use 30s (recommended) to prevent response failures",
@@ -352,7 +384,7 @@ func (c *ServerConfig) Validate() error {
 	}
 	if c.Server.IdleTimeout > 0 && c.Server.IdleTimeout < 30*time.Second {
 		err := NewConfigError(
-			"server.idle_timeout",
+			"server.idleTimeout",
 			c.Server.IdleTimeout.String(),
 			"is too low (< 30s)",
 			"Use 120s (recommended) to reduce connection churn",

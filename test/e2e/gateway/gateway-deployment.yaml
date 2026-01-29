@@ -8,14 +8,15 @@ metadata:
 data:
   config.yaml: |
     server:
-      listen_addr: ":8080"
-      read_timeout: 30s
-      write_timeout: 30s
-      idle_timeout: 120s
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100  # ADR-048-ADDENDUM-001: Prevents E2E test overload
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
 
     middleware:
-      rate_limit:
-        requests_per_minute: 100
+      rateLimit:
+        requestsPerMinute: 100
         burst: 10
 
     infrastructure:
@@ -24,27 +25,29 @@ data:
         addr: "redis-master.kubernaut-system.svc.cluster.local:6379"
         db: 0
         password: ""
-        dial_timeout: 5s
-        read_timeout: 3s
-        write_timeout: 3s
-        pool_size: 10
-        min_idle_conns: 5
+        dialTimeout: 5s
+        readTimeout: 3s
+        writeTimeout: 3s
+        poolSize: 10
+        minIdleConns: 5
 
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
-      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+      # Service name: data-storage-service (matches production, required for SAR)
+      # Port 8081: DataStorage listens on 8081, Service exposes as 8080 → use Service port
+      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081"
 
     processing:
       # NOTE: Deduplication is now status-based (DD-GATEWAY-011)
       # Uses RemediationRequest CRD phase, not TTL-based Redis expiration
 
       environment:
-        cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
-        configmap_namespace: "kubernaut-system"
-        configmap_name: "kubernaut-environment-overrides"
+        cacheTtl: 5s              # Fast cache for E2E tests (production: 30s)
+        configmapNamespace: "kubernaut-system"
+        configmapName: "kubernaut-environment-overrides"
 
       priority:
-        policy_path: "/etc/gateway-policy/priority-policy.rego"
+        policyPath: "/etc/gateway-policy/priority-policy.rego"
 
 ---
 # Gateway Service Rego Policy ConfigMap
