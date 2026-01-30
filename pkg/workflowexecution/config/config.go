@@ -135,7 +135,7 @@ func DefaultConfig() *Config {
 			MaxConsecutiveFailures: 5,
 		},
 		Audit: AuditConfig{
-			DataStorageURL: "http://datastorage-service:8080",
+			DataStorageURL: "http://data-storage-service:8080", // DD-AUTH-011: Standard service name (with hyphen)
 			Timeout:        10 * time.Second,
 		},
 		Controller: ControllerConfig{
@@ -187,7 +187,7 @@ func LoadFromFile(path string) (*Config, error) {
 		cfg.Backoff.MaxConsecutiveFailures = 5
 	}
 	if cfg.Audit.DataStorageURL == "" {
-		cfg.Audit.DataStorageURL = "http://datastorage-service:8080"
+		cfg.Audit.DataStorageURL = "http://data-storage-service:8080" // DD-AUTH-011: Standard service name (with hyphen)
 	}
 	if cfg.Audit.Timeout == 0 {
 		cfg.Audit.Timeout = 10 * time.Second
