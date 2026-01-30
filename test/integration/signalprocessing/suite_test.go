@@ -75,7 +75,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
 // Test constants for timeout and polling intervals
@@ -314,34 +314,31 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	// Create DataStorage client adapter for audit store (per-process)
-	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
-	// DD-AUTH-014: Integration tests use ServiceAccount Bearer token authentication
+	// DD-AUTH-014: Create authenticated DataStorage clients (both audit + query)
+	// Uses centralized helper to ensure both clients use ServiceAccount authentication
 	saToken := string(data) // Extract token from Phase 1
-	authTransport := testauth.NewServiceAccountTransport(saToken)
-	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
+	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
+	
+	dsClients := integration.NewAuthenticatedDataStorageClients(
+		dataStorageURL,
+		saToken,
 		5*time.Second,
-		authTransport, // ✅ Bearer token authentication (DD-AUTH-014)
 	)
-	Expect(err).NotTo(HaveOccurred(), "Failed to create OpenAPI client adapter")
+	GinkgoWriter.Println("✅ Authenticated DataStorage clients created (audit + query)")
 
 	// SP-CACHE-001: Create audit store per-process (uses shared DataStorage infrastructure)
 	auditConfig := audit.DefaultConfig()
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	logger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err = audit.NewBufferedStore(dsAuditClient, auditConfig, "signalprocessing", logger)
+	auditStore, err = audit.NewBufferedStore(dsClients.AuditClient, auditConfig, "signalprocessing", logger)
 	Expect(err).NotTo(HaveOccurred(), "Audit store creation must succeed for BR-SP-090")
 	GinkgoWriter.Println("✅ Per-process audit store configured")
 
-	// Create DataStorage ogen client for audit event queries in tests
-	// Per service boundary rules: SignalProcessing queries DataStorage via HTTP API
-	dsClient, err = ogenclient.NewClient(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
-	)
-	Expect(err).NotTo(HaveOccurred(), "DataStorage ogen client creation must succeed")
-	GinkgoWriter.Printf("✅ DataStorage ogen client ready for test queries\n")
+	// Use authenticated OpenAPI client for audit event queries in tests
+	// DD-AUTH-014: Query client now uses ServiceAccount Bearer token
+	dsClient = dsClients.OpenAPIClient
+	GinkgoWriter.Printf("✅ Authenticated DataStorage query client ready for tests\n")
 
 	By("Setting up the per-process controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{

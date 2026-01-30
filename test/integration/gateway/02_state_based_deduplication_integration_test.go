@@ -91,7 +91,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		// Initialize Gateway with shared K8s client
 		gwConfig := createGatewayConfig("http://mock-datastorage:8080")
 		var err error
-		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, dsClient)
+		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred())
 		testLogger.Info("✅ Gateway server initialized")
 	})

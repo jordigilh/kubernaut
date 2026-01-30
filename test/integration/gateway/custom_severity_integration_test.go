@@ -84,7 +84,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-001] should preserve standard severity values (baseline)", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'critical' severity")
@@ -117,7 +117,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-002] should preserve 'warning' severity without transformation", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'warning' severity")
@@ -149,7 +149,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-003] should preserve 'info' severity without transformation", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'info' severity")
@@ -195,7 +195,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-005] should preserve 'Sev1' enterprise severity without transformation", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'Sev1' severity")
@@ -228,7 +228,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-006] should preserve 'P0' PagerDuty severity without transformation", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'P0' severity")

@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
+
+// sharedInfraData is passed from Phase 1 (Process #1) to Phase 2 (ALL processes)
+// via Ginkgo's SynchronizedBeforeSuite []byte data passing mechanism
+type sharedInfraData struct {
+	ServiceAccountToken string `json:"serviceAccountToken"`
+	DataStorageURL      string `json:"dataStorageURL"`
+}
 
 // Suite-level variables
 var (
@@ -125,11 +133,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Printf("✅ Shared infrastructure ready (Process #1)\n")
 	// DD-AUTH-014: Pass ServiceAccount token AND DataStorage URL to all processes
 	// Phase 1 runs only on Process #1, but Phase 2 runs on ALL processes
-	// Package-level variables are NOT shared across processes, so we must serialize data
+	// Package-level variables (like 'infra') are NOT shared across processes
+	// We must marshal data into []byte for Ginkgo to pass to all processes
 	// Note: DataStorage health check now includes auth readiness validation
 	// StartDSBootstrap waits for /health to return 200, which includes auth middleware check
-	sharedData := fmt.Sprintf("%s|%s", authConfig.Token, infra.GetDataStorageURL())
-	return []byte(sharedData)
+	sharedData := sharedInfraData{
+		ServiceAccountToken: authConfig.Token,
+		DataStorageURL:      infra.GetDataStorageURL(),
+	}
+	data, err := json.Marshal(sharedData)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to marshal shared data: %v", err))
+	}
+	return data
 
 }, func(data []byte) {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -142,22 +158,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Printf("🔧 [Process %d] Setting up per-process resources...\n", GinkgoParallelProcess())
 
-	// DD-AUTH-014: Extract ServiceAccount token AND DataStorage URL from Phase 1
-	// Phase 1 serializes: "token|url"
-	sharedData := string(data)
-	parts := []string{"", ""}
-	if idx := len(sharedData) - 1; idx >= 0 {
-		// Find the LAST '|' separator (token may contain '|' but URL won't)
-		for i := len(sharedData) - 1; i >= 0; i-- {
-			if sharedData[i] == '|' {
-				parts[0] = sharedData[:i]   // Token
-				parts[1] = sharedData[i+1:] // URL
-				break
-			}
-		}
+	// DD-AUTH-014: Unmarshal shared data from Phase 1
+	// Phase 1 (Process #1) marshaled ServiceAccount token + DataStorage URL
+	// Phase 2 (ALL processes) unmarshal to access both values
+	var sharedData sharedInfraData
+	if err := json.Unmarshal(data, &sharedData); err != nil {
+		Fail(fmt.Sprintf("Failed to unmarshal shared data: %v", err))
 	}
-	saToken := parts[0]
-	dataStorageURL := parts[1]
+	saToken := sharedData.ServiceAccountToken
+	dataStorageURL := sharedData.DataStorageURL
 	GinkgoWriter.Printf("[Process %d] Received ServiceAccount token and DataStorage URL from Phase 1\n", GinkgoParallelProcess())
 
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
