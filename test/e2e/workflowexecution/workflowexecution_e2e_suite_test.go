@@ -78,6 +78,9 @@ var (
 	// Controller namespace
 	controllerNamespace string = infrastructure.WorkflowExecutionNamespace
 
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
+
 	// Track test failures
 	anyTestFailed bool
 )
@@ -166,10 +169,23 @@ var _ = SynchronizedBeforeSuite(
 
 		// Note: Test pipeline is already created by hybrid infrastructure setup
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "workflowexecution-e2e-sa"
+		namespace := infrastructure.WorkflowExecutionNamespace
+
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		logger.Info("✅ WorkflowExecution E2E environment ready!")
 
-		// Return kubeconfig path for other processes
-		return []byte(kubeconfigPath)
+		// Return kubeconfig path and auth token for other processes
+		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes - connects to the shared cluster
 	func(kubeconfigBytes []byte) {
@@ -183,8 +199,12 @@ var _ = SynchronizedBeforeSuite(
 			ServiceName: "workflowexecution-e2e-test",
 		})
 
-		// Get kubeconfig path from process 1
-		kubeconfigPath = string(kubeconfigBytes)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(kubeconfigBytes), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		// Set KUBECONFIG environment variable
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)

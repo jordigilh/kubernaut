@@ -37,6 +37,7 @@ import (
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 
 	"github.com/google/uuid"
@@ -463,12 +464,18 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for audit events via OpenAPI client")
+			By("Querying Data Storage for audit events via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 			// Query DS audit events API for events with this WFE's correlation ID
 			// This verifies the full flow: Controller -> pkg/audit -> DS -> PostgreSQL
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
@@ -575,11 +582,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for workflow.failed audit event via OpenAPI client")
+			By("Querying Data Storage for workflow.failed audit event via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 			// Use correlation ID to find this specific WFE's events
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var failedEvent *ogenclient.AuditEvent
@@ -689,10 +702,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for all audit events via OpenAPI client")
+			By("Querying Data Storage for all audit events via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
