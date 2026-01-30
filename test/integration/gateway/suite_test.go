@@ -36,8 +36,9 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
 // ========================================
@@ -82,14 +83,15 @@ var (
 	dsInfra *infrastructure.DSBootstrapInfra
 
 	// Per-process resources (Phase 2 - All processes)
-	ctx              context.Context
-	cancel           context.CancelFunc
-	k8sClient        client.Client
-	logger           logr.Logger
-	testEnv          *envtest.Environment
-	k8sConfig        *rest.Config
-	dsClient         audit.DataStorageClient // Per-process DataStorage client
-	sharedAuditStore audit.AuditStore        // Shared audit store (background flusher runs continuously)
+	ctx                       context.Context
+	cancel                    context.CancelFunc
+	k8sClient                 client.Client
+	logger                    logr.Logger
+	testEnv                   *envtest.Environment
+	k8sConfig                 *rest.Config
+	dsClient                  audit.DataStorageClient // Per-process DataStorage audit client (authenticated)
+	sharedOgenClient          *ogenclient.Client      // Per-process OpenAPI client (authenticated) - used for audit queries
+	sharedAuditStore          audit.AuditStore        // Shared audit store (background flusher runs continuously)
 )
 
 func TestGatewayIntegration(t *testing.T) {
@@ -177,28 +179,30 @@ var _ = SynchronizedBeforeSuite(
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// DD-AUTH-014: Create authenticated DataStorage client using ServiceAccount token
-		// This replaces MockUserTransport (X-Auth-Request-User) with real Bearer token auth
-		logger.Info(fmt.Sprintf("[Process %d] Creating authenticated DataStorage client", processNum))
+		// DD-AUTH-014: Create authenticated DataStorage clients using standard helper
+		// This replaces manual client creation with standardized pattern (all services)
+		logger.Info(fmt.Sprintf("[Process %d] Creating authenticated DataStorage clients", processNum))
 		
 		// Extract ServiceAccount token from Phase 1
 		saToken := string(data)
-		authTransport := testauth.NewServiceAccountTransport(saToken)
-
-		var err error
-		dsClient, err = audit.NewOpenAPIClientAdapterWithTransport(
-			fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort),
+		
+		// STANDARDIZED PATTERN: Use shared helper for authenticated client creation
+		dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
+		dsClients := integration.NewAuthenticatedDataStorageClients(
+			dataStorageURL,
+			saToken,
 			5*time.Second,
-			authTransport, // ✅ Bearer token authentication (DD-AUTH-014)
 		)
-		Expect(err).ToNot(HaveOccurred(), "DataStorage client creation must succeed")
-		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage client created", processNum))
+		dsClient = dsClients.AuditClient       // ✅ For audit event emission (used by Gateway servers)
+		sharedOgenClient = dsClients.OpenAPIClient // ✅ For audit event queries (used by test assertions)
+		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage clients created", processNum))
 
 		// Create SHARED audit store (used by all Gateway servers in this process)
 		// DD-AUDIT-003: ONE audit store per process, background flusher runs continuously
 		// This prevents Gateway's per-test server creation from losing buffered events
 		logger.Info(fmt.Sprintf("[Process %d] Creating shared audit store", processNum))
 		auditConfig := audit.RecommendedConfig("gateway-test")
+		var err error
 		sharedAuditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", logger)
 		Expect(err).ToNot(HaveOccurred(), "Shared audit store creation must succeed")
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Shared audit store created (continuous background flusher)", processNum))

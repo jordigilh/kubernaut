@@ -88,8 +88,9 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 
-		// Initialize Gateway with shared K8s client
-		gwConfig := createGatewayConfig("http://mock-datastorage:8080")
+		// Initialize Gateway with shared K8s client AND shared audit store
+		// ADR-032: Audit is MANDATORY for P0 services (Gateway)
+		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 		var err error
 		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred())
