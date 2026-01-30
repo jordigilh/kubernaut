@@ -72,7 +72,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 		It("[GW-INT-ERR-011] should handle context deadline with real K8s API gracefully (BR-GATEWAY-113)", func() {
 			By("1. Create Gateway server with real infrastructure")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process signal with very short context deadline")
@@ -114,7 +114,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 		It("[GW-INT-ERR-014] should handle DataStorage timeout gracefully (BR-GATEWAY-058)", func() {
 			By("1. Create Gateway server with real DataStorage")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process signal with very short context deadline (will timeout DataStorage)")
@@ -168,7 +168,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 		It("[GW-INT-ERR-015] should handle cascading failures across K8s API and DataStorage (BR-GATEWAY-113)", func() {
 			By("1. Create Gateway server with real infrastructure")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create unique namespace to trigger potential race conditions")

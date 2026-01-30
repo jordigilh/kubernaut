@@ -85,7 +85,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		// Create Gateway server with shared K8s client
 		cfg := createGatewayConfig(getDataStorageURL())
 		var err error
-		gwServer, err = createGatewayServer(cfg, testLogger, k8sClient, dsClient)
+		gwServer, err = createGatewayServer(cfg, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 	})
 

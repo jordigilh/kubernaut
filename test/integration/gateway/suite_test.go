@@ -82,13 +82,14 @@ var (
 	dsInfra *infrastructure.DSBootstrapInfra
 
 	// Per-process resources (Phase 2 - All processes)
-	ctx       context.Context
-	cancel    context.CancelFunc
-	k8sClient client.Client
-	logger    logr.Logger
-	testEnv   *envtest.Environment
-	k8sConfig *rest.Config
-	dsClient  audit.DataStorageClient // Per-process DataStorage client
+	ctx              context.Context
+	cancel           context.CancelFunc
+	k8sClient        client.Client
+	logger           logr.Logger
+	testEnv          *envtest.Environment
+	k8sConfig        *rest.Config
+	dsClient         audit.DataStorageClient // Per-process DataStorage client
+	sharedAuditStore audit.AuditStore        // Shared audit store (background flusher runs continuously)
 )
 
 func TestGatewayIntegration(t *testing.T) {
@@ -192,6 +193,15 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage client creation must succeed")
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage client created", processNum))
+
+		// Create SHARED audit store (used by all Gateway servers in this process)
+		// DD-AUDIT-003: ONE audit store per process, background flusher runs continuously
+		// This prevents Gateway's per-test server creation from losing buffered events
+		logger.Info(fmt.Sprintf("[Process %d] Creating shared audit store", processNum))
+		auditConfig := audit.RecommendedConfig("gateway-test")
+		sharedAuditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", logger)
+		Expect(err).ToNot(HaveOccurred(), "Shared audit store creation must succeed")
+		logger.Info(fmt.Sprintf("[Process %d] ✅ Shared audit store created (continuous background flusher)", processNum))
 
 		// Create per-process envtest
 		logger.Info(fmt.Sprintf("[Process %d] Creating per-process envtest", processNum))

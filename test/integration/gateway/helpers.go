@@ -1332,23 +1332,28 @@ func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
 }
 
 // createGatewayServer creates a Gateway server with shared K8s client for integration tests
-// DD-AUTH-014: Uses authenticated dsClient for audit events
-func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client, dsClient audit.DataStorageClient) (*gateway.Server, error) {
+// DD-AUTH-014: Uses SHARED audit store to prevent event loss during per-test server lifecycle
+//
+// ARCHITECTURE NOTE:
+// Gateway tests create isolated server instances per test (stateless service testing pattern).
+// However, audit events must use a SHARED store to prevent buffer flush issues:
+// - Each server instance has short lifecycle (create → test → destroy)
+// - NEW audit store = NEW background flusher goroutine
+// - Server destruction cancels context → flusher stops → buffered events LOST
+// - SHARED audit store = ONE continuous flusher → events reliably flushed
+//
+// This pattern differs from controller tests (WE, NT, RO) which share both
+// controller AND audit store, but matches Gateway's stateless service nature.
+func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
 	// Create isolated Prometheus registry for this Gateway instance
 	// This prevents "duplicate metrics collector registration" panics when
 	// multiple Gateway servers are created in parallel tests
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-	// DD-AUTH-014: Create authenticated audit store using authenticated DataStorage client
-	// The dsClient is passed from suite_test.go where it's set up with ServiceAccount authentication
-	auditConfig := audit.RecommendedConfig("gateway-test")
-	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", testLogger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create audit store: %w", err)
-	}
-
-	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, auditStore)
+	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
+	// The sharedAuditStore has continuous background flusher across all tests
+	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore)
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1534,17 +1539,11 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 }
 
 // createGatewayServerWithMetrics creates a Gateway server with custom metrics registry
-// DD-AUTH-014: Uses authenticated dsClient for audit events
-func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, dsClient audit.DataStorageClient) (*gateway.Server, error) {
-	// DD-AUTH-014: Create authenticated audit store using authenticated DataStorage client
-	// The dsClient is passed from suite_test.go where it's set up with ServiceAccount authentication
-	auditConfig := audit.RecommendedConfig("gateway-test")
-	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create audit store: %w", err)
-	}
-
-	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, auditStore)
+// DD-AUTH-014: Uses SHARED audit store (same rationale as createGatewayServer)
+func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
+	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
+	// The sharedAuditStore has continuous background flusher across all tests
+	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

@@ -98,7 +98,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = gwServer.ProcessSignal(ctx, signal)
@@ -122,7 +122,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial prometheus-alert metric value")
@@ -160,7 +160,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			initialCriticalValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
@@ -256,7 +256,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			response, err := gwServer.ProcessSignal(ctx, signal)
@@ -283,7 +283,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial CRD creation counter value")
@@ -369,7 +369,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			alertName := "RepeatedAlert"
@@ -416,7 +416,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial deduplication rate gauge value")
@@ -505,7 +505,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Process 3 signals
@@ -537,7 +537,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial metric values for correct and incorrect labels")
@@ -628,7 +628,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial CRD creation counter value")
@@ -666,7 +666,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create 3 CRDs
@@ -694,7 +694,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create initial CRD
@@ -768,7 +768,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial deduplication counter values for both signal names")
@@ -832,7 +832,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial metric values")
@@ -890,7 +890,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, dsClient)
+			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("1. Get initial signals received counter value")
