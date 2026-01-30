@@ -66,7 +66,7 @@ const (
 // 3. If NO: Build locally and load into Kind (automatic fallback for new contributors)
 //
 // Returns the registered workflow bundle references for use in WorkflowExecution specs.
-func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL string, output io.Writer) (map[string]string, error) {
+func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "\n📦 Setting up test workflows...\n")
 
 	bundles := make(map[string]string)
