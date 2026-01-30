@@ -238,12 +238,18 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	// Create statusUpdater
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
 
-	// Create CRD creator
+	// BR-GATEWAY-093: Wrap K8s client with circuit breaker (must be consistent in production AND tests)
+	// FIX: GW-INT-AUD-019 was failing because circuit breaker was missing in test mode
+	// Without circuit breaker, errors.Is(err, gobreaker.ErrOpenState) always returns false
+	// Result: Test expected ERR_CIRCUIT_BREAKER_OPEN but got ERR_K8S_UNKNOWN
+	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
+
+	// Create CRD creator with circuit-breaker-protected client
 	fallbackNamespace := "default"
 	if cfg.Processing.CRD.FallbackNamespace != "" {
 		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
 	}
-	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
+	crdCreator := processing.NewCRDCreator(cbClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
 
 	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety (test environment)
 	// Uses ctrlClient as apiReader (test clients don't have separate cache/apiReader)
