@@ -58,10 +58,10 @@ type Config struct {
 // ControllerSettings contains Kubernetes controller configuration.
 // Single Responsibility: Controller runtime behavior
 type ControllerSettings struct {
-	MetricsAddr      string `yaml:"metrics_addr"`       // Default: ":9090"
-	HealthProbeAddr  string `yaml:"health_probe_addr"`  // Default: ":8081"
-	LeaderElection   bool   `yaml:"leader_election"`    // Default: false
-	LeaderElectionID string `yaml:"leader_election_id"` // Default: "notification.kubernaut.ai"
+	MetricsAddr      string `yaml:"metricsAddr"`      // Default: ":9090"
+	HealthProbeAddr  string `yaml:"healthProbeAddr"`  // Default: ":8081"
+	LeaderElection   bool   `yaml:"leaderElection"`   // Default: false
+	LeaderElectionID string `yaml:"leaderElectionId"` // Default: "notification.kubernaut.ai"
 }
 
 // DeliverySettings contains delivery channel configuration.
@@ -81,9 +81,9 @@ type ConsoleSettings struct {
 // FileSettings contains file delivery configuration.
 // DD-NOT-006: File delivery for audit trails and E2E testing
 type FileSettings struct {
-	OutputDir string        `yaml:"output_dir"` // Required when ChannelFile used
-	Format    string        `yaml:"format"`     // Default: "json"
-	Timeout   time.Duration `yaml:"timeout"`    // Default: 5s
+	OutputDir string        `yaml:"outputDir"` // Required when ChannelFile used
+	Format    string        `yaml:"format"`    // Default: "json"
+	Timeout   time.Duration `yaml:"timeout"`   // Default: 5s
 }
 
 // LogSettings contains structured log delivery configuration.
@@ -95,8 +95,8 @@ type LogSettings struct {
 
 // SlackSettings contains Slack webhook configuration.
 type SlackSettings struct {
-	WebhookURL string        `yaml:"webhook_url"` // From env or config (secret)
-	Timeout    time.Duration `yaml:"timeout"`     // Default: 10s
+	WebhookURL string        `yaml:"webhookUrl"` // From env or config (secret)
+	Timeout    time.Duration `yaml:"timeout"`    // Default: 10s
 }
 
 // InfrastructureSettings contains external dependency configuration.
@@ -104,7 +104,7 @@ type SlackSettings struct {
 type InfrastructureSettings struct {
 	// ADR-032: Data Storage URL for audit event emission (MANDATORY for P0 services)
 	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-	DataStorageURL string `yaml:"data_storage_url"`
+	DataStorageURL string `yaml:"dataStorageUrl"`
 }
 
 // LoadFromFile loads configuration from YAML file.
