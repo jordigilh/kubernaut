@@ -13,7 +13,7 @@ nodes:
     protocol: TCP
   # Data Storage for BR-WE-005 audit events (per DD-TEST-001)
   - containerPort: 30081  # Data Storage HTTP NodePort
-    hostPort: 8081        # Port on host machine (localhost:8081 per DD-TEST-001)
+    hostPort: 8092        # DD-TEST-001: WE → DataStorage dependency (avoids conflicts with RO:8089, DS:8081)
     protocol: TCP
   # DD-TEST-007: Mount coverage directory for E2E coverage collection
   # Controller pods run on control-plane node, so coverage must be accessible here
