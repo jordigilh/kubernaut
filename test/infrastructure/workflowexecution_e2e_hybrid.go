@@ -1008,7 +1008,7 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 								"--execution-namespace=kubernaut-workflows",
 								"--cooldown-period=1", // Short cooldown for E2E tests (1 minute)
 								"--service-account=kubernaut-workflow-runner",
-								"--datastorage-url=http://datastorage.kubernaut-system:8080", // BR-WE-005: Audit events
+								"--datastorage-url=http://data-storage-service.kubernaut-system:8080", // BR-WE-005: DD-AUTH-011: Match Service name
 							},
 							Ports: []corev1.ContainerPort{
 								{
