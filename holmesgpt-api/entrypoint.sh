@@ -51,4 +51,8 @@ echo "Listening on port: $API_PORT"
 # Start uvicorn server (cannot pass custom flags - uses CONFIG_FILE env var)
 # CRITICAL: Use python3.12 explicitly (UBI9 python-312 image defaults to python3.9)
 # DD-AUTH-006: Port is configurable via API_PORT environment variable
-exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 4
+# DD-HAPI-015: Single-worker async architecture for I/O-bound workload
+# HAPI is 95% I/O-bound (HTTP calls to LLM/DataStorage/K8s API)
+# FastAPI's async/await handles concurrency within single process
+# Benefits: Resource efficiency (1 connection pool vs 4), singleton pattern works, 100+ concurrent requests
+exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1

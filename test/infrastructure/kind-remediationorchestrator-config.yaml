@@ -29,7 +29,7 @@ nodes:
   extraPortMappings:
   # DataStorage API Port (for audit event queries in E2E tests)
   - containerPort: 30081
-    hostPort: 8081
+    hostPort: 8081  # DD-TEST-001: DataStorage host port allocation
     protocol: TCP
   # API Port (if needed in future)
   - containerPort: 30083

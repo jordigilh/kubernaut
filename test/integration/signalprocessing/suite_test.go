@@ -144,23 +144,61 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • Data Storage API (port 18094)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// DD-AUTH-014: Create envtest FIRST for ServiceAccount authentication
+	By("Creating envtest for DataStorage authentication (DD-AUTH-014)")
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	sharedK8sConfig, err := sharedTestEnv.Start()
+	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
+	Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
+	GinkgoWriter.Printf("✅ envtest started: %s\n", sharedK8sConfig.Host)
+	
+	// Write kubeconfig to temporary file for DataStorage container
+	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "signalprocessing-integration")
+	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
+	GinkgoWriter.Printf("✅ envtest kubeconfig written: %s\n", kubeconfigPath)
+	
+	// DD-AUTH-014: Create ServiceAccount with DataStorage access
+	GinkgoWriter.Println("🔐 Creating ServiceAccount for DataStorage authentication...")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedK8sConfig,
+		"signalprocessing-integration-sa",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
+	GinkgoWriter.Println("✅ ServiceAccount created with Bearer token")
+	
 	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
 	// Per DD-TEST-001 v2.6: PostgreSQL=15436, Redis=16382, DS=18094
-	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:     "signalprocessing",
-		PostgresPort:    15436, // DD-TEST-001 v2.2
-		RedisPort:       16382, // DD-TEST-001 v2.2
-		DataStoragePort: 18094, // DD-TEST-001 v2.2 (OFFICIAL SP allocation)
-		MetricsPort:     19094,
-		ConfigDir:       "test/integration/signalprocessing/config",
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"signalprocessing",
+		15436, 16382, 18094, 19094,
+		"test/integration/signalprocessing/config",
+		authConfig,
+	)
+	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	dsInfra.SharedTestEnv = sharedTestEnv // Store for cleanup
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		// DD-AUTH-014: Stop shared envtest
+		if dsInfra != nil && dsInfra.SharedTestEnv != nil {
+			if sharedEnv, ok := dsInfra.SharedTestEnv.(*envtest.Environment); ok {
+				if err := sharedEnv.Stop(); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
+				} else {
+					GinkgoWriter.Println("✅ Shared envtest stopped")
+				}
+			}
+		}
 	})
 
 	// SP-BUG-006: Capture infrastructure state for diagnostics
@@ -228,9 +266,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ Phase 1 Complete: Shared infrastructure ready")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-TEST-010: Multi-Controller Pattern - No config serialization needed
-	// Each process will create its own envtest + controller in Phase 2
-	return []byte{}
+	// DD-AUTH-014: Pass ServiceAccount token to all processes
+	// Note: DataStorage health check now includes auth readiness validation
+	// StartDSBootstrap waits for /health to return 200, which includes auth middleware check
+	return []byte(authConfig.Token)
 }, func(data []byte) {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 2: ALL PROCESSES (DD-TEST-010 Multi-Controller Pattern)
@@ -277,12 +316,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Create DataStorage client adapter for audit store (per-process)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
-	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testauth.NewMockUserTransport("test-signalprocessing@integration.test")
+	// DD-AUTH-014: Integration tests use ServiceAccount Bearer token authentication
+	saToken := string(data) // Extract token from Phase 1
+	authTransport := testauth.NewServiceAccountTransport(saToken)
 	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
 		5*time.Second,
-		mockTransport,
+		authTransport, // ✅ Bearer token authentication (DD-AUTH-014)
 	)
 	Expect(err).NotTo(HaveOccurred(), "Failed to create OpenAPI client adapter")
 

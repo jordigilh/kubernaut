@@ -155,8 +155,13 @@ def create_data_storage_client(app_config: Optional[AppConfig]):
         if not ds_url:
             ds_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
 
+        # DD-AUTH-014: Use ServiceAccount authentication
+        # Performance Fix: Use singleton pool manager to reuse HTTP connections
+        from datastorage_pool_manager import get_shared_datastorage_pool_manager
+        auth_pool = get_shared_datastorage_pool_manager()
         configuration = Configuration(host=ds_url)
         api_client = ApiClient(configuration)
+        api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         return WorkflowCatalogAPIApi(api_client)
     except Exception as e:
         logger.warning({

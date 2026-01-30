@@ -68,30 +68,68 @@ func TestAuthWebhookIntegration(t *testing.T) {
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 1: Runs ONCE on parallel process #1
-	// Setup shared infrastructure (PostgreSQL + Redis + Data Storage)
+	// Setup shared infrastructure (envtest + PostgreSQL + Redis + Data Storage)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("🔧 [Process %d] AuthWebhook Integration Test Suite - DD-TEST-002\n", GinkgoParallelProcess())
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("Creating shared test infrastructure (Process #1 only)...\n")
+	GinkgoWriter.Printf("  • envtest (for ServiceAccount authentication)\n")
 	GinkgoWriter.Printf("  • PostgreSQL (port 15442)\n")
 	GinkgoWriter.Printf("  • Redis (port 16386)\n")
 	GinkgoWriter.Printf("  • Data Storage API (port 18099)\n")
 	GinkgoWriter.Printf("  • Parallel Execution: 4 concurrent processors\n")
-	GinkgoWriter.Printf("  • Pattern: DD-TEST-002 (Synchronized Suite Setup)\n")
+	GinkgoWriter.Printf("  • Pattern: DD-TEST-002 + DD-AUTH-014\n")
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// DD-AUTH-014: Create envtest FIRST for ServiceAccount authentication
+	By("Creating envtest for DataStorage authentication (DD-AUTH-014)")
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	sharedK8sConfig, err := sharedTestEnv.Start()
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to start envtest: %v", err))
+	}
+	GinkgoWriter.Printf("✅ envtest started: %s\n", sharedK8sConfig.Host)
+	
+	// Write kubeconfig to temporary file for DataStorage container
+	kubeconfigPath, err := testinfra.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "authwebhook-integration")
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to write envtest kubeconfig: %v", err))
+	}
+	GinkgoWriter.Printf("✅ envtest kubeconfig written: %s\n", kubeconfigPath)
+	
+	// DD-AUTH-014: Create ServiceAccount with DataStorage access
+	GinkgoWriter.Println("🔐 Creating ServiceAccount for DataStorage authentication...")
+	authConfig, err := testinfra.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedK8sConfig,
+		"authwebhook-integration-sa",
+		"default",
+		GinkgoWriter,
+	)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to create ServiceAccount: %v", err))
+	}
+	GinkgoWriter.Println("✅ ServiceAccount created with Bearer token")
 
 	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
 	infra = testinfra.NewAuthWebhookInfrastructure()
-	err := infra.Setup(GinkgoWriter)
+	err = infra.SetupWithAuth(authConfig, GinkgoWriter)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to setup infrastructure: %v", err))
 	}
+	infra.SharedTestEnv = sharedTestEnv // Store for cleanup
 
-	// Share Data Storage URL with all processes via byte slice
-	dataStorageURL := infra.GetDataStorageURL()
-	GinkgoWriter.Printf("✅ Shared infrastructure ready (Process #1) - Data Storage: %s\n", dataStorageURL)
-	return []byte(dataStorageURL) // Pass URL to all processes
+	GinkgoWriter.Printf("✅ Shared infrastructure ready (Process #1)\n")
+	// DD-AUTH-014: Pass ServiceAccount token AND DataStorage URL to all processes
+	// Phase 1 runs only on Process #1, but Phase 2 runs on ALL processes
+	// Package-level variables are NOT shared across processes, so we must serialize data
+	// Note: DataStorage health check now includes auth readiness validation
+	// StartDSBootstrap waits for /health to return 200, which includes auth middleware check
+	sharedData := fmt.Sprintf("%s|%s", authConfig.Token, infra.GetDataStorageURL())
+	return []byte(sharedData)
 
 }, func(data []byte) {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -104,9 +142,23 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Printf("🔧 [Process %d] Setting up per-process resources...\n", GinkgoParallelProcess())
 
-	// Receive Data Storage URL from Phase 1
-	dataStorageURL := string(data)
-	GinkgoWriter.Printf("[Process %d] Received Data Storage URL: %s\n", GinkgoParallelProcess(), dataStorageURL)
+	// DD-AUTH-014: Extract ServiceAccount token AND DataStorage URL from Phase 1
+	// Phase 1 serializes: "token|url"
+	sharedData := string(data)
+	parts := []string{"", ""}
+	if idx := len(sharedData) - 1; idx >= 0 {
+		// Find the LAST '|' separator (token may contain '|' but URL won't)
+		for i := len(sharedData) - 1; i >= 0; i-- {
+			if sharedData[i] == '|' {
+				parts[0] = sharedData[:i]   // Token
+				parts[1] = sharedData[i+1:] // URL
+				break
+			}
+		}
+	}
+	saToken := parts[0]
+	dataStorageURL := parts[1]
+	GinkgoWriter.Printf("[Process %d] Received ServiceAccount token and DataStorage URL from Phase 1\n", GinkgoParallelProcess())
 
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
 	var err error
@@ -116,14 +168,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 	GinkgoWriter.Printf("[Process %d] ✅ Data Storage Ogen client initialized\n", GinkgoParallelProcess())
 
-	By("Creating REAL audit store for webhook handlers")
+	By("Creating REAL audit store with ServiceAccount authentication (DD-AUTH-014)")
 	// Create OpenAPI DataStorage client adapter for audit writes
-	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testauth.NewMockUserTransport("test-authwebhook@integration.test")
+	// DD-AUTH-014: Integration tests use ServiceAccount Bearer token authentication
+	authTransport := testauth.NewServiceAccountTransport(saToken)
 	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageURL,
 		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+		authTransport, // ✅ Bearer token authentication (DD-AUTH-014)
 	)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage audit client: %v", err))
@@ -141,7 +193,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create audit store: %v", err))
 	}
-	GinkgoWriter.Printf("[Process %d] ✅ Real audit store created (connected to DataStorage)\n", GinkgoParallelProcess())
+	GinkgoWriter.Printf("[Process %d] ✅ Real audit store created with authenticated access\n", GinkgoParallelProcess())
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// STEP 2: Setup envtest + webhook server
@@ -294,6 +346,17 @@ var _ = SynchronizedAfterSuite(func() {
 	if infra != nil {
 		_ = infra.Teardown(GinkgoWriter) // Ignore errors during cleanup
 		GinkgoWriter.Println("✅ Shared infrastructure torn down (PostgreSQL + Redis + Data Storage)")
+		
+		// DD-AUTH-014: Stop shared envtest
+		if infra.SharedTestEnv != nil {
+			if sharedEnv, ok := infra.SharedTestEnv.(*envtest.Environment); ok {
+				if err := sharedEnv.Stop(); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
+				} else {
+					GinkgoWriter.Println("✅ Shared envtest stopped")
+				}
+			}
+		}
 	}
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

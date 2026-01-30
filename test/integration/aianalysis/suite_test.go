@@ -126,6 +126,14 @@ var (
 	// DD-TEST-010: Track infrastructure for cleanup (shared reference)
 	dsInfra *infrastructure.DSBootstrapInfra
 
+	// Shared infrastructure for cleanup (SynchronizedAfterSuite second function)
+	sharedTestEnv      *envtest.Environment
+	sharedCfg          *rest.Config
+	hapiContainer      *infrastructure.ContainerInstance
+	mockLLMConfig      infrastructure.MockLLMConfig
+	mockLLMConfigPath  string
+	hapiSATokenDir     string
+
 	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
 	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
 	// Example: "oomkill-increase-memory-v1:production" → "02fad812-0ad1-4da6-b3bb-cc322a1fda47"
@@ -178,7 +186,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Force envtest to bind to IPv4 (critical for macOS!)
 	os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
 	
-	sharedTestEnv := &envtest.Environment{
+	sharedTestEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 		ControlPlane: envtest.ControlPlane{
@@ -191,18 +199,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			},
 		},
 	}
-	sharedCfg, err := sharedTestEnv.Start()
+	var err error
+	sharedCfg, err = sharedTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(sharedCfg).NotTo(BeNil())
 	
 	GinkgoWriter.Printf("✅ Shared envtest started\n")
 	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
 
-	DeferCleanup(func() {
-		By("Stopping shared envtest")
-		err := sharedTestEnv.Stop()
-		Expect(err).NotTo(HaveOccurred())
-	})
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	// Create ServiceAccount + RBAC for DataStorage access
 	// This creates:
@@ -276,7 +281,35 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
-	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for HAPI → envtest")
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for HAPI → envtest (TokenReview/SAR)")
+	
+	// DD-AUTH-014: Grant HAPI ServiceAccount permission to write audit events to DataStorage
+	// HAPI needs BOTH:
+	//   1. TokenReview/SAR permissions (to validate incoming requests) - ✅ Already has
+	//   2. DataStorage client permissions (to write audit events) - Add now
+	By("Granting HAPI ServiceAccount permission to write audit events to DataStorage")
+	hapiDSClientBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "holmesgpt-service-datastorage-client",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "data-storage-client", // Reuse existing ClusterRole (created by CreateIntegrationServiceAccountWithDataStorageAccess)
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "holmesgpt-service",
+				Namespace: "default",
+			},
+		},
+	}
+	err = k8sClient.Create(context.Background(), hapiDSClientBinding)
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
+	GinkgoWriter.Println("✅ HAPI ServiceAccount granted DataStorage write permissions")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
@@ -328,22 +361,18 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	By("Starting AIAnalysis integration infrastructure (PostgreSQL, Redis, DataStorage)")
 	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:       "aianalysis",
-		PostgresPort:      15438, // DD-TEST-001 v2.2
-		RedisPort:         16384, // DD-TEST-001 v2.2
-		DataStoragePort:   18095, // DD-TEST-001 v2.2
-		MetricsPort:       19095,
-		ConfigDir:         "test/integration/aianalysis/config",
-		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"aianalysis",
+		15438, 16384, 18095, 19095,
+		"test/integration/aianalysis/config",
+		authConfig,
+	)
+	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 
-	// Clean up infrastructure on exit
-	DeferCleanup(func() {
-		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
-	})
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	// DD-AUTH-014: Create authenticated DataStorage client for workflow seeding
 	By("Creating authenticated DataStorage client for workflow seeding")
@@ -371,20 +400,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Mock LLM will read this file at startup (no HTTP calls required)
 	By("Writing Mock LLM configuration file with workflow UUIDs")
 	// Use absolute path in test directory (not /tmp which may be cleared)
-	mockLLMConfigPath, err := filepath.Abs("mock-llm-config.yaml")
+	mockLLMConfigPath, err = filepath.Abs("mock-llm-config.yaml")
 	Expect(err).ToNot(HaveOccurred(), "Must get absolute path for config file")
 	err = WriteMockLLMConfigFile(mockLLMConfigPath, workflowUUIDs, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM config file must be written successfully")
 
-	// Clean up config file on exit
-	DeferCleanup(func() {
-		_ = os.Remove(mockLLMConfigPath)
-	})
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
-	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
+	mockLLMConfig = infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
 	mockLLMConfig.Network = "aianalysis_test_network" // Join same network as HAPI for container-to-container DNS
 	mockLLMConfig.ConfigFilePath = mockLLMConfigPath  // DD-TEST-011 v2.0: Mount config file
@@ -393,14 +419,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
 	GinkgoWriter.Printf("✅ Mock LLM service started with config file (port %d)\n", mockLLMConfig.Port)
 
-	// Clean up Mock LLM on exit
-	DeferCleanup(func() {
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer stopCancel()
-		if err := infrastructure.StopMockLLMContainer(stopCtx, mockLLMConfig, GinkgoWriter); err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to stop Mock LLM container: %v\n", err)
-		}
-	})
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	By("Starting HolmesGPT-API HTTP service (using pre-built image)")
 	// AA integration tests use OpenAPI HAPI client (HTTP-based)
@@ -408,6 +427,21 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// OPTIMIZATION: Use pre-built image from parallel build (no BuildContext/BuildDockerfile)
 	hapiConfigDir, err := filepath.Abs("hapi-config")
 	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
+	
+	// DD-AUTH-014: Create ServiceAccount secrets directory structure for HAPI container
+	// HAPI's ServiceAccountAuthPoolManager expects token at /var/run/secrets/kubernetes.io/serviceaccount/token
+	// CRITICAL: Use HAPI's own ServiceAccount token (hapiServiceAuthConfig.Token), NOT the client token!
+	// This token identifies HAPI service when calling DataStorage
+	hapiSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-hapi-sa-secrets-%d", time.Now().UnixNano()))
+	err = os.MkdirAll(hapiSATokenDir, 0755)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create HAPI ServiceAccount secrets directory")
+	hapiSATokenFilePath := filepath.Join(hapiSATokenDir, "token")
+	err = os.WriteFile(hapiSATokenFilePath, []byte(hapiServiceAuthConfig.Token), 0644)
+	Expect(err).ToNot(HaveOccurred(), "Failed to write HAPI ServiceAccount token to file")
+	GinkgoWriter.Printf("✅ HAPI ServiceAccount token written to: %s (for DataStorage auth)\n", hapiSATokenFilePath)
+	
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
+	
 	hapiConfig := infrastructure.GenericContainerConfig{
 		Name:    "aianalysis_hapi_test",
 		Image:   hapiImageName, // Use pre-built image from parallel build
@@ -421,12 +455,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
+			"ENV_MODE":         "production",                              // DD-AUTH-014: Use real K8s auth (not mock) for integration tests with envtest
 			"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real auth with envtest (same as DataStorage pattern)
 			"POD_NAMESPACE":    "default",                                 // Required for K8s client
 		},
 		Volumes: map[string]string{
-			hapiConfigDir:                          "/etc/holmesgpt:ro",      // Mount HAPI config directory
-			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro", // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
+			hapiConfigDir:                        "/etc/holmesgpt:ro",                                               // Mount HAPI config directory
+			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",                                              // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
+			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",                // DD-AUTH-014: Mount HAPI ServiceAccount secrets (HAPI's own token for DataStorage auth)
 		},
 		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
@@ -434,24 +470,12 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
 		},
 	}
-	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
+	hapiContainer, err = infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
 	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
 	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
 
-
-	// Clean up HAPI container on exit
-	DeferCleanup(func() {
-		// Capture HAPI logs before stopping container (for HTTP 500 RCA)
-		GinkgoWriter.Println("\n📋 Capturing HAPI container logs before cleanup:")
-		logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
-		logsCmd.Stdout = GinkgoWriter
-		logsCmd.Stderr = GinkgoWriter
-		_ = logsCmd.Run()
-		GinkgoWriter.Println("")
-
-		_ = infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
-	})
+	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	GinkgoWriter.Println("✅ Infrastructure startup complete (Phase 1)")
 	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
@@ -711,10 +735,57 @@ var _ = SynchronizedAfterSuite(func() {
 		GinkgoWriter.Println("   podman rm aianalysis_hapi_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
 		GinkgoWriter.Println("   podman network rm aianalysis_test_network")
 	} else {
-		// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
-		// Per DD-TEST-001 v1.3: Image cleanup done automatically by shared functions
-		// - StopDSBootstrap removes DataStorage image by name (line 299 in datastorage_bootstrap.go)
-		// - No label-based pruning needed (programmatic builds don't have podman-compose labels)
+		// FIX: Ginkgo API Compliance - DeferCleanup cannot be used in SynchronizedBeforeSuite first function
+		// All cleanup must happen here in SynchronizedAfterSuite second function (process 1 only)
+		// Cleanup in reverse order of setup
+
+		// 1. Stop HAPI container (capture logs first for debugging)
+		if hapiContainer != nil {
+			GinkgoWriter.Println("\n📋 Capturing HAPI container logs before cleanup:")
+			logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
+			logsCmd.Stdout = GinkgoWriter
+			logsCmd.Stderr = GinkgoWriter
+			_ = logsCmd.Run()
+			GinkgoWriter.Println("")
+
+			if err := infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to stop HAPI container: %v\n", err)
+			}
+		}
+
+		// 2. Stop Mock LLM container
+		if mockLLMConfig.ServiceName != "" {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer stopCancel()
+			if err := infrastructure.StopMockLLMContainer(stopCtx, mockLLMConfig, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to stop Mock LLM container: %v\n", err)
+			}
+		}
+
+		// 3. Remove Mock LLM config file
+		if mockLLMConfigPath != "" {
+			_ = os.Remove(mockLLMConfigPath)
+		}
+
+		// 4. Remove HAPI ServiceAccount token directory
+		if hapiSATokenDir != "" {
+			_ = os.RemoveAll(hapiSATokenDir)
+		}
+
+		// 5. Stop DataStorage infrastructure (PostgreSQL, Redis, DataStorage container)
+		// Per DD-TEST-001 v1.3: StopDSBootstrap removes DataStorage image by name
+		if dsInfra != nil {
+			_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		}
+
+		// 6. Stop shared envtest
+		if sharedTestEnv != nil {
+			GinkgoWriter.Println("\n🛑 Stopping shared envtest")
+			err := sharedTestEnv.Stop()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
+			}
+		}
 	}
 
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")

@@ -189,15 +189,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Starting WorkflowExecution integration infrastructure (DD-TEST-002)")
 	// Use shared DSBootstrap infrastructure (replaces custom StartWEIntegrationInfrastructure)
 	// Per DD-TEST-001 v2.6: WE uses PostgreSQL=15441, Redis=16388, DS=18097
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:       "workflowexecution",
-		PostgresPort:      15441, // DD-TEST-001 v2.2
-		RedisPort:         16388, // DD-TEST-001 v2.2 (unique, resolved conflict with HAPI)
-		DataStoragePort:   18097, // DD-TEST-001 v2.2
-		MetricsPort:       19097,
-		ConfigDir:         "test/integration/workflowexecution/config",
-		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"workflowexecution",
+		15441, 16388, 18097, 19097,
+		"test/integration/workflowexecution/config",
+		authConfig,
+	)
+	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
@@ -206,6 +205,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	// DD-AUTH-014: DataStorage health endpoint now validates auth middleware readiness
+	// No explicit warmup needed - /health returns 200 only when auth is ready
 	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 

@@ -119,7 +119,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		It("[GW-INT-ADP-003] should extract namespace from labels correctly", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create alert with explicit namespace label")
@@ -348,7 +348,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		It("[GW-INT-ADP-010] should extract involvedObject metadata correctly", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create K8s Event with explicit involvedObject")
@@ -524,7 +524,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		It("[GW-INT-ADP-015] should allow signal processing to continue despite adapter errors (BR-GATEWAY-005)", func() {
 			By("1. Create Gateway server")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process valid K8s Event")

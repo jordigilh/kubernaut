@@ -249,15 +249,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Starting Notification integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, DataStorage
 	// Per DD-TEST-001 v2.6: PostgreSQL=15440, Redis=16385, DS=18096
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:       "notification",
-		PostgresPort:      15440, // DD-TEST-001 v2.2
-		RedisPort:         16385, // DD-TEST-001 v2.2
-		DataStoragePort:   18096, // DD-TEST-001 v2.2
-		MetricsPort:       19096,
-		ConfigDir:         "test/integration/notification/config",
-		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"notification",
+		15440, 16385, 18096, 19096,
+		"test/integration/notification/config",
+		authConfig,
+	)
+	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
 	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
@@ -266,6 +265,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	// DD-AUTH-014: DataStorage health endpoint now validates auth middleware readiness
+	// No explicit warmup needed - /health returns 200 only when auth is ready
 	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 

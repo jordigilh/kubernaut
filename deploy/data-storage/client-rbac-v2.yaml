@@ -1,24 +1,25 @@
 ---
 # ========================================
-# DD-AUTH-011: Granular RBAC for DataStorage Access
-# OAuth2-Proxy SAR: verb:"create" (single global check)
-# Authority: DD-AUTH-011 (User Approved: January 26, 2026)
+# DD-AUTH-014: Middleware-Based RBAC for DataStorage Access
+# Middleware SAR: Full CRUD permissions (create, get, list, update, delete)
+# Authority: DD-AUTH-014 (Middleware-based authentication) - User Approved: January 26, 2026
 # ========================================
 #
 # This RBAC configuration enables 8 services to authenticate with DataStorage
-# via the oauth2-proxy sidecar using ServiceAccount tokens.
+# via middleware-based authentication using ServiceAccount tokens.
 #
 # Flow:
-# 1. Service → oauth-proxy (with ServiceAccount token in Authorization header)
-# 2. oauth-proxy validates token
-# 3. oauth-proxy performs Subject Access Review (SAR) with verb:"create"
-# 4. oauth-proxy injects X-Auth-Request-User header
-# 5. DataStorage receives authenticated request
+# 1. Service → DataStorage/HAPI (with ServiceAccount Bearer token in Authorization header)
+# 2. Middleware validates token via TokenReview API
+# 3. Middleware performs Subject Access Review (SAR) for CRUD permissions
+# 4. Middleware injects X-Auth-Request-User header for audit attribution
+# 5. Service handler processes authenticated request
 #
 # Services (8 total):
 # - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator (kubernaut-system)
 # - Notification (kubernaut-notifications namespace)
-# - AuthWebhook, SignalProcessing, holmesgpt-api (kubernaut-system)
+# - AuthWebhook, SignalProcessing (kubernaut-system)
+# - HolmesGPT API (kubernaut-ai namespace)
 #
 # Audit Tracking:
 # - DataStorage audit logs capture all workflow endpoint access
@@ -71,7 +72,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: gateway-sa
+    name: gateway
     namespace: kubernaut-system
 
 ---
@@ -90,7 +91,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: aianalysis-sa
+    name: aianalysis
     namespace: kubernaut-system
 
 ---
@@ -109,7 +110,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: workflowexecution-sa
+    name: workflowexecution
     namespace: kubernaut-system
 
 ---
@@ -128,7 +129,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: remediationorchestrator-sa
+    name: remediationorchestrator
     namespace: kubernaut-system
 
 ---
@@ -167,7 +168,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: authwebhook-sa
+    name: authwebhook
     namespace: kubernaut-system
 
 ---
@@ -186,7 +187,7 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: signalprocessing-sa
+    name: signalprocessing
     namespace: kubernaut-system
 
 ---
@@ -205,8 +206,8 @@ roleRef:
   name: data-storage-client
 subjects:
   - kind: ServiceAccount
-    name: holmesgpt-api-sa
-    namespace: kubernaut-system
+    name: holmesgpt-api
+    namespace: kubernaut-ai
 
 ---
 # RoleBinding: Grant DataStorage ServiceAccount self-access (self-auditing)

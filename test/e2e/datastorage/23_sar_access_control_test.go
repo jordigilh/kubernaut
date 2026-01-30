@@ -48,7 +48,7 @@ import (
 // 5. User identity injected into context for audit logging
 //
 // Architecture:
-// Client → DataStorage:8081 (direct, no proxy)
+// Client → DataStorage:8081 (DD-TEST-001 host port) → NodePort:30081 → Pod:8080
 //   ↓
 // DataStorage Middleware:
 //   1. Extract Bearer token

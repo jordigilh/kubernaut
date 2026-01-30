@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -1331,14 +1332,23 @@ func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
 }
 
 // createGatewayServer creates a Gateway server with shared K8s client for integration tests
-func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client) (*gateway.Server, error) {
+// DD-AUTH-014: Uses authenticated dsClient for audit events
+func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client, dsClient audit.DataStorageClient) (*gateway.Server, error) {
 	// Create isolated Prometheus registry for this Gateway instance
 	// This prevents "duplicate metrics collector registration" panics when
 	// multiple Gateway servers are created in parallel tests
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-	return gateway.NewServerWithK8sClient(cfg, testLogger, metricsInstance, k8sClient)
+	// DD-AUTH-014: Create authenticated audit store using authenticated DataStorage client
+	// The dsClient is passed from suite_test.go where it's set up with ServiceAccount authentication
+	auditConfig := audit.RecommendedConfig("gateway-test")
+	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", testLogger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create audit store: %w", err)
+	}
+
+	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, auditStore)
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1524,8 +1534,17 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 }
 
 // createGatewayServerWithMetrics creates a Gateway server with custom metrics registry
-func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics) (*gateway.Server, error) {
-	return gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient)
+// DD-AUTH-014: Uses authenticated dsClient for audit events
+func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, dsClient audit.DataStorageClient) (*gateway.Server, error) {
+	// DD-AUTH-014: Create authenticated audit store using authenticated DataStorage client
+	// The dsClient is passed from suite_test.go where it's set up with ServiceAccount authentication
+	auditConfig := audit.RecommendedConfig("gateway-test")
+	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "gateway-test", logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create audit store: %w", err)
+	}
+
+	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, auditStore)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

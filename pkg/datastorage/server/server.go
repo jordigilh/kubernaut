@@ -137,6 +137,18 @@ func NewServer(
 	authorizer auth.Authorizer,
 	authNamespace string,
 ) (*Server, error) {
+	// DD-AUTH-014: Authenticator and authorizer are MANDATORY
+	// Service must not start without authentication configured
+	if authenticator == nil {
+		return nil, fmt.Errorf("authenticator is nil - DD-AUTH-014 requires authentication (K8s in production, mock in unit tests)")
+	}
+	if authorizer == nil {
+		return nil, fmt.Errorf("authorizer is nil - DD-AUTH-014 requires authorization (K8s in production, mock in unit tests)")
+	}
+	if authNamespace == "" {
+		return nil, fmt.Errorf("authNamespace is empty - DD-AUTH-014 requires namespace for SAR checks")
+	}
+
 	// Connect to PostgreSQL using pgx driver (DD-010)
 	db, err := sql.Open("pgx", dbConnStr)
 	if err != nil {
@@ -386,31 +398,28 @@ func (s *Server) Handler() http.Handler {
 		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// DD-AUTH-014: Authentication and authorization middleware
+		// DD-AUTH-014: Authentication and authorization middleware (MANDATORY)
 		// Applied to all /api/v1 routes (excludes /health, /metrics)
 		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
-		if s.authenticator != nil && s.authorizer != nil {
-			authMiddleware := dsmiddleware.NewAuthMiddleware(
-				s.authenticator,
-				s.authorizer,
-				dsmiddleware.AuthConfig{
-					Namespace:    s.authNamespace,
-					Resource:     "services",
-					ResourceName: "data-storage-service",
-					Verb:         "create", // DD-AUTH-014: All services need audit write permissions
-				},
-				s.logger,
-			)
-			r.Use(authMiddleware.Handler)
-			s.logger.Info("Auth middleware enabled (DD-AUTH-014)",
-				"namespace", s.authNamespace,
-				"resource", "services",
-				"resourceName", "data-storage-service",
-				"verb", "create",
-			)
-		} else {
-			s.logger.Info("Auth middleware SKIPPED - authenticator or authorizer is nil (test environment)")
-		}
+		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
+		authMiddleware := dsmiddleware.NewAuthMiddleware(
+			s.authenticator,
+			s.authorizer,
+			dsmiddleware.AuthConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "create", // DD-AUTH-014: All services need audit write permissions
+			},
+			s.logger,
+		)
+		r.Use(authMiddleware.Handler)
+		s.logger.Info("Auth middleware enabled (DD-AUTH-014)",
+			"namespace", s.authNamespace,
+			"resource", "services",
+			"resourceName", "data-storage-service",
+			"verb", "create",
+		)
 
 		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
