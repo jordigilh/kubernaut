@@ -401,8 +401,23 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// POST-DEPLOYMENT: Build workflow bundles & create pipeline (requires DataStorage ready)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")
+
+	// DD-AUTH-014: Create ServiceAccount for workflow registration with DataStorage
+	workflowRegSAName := "workflow-registration-sa"
+	_, _ = fmt.Fprintf(writer, "🔐 Creating ServiceAccount for workflow registration (DD-AUTH-014)...\n")
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, writer); err != nil {
+		return fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
+	}
+
+	// Get ServiceAccount token for authenticated workflow registration
+	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
+
 	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001
-	if _, err := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, writer); err != nil {
+	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
 
