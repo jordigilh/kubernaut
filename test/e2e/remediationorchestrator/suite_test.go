@@ -35,6 +35,7 @@ package remediationorchestrator
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -61,6 +62,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
 	"github.com/google/uuid"
 )
@@ -200,12 +202,18 @@ var _ = SynchronizedBeforeSuite(
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up DataStorage audit client for Gap #8 webhook tests")
+		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
 		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+		// Per DD-AUTH-014: Use ServiceAccount token for authentication
 		dataStorageURL := "http://localhost:8081"
-		auditClient, err = ogenclient.NewClient(dataStorageURL)
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
+		auditClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred())
-		GinkgoWriter.Printf("✅ DataStorage audit client configured: %s\n", dataStorageURL)
+		GinkgoWriter.Printf("✅ Authenticated DataStorage audit client configured: %s\n", dataStorageURL)
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Printf("Setup Complete - Process %d ready to run tests\n", GinkgoParallelProcess())
