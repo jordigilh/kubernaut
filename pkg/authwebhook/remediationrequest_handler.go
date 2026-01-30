@@ -99,7 +99,7 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	// Write complete audit event (webhook.remediationrequest.timeout_modified)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "webhook.remediationrequest.timeout_modified")
-	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.5: event_category = webhook
+	audit.SetEventCategory(auditEvent, "orchestration") // Gap #8: Use orchestration category (webhook is RR implementation detail)
 	audit.SetEventAction(auditEvent, "timeout_modified")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
