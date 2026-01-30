@@ -62,9 +62,9 @@ var _ = Describe("Gateway Configuration", Label("integration", "config"), func()
 			By("1. Create minimal config file (relying on defaults)")
 			minimalConfig := `
 server:
-  listen_addr: ":8080"
+  listenAddr: ":8080"
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 `
 			configPath := filepath.Join(tempDir, "minimal-config.yaml")
 			err := os.WriteFile(configPath, []byte(minimalConfig), 0644)
@@ -119,14 +119,14 @@ infrastructure:
 			// Note: MaxAttempts=0 triggers smart defaults, so test with out-of-range value instead
 			invalidRetryConfig := `
 server:
-  listen_addr: ":8080"
+  listenAddr: ":8080"
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 processing:
   retry:
-    max_attempts: 15
-    initial_backoff: 100ms
-    max_backoff: 5s
+    maxAttempts: 15
+    initialBackoff: 100ms
+    maxBackoff: 5s
 `
 			configPath := filepath.Join(tempDir, "invalid-retry.yaml")
 			err := os.WriteFile(configPath, []byte(invalidRetryConfig), 0644)
@@ -138,8 +138,8 @@ processing:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred(),
-				"BR-GATEWAY-082: Excessive max_attempts=15 must be rejected")
-			Expect(err.Error()).To(ContainSubstring("max_attempts"),
+				"BR-GATEWAY-082: Excessive maxAttempts=15 must be rejected")
+			Expect(err.Error()).To(ContainSubstring("maxAttempts"),
 				"BR-GATEWAY-082: Error must mention the invalid field")
 			Expect(err.Error()).To(ContainSubstring("exceeds recommended maximum"),
 				"BR-GATEWAY-082: Error must provide validation constraint")
@@ -149,14 +149,14 @@ processing:
 			By("3. Test invalid backoff settings (negative initial backoff)")
 			invalidBackoffConfig := `
 server:
-  listen_addr: ":8080"
+  listenAddr: ":8080"
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 processing:
   retry:
-    max_attempts: 3
-    initial_backoff: -100ms
-    max_backoff: 5s
+    maxAttempts: 3
+    initialBackoff: -100ms
+    maxBackoff: 5s
 `
 			configPath = filepath.Join(tempDir, "invalid-backoff.yaml")
 			err = os.WriteFile(configPath, []byte(invalidBackoffConfig), 0644)
@@ -167,23 +167,23 @@ processing:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred(),
-				"BR-GATEWAY-082: Negative initial_backoff must be rejected")
+				"BR-GATEWAY-082: Negative initialBackoff must be rejected")
 			Expect(err.Error()).To(ContainSubstring("must be >= 0"),
 				"BR-GATEWAY-082: Error must explain non-negative constraint")
 
 			GinkgoWriter.Printf("✅ Negative InitialBackoff rejected: %v\n", err)
 
-			By("4. Test invalid backoff settings (max_backoff < initial_backoff)")
+			By("4. Test invalid backoff settings (maxBackoff < initialBackoff)")
 			invalidMaxBackoffConfig := `
 server:
-  listen_addr: ":8080"
+  listenAddr: ":8080"
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 processing:
   retry:
-    max_attempts: 3
-    initial_backoff: 5s
-    max_backoff: 1s
+    maxAttempts: 3
+    initialBackoff: 5s
+    maxBackoff: 1s
 `
 			configPath = filepath.Join(tempDir, "invalid-max-backoff.yaml")
 			err = os.WriteFile(configPath, []byte(invalidMaxBackoffConfig), 0644)
@@ -194,19 +194,19 @@ processing:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred(),
-				"BR-GATEWAY-082: max_backoff < initial_backoff must be rejected")
-			Expect(err.Error()).To(ContainSubstring("must be >= initial_backoff"),
+				"BR-GATEWAY-082: maxBackoff < initialBackoff must be rejected")
+			Expect(err.Error()).To(ContainSubstring("must be >= initialBackoff"),
 				"BR-GATEWAY-082: Error must explain backoff relationship constraint")
 
-			GinkgoWriter.Printf("✅ Invalid max_backoff < initial_backoff rejected: %v\n", err)
+			GinkgoWriter.Printf("✅ Invalid maxBackoff < initialBackoff rejected: %v\n", err)
 
-			By("5. Test invalid server timeout (read_timeout too low)")
+			By("5. Test invalid server timeout (readTimeout too low)")
 			invalidTimeoutConfig := `
 server:
-  listen_addr: ":8080"
-  read_timeout: 1s
+  listenAddr: ":8080"
+  readTimeout: 1s
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 `
 			configPath = filepath.Join(tempDir, "invalid-timeout.yaml")
 			err = os.WriteFile(configPath, []byte(invalidTimeoutConfig), 0644)
@@ -225,10 +225,10 @@ infrastructure:
 
 			GinkgoWriter.Printf("✅ Low read_timeout=1s rejected: %v\n", err)
 
-			By("6. Test missing required field (listen_addr)")
+			By("6. Test missing required field (listenAddr)")
 			invalidMissingConfig := `
 infrastructure:
-  data_storage_url: "http://data-storage:8080"
+  dataStorageUrl: "http://data-storage:8080"
 `
 			configPath = filepath.Join(tempDir, "invalid-missing.yaml")
 			err = os.WriteFile(configPath, []byte(invalidMissingConfig), 0644)
@@ -239,17 +239,17 @@ infrastructure:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred(),
-				"BR-GATEWAY-082: Missing listen_addr must be rejected")
-			Expect(err.Error()).To(ContainSubstring("listen_addr"),
+				"BR-GATEWAY-082: Missing listenAddr must be rejected")
+			Expect(err.Error()).To(ContainSubstring("listenAddr"),
 				"BR-GATEWAY-082: Error must identify missing field")
 			Expect(err.Error()).To(ContainSubstring("is required"),
 				"BR-GATEWAY-082: Error must explain requirement")
 
-			GinkgoWriter.Printf("✅ Missing listen_addr rejected: %v\n", err)
+			GinkgoWriter.Printf("✅ Missing listenAddr rejected: %v\n", err)
 
 			By("7. Verify structured error contains actionable guidance")
 			// All ConfigError instances should provide:
-			// - Field name (e.g., "processing.retry.max_attempts")
+			// - Field name (e.g., "processing.retry.maxAttempts")
 			// - Invalid value
 			// - Constraint explanation
 			// - Recommended fix
