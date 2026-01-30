@@ -90,6 +90,9 @@ var (
 	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
 	auditClient *ogenclient.Client
 
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
+
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
 )
@@ -130,6 +133,19 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred())
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "remediationorchestrator-e2e-sa"
+		namespace := "kubernaut-system"
+		
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, tempKubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+		
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, tempKubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		By("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
@@ -137,14 +153,19 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("✅ E2E test environment ready (Process 1)")
 		GinkgoWriter.Printf("   Cluster: %s\n", clusterName)
 		GinkgoWriter.Printf("   Kubeconfig: %s\n", tempKubeconfigPath)
-		GinkgoWriter.Println("   Process 1 will now share kubeconfig with other processes")
+		GinkgoWriter.Println("   Process 1 will now share kubeconfig + auth token with other processes")
 
-		// Return kubeconfig path to all processes
-		return []byte(tempKubeconfigPath)
+		// Return kubeconfig path and auth token to all processes
+		return []byte(fmt.Sprintf("%s|%s", tempKubeconfigPath, token))
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
 	func(data []byte) {
-		kubeconfigPath = string(data)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(data), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.TODO())

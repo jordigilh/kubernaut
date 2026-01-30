@@ -32,6 +32,7 @@ package remediationorchestrator
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,6 +46,7 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
@@ -66,11 +68,17 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// Create unique namespace for E2E test
 			testNamespace = createTestNamespace("audit-wiring-e2e")
 
-			// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)
+			// ✅ DD-API-001 + DD-AUTH-014: Use authenticated OpenAPI client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
+			// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
 			var err error
-			dsClient, err = dsgen.NewClient(dataStorageURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 			// Create RemediationRequest
 			now := metav1.Now()
