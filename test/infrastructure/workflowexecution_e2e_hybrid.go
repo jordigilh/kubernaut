@@ -29,6 +29,8 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -310,6 +312,14 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage client access (DD-AUTH-014)...\n")
 	if err := CreateDataStorageAccessRoleBinding(ctx, WorkflowExecutionNamespace, kubeconfigPath, "data-storage-service", writer); err != nil {
 		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
+	}
+
+	// Step 3: Create ServiceAccount + RBAC for WorkflowExecution controller audit writes (DD-AUTH-014)
+	// Per RCA (Jan 30, 2026): WE controller needs SA for DataStorage audit emission
+	// Pattern: Follow RemediationOrchestrator E2E infrastructure
+	_, _ = fmt.Fprintf(writer, "🔐 Creating ServiceAccount for WorkflowExecution controller audit writes (DD-AUTH-014)...\n")
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, "workflowexecution-controller", writer); err != nil {
+		return fmt.Errorf("failed to create WorkflowExecution controller ServiceAccount: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -959,6 +969,93 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 	if err != nil {
 		return fmt.Errorf("failed to get Kubernetes client: %w", err)
 	}
+
+	// Create ServiceAccount for WE controller (DD-AUTH-014)
+	// Per RCA (Jan 30, 2026): WE was missing SA, causing 3 audit test failures
+	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller ServiceAccount...\n")
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workflowexecution-controller",
+			Namespace: namespace,
+		},
+	}
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "   ✅ ServiceAccount created\n")
+
+	// Create Role for WE controller
+	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller Role...\n")
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workflowexecution-controller",
+			Namespace: namespace,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"workflowexecutions"},
+				Verbs:     []string{"get", "list", "watch", "update", "patch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"workflowexecutions/status"},
+				Verbs:     []string{"get", "update", "patch"},
+			},
+			{
+				APIGroups: []string{"tekton.dev"},
+				Resources: []string{"pipelineruns"},
+				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			},
+			{
+				APIGroups: []string{"tekton.dev"},
+				Resources: []string{"pipelineruns/status"},
+				Verbs:     []string{"get"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"events"},
+				Verbs:     []string{"create", "patch"},
+			},
+		},
+	}
+	_, err = clientset.RbacV1().Roles(namespace).Create(ctx, role, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create Role: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "   ✅ Role created\n")
+
+	// Create RoleBinding for WE controller
+	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller RoleBinding...\n")
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workflowexecution-controller",
+			Namespace: namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "workflowexecution-controller",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "workflowexecution-controller",
+				Namespace: namespace,
+			},
+		},
+	}
+	_, err = clientset.RbacV1().RoleBindings(namespace).Create(ctx, roleBinding, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create RoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "   ✅ RoleBinding created\n")
 
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
