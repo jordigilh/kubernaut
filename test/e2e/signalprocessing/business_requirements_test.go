@@ -54,6 +54,7 @@ import (
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -2530,11 +2531,16 @@ func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 	// We use the host port mapping: localhost:30081 → NodePort 30081
 	dataStorageURL := "http://localhost:30081"
 
-	// Create OpenAPI client with 10s timeout
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	// DD-AUTH-014: Create authenticated OpenAPI client with ServiceAccount token
+	// DataStorage middleware requires Bearer token for TokenReview + SAR authorization
+	saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+	httpClient := &http.Client{
+		Timeout:   20 * time.Second,
+		Transport: saTransport,
+	}
 	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
+		return nil, fmt.Errorf("failed to create authenticated OpenAPI client: %w", err)
 	}
 
 	// Query audit events filtered by correlation_id + event_category to avoid getting events from other parallel tests
