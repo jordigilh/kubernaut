@@ -34,8 +34,8 @@ data:
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
       # Service name: data-storage-service (matches production, required for SAR)
-      # Port 8081: DataStorage listens on 8081, Service exposes as 8080 → use Service port
-      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081"
+      # Port: 8080 (Service port) - DataStorage container listens on 8081, Service exposes as 8080
+      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 
     processing:
       # NOTE: Deduplication is now status-based (DD-GATEWAY-011)
