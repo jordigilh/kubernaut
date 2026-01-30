@@ -273,6 +273,14 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("failed to create RemediationOrchestrator controller RoleBinding: %w", err)
 	}
 
+	// Step 3: Create RoleBinding for AuthWebhook (DD-AUTH-014)
+	// CRITICAL: AuthWebhook needs this to emit audit events to DataStorage (Gap #8)
+	// Per RCA (Jan 30, 2026): AuthWebhook was missing DataStorage RBAC, causing Gap #8 failure
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for AuthWebhook (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "authwebhook", writer); err != nil {
+		return fmt.Errorf("failed to create AuthWebhook RoleBinding: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
