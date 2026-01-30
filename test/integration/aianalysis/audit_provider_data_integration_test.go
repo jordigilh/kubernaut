@@ -414,35 +414,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// This matches the correlation_id that AIAnalysis audit client records
 		correlationID := analysis.Spec.RemediationRequestRef.Name
 
-			// NT Pattern: No preliminary flush needed - Eventually() flushes on each retry
+			// FIX: AA-INT-HAPI-001 - Use standardized waitForAuditEvents pattern
+			// ROOT CAUSE: Inline Eventually() used stricter query params (EventCategory="analysis")
+			// and shorter timeout (30s vs 90s) compared to successful tests.
+			// HAPI Python audit buffer can be slow to flush under load (batch_size triggers, not timer).
+			// SOLUTION: Use same pattern as successful "Hybrid Audit Event Emission" test (line 259)
 			By("Querying HAPI event for RR reconstruction validation (with Eventually for async buffer)")
 			hapiEventType := string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)
-			var hapiEvents []ogenclient.AuditEvent
-
-			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
-			// Note: HAPI has independent Python buffer with 0.1s flush interval, but we also
-			// flush the Go audit buffer to ensure AIAnalysis events are persisted
-			Eventually(func() int {
-				// NT Pattern: Flush on each retry to catch events buffered since last check
-				_ = auditStore.Flush(ctx)
-
-				hapiResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-					CorrelationID: ogenclient.NewOptString(correlationID),
-					EventCategory: ogenclient.NewOptString("analysis"),
-					EventType:     ogenclient.NewOptString(hapiEventType),
-				})
-				if err != nil {
-					GinkgoWriter.Printf("⏳ Waiting for HAPI event (query error: %v)\n", err)
-					return 0
-				}
-				if hapiResp.Data == nil {
-					GinkgoWriter.Println("⏳ Waiting for HAPI event (no data yet)")
-					return 0
-				}
-				hapiEvents = hapiResp.Data
-				return len(hapiEvents)
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(1),
-				"DD-TESTING-001: Should have EXACTLY 1 HAPI event after async buffer flush")
+			hapiEvents := waitForAuditEvents(correlationID, hapiEventType, 1)
 
 			// Extract strongly-typed response_data (DD-AUDIT-004)
 			hapiPayload := hapiEvents[0].EventData.HolmesGPTResponsePayload
