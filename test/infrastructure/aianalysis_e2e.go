@@ -427,7 +427,7 @@ data:
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
     data_storage:
-      url: "http://datastorage:8080"
+      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
     logging:
       level: "INFO"
     audit:
@@ -471,7 +471,7 @@ spec:
         - name: OPENAI_API_KEY
           value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
-          value: "http://datastorage:8080"
+          value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
@@ -528,7 +528,7 @@ data:
       url: "http://holmesgpt-api:8080"
       timeout: "60s"
     datastorage:
-      url: "http://datastorage:8080"
+      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
       timeout: "60s"
     rego:
       policy_path: "/etc/aianalysis/policies/approval.rego"
@@ -607,7 +607,7 @@ spec:
         - name: HOLMESGPT_API_URL
           value: http://holmesgpt-api:8080
         - name: DATASTORAGE_URL
-          value: http://datastorage:8080
+          value: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
         volumeMounts:
         - name: config
           mountPath: /etc/aianalysis

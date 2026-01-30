@@ -481,7 +481,7 @@ data:
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
     audit:
-      datastorage_url: http://datastorage:8080
+      datastorage_url: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
       timeout: 10s
       buffer:
         buffer_size: 10000
