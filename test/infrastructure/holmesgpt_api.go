@@ -296,7 +296,7 @@ data:
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
     data_storage:
-      url: "http://datastorage:8080"
+      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
     audit:
       flush_interval_seconds: 0.1
       buffer_size: 10000
@@ -336,7 +336,7 @@ spec:
         - name: OPENAI_API_KEY
           value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
-          value: "http://datastorage:8080"
+          value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt

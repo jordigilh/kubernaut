@@ -101,7 +101,7 @@ spec:
               value: "debug"
             # Data Storage Configuration
             - name: DATA_STORAGE_URL
-              value: "http://datastorage:8080"
+              value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
             # Coverage Configuration (DD-TEST-007)
             - name: GOCOVERDIR
               value: "/coverdata"
