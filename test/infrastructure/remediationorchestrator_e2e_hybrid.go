@@ -480,19 +480,20 @@ data:
   remediationorchestrator.yaml: |
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
+    # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
     audit:
-      datastorage_url: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
+      dataStorageUrl: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
       timeout: 10s
       buffer:
-        buffer_size: 10000
-        batch_size: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
-        flush_interval: 100ms  # E2E: Fast flush for test visibility (0.1s)
-        max_retries: 3
+        bufferSize: 10000
+        batchSize: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
+        flushInterval: 100ms  # E2E: Fast flush for test visibility (0.1s)
+        maxRetries: 3
     controller:
-      metrics_addr: :9093
-      health_probe_addr: :8084
-      leader_election: false
-      leader_election_id: remediationorchestrator.kubernaut.ai
+      metricsAddr: :9093
+      healthProbeAddr: :8084
+      leaderElection: false
+      leaderElectionId: remediationorchestrator.kubernaut.ai
 ---
 apiVersion: apps/v1
 kind: Deployment
