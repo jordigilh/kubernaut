@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,9 @@ var (
 	// Data Storage NodePort for audit E2E tests (0 if not deployed)
 	// When audit infrastructure is deployed, this is set to the NodePort for external access
 	dataStorageNodePort int
+
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -171,12 +175,25 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "AuthWebhook manifest deployment should succeed")
 		logger.Info("✅ AuthWebhook deployed - SOC2 CC8.1 cancellation attribution enabled")
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "notification-e2e-sa"
+		namespace := controllerNamespace
+
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Ready for parallel processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Return kubeconfig path to all processes
-		return []byte(kubeconfigPath)
+		// Return kubeconfig path and auth token to all processes
+		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes (including process 1) - connects to cluster
 	func(data []byte) {
@@ -193,8 +210,12 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize failure tracking
 		anyTestFailed = false
 
-		// Get kubeconfig path from process 1
-		kubeconfigPath = string(data)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(data), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 			"process", GinkgoParallelProcess())

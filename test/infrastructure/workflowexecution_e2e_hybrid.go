@@ -292,9 +292,16 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
 	// Step 1: Deploy DataStorage ServiceAccount + auth middleware RBAC
 	// Required for DataStorage to call TokenReview and SubjectAccessReview APIs
-	_, _ = fmt.Fprintf(writer, "\n🔐 Creating DataStorage ServiceAccount + auth middleware RBAC (DD-AUTH-014)...\n")
+	_, _ = fmt.Fprintf(writer, "🔐 Creating DataStorage ServiceAccount + auth middleware RBAC (DD-AUTH-014)...\n")
 	if err := deployDataStorageServiceRBAC(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create DataStorage ServiceAccount RBAC: %w", err)
 	}

@@ -336,10 +336,17 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	}
 	_, _ = fmt.Fprintf(writer, "✅ Data Storage infrastructure deployed\n")
 
-	// 3.5. Create RoleBinding for Notification controller to access DataStorage
+	// 3.5. Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// 3.6. Create RoleBinding for Notification controller to access DataStorage
 	// DD-AUTH-011-E2E-RBAC-ISSUE: DataStorage is in SAME namespace as Notification in E2E
 	// Authority: DD-AUTH-011-E2E-RBAC-ISSUE.md
-	_, _ = fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for Notification controller (DD-AUTH-014)...\n")
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "notification-controller", writer); err != nil {
 		return fmt.Errorf("failed to create DataStorage access RoleBinding: %w", err)
 	}

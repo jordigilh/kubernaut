@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // ========================================
@@ -91,10 +93,16 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		// Use real Data Storage URL from Kind cluster
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+		// ✅ DD-API-001 + DD-AUTH-014: Create authenticated OpenAPI client (MANDATORY)
+		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
 		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 		// Create 3 NotificationRequests with same remediation context
 		for i := 1; i <= 3; i++ {

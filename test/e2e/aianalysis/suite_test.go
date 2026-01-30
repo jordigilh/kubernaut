@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,7 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func TestAIAnalysisE2E(t *testing.T) {
@@ -82,6 +84,9 @@ var (
 
 	// DataStorage OpenAPI client (DD-API-001: MANDATORY)
 	dsClient *dsgen.Client
+
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
 
 	// Service URLs (per DD-TEST-001)
 	healthURL  string
@@ -131,14 +136,32 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • DD-TEST-011: Workflows seeded and ConfigMap created in infrastructure setup")
 		logger.Info("  • Mock LLM will mount ConfigMap with workflow UUIDs at startup")
 
-		logger.Info("  • Process 1 will now share kubeconfig with other processes")
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "aianalysis-e2e-sa"
+		namespace := "kubernaut-system"
 
-		// Return kubeconfig path to all processes
-		return []byte(kubeconfigPath)
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
+		logger.Info("  • Process 1 will now share kubeconfig + auth token with other processes")
+
+		// Return kubeconfig path and auth token to all processes
+		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
 	func(data []byte) {
-		kubeconfigPath = string(data)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(data), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.Background())
@@ -202,16 +225,24 @@ var _ = SynchronizedBeforeSuite(
 			return ready
 		}, healthTimeout, 3*time.Second).Should(BeTrue(), "AIAnalysis services should become ready")
 
-		// DD-API-001: Initialize DataStorage OpenAPI client (MANDATORY)
+		// DD-API-001 + DD-AUTH-014: Initialize authenticated DataStorage OpenAPI client (MANDATORY)
 		// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN
+		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 		// All queries MUST use generated OpenAPI client for type safety
 		dataStorageURL := "http://localhost:8091" // DataStorage NodePort 30081
-		dsClient, err = dsgen.NewClient(dataStorageURL)
-		if err != nil {
-			logger.Error(err, "Failed to create DataStorage OpenAPI client")
-			Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
+		
+		// Create authenticated HTTP client with ServiceAccount token
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
 		}
-		logger.Info("✅ DataStorage OpenAPI client initialized (DD-API-001 compliant)")
+		dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+		if err != nil {
+			logger.Error(err, "Failed to create authenticated DataStorage OpenAPI client")
+			Fail(fmt.Sprintf("DD-API-001/DD-AUTH-014 violation: Cannot proceed without DataStorage client: %v", err))
+		}
+		logger.Info("✅ Authenticated DataStorage OpenAPI client initialized (DD-API-001 + DD-AUTH-014 compliant)")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info(fmt.Sprintf("✅ Process %d ready!", GinkgoParallelProcess()))
