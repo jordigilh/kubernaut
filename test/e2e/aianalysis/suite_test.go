@@ -30,7 +30,7 @@ limitations under the License.
 // Port Allocation (per DD-TEST-001):
 // - AIAnalysis Health: http://localhost:8184
 // - AIAnalysis Metrics: http://localhost:9184
-// - Data Storage: http://localhost:8081
+// - Data Storage: http://localhost:8081 (DD-TEST-001: DataStorage host port)
 // - HolmesGPT-API: http://localhost:8088
 package aianalysis
 

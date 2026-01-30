@@ -90,7 +90,7 @@ var (
 	k8sClient client.Client
 
 	// DataStorage audit client for Gap #8 webhook audit event queries
-	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 	auditClient *ogenclient.Client
 
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
@@ -203,7 +203,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
-		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 		// Per DD-AUTH-014: Use ServiceAccount token for authentication
 		dataStorageURL := "http://localhost:8081"
 		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)

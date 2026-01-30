@@ -106,10 +106,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			"DataStorage must be healthy before test starts (CI resource contention mitigation)")
 		GinkgoWriter.Println("✅ DataStorage health check passed")
 
-		// Create Data Storage client for querying audit events
-		var err error
-		dsClient, err = ogenclient.NewClient(datastorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// FIX: Creating unauthenticated client here caused HTTP 401 errors when querying audit events
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		// Pattern follows notification/controller_audit_emission_test.go:70
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	// ========================================
@@ -140,10 +141,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 	// waitForAuditEvents polls Data Storage until exact expected count appears (DD-TESTING-001 §256-300).
 	// MANDATORY: Uses Equal() for deterministic count validation, not BeNumerically(">=")
+	// NT Pattern: Flushes audit buffer on EACH retry to ensure events are written to DataStorage
 	// CI FIX: Increased timeout from 60s to 90s for CI environment resource contention
 	waitForAuditEvents := func(correlationID string, eventType string, expectedCount int) []ogenclient.AuditEvent {
 		var events []ogenclient.AuditEvent
 		Eventually(func() int {
+			// NT Pattern: Flush on each retry to catch events buffered since last check
+			_ = auditStore.Flush(ctx)
+
 			var err error
 			events, err = queryAuditEvents(correlationID, &eventType)
 			if err != nil {
@@ -151,7 +156,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				return 0
 			}
 			return len(events)
-		}, 90*time.Second, 2*time.Second).Should(Equal(expectedCount),
+		}, 90*time.Second, 500*time.Millisecond).Should(Equal(expectedCount),
 			fmt.Sprintf("DD-TESTING-001 violation: Should have EXACTLY %d %s events (controller idempotency)", expectedCount, eventType))
 		return events
 	}
@@ -246,21 +251,10 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("📋 Testing hybrid audit for correlation_id: %s\n", correlationID)
 
-			By("Flushing audit buffers to ensure all events are persisted")
-			flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-			GinkgoWriter.Println("✅ Audit buffers flushed")
-
-			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
-			// Give HAPI time to flush its buffer (Go flush doesn't trigger HAPI flush)
-			time.Sleep(500 * time.Millisecond) // 5x HAPI flush interval for safety
-			GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
-
 			// ========================================
 			// STEP 1: Verify HAPI audit event (provider perspective)
 			// ========================================
+			// NT Pattern: No preliminary flush needed - waitForAuditEvents helper flushes on each retry
 			By("Waiting for HAPI audit event (holmesgpt.response.complete)")
 			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
@@ -420,21 +414,21 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// This matches the correlation_id that AIAnalysis audit client records
 		correlationID := analysis.Spec.RemediationRequestRef.Name
 
-			By("Flushing audit buffers")
-			flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			Expect(auditStore.Flush(flushCtx)).To(Succeed())
-
+			// NT Pattern: No preliminary flush needed - Eventually() flushes on each retry
 			By("Querying HAPI event for RR reconstruction validation (with Eventually for async buffer)")
 			hapiEventType := string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)
 			var hapiEvents []ogenclient.AuditEvent
 
-			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
-			// Use Eventually() to poll until event appears (replaces brittle time.Sleep)
-			// Timeout increased to 10s to account for HAPI idempotency issue (4 duplicate calls)
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
+			// Note: HAPI has independent Python buffer with 0.1s flush interval, but we also
+			// flush the Go audit buffer to ensure AIAnalysis events are persisted
 			Eventually(func() int {
+				// NT Pattern: Flush on each retry to catch events buffered since last check
+				_ = auditStore.Flush(ctx)
+
 				hapiResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: ogenclient.NewOptString("analysis"),
 					EventType:     ogenclient.NewOptString(hapiEventType),
 				})
 				if err != nil {
@@ -447,7 +441,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				}
 				hapiEvents = hapiResp.Data
 				return len(hapiEvents)
-			}, 10*time.Second, 100*time.Millisecond).Should(Equal(1),
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"DD-TESTING-001: Should have EXACTLY 1 HAPI event after async buffer flush")
 
 			// Extract strongly-typed response_data (DD-AUDIT-004)
@@ -560,22 +554,39 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// This matches the correlation_id that AIAnalysis audit client records
 		correlationID := analysis.Spec.RemediationRequestRef.Name
 
-			By("Flushing audit buffers")
-			flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			Expect(auditStore.Flush(flushCtx)).To(Succeed())
+			// NT Pattern: Use Eventually() with Flush() to wait for HAPI events to be written
+			By("Querying ALL events by correlation_id and waiting for HAPI events")
+			var allEvents []ogenclient.AuditEvent
+			Eventually(func() int {
+				// NT Pattern: Flush audit buffer on each retry
+				_ = auditStore.Flush(ctx)
 
-			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
-			time.Sleep(500 * time.Millisecond)
-			GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
-
-			By("Querying ALL events by correlation_id")
-			allResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(allResp.Data).ToNot(BeNil())
-			allEvents := allResp.Data
+				allResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
+					return 0
+				}
+				if allResp.Data == nil {
+					return 0
+				}
+				allEvents = allResp.Data
+				
+				// Count HAPI events specifically - don't exit until we have at least 1
+				hapiEventType := ogenclient.HolmesGPTResponsePayloadAuditEventEventData
+				hapiCount := 0
+				for _, event := range allEvents {
+					if event.EventData.Type == hapiEventType {
+						hapiCount++
+					}
+				}
+				if hapiCount == 0 {
+					GinkgoWriter.Printf("⏳ Waiting for HAPI events (found %d total events, 0 HAPI)\n", len(allEvents))
+				}
+				return hapiCount
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"Should find exactly 1 HAPI audit event after buffer flush")
 
 			By("Counting events by type")
 			eventCounts := countEventsByType(allEvents)

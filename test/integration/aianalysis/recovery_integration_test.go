@@ -18,8 +18,6 @@ package aianalysis
 
 import (
 	"context"
-	"net/http"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -58,62 +56,15 @@ import (
 // See audit_flow_integration_test.go for detailed rationale.
 var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery", "hapi"), func() {
 	var (
-		hapiClient *client.HolmesGPTClient
-		hapiURL    string
 		testCtx    context.Context
 		cancelFunc context.CancelFunc
 	)
 
 	BeforeEach(func() {
-		// Get HAPI URL from environment or use default from podman-compose.test.yml
-		hapiURL = os.Getenv("HOLMESGPT_URL")
-		if hapiURL == "" {
-			// DD-TEST-001: HAPI integration port range 18120-18129
-			hapiURL = "http://localhost:18120"
-		}
-
-		// Create real HAPI client (DD-HAPI-003: Generated OpenAPI client)
-		var err error
-		hapiClient, err = client.NewHolmesGPTClient(client.Config{
-			BaseURL: hapiURL,
-			Timeout: 60 * time.Second,
-		})
-		Expect(err).ToNot(HaveOccurred(), "Failed to create HolmesGPT-API client")
-
+		// DD-AUTH-014: Use shared realHGClient from suite setup (has authentication)
+		// DO NOT create new client here - it would lack Bearer token
+		// The suite_test.go creates realHGClient with ServiceAccountTransport(token)
 		testCtx, cancelFunc = context.WithTimeout(context.Background(), 90*time.Second)
-
-		// Verify HAPI is available
-		// Skip if HAPI is not running (allows running test suite without infrastructure)
-		// Per TESTING_GUIDELINES.md: Integration tests SHOULD fail if real services unavailable
-		// But we use Skip to allow partial test runs during development
-		By("Verifying HAPI availability")
-		// Use HTTP health endpoint instead of Investigate() for better reliability
-		// The /health endpoint is always available and doesn't require complex request setup
-		healthURL := hapiURL + "/health"
-		healthReq, err := http.NewRequest("GET", healthURL, nil)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create health check request")
-
-		healthCtx, healthCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer healthCancel()
-		healthReq = healthReq.WithContext(healthCtx)
-
-		httpClient := &http.Client{Timeout: 10 * time.Second}
-		healthResp, err := httpClient.Do(healthReq)
-		if err != nil {
-			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN
-			// Integration tests MUST fail when required services are unavailable
-			Fail("REQUIRED: HAPI not available at " + hapiURL + "\n" +
-				"  Health check failed: " + err.Error() + "\n" +
-				"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n" +
-				"  Start with: podman-compose -f podman-compose.test.yml up -d holmesgpt-api")
-		}
-		defer func() { _ = healthResp.Body.Close() }()
-
-		if healthResp.StatusCode != 200 {
-			Fail("REQUIRED: HAPI health check returned non-200 status: " + healthResp.Status + "\n" +
-				"  URL: " + healthURL + "\n" +
-				"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services")
-		}
 	})
 
 	AfterEach(func() {
@@ -176,7 +127,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				BusinessCategory: client.NewOptString("standard"),
 			}
 
-			resp, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			// Contract validation
 			Expect(err).ToNot(HaveOccurred(), "Recovery request should succeed")
@@ -196,7 +147,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				BusinessCategory:  client.NewOptString("standard"),
 			}
 
-			_, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+			_, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			// Should return validation error (HAPI returns 400 for validation errors)
 			Expect(err).To(HaveOccurred(), "Request without remediation_id should fail")
@@ -220,7 +171,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					BusinessCategory:      client.NewOptString("standard"),
 				}
 
-				resp, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+				resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 				Expect(err).ToNot(HaveOccurred(), "Recovery attempt %d should succeed", attemptNum)
 				Expect(resp).ToNot(BeNil())
 			}
@@ -249,7 +200,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				ClusterName:       "prod-cluster",
 			}
 
-			resp, err := hapiClient.Investigate(testCtx, incidentReq)
+			resp, err := realHGClient.Investigate(testCtx, incidentReq)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp).ToNot(BeNil())
@@ -290,7 +241,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				BusinessCategory: client.NewOptString("standard"),
 			}
 
-			resp, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp).ToNot(BeNil())
@@ -339,7 +290,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				BusinessCategory: client.NewOptString("critical"),
 			}
 
-			resp, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred(), "Full context recovery request should succeed")
 			Expect(resp).ToNot(BeNil())
@@ -379,7 +330,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				BusinessCategory: client.NewOptString("standard"),
 			}
 
-			resp, err := hapiClient.InvestigateRecovery(testCtx, recoveryReq)
+			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred(), "Third recovery attempt should succeed")
 			Expect(resp).ToNot(BeNil())
@@ -392,8 +343,9 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 	Context("Error Handling", func() {
 		It("should return APIError for transient failures", func() {
 			// Create client with very short timeout to simulate timeout (DD-HAPI-003)
+			// DD-TEST-001: HAPI integration port 18120
 			shortClient, err := client.NewHolmesGPTClient(client.Config{
-				BaseURL: hapiURL,
+				BaseURL: "http://localhost:18120",
 				Timeout: 1 * time.Nanosecond, // Effectively instant timeout
 			})
 			Expect(err).ToNot(HaveOccurred(), "Failed to create short-timeout HAPI client")

@@ -128,7 +128,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("3. Process signal through Gateway")
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -192,7 +192,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("2. Process first signal - should create CRD")
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -253,7 +253,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Create Gateway server
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Process signals
@@ -315,7 +315,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -404,7 +404,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -481,7 +481,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -546,7 +546,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -599,7 +599,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -677,7 +677,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				firstFingerprint := signal1.Fingerprint
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -743,7 +743,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				firstFingerprint := signal1.Fingerprint
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -812,7 +812,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -866,7 +866,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -930,7 +930,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -1010,7 +1010,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				actualFingerprint := signal1.Fingerprint // Gateway generates fingerprint from alert labels
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 				Expect(err).ToNot(HaveOccurred())
 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
@@ -1110,7 +1110,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			By("1. Create and process 3 unique signals")
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, dsClient)
 			Expect(err).ToNot(HaveOccurred())
 
 			var correlationIDs []string
@@ -1238,9 +1238,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "API server unavailable",
 				}
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
-				Expect(err).ToNot(HaveOccurred())
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, dsClient)
+			Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error when K8s fails")
@@ -1313,9 +1313,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
 				}
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
-				Expect(err).ToNot(HaveOccurred())
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, dsClient)
+			Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred())
@@ -1395,9 +1395,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				}
 
 				By("2. Trip circuit breaker by making 10+ failed requests")
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
-				Expect(err).ToNot(HaveOccurred())
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, dsClient)
+			Expect(err).ToNot(HaveOccurred())
 
 				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
 				for i := 0; i < 10; i++ {

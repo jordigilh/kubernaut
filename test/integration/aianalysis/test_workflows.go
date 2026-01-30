@@ -242,7 +242,7 @@ func registerWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 			SignalType:  wf.SignalType,
 			Severity:    severity,
 			Component:   wf.Component,
-			Environment: wf.Environment,
+			Environment: []ogenclient.MandatoryLabelsEnvironmentItem{ogenclient.MandatoryLabelsEnvironmentItem(wf.Environment)}, // Model 2: wrap string in array
 			Priority:    priority,
 		},
 		Status: "active",

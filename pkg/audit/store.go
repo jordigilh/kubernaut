@@ -375,12 +375,13 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				return
 			}
 
-		batch = append(batch, event)
-		bufferSize := len(s.buffer)
-		s.metrics.SetBufferSize(bufferSize)
-		s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
+			// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
+			batch = append(batch, event)
+			bufferSize := len(s.buffer)
+			s.metrics.SetBufferSize(bufferSize)
+			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
-		// Write when batch is full
+			// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
 				// Capture size BEFORE flushing (AA Team: prevent misleading logs)
 				batchSizeBeforeFlush := len(batch)

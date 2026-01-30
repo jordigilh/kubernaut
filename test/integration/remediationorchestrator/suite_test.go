@@ -195,15 +195,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ ServiceAccount + RBAC created in shared envtest")
 
 	By("Starting RO integration infrastructure (DD-TEST-002)")
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:       "remediationorchestrator",
-		PostgresPort:      15435,
-		RedisPort:         16381,
-		DataStoragePort:   ROIntegrationDataStoragePort,
-		MetricsPort:       19140,
-		ConfigDir:         "test/integration/remediationorchestrator/config",
-		EnvtestKubeconfig: authConfig.KubeconfigPath, // DD-AUTH-014: Pass envtest kubeconfig
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"remediationorchestrator",
+		15435, 16381, ROIntegrationDataStoragePort, 19140,
+		"test/integration/remediationorchestrator/config",
+		authConfig,
+	)
+	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All external services started and healthy")
 
@@ -211,6 +210,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	// DD-AUTH-014: DataStorage health endpoint now validates auth middleware readiness
+	// No explicit warmup needed - /health returns 200 only when auth is ready
 	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 

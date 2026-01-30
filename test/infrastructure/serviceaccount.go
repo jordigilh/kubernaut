@@ -559,6 +559,7 @@ func VerifyServiceAccountAccess(namespace, saName, kubeconfigPath string, writer
 // DataStorage containers can use to validate requests via TokenReview/SAR APIs.
 type IntegrationAuthConfig struct {
 	// Token is the ServiceAccount Bearer token (from TokenRequest API)
+	// This token is used by test clients to authenticate to DataStorage
 	Token string
 
 	// KubeconfigPath is the path to the kubeconfig file for envtest API server
@@ -569,6 +570,14 @@ type IntegrationAuthConfig struct {
 
 	// Namespace is the namespace containing the ServiceAccount
 	Namespace string
+
+	// DataStorageServiceToken is the token for the datastorage-service ServiceAccount
+	// This token is used by DataStorage itself for TokenReview/SAR operations (DD-AUTH-014)
+	DataStorageServiceToken string
+
+	// DataStorageServiceTokenPath is the file path where DataStorageServiceToken is written
+	// This file is mounted in the DataStorage container at /var/run/secrets/kubernetes.io/serviceaccount/token
+	DataStorageServiceTokenPath string
 }
 
 // CreateIntegrationServiceAccountWithDataStorageAccess creates a ServiceAccount in envtest
@@ -766,7 +775,8 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	// DD-AUTH-014: DataStorage needs its own ServiceAccount to call TokenReview API
 	// The client ServiceAccount (created above) is what gets validated
 	// The DataStorage service ServiceAccount does the validating
-	datastorageSAName := "datastorage-service"
+	// DD-AUTH-014: MUST match pod deployment (datastorage.go:1139) and RBAC (client-rbac-v2.yaml:228)
+	datastorageSAName := "data-storage-sa"
 	_, _ = fmt.Fprintf(writer, "🔐 Creating DataStorage Service ServiceAccount: %s\n", datastorageSAName)
 	
 	datastorageSA := &corev1.ServiceAccount{
@@ -881,6 +891,25 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	datastorageToken := datastorageTokenResp.Status.Token
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage service token retrieved\n")
 
+	// Write DataStorage service token to file for container mounting (DD-AUTH-014)
+	// NOTE: Must use directory under $HOME (Podman rootless limitation)
+	_, _ = fmt.Fprintf(writer, "📝 Writing DataStorage service token file for container mounting...\n")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	kubeconfigDir := filepath.Join(homeDir, "tmp", "kubernaut-envtest")
+	err = os.MkdirAll(kubeconfigDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token directory: %w", err)
+	}
+	
+	datastorageTokenPath := filepath.Join(kubeconfigDir, fmt.Sprintf("datastorage-service-token-%s", saName))
+	if err := os.WriteFile(datastorageTokenPath, []byte(datastorageToken), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write DataStorage service token file: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage service token written: %s (mode: 0644, Podman-mountable)\n", datastorageTokenPath)
+
 	// ════════════════════════════════════════════════════════════════════════
 	// STEP 5: Get Token via TokenRequest API (for client)
 	// ════════════════════════════════════════════════════════════════════════
@@ -945,14 +974,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	}
 
 	// Write to temporary directory (DD-AUTH-014)
-	// NOTE: Podman rootless cannot mount files from /tmp/ (statfs fails)
-	// Must use a directory under $HOME which Podman rootless can access
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	
-	kubeconfigDir := filepath.Join(homeDir, "tmp", "kubernaut-envtest")
+	// NOTE: kubeconfigDir already created above for token file
 	err = os.MkdirAll(kubeconfigDir, 0755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubeconfig directory: %w", err)
@@ -979,16 +1001,95 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	// STEP 7: Return configuration
 	// ════════════════════════════════════════════════════════════════════════
 	authConfig := &IntegrationAuthConfig{
-		Token:              token,
-		KubeconfigPath:     kubeconfigPath,
-		ServiceAccountName: saName,
-		Namespace:          namespace,
+		Token:                       token,
+		KubeconfigPath:              kubeconfigPath,
+		ServiceAccountName:          saName,
+		Namespace:                   namespace,
+		DataStorageServiceToken:     datastorageToken,
+		DataStorageServiceTokenPath: datastorageTokenPath,
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Integration auth configured with real K8s TokenReview/SAR\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	return authConfig, nil
+}
+
+// WriteEnvtestKubeconfigToFile writes envtest REST config to a kubeconfig file
+// for mounting into Podman containers (DD-AUTH-014).
+//
+// Background:
+// - Integration tests use envtest (in-memory K8s API)
+// - DataStorage middleware needs K8s API access for TokenReview/SAR
+// - Podman containers need kubeconfig file mounted as volume
+//
+// Usage:
+//
+//	testEnv := &envtest.Environment{...}
+//	cfg, err := testEnv.Start()
+//	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(cfg, "gateway")
+//	
+//	// Pass to DataStorage:
+//	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+//	    EnvtestKubeconfig: kubeconfigPath,
+//	    ...
+//	})
+//
+// File Location:
+//   - Path: $HOME/tmp/kubernaut-envtest/envtest-kubeconfig-{serviceName}.yaml
+//   - Permissions: 0644 (Podman rootless compatible)
+//
+// Authority: DD-AUTH-014, DD-TEST-012 (envtest real authentication pattern)
+func WriteEnvtestKubeconfigToFile(cfg *rest.Config, serviceName string) (string, error) {
+	// Create kubeconfig from envtest REST config
+	kubeconfig := clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"envtest": {
+				Server:                   cfg.Host,
+				CertificateAuthorityData: cfg.CAData,
+			},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			"envtest": {
+				ClientCertificateData: cfg.CertData,
+				ClientKeyData:         cfg.KeyData,
+			},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"envtest": {
+				Cluster:  "envtest",
+				AuthInfo: "envtest",
+			},
+		},
+		CurrentContext: "envtest",
+	}
+
+	// Write to Podman-compatible directory (not /tmp/)
+	// DD-AUTH-014: Podman rootless cannot mount from /tmp/ (statfs fails)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	
+	kubeconfigDir := filepath.Join(homeDir, "tmp", "kubernaut-envtest")
+	err = os.MkdirAll(kubeconfigDir, 0755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kubeconfig directory: %w", err)
+	}
+
+	kubeconfigPath := filepath.Join(kubeconfigDir, fmt.Sprintf("envtest-kubeconfig-%s.yaml", serviceName))
+	err = clientcmd.WriteToFile(kubeconfig, kubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to write kubeconfig: %w", err)
+	}
+
+	// Fix file permissions for Podman rootless (DD-AUTH-014)
+	err = os.Chmod(kubeconfigPath, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to set kubeconfig permissions: %w", err)
+	}
+
+	return kubeconfigPath, nil
 }
 
 // CreateServiceAccountForHTTPService creates a ServiceAccount for HTTP services (like HAPI)
@@ -1165,3 +1266,17 @@ func CreateServiceAccountForHTTPService(
 func int64Ptr(i int64) *int64 {
 	return &i
 }
+
+// WriteEnvtestKubeconfigToFile writes envtest REST config to a kubeconfig file
+// for mounting into Podman containers (DD-AUTH-014).
+//
+// Background:
+// - Integration tests use envtest (in-memory K8s API)
+// - DataStorage middleware needs K8s API access for TokenReview/SAR
+// - Podman containers need kubeconfig file mounted as volume
+//
+// Usage:
+//
+//	testEnv := &envtest.Environment{...}
+//	cfg, err := testEnv.Start()
+//	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(cfg, "gateway")

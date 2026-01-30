@@ -45,6 +45,57 @@ type DSBootstrapConfig struct {
 	// If provided, DataStorage will use envtest for TokenReview/SAR validation (real K8s APIs)
 	// Optional: Only needed when using real middleware auth in integration tests
 	EnvtestKubeconfig string // Path to envtest kubeconfig (e.g., "/tmp/envtest-kubeconfig-ds-client.yaml")
+
+	// DataStorageServiceTokenPath is the path to the data-storage-sa ServiceAccount token file (DD-AUTH-014)
+	// If provided, this token is mounted at /var/run/secrets/kubernetes.io/serviceaccount/token in the container
+	// This allows DataStorage to self-validate its auth middleware in the /health endpoint
+	// Optional: Only needed when using real middleware auth in integration tests
+	DataStorageServiceTokenPath string // Path to data-storage-sa token file (e.g., "/tmp/datastorage-service-token")
+}
+
+// NewDSBootstrapConfigWithAuth creates a DSBootstrapConfig with authentication properly configured
+// This helper ensures all services configure DataStorage auth consistently (DD-AUTH-014)
+//
+// Parameters:
+//   - serviceName: Service name for container naming (e.g., "gateway", "signalprocessing")
+//   - postgresPort, redisPort, dataStoragePort, metricsPort: Service-specific port allocations (per DD-TEST-001)
+//   - configDir: Path to service's DataStorage config directory (e.g., "test/integration/gateway/config")
+//   - authConfig: Result from CreateIntegrationServiceAccountWithDataStorageAccess()
+//
+// Returns:
+//   - DSBootstrapConfig with all auth fields properly set
+//
+// Usage:
+//
+//	// Phase 1: Create ServiceAccount + RBAC
+//	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+//	    sharedK8sConfig, "gateway-integration-sa", "default", GinkgoWriter)
+//
+//	// Phase 2: Build config with helper (no manual field mapping needed)
+//	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+//	    "gateway", 15437, 16380, 18091, 19091,
+//	    "test/integration/gateway/config", authConfig)
+//
+//	// Phase 3: Start infrastructure
+//	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+//
+// Authority: DD-AUTH-014 (Middleware-based authentication)
+func NewDSBootstrapConfigWithAuth(
+	serviceName string,
+	postgresPort, redisPort, dataStoragePort, metricsPort int,
+	configDir string,
+	authConfig *IntegrationAuthConfig,
+) DSBootstrapConfig {
+	return DSBootstrapConfig{
+		ServiceName:                 serviceName,
+		PostgresPort:                postgresPort,
+		RedisPort:                   redisPort,
+		DataStoragePort:             dataStoragePort,
+		MetricsPort:                 metricsPort,
+		ConfigDir:                   configDir,
+		EnvtestKubeconfig:           authConfig.KubeconfigPath,
+		DataStorageServiceTokenPath: authConfig.DataStorageServiceTokenPath,
+	}
 }
 
 // Internal constants - shared across all services, not exposed in config
@@ -86,6 +137,10 @@ type DSBootstrapInfra struct {
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
 	Config DSBootstrapConfig // Original configuration (for reference)
+	
+	// SharedTestEnv holds envtest environment for cleanup (DD-AUTH-014)
+	// Only set if envtest was created in Phase 1 (for services needing DataStorage auth)
+	SharedTestEnv interface{} // *envtest.Environment (interface{} to avoid import cycle)
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
@@ -478,6 +533,14 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 			"-e", "KUBECONFIG=/tmp/kubeconfig",
 			"-e", "POD_NAMESPACE=default",
 		)
+
+		// DD-AUTH-014: Mount DataStorage service token for health check self-validation
+		if cfg.DataStorageServiceTokenPath != "" {
+			_, _ = fmt.Fprintf(writer, "   🎫 Mounting DataStorage service token: %s\n", cfg.DataStorageServiceTokenPath)
+			args = append(args,
+				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro", cfg.DataStorageServiceTokenPath),
+			)
+		}
 	}
 
 	args = append(args, imageName)

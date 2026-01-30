@@ -416,7 +416,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
-	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001
+	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001 (hostPort allocation)
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}

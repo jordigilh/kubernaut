@@ -1,13 +1,34 @@
 # DD-AUTH-014: Middleware-Based SAR Authentication (Interface-Driven)
 
-**Status**: Proposed (POC in DataStorage)  
-**Date**: January 26, 2026  
+**Status**: Approved (Gateway implementation in progress)  
+**Version**: 2.0  
+**Date**: January 29, 2026  
 **Decision Makers**: Architecture Team  
 **Affected Services**: 
-- **Phase 2 (POC)**: DataStorage ⭐
-- **Phase 4 (If approved)**: HolmesGPT API
-- **Phase 5 (Evaluation required)**: Gateway (high-throughput concern)
+- **Phase 2 (POC)**: ✅ DataStorage (Complete)
+- **Phase 3**: ✅ HolmesGPT API (Complete)
+- **Phase 4**: 🚧 Gateway (In Progress - January 2026)
 - **Future**: Notification, other REST API services (TBD)
+
+---
+
+## 📋 **Changelog**
+
+### Version 2.0 (January 29, 2026)
+- **APPROVED**: Gateway service added to Phase 4 scope
+- **RATIONALE**: Gateway is external-facing entry point, requires authentication for:
+  - Defense-in-depth security (zero-trust architecture)
+  - SOC2 compliance (operator attribution for signal injection)
+  - Webhook compatibility (Prometheus AlertManager + K8s Events support Bearer tokens)
+- **DECISION**: No caching for Gateway (low throughput <100 signals/min, NetworkPolicy reduces risk)
+- **SUPERSEDES**: DD-GATEWAY-006 (Network Policies only) - now obsolete
+- **UPDATES**: ADR-036 exception - Gateway now requires SAR auth despite original decision
+- **NEW BRs**: BR-GATEWAY-182 (Authentication), BR-GATEWAY-183 (Authorization)
+
+### Version 1.0 (January 26, 2026)
+- Initial POC design for DataStorage
+- Interface-driven architecture with dependency injection
+- Real K8s auth for E2E, mocks for integration tests (later revised)
 
 ---
 
@@ -654,43 +675,71 @@ ctx := context.WithValue(r.Context(), "user", user)
 - Investigate alternative approaches (e.g., service mesh)
 - **Only if POC fails validation**
 
-### **Phase 4: HolmesGPT API (If Approved)** (2 days)
+### **Phase 3: HolmesGPT API** ✅ **COMPLETE** (2 days)
 
 **Goal**: Apply proven pattern to HAPI
 
-1. Create `pkg/holmesgpt-api/middleware/auth.go`
-   - Reuse `pkg/shared/auth` interfaces
+**Status**: ✅ Implementation complete (January 2026)
+
+1. ✅ Created `pkg/holmesgpt-api/middleware/auth.go`
+   - Reused `pkg/shared/auth` interfaces
    - Service-specific SAR configuration
 
-2. Update `holmesgpt-api/main.py`
-   - Add auth middleware to FastAPI app
-   - Configure SAR parameters
-   - **Remove oauth-proxy from Python app**
+2. ✅ Updated `holmesgpt-api/main.py`
+   - Added auth middleware to FastAPI app
+   - Configured SAR parameters
+   - **Removed oauth-proxy from Python app**
 
-3. Update tests (same pattern as DataStorage)
-   - Integration: Mock authenticator/authorizer
-   - E2E: Real K8s auth
+3. ✅ Updated tests (same pattern as DataStorage)
+   - Integration: Real envtest with K8s auth
+   - E2E: Real Kind cluster with K8s auth
 
-4. Update deployment
-   - **Remove oauth-proxy sidecar**
-   - Update manifests
+4. ✅ Updated deployment
+   - **Removed oauth-proxy sidecar**
+   - Updated manifests
 
-### **Phase 5: Gateway E2E Evaluation** (1 day) ⚠️
+### **Phase 4: Gateway Service** 🚧 **IN PROGRESS** (3-4 days)
 
-**Goal**: Assess high-throughput impact
+**Goal**: Secure external-facing entry point with SAR authentication
 
-**Concern**: Gateway processes high alert volumes - may stress API server
+**Status**: 🚧 Implementation in progress (January 29, 2026)
 
-**Actions**:
-- Run Gateway E2E tests with current auth
-- Measure TokenReview/SAR call patterns
-- Estimate load if middleware applied
-- Consider optimizations:
-  - Longer token cache TTL (10-15 minutes)
-  - Batch SAR checks
-  - Rate limiting at application layer
+**Rationale for Gateway SAR Auth**:
+1. **Security**: Gateway is external-facing (Prometheus AlertManager, K8s Event forwarders)
+2. **Zero-Trust**: Network Policies alone insufficient (DD-GATEWAY-006 superseded)
+3. **SOC2 Compliance**: Need operator attribution for signal injection (REQ-3)
+4. **Webhook Support**: AlertManager + K8s Events already support Bearer tokens
 
-**Decision**: Apply middleware to Gateway only if load is acceptable
+**Performance Considerations**:
+- ✅ Low throughput: <100 signals/min in most deployments
+- ✅ No caching needed: NetworkPolicy reduces unauthorized traffic
+- ✅ Proven pattern: Same as DataStorage/HAPI (validated)
+
+**Implementation Tasks**:
+1. 🚧 Create `pkg/gateway/middleware/auth.go`
+   - Reuse `pkg/shared/auth` interfaces (K8sAuthenticator, K8sAuthorizer)
+   - Apply to `/webhook/*` routes only
+   - Extract user identity for audit events
+
+2. 🚧 Update `pkg/gateway/server.go`
+   - Add k8sClient parameter to NewServer()
+   - Instantiate AuthMiddleware
+   - Inject authenticated user into audit events (ActorID)
+
+3. 🚧 Update Business Requirements
+   - **BR-GATEWAY-182**: ServiceAccount Authentication (TokenReview)
+   - **BR-GATEWAY-183**: SubjectAccessReview Authorization
+
+4. 🚧 Update tests
+   - Integration: Real envtest with ServiceAccounts + RBAC
+   - E2E: Real Kind cluster with ServiceAccount tokens
+
+5. 🚧 Update deployment docs
+   - Webhook configuration examples (Bearer tokens)
+   - RBAC requirements
+   - ServiceAccount setup guide
+
+**Decision**: ✅ **APPROVED** - Gateway auth/authz required for production security
 
 ### **Phase 6: Documentation & Rollout** (1 day)
 
@@ -714,30 +763,45 @@ ctx := context.WithValue(r.Context(), "user", user)
 ## 📈 **Success Metrics**
 
 ### **Functional**
-- ✅ All services authenticate using TokenReview API
+- ✅ **DataStorage**: Authenticates using TokenReview API (Complete)
+- ✅ **HAPI**: Authenticates using TokenReview API (Complete)
+- 🚧 **Gateway**: Authentication in progress (January 2026)
 - ✅ All services authorize using SAR API
-- ✅ User identity captured for audit logging
+- ✅ User identity captured for audit logging (SOC2 CC8.1 compliance)
 
 ### **Testing**
-- ✅ Unit tests: 100% coverage of auth middleware
-- ✅ Integration tests: Auth validated with mocks
-- ✅ E2E tests: Full auth flow validated in Kind
-- ✅ Production: Auth works in OpenShift
+- ✅ **DataStorage**: 100% auth middleware coverage (Unit + Integration + E2E)
+- ✅ **HAPI**: Full auth flow validated in integration + E2E
+- 🚧 **Gateway**: Tests pending (envtest + Kind)
+- ✅ Integration tests: Real K8s auth with envtest (not mocks)
+- ✅ E2E tests: Real K8s auth in Kind cluster
 
 ### **Operational**
-- ✅ No more proxy sidecars (reduced complexity)
-- ✅ Single container per service (simplified debugging)
-- ✅ Portable across Kubernetes distributions
+- ✅ **DataStorage**: oauth-proxy removed (Single container deployment)
+- ✅ **HAPI**: oauth-proxy removed (Simplified debugging)
+- 🚧 **Gateway**: Network Policies replaced with SAR auth (In progress)
+- ✅ Portable across Kubernetes distributions (OpenShift, vanilla K8s)
+- ✅ Reduced K8s API load: No issues observed with real auth in DS/HAPI
 
 ---
 
 ## 🔗 **Related Documents**
 
-- **DD-AUTH-011**: Granular RBAC & SAR Verb Mapping (superseded by this DD)
-- **DD-AUTH-012**: ose-oauth-proxy for SAR (superseded by this DD)
-- **DD-AUTH-013**: HTTP Status Codes for Auth Errors (complements this DD)
+### **Superseded Documents**
+- **DD-AUTH-011**: Granular RBAC & SAR Verb Mapping → Superseded by DD-AUTH-014
+- **DD-AUTH-012**: ose-oauth-proxy for SAR → Superseded by DD-AUTH-014
+- **DD-GATEWAY-006**: Gateway Network Policies Only → Superseded by DD-AUTH-014 V2.0 (Gateway now requires SAR)
+- **ADR-036**: Authentication Strategy → Exception: Gateway now requires SAR despite original decision
+
+### **Complementary Documents**
+- **DD-AUTH-013**: HTTP Status Codes for Auth Errors (401/403 handling)
+- **DD-TEST-012**: Envtest Real Authentication Pattern (integration test strategy)
+
+### **Business Requirements**
 - **BR-SECURITY-016**: Kubernetes RBAC enforcement for REST API endpoints
 - **BR-SECURITY-017**: ServiceAccount token authentication
+- **BR-GATEWAY-182**: Gateway ServiceAccount Authentication (NEW - January 2026)
+- **BR-GATEWAY-183**: Gateway SubjectAccessReview Authorization (NEW - January 2026)
 
 ---
 

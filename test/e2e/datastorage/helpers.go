@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
@@ -31,8 +31,8 @@ import (
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
 func postAuditEventBatch( //nolint:unused
 	ctx context.Context,
-	client *ogenclient.Client,
-	events []ogenclient.AuditEventRequest,
+	client *dsgen.Client,
+	events []dsgen.AuditEventRequest,
 ) ([]string, error) {
 	resp, err := client.CreateAuditEventsBatch(ctx, events)
 	if err != nil {
@@ -106,12 +106,12 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
-func newMinimalGatewayPayload(signalType, alertName string) ogenclient.AuditEventRequestEventData {
-	return ogenclient.AuditEventRequestEventData{
-		Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
-		GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-			EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  ogenclient.GatewayAuditPayloadSignalType(signalType),
+func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequestEventData {
+	return dsgen.AuditEventRequestEventData{
+		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+		GatewayAuditPayload: dsgen.GatewayAuditPayload{
+			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
 			AlertName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
@@ -119,11 +119,11 @@ func newMinimalGatewayPayload(signalType, alertName string) ogenclient.AuditEven
 	}
 }
 
-func newMinimalAIAnalysisPayload(analysisName string) ogenclient.AuditEventRequestEventData {
-	return ogenclient.AuditEventRequestEventData{
-		Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
-		AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
-			EventType:        ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+func newMinimalAIAnalysisPayload(analysisName string) dsgen.AuditEventRequestEventData {
+	return dsgen.AuditEventRequestEventData{
+		Type: dsgen.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+		AIAnalysisAuditPayload: dsgen.AIAnalysisAuditPayload{
+			EventType:        dsgen.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
 			AnalysisName:     analysisName,
 			Namespace:        "default",
 			Phase:            "Completed",
@@ -132,11 +132,11 @@ func newMinimalAIAnalysisPayload(analysisName string) ogenclient.AuditEventReque
 	}
 }
 
-func newMinimalWorkflowPayload(workflowID string) ogenclient.AuditEventRequestEventData {
-	return ogenclient.AuditEventRequestEventData{
-		Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData,
-		WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
-			EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+func newMinimalWorkflowPayload(workflowID string) dsgen.AuditEventRequestEventData {
+	return dsgen.AuditEventRequestEventData{
+		Type: dsgen.AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData,
+		WorkflowExecutionAuditPayload: dsgen.WorkflowExecutionAuditPayload{
+			EventType:       dsgen.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
 			WorkflowID:      workflowID,
 			WorkflowVersion: "1.0.0",
 			TargetResource:  "test-resource",
@@ -145,21 +145,21 @@ func newMinimalWorkflowPayload(workflowID string) ogenclient.AuditEventRequestEv
 	}
 }
 
-func newMinimalGenericPayload() ogenclient.AuditEventRequestEventData {
+func newMinimalGenericPayload() dsgen.AuditEventRequestEventData {
 	// Use WorkflowSearchAuditPayload as a minimal generic payload for testing
-	return ogenclient.AuditEventRequestEventData{
-		Type: ogenclient.WorkflowSearchAuditPayloadAuditEventRequestEventData,
-		WorkflowSearchAuditPayload: ogenclient.WorkflowSearchAuditPayload{
-			EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			Query: ogenclient.QueryMetadata{
+	return dsgen.AuditEventRequestEventData{
+		Type: dsgen.WorkflowSearchAuditPayloadAuditEventRequestEventData,
+		WorkflowSearchAuditPayload: dsgen.WorkflowSearchAuditPayload{
+			EventType: dsgen.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+			Query: dsgen.QueryMetadata{
 				TopK: 10,
 			},
-			Results: ogenclient.ResultsMetadata{
+			Results: dsgen.ResultsMetadata{
 				TotalFound: 0,
 				Returned:   0,
-				Workflows:  []ogenclient.WorkflowResultAudit{},
+				Workflows:  []dsgen.WorkflowResultAudit{},
 			},
-			SearchMetadata: ogenclient.SearchExecutionMetadata{
+			SearchMetadata: dsgen.SearchExecutionMetadata{
 				DurationMs:          100,
 				EmbeddingDimensions: 1536,
 				EmbeddingModel:      "text-embedding-ada-002",
@@ -173,20 +173,20 @@ func newMinimalGenericPayload() ogenclient.AuditEventRequestEventData {
 //
 // Authority: DD-API-001 (OpenAPI Client Mandate)
 // Replaces: postAuditEvent (raw HTTP helper)
-func createAuditEventOpenAPI(ctx context.Context, client *ogenclient.Client, event ogenclient.AuditEventRequest) string {
+func createAuditEventOpenAPI(ctx context.Context, client *dsgen.Client, event dsgen.AuditEventRequest) string {
 	resp, err := client.CreateAuditEvent(ctx, &event)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit event via OpenAPI client")
 
 	// Ogen returns concrete types - extract event ID or handle errors
 	switch r := resp.(type) {
-	case *ogenclient.CreateAuditEventCreated:
+	case *dsgen.CreateAuditEventCreated:
 		return r.EventID.String()
-	case *ogenclient.CreateAuditEventAccepted:
+	case *dsgen.CreateAuditEventAccepted:
 		return r.EventID.String()
-	case *ogenclient.CreateAuditEventBadRequest:
+	case *dsgen.CreateAuditEventBadRequest:
 		Fail(fmt.Sprintf("API returned 400 Bad Request: %+v", r))
 		return ""
-	case *ogenclient.CreateAuditEventInternalServerError:
+	case *dsgen.CreateAuditEventInternalServerError:
 		Fail(fmt.Sprintf("API returned 500 Internal Server Error: %+v", r))
 		return ""
 	default:
@@ -215,7 +215,7 @@ func generateTestID() string {
 // with authentication provided by ServiceAccount Bearer token.
 //
 // Authority: DD-AUTH-014 (Middleware-based Authentication)
-func createOpenAPIClient(baseURL string) (*ogenclient.Client, error) {
+func createOpenAPIClient(baseURL string) (*dsgen.Client, error) {
 	// DD-AUTH-014: Return shared authenticated DSClient instead of creating new unauthenticated client
 	return DSClient, nil
 }
@@ -223,8 +223,8 @@ func createOpenAPIClient(baseURL string) (*ogenclient.Client, error) {
 // postAuditEvent posts an audit event using the ogen client and returns the event ID
 func postAuditEvent(
 	ctx context.Context,
-	client *ogenclient.Client,
-	event ogenclient.AuditEventRequest,
+	client *dsgen.Client,
+	event dsgen.AuditEventRequest,
 ) (string, error) {
 	resp, err := client.CreateAuditEvent(ctx, &event)
 	if err != nil {
@@ -233,11 +233,11 @@ func postAuditEvent(
 
 	// Extract event ID from response (ogen unions require type checking)
 	switch r := resp.(type) {
-	case *ogenclient.CreateAuditEventCreated:
+	case *dsgen.CreateAuditEventCreated:
 		return r.EventID.String(), nil
-	case *ogenclient.CreateAuditEventAccepted:
+	case *dsgen.CreateAuditEventAccepted:
 		return r.EventID.String(), nil
-	case *ogenclient.CreateAuditEventBadRequest:
+	case *dsgen.CreateAuditEventBadRequest:
 		return "", fmt.Errorf("bad request: %s", r.Detail.Value)
 	default:
 		return "", fmt.Errorf("unexpected response type: %T", resp)

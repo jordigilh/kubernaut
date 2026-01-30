@@ -106,24 +106,60 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		
+	// DD-AUTH-014: Create envtest FIRST (DataStorage middleware needs kubeconfig)
+	logger.Info("[Process 1] Creating envtest for DataStorage authentication...")
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			"../../../config/crd/bases",
+		},
+		ErrorIfCRDPathMissing: true,
+	}
+	
+	sharedK8sConfig, err := sharedTestEnv.Start()
+	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
+	Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
+	logger.Info("[Process 1] ✅ envtest started", "api", sharedK8sConfig.Host)
+	
+	// Write kubeconfig to temporary file for DataStorage container
+	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "gateway-integration")
+	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
+	logger.Info("[Process 1] ✅ envtest kubeconfig written", "path", kubeconfigPath)
+	
+	// DD-AUTH-014: Create ServiceAccount with DataStorage access for integration tests
+	// This replaces MockUserTransport with real Bearer token authentication
+	logger.Info("[Process 1] Creating ServiceAccount for DataStorage authentication...")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedK8sConfig,
+		"gateway-integration-sa",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
+	logger.Info("[Process 1] ✅ ServiceAccount created with Bearer token")
+
 		logger.Info("[Process 1] Starting DataStorage infrastructure (PostgreSQL, Redis, DataStorage)...")
 
 		// Use unified infrastructure bootstrap (per DD-TEST-002)
 		// This handles: PostgreSQL, Redis, Migrations, DataStorage
-		// Same pattern as AIAnalysis and SignalProcessing integration tests
-		var err error
-		dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-			ServiceName:     "gateway",
-			PostgresPort:    gatewayPostgresPort,    // 15437 per DD-TEST-001
-			RedisPort:       gatewayRedisPort,       // 16380 per DD-TEST-001
-			DataStoragePort: gatewayDataStoragePort, // 18091 per DD-TEST-001
-			MetricsPort:     gatewayMetricsPort,     // 19091 per DD-TEST-001
-			ConfigDir:       "test/integration/gateway/config",
-		}, GinkgoWriter)
+		// DD-AUTH-014: Helper function ensures auth is properly configured
+		cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+			"gateway",
+			gatewayPostgresPort, gatewayRedisPort, gatewayDataStoragePort, gatewayMetricsPort,
+			"test/integration/gateway/config",
+			authConfig,
+		)
+		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 
-		logger.Info("✅ Phase 1 complete - DataStorage infrastructure ready for all processes")
-		return []byte("ready")
+	// Store shared envtest for cleanup
+	dsInfra.SharedTestEnv = sharedTestEnv
+
+	logger.Info("✅ Phase 1 complete - DataStorage infrastructure ready for all processes")
+	// Pass ServiceAccount token to all processes for authenticated DataStorage client
+	// Note: DataStorage health check now includes auth readiness (DD-AUTH-014)
+	// StartDSBootstrap waits for /health to return 200, which includes auth middleware validation
+	return []byte(authConfig.Token)
 	},
 
 	// ============================================================================
@@ -140,20 +176,22 @@ var _ = SynchronizedBeforeSuite(
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// CRITICAL: Create per-process DataStorage client
-		logger.Info(fmt.Sprintf("[Process %d] Creating per-process DataStorage client", processNum))
-		mockTransport := testauth.NewMockUserTransport(
-			fmt.Sprintf("test-gateway@integration.test-p%d", processNum),
-		)
+		// DD-AUTH-014: Create authenticated DataStorage client using ServiceAccount token
+		// This replaces MockUserTransport (X-Auth-Request-User) with real Bearer token auth
+		logger.Info(fmt.Sprintf("[Process %d] Creating authenticated DataStorage client", processNum))
+		
+		// Extract ServiceAccount token from Phase 1
+		saToken := string(data)
+		authTransport := testauth.NewServiceAccountTransport(saToken)
 
 		var err error
 		dsClient, err = audit.NewOpenAPIClientAdapterWithTransport(
 			fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort),
 			5*time.Second,
-			mockTransport,
+			authTransport, // ✅ Bearer token authentication (DD-AUTH-014)
 		)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage client creation must succeed")
-		logger.Info(fmt.Sprintf("[Process %d] ✅ DataStorage client created", processNum))
+		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage client created", processNum))
 
 		// Create per-process envtest
 		logger.Info(fmt.Sprintf("[Process %d] Creating per-process envtest", processNum))

@@ -982,7 +982,7 @@ func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubecon
 }
 
 // deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage with OAuth2-Proxy sidecar.
-// Architecture: Service:8080 → oauth2-proxy:8080 → DataStorage:8081
+// Architecture: Direct access via DD-AUTH-014 (no oauth-proxy)
 // DD-AUTH-010: Real authentication with ServiceAccount tokens (no pass-through mode)
 // DD-AUTH-011: SubjectAccessReview (SAR) with verb:"create" for all DataStorage operations
 // DD-AUTH-009 v2.0: OpenShift oauth-proxy (NOT CNCF oauth2-proxy)
@@ -1002,7 +1002,7 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
+  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
@@ -1087,8 +1087,8 @@ password: test_password`,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "http",
-					Port:       8081,                   // DD-AUTH-014: Direct to DataStorage (no proxy)
-					TargetPort: intstr.FromInt(8081), // Maps to DataStorage container port
+					Port:       8080,                   // DD-AUTH-014: Direct to DataStorage (no proxy)
+					TargetPort: intstr.FromInt(8080), // Maps to DataStorage container port
 					NodePort:   nodePort,              // Configurable per service (default: 30081)
 					Protocol:   corev1.ProtocolTCP,
 				},
@@ -1172,7 +1172,7 @@ password: test_password`,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "http",      // DD-AUTH-014: Direct access (no proxy)
-								ContainerPort: 8081,        // Internal port (matches config.yaml)
+								ContainerPort: 8080,        // Internal port (matches config.yaml)
 							},
 							{
 								Name:          "metrics",
@@ -1249,7 +1249,7 @@ password: test_password`,
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path: "/health",
-										Port: intstr.FromInt(8081), // DataStorage listens on 8081
+										Port: intstr.FromInt(8080), // DataStorage listens on 8080
 									},
 								},
 								InitialDelaySeconds: 5,
@@ -1261,7 +1261,7 @@ password: test_password`,
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path: "/health",
-										Port: intstr.FromInt(8081), // DataStorage listens on 8081
+										Port: intstr.FromInt(8080), // DataStorage listens on 8080
 									},
 								},
 								InitialDelaySeconds: 30,
@@ -1854,7 +1854,7 @@ service:
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
+  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
