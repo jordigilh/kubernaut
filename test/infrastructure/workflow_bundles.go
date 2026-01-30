@@ -17,17 +17,17 @@ limitations under the License.
 package infrastructure
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
+
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
@@ -125,10 +125,11 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		bundles["test-intentional-failure"] = localFailingRef
 	}
 
-	// Register workflows in DataStorage (fast HTTP POST)
+	// Register workflows in DataStorage using OpenAPI client (DD-API-001)
 	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage...\n")
-	if err := registerWorkflowInDataStorageRaw(
+	if err := registerTestBundleWorkflow(
 		dataStorageURL,
+		saToken,
 		"test-hello-world",
 		"v1.0.0",
 		bundles["test-hello-world"],
@@ -138,8 +139,9 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		return nil, fmt.Errorf("failed to register hello-world workflow: %w", err)
 	}
 
-	if err := registerWorkflowInDataStorageRaw(
+	if err := registerTestBundleWorkflow(
 		dataStorageURL,
+		saToken,
 		"test-intentional-failure",
 		"v1.0.0",
 		bundles["test-intentional-failure"],
@@ -255,11 +257,11 @@ func loadBundleIntoKind(clusterName, bundleRef string, output io.Writer) error {
 	return nil
 }
 
-// registerWorkflowInDataStorageRaw registers a workflow in DataStorage via REST API (raw HTTP)
+// registerTestBundleWorkflow registers a workflow in DataStorage using OpenAPI client
 // POST /api/v1/workflows per DD-WORKFLOW-005 v1.0
-// Uses map[string]interface{} pattern matching working E2E tests
-// NOTE: Legacy function - AIAnalysis E2E tests use OpenAPI client version
-func registerWorkflowInDataStorageRaw(dataStorageURL, workflowName, version, containerImage, description string, output io.Writer) error {
+// Uses dsgen.RemediationWorkflow OpenAPI types for compile-time type safety (DD-API-001)
+// Includes DD-AUTH-014 ServiceAccount authentication
+func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, containerImage, description string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
 
 	// Generate ADR-043 compliant content
@@ -268,53 +270,54 @@ func registerWorkflowInDataStorageRaw(dataStorageURL, workflowName, version, con
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
 
-	// Build payload using map pattern (matches E2E tests at test/e2e/datastorage/04_workflow_search_test.go:265-277)
-	workflowReq := map[string]interface{}{
-		"workflow_name":    workflowName,
-		"version":          version,
-		"name":             fmt.Sprintf("Test Workflow: %s", workflowName),
-		"description":      description,
-		"content":          content,
-		"content_hash":     contentHash,
-		"execution_engine": "tekton",
-		"container_image":  containerImage,
-		"labels": map[string]interface{}{
-			"signal_type": "test-signal", // mandatory
-			"severity":    "low",         // mandatory
-			"component":   "deployment",  // mandatory
-			"environment": "test",        // mandatory
-			"priority":    "P3",          // mandatory
+	// Build payload using OpenAPI client types (DD-API-001)
+	// CRITICAL: Environment must be []dsgen.MandatoryLabelsEnvironmentItem, not string!
+	workflow := dsgen.RemediationWorkflow{
+		WorkflowName:    workflowName,
+		Version:         version,
+		Name:            fmt.Sprintf("Test Workflow: %s", workflowName),
+		Description:     description,
+		Content:         content,
+		ContentHash:     contentHash,
+		ExecutionEngine: "tekton", // String field, not enum
+		ContainerImage:  dsgen.NewOptString(containerImage),
+		Labels: dsgen.MandatoryLabels{
+			SignalType:  "test-signal",
+			Severity:    dsgen.MandatoryLabelsSeverityLow,
+			Component:   "deployment",
+			Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem_test}, // ✅ Array!
+			Priority:    dsgen.MandatoryLabelsPriority_P3,
 		},
-		"status": "active",
+		Status: dsgen.RemediationWorkflowStatusActive,
 	}
 
-	jsonPayload, err := json.Marshal(workflowReq)
+	// Create authenticated HTTP client (DD-AUTH-014)
+	httpClient := &http.Client{
+		Transport: testauth.NewServiceAccountTransport(saToken),
+	}
+
+	// Create OpenAPI client with authentication
+	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 	if err != nil {
-		return fmt.Errorf("failed to marshal workflow payload: %w", err)
+		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	// POST to DataStorage workflow creation endpoint
-	// BR-STORAGE-014: Workflow catalog management
-	endpoint := fmt.Sprintf("%s/api/v1/workflows", dataStorageURL)
-	req, err := http.NewRequestWithContext(context.Background(), "POST", endpoint, bytes.NewBuffer(jsonPayload))
+	// Register workflow via OpenAPI client
+	ctx := context.Background()
+	resp, err := client.CreateWorkflow(ctx, &workflow)
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to POST workflow to DataStorage: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Check response status
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DataStorage returned status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("failed to register workflow: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
-	return nil
+	// Validate response - success returns *RemediationWorkflow
+	if createdWorkflow, ok := resp.(*dsgen.RemediationWorkflow); ok {
+		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
+		if wfID, exists := createdWorkflow.WorkflowID.Get(); exists {
+			_, _ = fmt.Fprintf(output, "       UUID: %s\n", wfID.String())
+		}
+		return nil
+	}
+
+	// Handle error responses
+	return fmt.Errorf("unexpected response type: %T", resp)
 }
