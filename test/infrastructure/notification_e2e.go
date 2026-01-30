@@ -230,6 +230,13 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to deploy RBAC: %w", err)
 	}
 
+	// 2b. Add DataStorage access for audit emission (DD-AUTH-014, same pattern as WE/AuthWebhook)
+	_, _ = fmt.Fprintf(writer, "🔐 Adding DataStorage access for notification-controller SA (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "notification-controller", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage access RoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage access RoleBinding created\n")
+
 	// 3. Deploy ConfigMap (if needed for configuration)
 	_, _ = fmt.Fprintf(writer, "📄 Deploying ConfigMap...\n")
 	if err := deployNotificationConfigMap(namespace, kubeconfigPath, writer); err != nil {
