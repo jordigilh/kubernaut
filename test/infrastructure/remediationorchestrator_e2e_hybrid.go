@@ -265,6 +265,14 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
 	}
 
+	// Step 2: Create RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)
+	// CRITICAL: RO controller needs this to emit audit events to DataStorage
+	// Authority: DD-AUTH-014 (Middleware-based SAR Authentication)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "remediationorchestrator-controller", writer); err != nil {
+		return fmt.Errorf("failed to create RemediationOrchestrator controller RoleBinding: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
