@@ -250,9 +250,17 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3.5: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintf(writer, "\n🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// Step 1: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
 		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
 	}
