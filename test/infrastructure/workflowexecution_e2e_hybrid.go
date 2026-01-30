@@ -416,7 +416,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
-	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001 (hostPort allocation)
+	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
@@ -439,7 +439,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
 	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
-	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8081")
+	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8092") // DD-TEST-001: WE → DataStorage dependency port
 	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
