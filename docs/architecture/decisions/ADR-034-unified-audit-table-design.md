@@ -2,10 +2,10 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
-**Version**: 1.5
-**Last Updated**: 2026-01-08
+**Version**: 1.6
+**Last Updated**: 2026-01-31
 **Deciders**: Architecture Team
-**Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator, Authentication Webhook teams
+**Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator, Authentication Webhook, HolmesGPT API teams
 
 ---
 
@@ -19,6 +19,7 @@
 | **v1.3** | 2025-12-18 | Added "Authoritative Subdocuments" section establishing DD-AUDIT-004 (RR Reconstruction Field Mapping) as authoritative reference for BR-AUDIT-005 v2.0 (100% RR reconstruction from audit traces). Supports enterprise compliance (SOC 2, ISO 27001, NIST 800-53). | Architecture Team |
 | **v1.4** | 2026-01-06 | Added Authentication Webhook Service (`webhook` category) for SOC2 CC8.1 operator attribution. Webhook service captures WHO (authenticated user) for CRD operations requiring manual approval. Cross-references DD-WEBHOOK-003, BR-AUTH-001. Expected volume: +100 events/day. | Architecture Team |
 | **v1.5** | 2026-01-08 | **BREAKING**: Fixed WorkflowExecution event naming inconsistency. Changed Gap #5 (`workflow.selection.completed` → `workflowexecution.selection.completed`) and Gap #6 (`execution.workflow.started` → `workflowexecution.execution.started`) to align with ADR-034 v1.2 service-level category naming convention. All WorkflowExecution controller events now use `workflowexecution` prefix. Updated event_category from `"workflow"`/`"execution"` to `"workflowexecution"`. Discovered during ogen migration architectural review. | Architecture Team |
+| **v1.6** | 2026-01-31 | **BREAKING**: Fixed event_category collision between AIAnalysis and HolmesGPT API. Added new `aiagent` category for HolmesGPT API Service (AI Agent Provider with autonomous tool-calling). Clarified `analysis` category is exclusively for AIAnalysis controller (remediation workflow orchestration). **Rationale**: Two distinct services were incorrectly sharing `"analysis"` category, violating ADR-034 v1.2 service-level naming rule. HolmesGPT is architecturally an autonomous AI agent (per HolmesGPT documentation), not an analysis controller. New name is implementation-agnostic (supports future agent replacements). **Impact**: (1) Historical queries filtering by `event_category='analysis'` will now miss HAPI events (must use `'aiagent'`). (2) **KNOWN ISSUE**: AIAnalysis INT tests will temporarily fail - they query with `event_category='analysis'` expecting to find HAPI events (`holmesgpt.response.complete`). **Migration Path**: Fix HAPI INT tests first (Priority 1), then update AIAnalysis INT tests to query `event_category='aiagent'` for HAPI events (Priority 2). Estimated 20-30 test updates across `test/integration/aianalysis/`. | Architecture Team |
 
 ---
 
@@ -137,7 +138,8 @@ CREATE TABLE audit_events (
 |---------------|---------|-------|----------------|
 | `gateway` | Gateway Service | Signal ingestion and CRD creation | `gateway.signal.received`, `gateway.crd.created`, `gateway.signal.deduplicated` |
 | `notification` | Notification Service | Alert notification delivery | `notification.message.sent`, `notification.delivery.failed`, `notification.message.acknowledged` |
-| `analysis` | AI Analysis Service | HolmesGPT integration and analysis | `aianalysis.investigation.started`, `aianalysis.recommendation.generated`, `aianalysis.analysis.completed` |
+| `analysis` | AI Analysis Controller | Remediation workflow orchestration (NOT HolmesGPT API - see `aiagent`) | `aianalysis.investigation.started`, `aianalysis.recommendation.generated`, `aianalysis.analysis.completed`, `aianalysis.phase.transition` |
+| `aiagent` | AI Agent Provider (HolmesGPT API) | Autonomous AI agent with tool-calling for investigations, recovery, and effectiveness analysis | `llm_request`, `llm_response`, `llm_tool_call`, `workflow_validation_attempt`, `holmesgpt.response.complete` |
 | `signalprocessing` | Signal Processing Service | Signal enrichment and classification | `signalprocessing.enrichment.completed`, `signalprocessing.classification.decision`, `signalprocessing.phase.transition` |
 | `workflow` | Workflow Catalog Service | Workflow search and selection | `workflow.catalog.search_completed` (DD-WORKFLOW-014) |
 | `workflowexecution` | WorkflowExecution Controller | Tekton workflow orchestration and execution | `workflowexecution.workflow.started`, `workflowexecution.selection.completed`, `workflowexecution.execution.started`, `workflowexecution.workflow.completed`, `workflowexecution.workflow.failed` (BR-AUDIT-005 Gap #5, #6) |
