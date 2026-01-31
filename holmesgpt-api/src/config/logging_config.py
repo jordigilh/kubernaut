@@ -92,10 +92,15 @@ def setup_logging(app_config: Optional[AppConfig] = None) -> None:
         "src.extensions.recovery",
         "src.toolsets.workflow_catalog",
         "src.config",
+        "src.auth",        # Authentication/authorization (DD-AUTH-014)
+        "src.middleware",  # Auth middleware
     ]
 
     for module in holmesgpt_modules:
         logging.getLogger(module).setLevel(log_level_int)
+    
+    # Set root logger level to ensure all logs are visible
+    logging.getLogger().setLevel(log_level_int)
 
     # Configure LiteLLM logging
     if log_level == "DEBUG":
