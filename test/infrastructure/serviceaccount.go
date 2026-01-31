@@ -587,7 +587,7 @@ type IntegrationAuthConfig struct {
 // Authority: DD-AUTH-014 (Middleware-based authentication for integration tests)
 //
 // This function eliminates the need for:
-//   - ENV_MODE security risk (no conditional auth in production binary)
+//   - Conditional auth logic in production binary (security risk)
 //   - MockUserTransport (no manual header injection)
 //   - X-Auth-Request-User header fallback in handlers
 //
@@ -619,7 +619,7 @@ type IntegrationAuthConfig struct {
 //
 // Benefits:
 //   - ✅ Real TokenReview/SAR validation (envtest provides real K8s APIs)
-//   - ✅ No ENV_MODE security risk (production binary unchanged)
+//   - ✅ No conditional auth logic (production binary unchanged)
 //   - ✅ No header injection (context-only user attribution)
 //   - ✅ Realistic test coverage (actual middleware code path)
 func CreateIntegrationServiceAccountWithDataStorageAccess(
