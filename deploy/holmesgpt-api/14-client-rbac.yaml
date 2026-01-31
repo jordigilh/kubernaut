@@ -35,12 +35,13 @@ metadata:
     app.kubernetes.io/name: holmesgpt-api
     app.kubernetes.io/component: rbac
 rules:
-  # DD-AUTH-014 middleware SAR check: Can the ServiceAccount "get" the holmesgpt-api service?
+  # DD-AUTH-014 middleware SAR check: Can the ServiceAccount "create" the holmesgpt-api service?
+  # Note: 'create' verb represents "permission to use the service" in this context
   # This is the authorization check performed by DD-AUTH-014 middleware
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["holmesgpt-api"]
-    verbs: ["get"]
+    verbs: ["create"]  # Changed from 'get' to match middleware SAR check
 
 ---
 # RoleBinding: Grant AIAnalysis Controller ServiceAccount access to HolmesGPT API
