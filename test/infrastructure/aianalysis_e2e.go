@@ -260,11 +260,8 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
 
-	// Create ConfigMap with workflow UUIDs for Mock LLM
-	if err := createMockLLMConfigMap(ctx, namespace, kubeconfigPath, workflowUUIDs, writer); err != nil {
-		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap created for Mock LLM")
+	// NOTE: ConfigMap creation moved to deployMockLLMInNamespace() (Phase 7c)
+	// This avoids duplication and ensures workflows are passed correctly
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7c: Deploy remaining services IN PARALLEL (ConfigMap ready)
