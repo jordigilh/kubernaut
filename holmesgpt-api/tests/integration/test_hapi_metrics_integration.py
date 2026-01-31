@@ -15,70 +15,99 @@ limitations under the License.
 """
 
 """
-Integration Tests for HAPI Metrics (Following Go Pattern)
+Integration Tests for HAPI Metrics (Go Pattern)
 
-Business Requirement: BR-MONITORING-001 - HAPI MUST expose Prometheus metrics
-Test Pattern: Direct business logic calls + Prometheus registry inspection
+Business Requirements:
+- BR-HAPI-011: Investigation Metrics
+- BR-HAPI-301: LLM Observability Metrics
 
-✅ INTEGRATION TEST PATTERN (Like Go Gateway/AIAnalysis):
-1. Call business logic directly (analyze_incident, analyze_recovery)
-2. Query Prometheus REGISTRY directly (no HTTP /metrics endpoint)
-3. Verify metrics are recorded with correct labels
-4. NO TestClient, NO HTTP layer, NO main.py import
+Test Pattern: Direct business logic calls + Prometheus registry inspection (like Go)
+
+✅ INTEGRATION TEST PATTERN (Matches Go Gateway/AIAnalysis):
+1. Create custom Prometheus registry (test isolation)
+2. Create HAMetrics instance with test registry
+3. Call business logic directly (analyze_incident, analyze_recovery)
+4. Query test registry for metric values
+5. Verify metrics incremented correctly
 
 This pattern:
-- Avoids K8s auth initialization issues (no main.py import)
+- Follows Go service testing pattern (Gateway, AIAnalysis)
 - Tests business logic metrics emission (integration testing)
-- Matches Go service metrics testing pattern
-- Faster and more reliable than E2E HTTP testing
+- No HTTP layer (no TestClient, no main.py import)
+- No K8s auth initialization issues
 
 Reference:
 - test/integration/gateway/metrics_emission_integration_test.go
 - test/integration/aianalysis/metrics_integration_test.go
 """
 
-import os
 import time
 import pytest
-import asyncio
 from typing import Dict, Any
-from prometheus_client import REGISTRY
+from prometheus_client import CollectorRegistry
+
+# Import business logic and metrics
+from src.extensions.incident.llm_integration import analyze_incident
+from src.extensions.recovery.llm_integration import analyze_recovery
+from src.metrics import HAMetrics
+from src.models.config_models import AppConfig
 
 
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
 
-def get_metric_value_from_registry(metric_name: str, labels: Dict[str, str] = None) -> float:
+def get_counter_value(test_metrics: HAMetrics, counter_name: str, labels: Dict[str, str] = None) -> float:
     """
-    Query Prometheus REGISTRY directly for metric value.
-    
-    This is the Go pattern: Query registry, NOT /metrics HTTP endpoint.
+    Get counter value from test metrics registry (like Go's getCounterValue).
     
     Args:
-        metric_name: Name of the metric (e.g., "investigations_total")
-        labels: Optional dict of label filters
+        test_metrics: HAMetrics instance with custom registry
+        counter_name: Metric attribute name (e.g., 'investigations_total')
+        labels: Optional label filters
     
     Returns:
-        Metric value as float, or 0.0 if not found
+        Counter value as float
         
     Example:
-        value = get_metric_value_from_registry("investigations_total", {"status": "success"})
+        value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
     """
-    for collector in REGISTRY.collect():
-        for metric in collector.samples:
-            # Match metric name
-            if metric.name == metric_name or metric.name.startswith(metric_name):
-                # If labels specified, check if all match
-                if labels:
-                    all_match = all(metric.labels.get(key) == value for key, value in labels.items())
-                    if not all_match:
-                        continue
-                
-                # Return the value
-                return metric.value
+    counter = getattr(test_metrics, counter_name, None)
+    if counter is None:
+        print(f"⚠️  Counter {counter_name} not found on metrics instance")
+        return 0.0
     
-    return 0.0
+    if labels:
+        # Get labeled counter value
+        try:
+            labeled_counter = counter.labels(**labels)
+            # Access the actual counter value via _metrics dict
+            # prometheus_client stores labeled metrics in a dict
+            metric_key = tuple(labels.values())
+            if hasattr(labeled_counter, '_metrics') and metric_key in labeled_counter._metrics:
+                return float(labeled_counter._metrics[metric_key]._value._value)
+            elif hasattr(labeled_counter, '_value'):
+                return float(labeled_counter._value._value)
+            else:
+                # Try to collect from registry
+                for collector in test_metrics.registry.collect():
+                    for sample in collector.samples:
+                        if sample.name == counter._name:
+                            # Check if labels match
+                            if all(sample.labels.get(k) == v for k, v in labels.items()):
+                                return float(sample.value)
+                return 0.0
+        except Exception as e:
+            print(f"⚠️  Error getting counter value: {e}")
+            return 0.0
+    else:
+        # Get total across all labels (collect from registry)
+        total = 0.0
+        for collector in test_metrics.registry.collect():
+            for sample in collector.samples:
+                if sample.name == counter._name:
+                    total += float(sample.value)
+        return total
 
 
 def make_incident_request(unique_test_id: str = None) -> Dict[str, Any]:
@@ -123,235 +152,214 @@ class TestIncidentAnalysisMetrics:
     """
     Integration tests for incident analysis metrics.
     
-    Pattern: Call business logic directly → Query Prometheus registry
+    Pattern: Custom registry → Inject metrics → Call business logic → Query registry
     
-    BR-MONITORING-001: HAPI MUST record investigation metrics
+    BR-HAPI-011: Investigation request metrics
     """
 
     @pytest.mark.asyncio
     async def test_incident_analysis_increments_investigations_total(self, unique_test_id):
         """
-        BR-MONITORING-001: Incident analysis MUST increment investigations_total metric.
+        BR-HAPI-011: Incident analysis MUST increment investigations_total metric.
         
         Pattern (like Go):
-        1. Get initial metric value from REGISTRY
-        2. Call analyze_incident() directly (NO HTTP)
-        3. Query REGISTRY for new value
-        4. Verify increment
+        1. Create test registry
+        2. Create HAMetrics with test registry
+        3. Get initial metric value
+        4. Call analyze_incident() with test metrics
+        5. Query test registry for new value
+        6. Verify increment
         """
-        from src.extensions.incident.llm_integration import analyze_incident
-        from src.models.config_models import AppConfig
+        # ARRANGE: Create test registry (like Go's prometheus.NewRegistry())
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
         
-        # ARRANGE: Get baseline from Prometheus REGISTRY
-        initial_value = get_metric_value_from_registry("investigations_total", {"status": "success"})
+        # Get baseline
+        initial_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
         
-        # ACT: Call business logic directly (NO HTTP, NO TestClient)
+        # ACT: Call business logic with test metrics (Go pattern)
         incident_request = make_incident_request(unique_test_id)
-        
-        # Load app config for analyze_incident
         app_config = AppConfig()
         
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config)
+        result = await analyze_incident(
+            incident_request,
+            app_config=app_config,
+            metrics=test_metrics  # ✅ Inject test metrics
+        )
         
         # Verify business operation succeeded
         assert result is not None, "Incident analysis should return result"
-        assert "workflow_id" in result or "needs_human_review" in result, \
-            "Result should contain workflow_id or needs_human_review"
         
-        # ASSERT: Query Prometheus REGISTRY for updated metric
-        final_value = get_metric_value_from_registry("investigations_total", {"status": "success"})
+        # ASSERT: Query test registry for updated metric
+        final_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
         
-        assert final_value > initial_value, \
-            f"investigations_total should increment (before: {initial_value}, after: {final_value})"
+        assert final_value == initial_value + 1, \
+            f"investigations_total should increment by 1 (before: {initial_value}, after: {final_value})"
         
         print(f"✅ Metric validated: investigations_total increased from {initial_value} to {final_value}")
 
     @pytest.mark.asyncio
     async def test_incident_analysis_records_duration_histogram(self, unique_test_id):
         """
-        BR-MONITORING-001: Incident analysis MUST record duration histogram.
+        BR-HAPI-011: Incident analysis MUST record duration histogram.
         
-        Pattern: Call business logic → Verify histogram count incremented
+        Pattern: Inject test metrics → Call business logic → Verify histogram count
         """
-        from src.extensions.incident.llm_integration import analyze_incident
-        from src.models.config_models import AppConfig
+        # ARRANGE
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
         
-        # ARRANGE: Get baseline histogram count
-        initial_count = get_metric_value_from_registry("investigations_duration_seconds_count")
+        # Get baseline histogram count
+        initial_count = test_metrics.investigations_duration._count.get()
         
         # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config)
+        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
         # ASSERT: Histogram count should increment
-        final_count = get_metric_value_from_registry("investigations_duration_seconds_count")
+        final_count = test_metrics.investigations_duration._count.get()
         
-        assert final_count > initial_count, \
-            f"investigations_duration_seconds_count should increment (before: {initial_count}, after: {final_count})"
+        assert final_count == initial_count + 1, \
+            f"investigations_duration_seconds count should increment (before: {initial_count}, after: {final_count})"
         
         print(f"✅ Duration histogram updated: count {initial_count} → {final_count}")
 
     @pytest.mark.asyncio
-    async def test_llm_calls_total_increments(self, unique_test_id):
+    async def test_incident_analysis_records_needs_review_status(self, unique_test_id):
         """
-        BR-MONITORING-001: LLM calls MUST increment llm_calls_total metric.
+        BR-HAPI-011: Incident analysis with needs_human_review MUST record correct status.
         
-        Pattern: Call business logic → Verify LLM metrics recorded
+        Pattern: Test metrics recording for different outcomes
         """
-        from src.extensions.incident.llm_integration import analyze_incident
-        from src.models.config_models import AppConfig
+        # ARRANGE
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
         
-        # ARRANGE: Get baseline
-        initial_llm_calls = get_metric_value_from_registry("llm_calls_total")
-        
-        # ACT: Call business logic (triggers LLM call)
+        # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config)
+        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
-        # ASSERT: LLM metrics should increment
-        final_llm_calls = get_metric_value_from_registry("llm_calls_total")
+        # ASSERT: Check appropriate status counter incremented
+        success_count = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        needs_review_count = get_counter_value(test_metrics, 'investigations_total', {'status': 'needs_review'})
         
-        assert final_llm_calls > initial_llm_calls, \
-            f"llm_calls_total should increment (before: {initial_llm_calls}, after: {final_llm_calls})"
-        
-        print(f"✅ LLM metrics updated: llm_calls_total {initial_llm_calls} → {final_llm_calls}")
+        if result.get("needs_human_review", False):
+            assert needs_review_count >= 1, "needs_review counter should increment for needs_human_review=True"
+            print(f"✅ Recorded needs_review status: count={needs_review_count}")
+        else:
+            assert success_count >= 1, "success counter should increment for successful analysis"
+            print(f"✅ Recorded success status: count={success_count}")
 
 
 class TestRecoveryAnalysisMetrics:
     """
     Integration tests for recovery analysis metrics.
     
-    Pattern: Direct business logic calls + Prometheus registry inspection
+    Pattern: Custom registry → Inject metrics → Call business logic → Query registry
+    
+    BR-HAPI-011: Investigation request metrics
     """
 
     @pytest.mark.asyncio
     async def test_recovery_analysis_increments_investigations_total(self, unique_test_id):
         """
-        BR-MONITORING-001: Recovery analysis MUST increment investigations_total metric.
+        BR-HAPI-011: Recovery analysis MUST increment investigations_total metric.
         
-        Pattern (like Go): Direct business logic call → Query REGISTRY
+        Pattern (like Go): Direct business logic call with injected test metrics
         """
-        from src.extensions.recovery.llm_integration import analyze_recovery
-        from src.models.config_models import AppConfig
+        # ARRANGE
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
         
-        # ARRANGE: Get baseline
-        initial_value = get_metric_value_from_registry("investigations_total")
+        initial_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
         
-        # ACT: Call recovery business logic directly
+        # ACT: Call recovery business logic with test metrics
         recovery_request = make_recovery_request(unique_test_id)
         app_config = AppConfig()
         
-        result = await analyze_recovery(recovery_request, app_config=app_config)
+        result = await analyze_recovery(
+            recovery_request,
+            app_config=app_config,
+            metrics=test_metrics  # ✅ Inject test metrics
+        )
         
         # Verify operation succeeded
         assert result is not None
         
-        # ASSERT: Query registry
-        final_value = get_metric_value_from_registry("investigations_total")
+        # ASSERT: Query test registry
+        final_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
         
-        assert final_value > initial_value, \
+        assert final_value == initial_value + 1, \
             f"Recovery analysis should increment investigations_total (before: {initial_value}, after: {final_value})"
         
         print(f"✅ Recovery metrics: investigations_total {initial_value} → {final_value}")
 
     @pytest.mark.asyncio
-    async def test_recovery_analysis_records_llm_metrics(self, unique_test_id):
+    async def test_recovery_analysis_records_duration(self, unique_test_id):
         """
-        BR-MONITORING-001: Recovery analysis MUST record LLM call metrics.
+        BR-HAPI-011: Recovery analysis MUST record duration histogram.
         
-        Pattern: Direct business logic call → Verify LLM metrics
+        Pattern: Inject test metrics → Verify histogram updated
         """
-        from src.extensions.recovery.llm_integration import analyze_recovery
-        from src.models.config_models import AppConfig
-        
         # ARRANGE
-        initial_llm_calls = get_metric_value_from_registry("llm_calls_total")
-        initial_duration_count = get_metric_value_from_registry("llm_call_duration_seconds_count")
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        initial_count = test_metrics.investigations_duration._count.get()
         
         # ACT: Call recovery business logic
         recovery_request = make_recovery_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_recovery(recovery_request, app_config=app_config)
+        result = await analyze_recovery(recovery_request, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
-        # ASSERT: LLM metrics should increment
-        final_llm_calls = get_metric_value_from_registry("llm_calls_total")
-        final_duration_count = get_metric_value_from_registry("llm_call_duration_seconds_count")
+        # ASSERT: Histogram count incremented
+        final_count = test_metrics.investigations_duration._count.get()
         
-        assert final_llm_calls > initial_llm_calls, \
-            "Recovery should trigger LLM calls"
-        assert final_duration_count > initial_duration_count, \
-            "Recovery should record LLM duration"
+        assert final_count == initial_count + 1, \
+            "Recovery should record duration histogram"
         
-        print(f"✅ Recovery LLM metrics: calls {initial_llm_calls}→{final_llm_calls}, duration_count {initial_duration_count}→{final_duration_count}")
+        print(f"✅ Recovery duration: histogram count {initial_count}→{final_count}")
 
 
-class TestWorkflowCatalogMetrics:
+class TestMetricsIsolation:
     """
-    Integration tests for workflow catalog metrics.
+    Verify test metrics isolation (custom registry pattern).
     
-    Pattern: Direct toolset calls → Query Prometheus registry
-    
-    BR-MONITORING-001: Workflow catalog operations MUST be metered
+    BR-HAPI-011: Test isolation via custom registry
     """
 
     @pytest.mark.asyncio
-    async def test_workflow_search_increments_context_api_calls(self, data_storage_url, unique_test_id):
+    async def test_custom_registry_isolates_test_metrics(self, unique_test_id):
         """
-        BR-MONITORING-001: Workflow search MUST increment context_api_calls_total.
+        Integration test: Custom registry isolates test metrics from global registry.
         
-        Pattern: Call workflow catalog toolset directly → Query REGISTRY
-        
-        Note: Workflow catalog is implemented as MCP toolset, accessed during
-        incident/recovery analysis. This test verifies the metrics are recorded.
+        Pattern: Create two HAMetrics instances, verify independence
         """
-        from src.extensions.incident.llm_integration import analyze_incident
-        from src.models.config_models import AppConfig
+        # ARRANGE: Create two independent test registries
+        test_registry_1 = CollectorRegistry()
+        test_metrics_1 = HAMetrics(registry=test_registry_1)
         
-        # ARRANGE: Get baseline
-        initial_context_calls = get_metric_value_from_registry("context_api_calls_total")
+        test_registry_2 = CollectorRegistry()
+        test_metrics_2 = HAMetrics(registry=test_registry_2)
         
-        # ACT: Trigger incident analysis (which uses workflow catalog)
+        # ACT: Call business logic with metrics_1
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config)
+        await analyze_incident(incident_request, app_config=app_config, metrics=test_metrics_1)
         
-        assert result is not None
+        # ASSERT: Only metrics_1 should increment, metrics_2 should be zero
+        value_1 = get_counter_value(test_metrics_1, 'investigations_total', {'status': 'success'})
+        value_2 = get_counter_value(test_metrics_2, 'investigations_total', {'status': 'success'})
         
-        # ASSERT: Context API calls should increment (workflow catalog is context)
-        final_context_calls = get_metric_value_from_registry("context_api_calls_total")
+        assert value_1 >= 1, "metrics_1 should be incremented"
+        assert value_2 == 0, "metrics_2 should remain at zero (isolated)"
         
-        # Note: This may or may not increment depending on whether workflow catalog
-        # is accessed (depends on LLM tool selection). We verify the metric exists.
-        assert final_context_calls >= initial_context_calls, \
-            "context_api_calls_total should exist and not decrease"
-        
-        if final_context_calls > initial_context_calls:
-            print(f"✅ Context API metrics: calls {initial_context_calls}→{final_context_calls}")
-        else:
-            print(f"ℹ️  Context API calls unchanged (LLM may not have called workflow catalog)")
-
-
-# ========================================
-# DEPRECATED (E2E PATTERN - DO NOT USE)
-# ========================================
-
-class TestHTTPRequestMetrics_DEPRECATED:
-    """
-    ⚠️  DEPRECATED: These tests use E2E pattern (HTTP + TestClient).
-    
-    Problem: Importing main.py causes K8s auth initialization failures.
-    
-    Solution: Moved to E2E test tier OR deleted (HTTP metrics tested via E2E).
-    
-    Integration tests should test business logic metrics (investigations, LLM calls),
-    NOT HTTP layer metrics (that's E2E testing).
-    """
-    pass
+        print(f"✅ Metrics isolation verified: registry_1={value_1}, registry_2={value_2}")

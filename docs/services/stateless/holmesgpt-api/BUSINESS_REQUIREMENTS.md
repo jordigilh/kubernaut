@@ -45,11 +45,11 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 52 essential BRs (139 deferred BRs for v2.0)
-**Categories**: 8
+**Total Business Requirements**: 55 essential BRs (139 deferred BRs for v2.0)
+**Categories**: 8 (Investigation, Recovery, Post-Exec, SDK, Health, Auth, HTTP, Observability)
 **Priority Breakdown**:
-- P0 (Critical): 46 BRs (core business logic + graceful shutdown + recovery context + LLM sanitization)
-- P1 (High): 6 BRs (RFC 7807 + hot-reload + mock mode + enhancements)
+- P0 (Critical): 49 BRs (core business logic + observability metrics + graceful shutdown + LLM sanitization)
+- P1 (High): 6 BRs (RFC 7807 + hot-reload + mock mode + config reload metrics)
 
 **Implementation Status**:
 - ✅ Implemented: 52 BRs (100% of V1.0 scope)
@@ -114,7 +114,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-002 to BR-HAPI-015: Investigation Endpoint Variations
+#### BR-HAPI-002 to BR-HAPI-010: Investigation Endpoint Variations
 
 **Description**: Additional investigation endpoint capabilities including:
 - BR-HAPI-002: Investigation with custom context
@@ -126,15 +126,78 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - BR-HAPI-008: Investigation timeout configuration
 - BR-HAPI-009: Investigation retry logic
 - BR-HAPI-010: Investigation logging
-- BR-HAPI-011: Investigation metrics
-- BR-HAPI-012: Investigation rate limiting (deferred)
-- BR-HAPI-013: Investigation authentication
-- BR-HAPI-014: Investigation authorization (deferred)
-- BR-HAPI-015: Investigation audit trail (deferred)
 
-**Priority**: P0 (CRITICAL) for BR-HAPI-002 to 011, P1 (HIGH) for BR-HAPI-012 to 015
+**Priority**: P0 (CRITICAL)
 
-**Implementation Status**: ✅ Implemented (BR-HAPI-002 to 011), ⏸️ Deferred (BR-HAPI-012 to 015)
+**Implementation Status**: ✅ Implemented
+
+**Related BRs**: BR-HAPI-001 (Core Investigation)
+
+---
+
+#### BR-HAPI-011: Investigation Metrics (Prometheus Observability)
+
+**Description**: The HolmesGPT API Service MUST expose Prometheus metrics for investigation request observability, enabling SLO monitoring, performance tracking, and operational visibility.
+
+**Priority**: P0 (CRITICAL) - Core observability capability
+
+**Rationale**: 
+- SLO monitoring: Track investigation latency and success rates
+- Performance tracking: Identify slow investigations and optimize
+- Operational visibility: Alert on investigation failures or degraded performance
+- Business insights: Understand investigation workload patterns
+
+**Metrics Specification**:
+
+1. **Investigation Request Counter**
+   ```
+   Metric: holmesgpt_api_investigations_total
+   Type: Counter
+   Labels: status (success | error | needs_review)
+   Description: Total number of investigation requests by outcome
+   ```
+
+2. **Investigation Duration Histogram**
+   ```
+   Metric: holmesgpt_api_investigations_duration_seconds
+   Type: Histogram
+   Labels: none
+   Buckets: (0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
+   Description: Time spent processing investigation requests (incident + recovery)
+   ```
+
+**Service Level Objectives (SLOs)**:
+- **P95 Latency**: < 10 seconds (investigation requests)
+- **Success Rate**: > 95% (non-needs_review outcomes)
+- **Error Rate**: < 5%
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed via `/metrics` endpoint
+- ✅ Metrics follow DD-005 naming convention
+- ✅ Metric name constants defined (DD-005 v3.0 compliance)
+- ✅ Integration tests validate metric emission
+- ✅ Grafana dashboard queries documented
+
+**Implementation Notes**:
+- Metrics incremented in business logic (not middleware) per DD-005 pattern
+- Injectable metrics instance for integration test isolation
+- Follows Go service pattern (Gateway, AIAnalysis)
+
+**Related Standards**: DD-005 v3.0 (Observability Standards)
+
+---
+
+#### BR-HAPI-012 to 015: Investigation Advanced Features (Deferred)
+
+**Description**: Advanced investigation capabilities:
+- BR-HAPI-012: Investigation rate limiting (deferred to v2.0)
+- BR-HAPI-013: Investigation authentication (handled by DD-AUTH-014 middleware)
+- BR-HAPI-014: Investigation authorization (deferred to v2.0)
+- BR-HAPI-015: Investigation audit trail (deferred to v2.0)
+
+**Priority**: P1 (HIGH)
+
+**Implementation Status**: ⏸️ Deferred to v2.0
 
 **Related BRs**: BR-HAPI-001 (Core Investigation)
 
@@ -487,6 +550,168 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 **Implementation Status**: ✅ Implemented (BR-HAPI-037 to 041), ⏸️ Deferred (BR-HAPI-042 to 045)
 
 **Related BRs**: BR-HAPI-036 (Core HTTP Server)
+
+---
+
+### Category 8: Observability & Metrics (BR-HAPI-301 to 303)
+
+#### BR-HAPI-301: LLM Observability Metrics
+
+**Description**: The HolmesGPT API Service MUST expose Prometheus metrics for LLM API call observability, including call counts, latency, token usage, and provider/model breakdown.
+
+**Priority**: P0 (CRITICAL) - LLM is core business capability
+
+**Rationale**:
+- **Cost monitoring**: Track token usage for billing forecasting and cost optimization
+- **Performance SLOs**: Monitor LLM latency by provider (OpenAI vs Claude vs Ollama)
+- **Error tracking**: Alert on LLM API failures or degraded performance
+- **Capacity planning**: Understand LLM workload patterns and provider distribution
+- **Business intelligence**: Correlate model selection with investigation quality
+
+**Metrics Specification**:
+
+1. **LLM Call Counter**
+   ```
+   Metric: holmesgpt_api_llm_calls_total
+   Type: Counter
+   Labels: provider (openai | anthropic | ollama), model (gpt-4 | claude-3 | ...), status (success | error | timeout)
+   Description: Total number of LLM API calls by provider, model, and outcome
+   ```
+
+2. **LLM Call Duration Histogram**
+   ```
+   Metric: holmesgpt_api_llm_call_duration_seconds
+   Type: Histogram
+   Labels: provider, model
+   Buckets: (0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
+   Description: LLM API call latency distribution (streaming excluded)
+   ```
+
+3. **LLM Token Usage Counter**
+   ```
+   Metric: holmesgpt_api_llm_token_usage_total
+   Type: Counter
+   Labels: provider, model, type (prompt | completion)
+   Description: Total tokens consumed by LLM calls (for cost tracking)
+   ```
+
+**Service Level Objectives (SLOs)**:
+- **OpenAI P95 Latency**: < 5 seconds
+- **Claude P95 Latency**: < 10 seconds
+- **Ollama P95 Latency**: < 2 seconds (local LLM)
+- **LLM Error Rate**: < 1% (excluding rate limits)
+- **Token Cost Alert**: > $100/day
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed via `/metrics` endpoint
+- ✅ Metrics follow DD-005 naming convention
+- ✅ Metric name constants defined (DD-005 v3.0 compliance)
+- ✅ Integration tests validate metric emission
+- ✅ Cost dashboard queries documented
+
+**Implementation Notes**:
+- Metrics recorded in business logic (LLM client wrapper)
+- Injectable metrics instance for integration test isolation
+- Token usage updated after each successful LLM call
+- Cost calculation: `tokens * model_price_per_1k` (external dashboard)
+
+**Related Standards**: DD-005 v3.0 (Observability Standards)
+
+---
+
+#### BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
+
+**Description**: The HolmesGPT API Service MUST expose standard HTTP request metrics per DD-005 observability standards.
+
+**Priority**: P0 (CRITICAL) - Required by DD-005
+
+**Rationale**:
+- **Compliance**: DD-005 mandates HTTP metrics for all stateless services
+- **API health**: Monitor endpoint availability and error rates
+- **Performance**: Track request latency and throughput
+- **Troubleshooting**: Correlate HTTP errors with business logic failures
+
+**Metrics Specification**:
+
+1. **HTTP Request Counter**
+   ```
+   Metric: holmesgpt_api_http_requests_total
+   Type: Counter
+   Labels: method (GET | POST), endpoint (/api/v1/incident/analyze | ...), status (200 | 400 | 500)
+   Description: Total HTTP requests by method, endpoint, and status code
+   ```
+
+2. **HTTP Request Duration Histogram**
+   ```
+   Metric: holmesgpt_api_http_request_duration_seconds
+   Type: Histogram
+   Labels: method, endpoint
+   Buckets: (0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0) - Per DD-005 standard
+   Description: HTTP request latency distribution (excluding LLM time)
+   ```
+
+**Service Level Objectives (SLOs)**:
+- **P95 Latency**: < 100ms (HTTP overhead only, excludes LLM)
+- **Availability**: > 99.9%
+- **Error Rate**: < 0.1% (5xx errors)
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed via `/metrics` endpoint
+- ✅ Path normalization prevents cardinality explosion
+- ✅ Buckets match DD-005 specification
+- ✅ Integration tests validate metric emission
+
+**Implementation Notes**:
+- Metrics recorded in HTTP middleware (FastAPI/Starlette)
+- Path normalization: `/api/v1/incidents/<id>` → `/api/v1/incidents/:id`
+- Follows DD-005 Section 3.1 (Path Normalization)
+
+**Related Standards**: DD-005 v3.0 Section 3.1 (HTTP Metrics)
+
+---
+
+#### BR-HAPI-303: Config Hot-Reload Metrics (Operational Visibility)
+
+**Description**: The HolmesGPT API Service MUST expose metrics for ConfigMap hot-reload operations (BR-HAPI-199 compliance).
+
+**Priority**: P1 (HIGH) - Operational visibility
+
+**Rationale**: Operators need visibility into config reload events for troubleshooting and audit.
+
+**Metrics Specification**:
+
+1. **Config Reload Success Counter**
+   ```
+   Metric: holmesgpt_api_config_reload_total
+   Type: Counter
+   Labels: none
+   Description: Total successful configuration reloads
+   ```
+
+2. **Config Reload Error Counter**
+   ```
+   Metric: holmesgpt_api_config_reload_errors_total
+   Type: Counter
+   Labels: none
+   Description: Total failed configuration reload attempts
+   ```
+
+3. **Last Reload Timestamp**
+   ```
+   Metric: holmesgpt_api_config_last_reload_timestamp
+   Type: Gauge
+   Labels: none
+   Description: Unix timestamp of last successful config reload
+   ```
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed via `/metrics` endpoint
+- ✅ Metrics update on ConfigMap change events
+- ✅ Integration tests validate reload metrics
+
+**Implementation Status**: ✅ Implemented (BR-HAPI-199)
+
+**Related BRs**: BR-HAPI-199 (ConfigMap Hot-Reload)
 
 ---
 

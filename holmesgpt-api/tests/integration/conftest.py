@@ -362,8 +362,12 @@ def create_authenticated_datastorage_client(data_storage_url: str):
         api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
         response = search_api.search_workflows(...)
     """
-    from datastorage import Configuration, ApiClient
-    from datastorage.apis import WorkflowCatalogAPIApi
+    # Import inside function to avoid module-level import errors when DS client not available
+    try:
+        from datastorage import Configuration, ApiClient
+        from datastorage.apis import WorkflowCatalogAPIApi
+    except ImportError as e:
+        raise ImportError(f"DataStorage client not available. Run 'make generate-datastorage-client' first: {e}")
     
     # Import pool manager for token injection
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
