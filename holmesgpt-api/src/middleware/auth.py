@@ -174,7 +174,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             # Step 2: Extract Bearer token from Authorization header
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
-                record_auth_failure("missing_auth_header", request.url.path)
+                # Note: Auth metrics removed (no BR backing)
                 return self._create_rfc7807_response(
                     status_code=401,
                     title="Unauthorized",
@@ -212,10 +212,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             #   - request.state.user (direct access)
             request.state.user = user
 
-            # Step 6: Record success metrics
-            record_auth_success(user, "authenticated")
-
-            # Step 7: Pass request to next handler
+            # Step 6: Pass request to next handler
+            # Note: Auth success metrics removed (no BR backing)
             return await call_next(request)
 
         except Exception as e:
