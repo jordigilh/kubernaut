@@ -182,9 +182,19 @@ class HAMetrics:
             start_time: Start timestamp from record_investigation_start()
             status: Investigation outcome (success | error | needs_review)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         duration = time.time() - start_time
+        
+        logger.info(f"🔍 METRICS DEBUG: Recording investigation_complete - status={status}, duration={duration:.2f}s")
+        logger.info(f"🔍 METRICS DEBUG: Counter before inc: {self.investigations_total}")
+        
         self.investigations_total.labels(status=status).inc()
         self.investigations_duration.observe(duration)
+        
+        logger.info(f"🔍 METRICS DEBUG: Metrics recorded successfully")
+        logger.info(f"🔍 METRICS DEBUG: Registry: {self.registry}")
     
     def record_llm_call(
         self,

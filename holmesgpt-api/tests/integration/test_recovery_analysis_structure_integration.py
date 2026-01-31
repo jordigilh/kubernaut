@@ -113,7 +113,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT: Call business logic directly (NO HTTP)
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
 
         # ASSERT: recovery_analysis field present
         assert result is not None, "analyze_recovery should return result"
@@ -135,7 +135,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT: Call business logic
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
 
         # ASSERT: previous_attempt_assessment exists
         assert 'previous_attempt_assessment' in result['recovery_analysis'], \
@@ -169,7 +169,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
         prev_assessment = result['recovery_analysis']['previous_attempt_assessment']
 
         # ASSERT: Field type 1 - failure_understood (boolean)
@@ -208,7 +208,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
         prev_assessment = result['recovery_analysis']['previous_attempt_assessment']
 
         # ASSERT: failure_reason_analysis has substance
@@ -239,7 +239,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
         prev_assessment = result['recovery_analysis']['previous_attempt_assessment']
 
         # ASSERT: current_signal_type is populated (exact value depends on LLM logic)
@@ -267,7 +267,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
         prev_assessment = result['recovery_analysis']['previous_attempt_assessment']
 
         # ASSERT: state_changed is bool (not string "true" or int 1)
@@ -299,7 +299,7 @@ class TestRecoveryAnalysisStructure:
         
         # ACT
         app_config = AppConfig()
-        result = await analyze_recovery(sample_recovery_request, app_config=app_config)
+        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
 
         # ASSERT: recovery_analysis serializes to JSON
         recovery_analysis = result['recovery_analysis']

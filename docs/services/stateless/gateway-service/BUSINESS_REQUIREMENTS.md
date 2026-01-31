@@ -828,9 +828,7 @@ Can <ServiceAccount> CREATE remediationrequests.kubernaut.ai IN <namespace>?
 - **User**: Authenticated ServiceAccount name (from BR-GATEWAY-182)
 - **Resource**: `remediationrequests.kubernaut.ai` (CRD API group)
 - **Verb**: `create` (Gateway creates RemediationRequest CRDs)
-- **Namespace**: Target namespace from signal payload (e.g., `monitoring`, `prod`)
-
-**Authorization Outcomes**:
+- **Namespace**: Target namespace from signal payload (e.g., `monitoring`, `prod`)**Authorization Outcomes**:
 - ✅ **Allowed**: SAR returns `allowed=true` → Process signal, create RemediationRequest
 - ❌ **Denied**: SAR returns `allowed=false` → Return 403 Forbidden with explanation
 - ⚠️ **Error**: SAR API fails → Return 500 Internal Server Error (fail-closed)

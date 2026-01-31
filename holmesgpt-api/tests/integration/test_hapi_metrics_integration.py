@@ -72,42 +72,35 @@ def get_counter_value(test_metrics: HAMetrics, counter_name: str, labels: Dict[s
     Example:
         value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
     """
+    # Get the metric name from the counter
     counter = getattr(test_metrics, counter_name, None)
     if counter is None:
         print(f"⚠️  Counter {counter_name} not found on metrics instance")
         return 0.0
     
-    if labels:
-        # Get labeled counter value
-        try:
-            labeled_counter = counter.labels(**labels)
-            # Access the actual counter value via _metrics dict
-            # prometheus_client stores labeled metrics in a dict
-            metric_key = tuple(labels.values())
-            if hasattr(labeled_counter, '_metrics') and metric_key in labeled_counter._metrics:
-                return float(labeled_counter._metrics[metric_key]._value._value)
-            elif hasattr(labeled_counter, '_value'):
-                return float(labeled_counter._value._value)
-            else:
-                # Try to collect from registry
-                for collector in test_metrics.registry.collect():
-                    for sample in collector.samples:
-                        if sample.name == counter._name:
-                            # Check if labels match
-                            if all(sample.labels.get(k) == v for k, v in labels.items()):
-                                return float(sample.value)
-                return 0.0
-        except Exception as e:
-            print(f"⚠️  Error getting counter value: {e}")
-            return 0.0
-    else:
-        # Get total across all labels (collect from registry)
-        total = 0.0
+    # Collect metrics from registry (most reliable method)
+    try:
         for collector in test_metrics.registry.collect():
             for sample in collector.samples:
-                if sample.name == counter._name:
-                    total += float(sample.value)
-        return total
+                # Match metric name
+                if sample.name == counter._name or sample.name.startswith(counter._name):
+                    # If labels specified, check if all match
+                    if labels:
+                        all_match = all(sample.labels.get(k) == v for k, v in labels.items())
+                        if not all_match:
+                            continue
+                    
+                    # Return the value
+                    return float(sample.value)
+        
+        # No matching sample found
+        return 0.0
+        
+    except Exception as e:
+        print(f"⚠️  Error collecting metrics: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
 
 
 def make_incident_request(unique_test_id: str = None) -> Dict[str, Any]:
@@ -182,7 +175,8 @@ class TestIncidentAnalysisMetrics:
         app_config = AppConfig()
         
         result = await analyze_incident(
-            incident_request,
+            request_data=incident_request,
+            mcp_config=None,
             app_config=app_config,
             metrics=test_metrics  # ✅ Inject test metrics
         )
@@ -215,7 +209,7 @@ class TestIncidentAnalysisMetrics:
         # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
+        result = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
@@ -241,7 +235,7 @@ class TestIncidentAnalysisMetrics:
         # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_incident(incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
+        result = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
@@ -284,7 +278,7 @@ class TestRecoveryAnalysisMetrics:
         app_config = AppConfig()
         
         result = await analyze_recovery(
-            recovery_request,
+            request_data=recovery_request,
             app_config=app_config,
             metrics=test_metrics  # ✅ Inject test metrics
         )
@@ -316,7 +310,7 @@ class TestRecoveryAnalysisMetrics:
         # ACT: Call recovery business logic
         recovery_request = make_recovery_request(unique_test_id)
         app_config = AppConfig()
-        result = await analyze_recovery(recovery_request, app_config=app_config, metrics=test_metrics)
+        result = await analyze_recovery(request_data=recovery_request, app_config=app_config, metrics=test_metrics)
         
         assert result is not None
         
