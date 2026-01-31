@@ -903,8 +903,47 @@ func buildImageOnly(name, imageTag, dockerfile, projectRoot string, writer io.Wr
 
 // buildImageWithArgs builds a Docker image with optional build arguments
 // This is used by E2E tests to build service images before loading them into Kind
+//
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Pull from registry (ghcr.io)
+//   - Otherwise: Build locally (existing behavior for local dev)
+//   - Automatic fallback to local build if registry pull fails
 func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArgs []string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  🔨 Building %s image: %s\n", name, imageTag)
+	// CI/CD Optimization: Try to pull from registry if configured
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	
+	if registry != "" && tag != "" {
+		// Extract service name from image tag (e.g., "kubernaut/datastorage:unique" → "datastorage")
+		serviceName := extractServiceNameFromImageTag(imageTag)
+		
+		if serviceName != "" {
+			registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+			_, _ = fmt.Fprintf(writer, "  🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
+			_, _ = fmt.Fprintf(writer, "  📥 Pulling %s from registry: %s\n", name, registryImage)
+			
+			pullCmd := exec.Command("podman", "pull", registryImage)
+			pullCmd.Stdout = writer
+			pullCmd.Stderr = writer
+			
+			if err := pullCmd.Run(); err == nil {
+				// Success! Tag as local image for consistency
+				_, _ = fmt.Fprintf(writer, "  ✅ Image pulled from registry\n")
+				_, _ = fmt.Fprintf(writer, "  🏷️  Tagging as local image: %s\n", imageTag)
+				tagCmd := exec.Command("podman", "tag", registryImage, imageTag)
+				if tagErr := tagCmd.Run(); tagErr == nil {
+					_, _ = fmt.Fprintf(writer, "  ✅ %s image ready from registry (skipping build)\n", name)
+					return nil // Skip build, use registry image
+				}
+			} else {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Registry pull failed: %v\n", err)
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Falling back to local build...\n")
+			}
+		}
+	}
+
+	// Build locally
+	_, _ = fmt.Fprintf(writer, "  🔨 Building %s image locally: %s\n", name, imageTag)
 
 	// ✅ FIX: Resolve Dockerfile path relative to project root
 	// Ensures podman finds the Dockerfile when run from any working directory
@@ -924,6 +963,23 @@ func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArg
 
 	_, _ = fmt.Fprintf(writer, "  ✅ %s image built successfully\n", name)
 	return nil
+}
+
+// extractServiceNameFromImageTag extracts service name from image tag
+// Examples:
+//   - "kubernaut/datastorage:unique-tag" → "datastorage"
+//   - "localhost/mock-llm:latest" → "mock-llm"
+//   - "holmesgpt-api:test" → "holmesgpt-api"
+func extractServiceNameFromImageTag(imageTag string) string {
+	// Remove tag portion (after :)
+	parts := strings.Split(imageTag, ":")
+	imageNameOnly := parts[0]
+	
+	// Extract service name (last component after /)
+	nameParts := strings.Split(imageNameOnly, "/")
+	serviceName := nameParts[len(nameParts)-1]
+	
+	return serviceName
 }
 
 // loadImageToKind loads a pre-built podman image into a Kind cluster using tar archive
