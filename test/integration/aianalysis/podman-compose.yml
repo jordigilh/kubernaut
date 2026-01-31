@@ -87,8 +87,6 @@ services:
     environment:
       # Mock LLM mode for integration tests (no real LLM calls)
       MOCK_LLM_MODE: "true"
-      # DD-AUTH-014: Integration mode uses mock auth (MockAuthenticator + MockAuthorizer)
-      ENV_MODE: "integration"
       # DataStorage connection (matches src/audit/factory.py expectation)
       DATA_STORAGE_URL: http://datastorage:8080
       PORT: 8080
