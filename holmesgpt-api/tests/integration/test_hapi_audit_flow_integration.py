@@ -136,7 +136,7 @@ def query_audit_events_with_retry(
     data_storage_url: str,
     correlation_id: str,
     min_expected_events: int = 1,
-    timeout_seconds: int = 10,
+    timeout_seconds: int = 30,
     poll_interval: float = 0.5,
     audit_store=None
 ) -> List[AuditEvent]:
@@ -146,14 +146,24 @@ def query_audit_events_with_retry(
     This function eliminates async race conditions by flushing the audit buffer
     before querying, similar to Go integration tests.
 
-    Pattern: flush() → query() → assert (deterministic, no polling needed)
+    Pattern: flush() → poll with Eventually() → assert
+    
+    Timeout Alignment (Jan 31, 2026):
+    - Polling: 30s (matches Go AIAnalysis INT: Eventually(30*time.Second, 500*time.Millisecond))
+    - Poll interval: 500ms (matches Go Eventually pattern)
+    - Flush: 10s (matches Go Gateway/AuthWebhook suite_test.go)
+    
+    Pattern Difference from Go:
+    - Go AIAnalysis: Flush on EACH retry (controller may buffer during polling)
+    - HAPI Python: Flush ONCE (analyze_incident() completes before polling)
+    Rationale: Direct function calls complete before polling, so single flush is sufficient.
 
     Args:
         data_storage_url: Data Storage service URL
         correlation_id: Remediation ID for audit correlation
         min_expected_events: Minimum number of events expected (default 1)
-        timeout_seconds: Maximum time to wait for events (default 10s)
-        poll_interval: Time between polling attempts (default 0.5s)
+        timeout_seconds: Maximum time to wait for events (default 30s, aligned with Go)
+        poll_interval: Time between polling attempts (default 0.5s, aligned with Go)
         audit_store: Optional BufferedAuditStore instance for explicit flush
 
     Returns:
