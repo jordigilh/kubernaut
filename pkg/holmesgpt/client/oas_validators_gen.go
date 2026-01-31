@@ -155,43 +155,6 @@ func (s *ExecutionFailure) Validate() error {
 	return nil
 }
 
-func (s *HTTPValidationError) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		var failures []validate.FieldError
-		for i, elem := range s.Detail {
-			if err := func() error {
-				if err := elem.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				failures = append(failures, validate.FieldError{
-					Name:  fmt.Sprintf("[%d]", i),
-					Error: err,
-				})
-			}
-		}
-		if len(failures) > 0 {
-			return &validate.Error{Fields: failures}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "detail",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
 func (s HumanReviewReason) Validate() error {
 	switch s {
 	case "workflow_not_found":
@@ -211,22 +174,6 @@ func (s HumanReviewReason) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
-}
-
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Validate() error {
-	alias := (*HTTPValidationError)(s)
-	if err := alias.Validate(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Validate() error {
-	alias := (*HTTPValidationError)(s)
-	if err := alias.Validate(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *IncidentRequest) Validate() error {
@@ -420,22 +367,6 @@ func (s *PreviousExecution) Validate() error {
 	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Validate() error {
-	alias := (*HTTPValidationError)(s)
-	if err := alias.Validate(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Validate() error {
-	alias := (*HTTPValidationError)(s)
-	if err := alias.Validate(); err != nil {
-		return err
 	}
 	return nil
 }
@@ -660,29 +591,6 @@ func (s *ValidationAttempt) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "attempt",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *ValidationError) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if s.Loc == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "loc",
 			Error: err,
 		})
 	}

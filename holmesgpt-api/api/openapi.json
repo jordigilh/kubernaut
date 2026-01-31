@@ -55,22 +55,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
           },
           "500": {
-            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: DD-AUTH-013",
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
@@ -127,22 +137,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
           },
           "500": {
-            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: DD-AUTH-013",
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
