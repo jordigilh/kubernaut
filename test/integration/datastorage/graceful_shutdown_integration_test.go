@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // TDD RED PHASE: These tests define DD-007 graceful shutdown requirements
@@ -1015,19 +1016,29 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 		},
 	}
 
-	// DD-AUTH-014: Skip auth for graceful shutdown integration tests
+	// DD-AUTH-014: Graceful shutdown tests use permissive mock auth
 	// These tests focus on shutdown behavior, not authentication
-	// Auth middleware is skipped when authenticator/authorizer are nil
+	// Mock authenticator/authorizer allow all access for these tests
 	// 
-	// Note: Tests that need to validate auth should create their own server
-	// with mock authenticator/authorizer (see SAR E2E tests)
+	// Note: Tests that need to validate specific auth behavior should create
+	// their own server with specific mock configurations (see SAR E2E tests)
+	mockAuthenticator := &auth.MockAuthenticator{
+		ValidUsers: map[string]string{
+			"test-token": "system:serviceaccount:datastorage-test:graceful-shutdown-test",
+		},
+	}
+	mockAuthorizer := &auth.MockAuthorizer{
+		AllowedUsers: map[string]bool{
+			"system:serviceaccount:datastorage-test:graceful-shutdown-test": true,
+		},
+	}
 	
 	// Create server instance (this will create its own DB connection pool)
 	// dlqMaxLen: 1000 events (default from DD-009)
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
-	// DD-AUTH-014: Pass nil, nil, "" to skip auth middleware (test environment)
-	// authNamespace is empty string since auth is disabled (nil authenticator/authorizer)
-	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, appCfg, serverCfg, 1000, nil, nil, "")
+	// DD-AUTH-014: Pass mock authenticator/authorizer for test environment
+	// authNamespace is "datastorage-test" for SAR checks (mock authorizer allows all)
+	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, appCfg, serverCfg, 1000, mockAuthenticator, mockAuthorizer, "datastorage-test")
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 
 	// Wrap in httptest.Server for HTTP testing
