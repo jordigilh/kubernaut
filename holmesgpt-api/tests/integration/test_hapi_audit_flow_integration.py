@@ -553,10 +553,10 @@ class TestAuditEventSchemaValidation:
                 assert field_value is not None, \
                     f"Event {event.event_type} has null value for ADR-034 required field: {field}"
 
-            # ADR-034 v1.1+: HAPI triggers workflow search in DataStorage.
-            # DataStorage emits workflow.catalog.search_completed with category="workflow".
-            # Tests must expect MIXED event categories (enabled by Mock LLM extraction Jan 2026).
-            valid_categories = ["analysis", "workflow"]
+            # ADR-034 v1.6: HAPI uses 'aiagent', DataStorage uses 'workflow'
+            # AIAnalysis controller uses 'analysis' (not tested here - separate service)
+            # Tests must expect MIXED event categories (HAPI + DataStorage).
+            valid_categories = ["aiagent", "workflow"]  # Updated for ADR-034 v1.6
             assert event.event_category in valid_categories, \
                 f"Expected ADR-034 category in {valid_categories}, got '{event.event_category}'"
 
@@ -565,8 +565,14 @@ class TestAuditEventSchemaValidation:
                 assert event.event_category == "workflow", \
                     f"Workflow events must have category='workflow', got '{event.event_category}'"
             elif event.event_type.startswith("aianalysis."):
+                # This should NOT appear in HAPI tests - AIAnalysis controller only
                 assert event.event_category == "analysis", \
                     f"AI Analysis events must have category='analysis', got '{event.event_category}'"
+            elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
+                                       "workflow_validation_attempt", "holmesgpt.response.complete"]:
+                # ADR-034 v1.6: HAPI events use 'aiagent' category
+                assert event.event_category == "aiagent", \
+                    f"HAPI events must have category='aiagent' per ADR-034 v1.6, got '{event.event_category}'"
 
             # Verify event has valid version
             assert event.version is not None, \
