@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -223,8 +224,25 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		}
 	}()
 
-	// Wait for port-forward to be ready
-	time.Sleep(3 * time.Second)
+	// Wait for port-forward to be ready (active polling, not fixed sleep)
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for port-forward to be ready (active polling)...")
+	ready := false
+	for i := 0; i < 30; i++ { // 30 seconds max
+		time.Sleep(1 * time.Second)
+		resp, err := http.Get(fmt.Sprintf("%s/health", dataStorageURL))
+		if err == nil && resp.StatusCode == 200 {
+			resp.Body.Close()
+			ready = true
+			_, _ = fmt.Fprintf(writer, "  ✅ Port-forward ready after %d seconds\n", i+1)
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+	if !ready {
+		return fmt.Errorf("port-forward not ready after 30 seconds")
+	}
 
 	// Seed workflows and capture UUIDs
 	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, writer)
