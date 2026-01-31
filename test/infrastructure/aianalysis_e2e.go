@@ -1011,9 +1011,12 @@ data:
 // createAIAnalysisE2EServiceAccount creates the ServiceAccount for workflow seeding
 // with DataStorage access using DD-AUTH-014 (SubjectAccessReview authorization)
 func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Create a fresh context (workaround for potential context issues)
+	freshCtx := context.Background()
+	
 	// Create ServiceAccount
 	saName := "aianalysis-e2e-sa"
-	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
+	if err := CreateServiceAccount(freshCtx, namespace, kubeconfigPath, saName, writer); err != nil {
 		return fmt.Errorf("failed to create ServiceAccount: %w", err)
 	}
 
