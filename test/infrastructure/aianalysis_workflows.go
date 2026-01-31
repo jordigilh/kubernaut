@@ -27,6 +27,8 @@ import (
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // TestWorkflow represents a workflow for AIAnalysis integration tests
@@ -146,7 +148,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 //
 // Returns: map[workflow_name]workflow_id (UUID) for Mock LLM configuration
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
-func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (map[string]string, error) {
+func SeedTestWorkflowsInDataStorage(kubeconfigPath, namespace, dataStorageURL string, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding Test Workflows in DataStorage\n")
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -158,7 +160,7 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (ma
 	workflowUUIDs := make(map[string]string)
 
 	for _, wf := range workflows {
-		workflowID, err := registerWorkflowInDataStorage(dataStorageURL, wf, output)
+		workflowID, err := registerWorkflowInDataStorage(kubeconfigPath, namespace, dataStorageURL, wf, output)
 		if err != nil {
 			return nil, fmt.Errorf("failed to register workflow %s: %w", wf.WorkflowID, err)
 		}
@@ -179,16 +181,31 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (ma
 // Pattern: DD-API-001 (OpenAPI Generated Client MANDATORY)
 // Authority: .cursor/rules/* - All Go services must use OpenAPI clients
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
+// DD-AUTH-014: Uses ServiceAccount token for authentication
 // Returns the actual UUID assigned by DataStorage
-func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, output io.Writer) (string, error) {
+func registerWorkflowInDataStorage(kubeconfigPath, namespace, dataStorageURL string, wf TestWorkflow, output io.Writer) (string, error) {
 	version := "1.0.0"
 	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", wf.WorkflowID, version, wf.Description)
 	contentBytes := []byte(content)
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
 
-	// DD-API-001: Create OpenAPI client (type-safe, spec-validated)
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	// DD-AUTH-014: Get ServiceAccount token for authentication
+	// Use the E2E test ServiceAccount (has proper RBAC permissions)
+	token, err := getServiceAccountToken(kubeconfigPath, namespace, "aianalysis-e2e-sa")
+	if err != nil {
+		return "", fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+
+	// DD-API-001: Create authenticated OpenAPI client (type-safe, spec-validated)
+	// Use authTransport to inject Bearer token for DD-AUTH-014 middleware
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &authTransport{
+			token:     token,
+			transport: http.DefaultTransport,
+		},
+	}
 	client, err := ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 	if err != nil {
 		return "", fmt.Errorf("failed to create OpenAPI client: %w", err)
@@ -345,4 +362,55 @@ func UpdateMockLLMWithUUIDs(mockLLMConfig MockLLMConfig, workflowUUIDs map[strin
 	_, _ = fmt.Fprintf(output, "✅ Mock LLM updated: %d scenarios synchronized with DataStorage UUIDs\n", int(updatedCount))
 
 	return nil
+}
+
+// authTransport adds Bearer token to all HTTP requests for DataStorage authentication
+// Implements DD-AUTH-014: Middleware-based SAR authentication
+type authTransport struct {
+	token     string
+	transport http.RoundTripper
+}
+
+func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Add Bearer token to Authorization header (DD-AUTH-014)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.token))
+	return t.transport.RoundTrip(req)
+}
+
+// getServiceAccountToken reads ServiceAccount token from Kubernetes
+// Required for DD-AUTH-014 authentication when calling DataStorage via port-forward
+func getServiceAccountToken(kubeconfigPath, namespace, saName string) (string, error) {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	ctx := context.Background()
+
+	// Verify ServiceAccount exists (will error if not found)
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, saName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get ServiceAccount %s: %w", saName, err)
+	}
+
+	// For Kubernetes 1.24+, tokens are not automatically created in secrets
+	// We need to create a token request instead (recommended by Kubernetes)
+	tokenRequest := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			// Request a token valid for 1 hour (enough for E2E test setup)
+			ExpirationSeconds: func(i int64) *int64 { return &i }(3600),
+		},
+	}
+
+	tokenResponse, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(
+		ctx,
+		saName,
+		tokenRequest,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create token for ServiceAccount %s: %w", saName, err)
+	}
+
+	return tokenResponse.Status.Token, nil
 }

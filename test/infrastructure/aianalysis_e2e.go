@@ -202,6 +202,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage infrastructure deployed successfully")
 
+	// Create ServiceAccount for workflow seeding with DataStorage access (DD-AUTH-014)
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating ServiceAccount for workflow seeding...")
+	if err := createAIAnalysisE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ aianalysis-e2e-sa created with DataStorage access")
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7b: Seed workflows and create ConfigMap (DD-TEST-011 Alt 2)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -245,8 +252,8 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("port-forward not ready after 30 seconds")
 	}
 
-	// Seed workflows and capture UUIDs
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, writer)
+	// Seed workflows and capture UUIDs (with DD-AUTH-014 authentication)
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(kubeconfigPath, namespace, dataStorageURL, writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
@@ -999,4 +1006,41 @@ data:
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// createAIAnalysisE2EServiceAccount creates the ServiceAccount for workflow seeding
+// with DataStorage access using DD-AUTH-014 (SubjectAccessReview authorization)
+func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Create ServiceAccount
+	saName := "aianalysis-e2e-sa"
+	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
+		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+
+	// Bind to data-storage-client ClusterRole (already deployed in Phase 6.5)
+	// This ClusterRole has SubjectAccessReview permissions for DataStorage access
+	roleBindingYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-e2e-datastorage-access
+  namespace: %s
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: data-storage-client
+  apiGroup: rbac.authorization.k8s.io
+`, namespace, saName, namespace)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(roleBindingYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create RoleBinding: %w", err)
+	}
+
+	return nil
 }
