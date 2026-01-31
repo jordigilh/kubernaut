@@ -188,11 +188,18 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 	}
 
 	// DD-HAPI-003: Type-assert response interface to concrete type
-	// DD-AUTH-013: Handle all HTTP status codes (200, 401, 403, 422, 500)
+	// DD-AUTH-013: Handle all HTTP status codes (200, 400, 401, 403, 422, 500)
 	switch v := res.(type) {
 	case *IncidentResponse:
 		// 200 OK - Success
 		return v, nil
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest:
+		// 400 Bad Request - Validation error (RFC7807)
+		// Per commit 12bdd7f7d: HAPI returns 400 for Pydantic validation errors
+		return nil, &APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    fmt.Sprintf("HAPI validation error: %+v", v),
+		}
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized:
 		// 401 Unauthorized - Authentication failed (ose-oauth-proxy)
 		return nil, &APIError{
@@ -206,7 +213,7 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 			Message:    "Authorization failed: ServiceAccount lacks 'get' permission on holmesgpt-api resource",
 		}
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity:
-		// 422 Unprocessable Entity - Validation error (FastAPI/Pydantic)
+		// 422 Unprocessable Entity - Validation error (Deprecated: HAPI now uses 400)
 		return nil, &APIError{
 			StatusCode: http.StatusUnprocessableEntity,
 			Message:    fmt.Sprintf("HAPI validation error: %+v", v),
@@ -269,11 +276,18 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 	}
 
 	// DD-HAPI-003: Type-assert response interface to concrete type
-	// DD-AUTH-013: Handle all HTTP status codes (200, 401, 403, 422, 500)
+	// DD-AUTH-013: Handle all HTTP status codes (200, 400, 401, 403, 422, 500)
 	switch v := res.(type) {
 	case *RecoveryResponse:
 		// 200 OK - Success
 		return v, nil
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest:
+		// 400 Bad Request - Validation error (RFC7807)
+		// Per commit 12bdd7f7d: HAPI returns 400 for Pydantic validation errors
+		return nil, &APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    fmt.Sprintf("HAPI recovery validation error: %+v", v),
+		}
 	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized:
 		// 401 Unauthorized - Authentication failed (ose-oauth-proxy)
 		return nil, &APIError{
@@ -287,7 +301,7 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 			Message:    "Authorization failed: ServiceAccount lacks 'get' permission on holmesgpt-api resource",
 		}
 	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity:
-		// 422 Unprocessable Entity - Validation error (FastAPI/Pydantic)
+		// 422 Unprocessable Entity - Validation error (Deprecated: HAPI now uses 400)
 		return nil, &APIError{
 			StatusCode: http.StatusUnprocessableEntity,
 			Message:    fmt.Sprintf("HAPI recovery validation error: %+v", v),
