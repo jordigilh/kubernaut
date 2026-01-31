@@ -462,6 +462,42 @@ data:
       buffer_size: 10000
       batch_size: 50
 ---
+# ServiceAccount: HolmesGPT-API (DD-AUTH-014 middleware needs TokenReview permissions)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+automountServiceAccountToken: true
+---
+# ClusterRole: HolmesGPT-API Middleware Permissions (DD-AUTH-014)
+# Grants TokenReview permission so middleware can validate incoming Bearer tokens
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-middleware
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+# ClusterRoleBinding: Grant HolmesGPT-API SA middleware permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-middleware
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-middleware
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api
+  namespace: kubernaut-system
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -477,6 +513,7 @@ spec:
       labels:
         app: holmesgpt-api
     spec:
+      serviceAccountName: holmesgpt-api
       containers:
       - name: holmesgpt-api
         image: %s
