@@ -97,6 +97,7 @@ def query_audit_events(
     Query Data Storage for audit events by correlation_id using OpenAPI client.
 
     DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
+    DD-AUTH-014: Injects ServiceAccount token via shared pool manager.
 
     Args:
         data_storage_url: Data Storage service URL
@@ -106,8 +107,19 @@ def query_audit_events(
     Returns:
         List of AuditEvent Pydantic models
     """
+    # DD-AUTH-014: Import pool manager for token injection
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
+    
     config = DataStorageConfiguration(host=data_storage_url)
     client = DataStorageApiClient(configuration=config)
+    
+    # DD-AUTH-014: Inject ServiceAccount token via shared pool manager
+    auth_pool = get_shared_datastorage_pool_manager()
+    client.rest_client.pool_manager = auth_pool
+    
     api_instance = AuditWriteAPIApi(client)
 
     # DD-API-001: Use OpenAPI generated client

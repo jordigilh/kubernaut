@@ -88,8 +88,7 @@ def get_shared_datastorage_pool_manager() -> ServiceAccountAuthPoolManager:
     Uses threading.Lock for safe concurrent access during initialization.
     
     Returns:
-        ServiceAccountAuthPoolManager: Singleton pool manager instance with persistent
-                                       HTTP connections to DataStorage
+        ServiceAccountAuthPoolManager or IntegrationTestPoolManager: Singleton pool manager
     
     Example:
         >>> from datastorage_pool_manager import get_shared_datastorage_pool_manager

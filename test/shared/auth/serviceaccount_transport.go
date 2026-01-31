@@ -64,7 +64,7 @@ func (t *ServiceAccountTransport) RoundTrip(req *http.Request) (*http.Response, 
 
 	// Inject Bearer token (DataStorage middleware validates against Kubernetes API)
 	// Authentication: TokenReview API
-	// Authorization: SubjectAccessReview API
+	// Authorization: SubjectAccessReview API # notsecret
 	reqClone.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.token))
 
 	// Execute request with injected token
