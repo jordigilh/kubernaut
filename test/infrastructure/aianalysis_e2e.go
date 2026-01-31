@@ -640,7 +640,7 @@ rules:
 - apiGroups: [""]
   resources: ["services"]
   resourceNames: ["holmesgpt-api"]
-  verbs: ["get"]
+  verbs: ["create"]  # Changed from 'get' - DD-AUTH-014 middleware checks 'create' verb
 ---
 # RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
 # Required for DD-AUTH-014 middleware SubjectAccessReview check
