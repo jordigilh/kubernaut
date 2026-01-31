@@ -83,6 +83,11 @@ type MockLLMConfig struct {
 // Pattern: DD-INTEGRATION-001 v2.0 - Programmatic Podman Setup
 // Image Naming: DD-TEST-004 - Unique Resource Naming
 //
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Pull from registry (ghcr.io)
+//   - Otherwise: Build locally (existing behavior for local dev)
+//   - Automatic fallback to local build if registry pull fails
+//
 // Returns: Full image name with tag (e.g., "localhost/mock-llm:hapi-abc123")
 func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -94,7 +99,19 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	baseImageName := "localhost/mock-llm:latest"
 	uniqueImageName := GenerateInfraImageName("mock-llm", serviceName)
 
-	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image: %s (cache-friendly)\n", baseImageName)
+	// CI/CD Optimization: Try to pull from registry if configured
+	// Note: We try to pull with the unique image name, then tag as base for consistency
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", uniqueImageName, writer); pulled {
+		if err != nil {
+			return "", err // Tag failed after successful pull
+		}
+		// Also tag as base image for cache consistency
+		tagBaseCmd := exec.CommandContext(ctx, "podman", "tag", pulledImageName, baseImageName)
+		_ = tagBaseCmd.Run() // Ignore errors (not critical)
+		return pulledImageName, nil // Use registry image
+	}
+
+	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (cache-friendly)\n", baseImageName)
 	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
 	// Build context is test/services/mock-llm/

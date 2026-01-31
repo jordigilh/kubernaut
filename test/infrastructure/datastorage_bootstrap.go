@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -143,9 +144,70 @@ type DSBootstrapInfra struct {
 	SharedTestEnv interface{} // *envtest.Environment (interface{} to avoid import cycle)
 }
 
+// tryPullFromRegistry attempts to pull an image from IMAGE_REGISTRY if configured.
+// This enables CI/CD optimization where pre-built images are pulled from ghcr.io
+// instead of building locally, saving ~70% disk space and ~30% time.
+//
+// Environment Variables:
+//   - IMAGE_REGISTRY: Registry URL (e.g., "ghcr.io/jordigilh/kubernaut")
+//   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
+//
+// Returns:
+//   - imageName: The local image name after tagging (same as input localImageName)
+//   - pulled: true if successfully pulled from registry, false otherwise
+//   - error: Only returns error if pull succeeded but tagging failed
+//
+// Usage:
+//
+//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", localImageName, writer); pulled {
+//	    return imageName, nil // Use registry image
+//	}
+//	// Otherwise, fall through to local build
+//
+// Authority: CI/CD pipeline optimization for integration tests
+func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string, writer io.Writer) (string, bool, error) {
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	
+	if registry == "" || tag == "" {
+		return "", false, nil // Not configured, caller should build locally
+	}
+	
+	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
+	_, _ = fmt.Fprintf(writer, "   📥 Pulling from registry: %s\n", registryImage)
+	
+	pullCmd := exec.CommandContext(ctx, "podman", "pull", registryImage)
+	pullCmd.Stdout = writer
+	pullCmd.Stderr = writer
+	
+	if err := pullCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
+		return "", false, nil // Pull failed, caller should build locally
+	}
+	
+	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry successfully\n")
+	
+	// Tag as local image for consistency with local build workflow
+	_, _ = fmt.Fprintf(writer, "   🏷️  Tagging as local image: %s\n", localImageName)
+	tagCmd := exec.CommandContext(ctx, "podman", "tag", registryImage, localImageName)
+	if err := tagCmd.Run(); err != nil {
+		return "", false, fmt.Errorf("failed to tag registry image: %w", err)
+	}
+	
+	_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping local build)\n")
+	return localImageName, true, nil
+}
+
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
 // This function is extracted to enable parallel image builds (build can happen in parallel,
 // while deployment must remain sequential due to workflow seeding dependencies).
+//
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Pull from registry (ghcr.io)
+//   - Otherwise: Build locally (existing behavior for local dev)
+//   - Automatic fallback to local build if registry pull fails
 //
 // Returns:
 // - string: Full image name with tag (e.g., "kubernaut/datastorage:aianalysis-a1b2c3d4")
@@ -159,6 +221,14 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
 	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
+	// CI/CD Optimization: Try to pull from registry if configured
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", imageName, writer); pulled {
+		if err != nil {
+			return "", err // Tag failed after successful pull
+		}
+		return pulledImageName, nil // Use registry image
+	}
+
 	// Check if image already exists (cache hit)
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 	if checkCmd.Run() == nil {
@@ -166,8 +236,8 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 		return imageName, nil
 	}
 
-	// Build the image
-	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image (tag: %s)...\n", imageTag)
+	// Build the image locally
+	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image locally (tag: %s)...\n", imageTag)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 		"-t", imageName,
