@@ -365,7 +365,7 @@ def create_authenticated_datastorage_client(data_storage_url: str):
     # Import inside function to avoid module-level import errors when DS client not available
     try:
         from datastorage import Configuration, ApiClient
-        from datastorage.apis import WorkflowCatalogAPIApi
+        from datastorage.api import WorkflowCatalogAPIApi  # Fixed typo: "apis" → "api" (singular)
     except ImportError as e:
         raise ImportError(f"DataStorage client not available. Run 'make generate-datastorage-client' first: {e}")
     

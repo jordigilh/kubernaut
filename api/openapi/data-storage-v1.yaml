@@ -1568,14 +1568,15 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, signalprocessing, workflow, workflowexecution, orchestration, webhook]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
           description: |
-            Service-level event category (ADR-034 v1.5).
+            Service-level event category (ADR-034 v1.6).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
             - notification: Notification Service
-            - analysis: AI Analysis Service
+            - analysis: AI Analysis Controller (NOT HolmesGPT API)
+            - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
             - signalprocessing: Signal Processing Service
             - workflow: Workflow Catalog Service
             - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
