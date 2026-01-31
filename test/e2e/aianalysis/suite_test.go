@@ -64,6 +64,14 @@ import (
 
 func TestAIAnalysisE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+	
+	// Per RCA (Jan 31, 2026): Controller initialization takes ~45-50 seconds
+	// (pod start → watches ready). Tests timeout at 10s before controller processes resources.
+	// Solution: Increase default Eventually timeout to 30s to allow controller startup + processing.
+	// Investigation times are fast (1-2s), but need to account for controller readiness.
+	SetDefaultEventuallyTimeout(30 * time.Second)
+	SetDefaultEventuallyPollingInterval(500 * time.Millisecond)
+	
 	RunSpecs(t, "AIAnalysis E2E Test Suite")
 }
 
