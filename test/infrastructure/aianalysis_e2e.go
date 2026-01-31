@@ -565,6 +565,7 @@ kind: ServiceAccount
 metadata:
   name: aianalysis-controller
   namespace: kubernaut-system
+automountServiceAccountToken: true  # Kubernetes 1.24+ - ensure token is mounted
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -589,6 +590,33 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: aianalysis-controller
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+# ClusterRole: HolmesGPT API Client Access (DD-AUTH-014 middleware)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-client
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["holmesgpt-api"]
+  verbs: ["get"]
+---
+# RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
+# Required for DD-AUTH-014 middleware SubjectAccessReview check
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-holmesgpt-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-client
 subjects:
 - kind: ServiceAccount
   name: aianalysis-controller
