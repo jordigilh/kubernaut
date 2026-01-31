@@ -347,7 +347,7 @@ class TestMetricsIsolation:
         # ACT: Call business logic with metrics_1
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
-        await analyze_incident(incident_request, app_config=app_config, metrics=test_metrics_1)
+        await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics_1)
         
         # ASSERT: Only metrics_1 should increment, metrics_2 should be zero
         value_1 = get_counter_value(test_metrics_1, 'investigations_total', {'status': 'success'})
