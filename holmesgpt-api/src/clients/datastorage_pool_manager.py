@@ -105,5 +105,12 @@ def get_shared_datastorage_pool_manager() -> ServiceAccountAuthPoolManager:
     with _datastorage_pool_manager_lock:
         if _shared_datastorage_pool_manager is None:
             logger.info("🔧 Creating singleton ServiceAccountAuthPoolManager for DataStorage (shared across all HAPI components)")
-            _shared_datastorage_pool_manager = ServiceAccountAuthPoolManager()
+            # BR-HAPI-301: Increase pool size for parallel test execution (4 pytest workers)
+            # Default num_pools=10, but also set maxsize for connections per pool
+            _shared_datastorage_pool_manager = ServiceAccountAuthPoolManager(
+                num_pools=20,   # Number of connection pools
+                maxsize=20,     # Max connections per pool (handles parallel tests)
+                block=False     # Don't block when pool exhausted, raise error instead
+            )
+            logger.info(f"   Pool configuration: num_pools=20, maxsize=20, block=False")
         return _shared_datastorage_pool_manager

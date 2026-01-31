@@ -55,10 +55,11 @@ const (
 )
 
 // Container names (unique to HAPI integration tests)
+// Pattern: DSBootstrap programmatic setup uses {service}_{component}_test suffix
 const (
-	HAPIIntegrationPostgresContainer    = "holmesgptapi_postgres_1"
-	HAPIIntegrationRedisContainer       = "holmesgptapi_redis_1"
-	HAPIIntegrationDataStorageContainer = "holmesgptapi_datastorage_1"
+	HAPIIntegrationPostgresContainer    = "holmesgptapi_postgres_test"    // Matches DSBootstrap pattern
+	HAPIIntegrationRedisContainer       = "holmesgptapi_redis_test"       // Matches DSBootstrap pattern
+	HAPIIntegrationDataStorageContainer = "holmesgptapi_datastorage_test" // Matches DSBootstrap pattern
 	HAPIIntegrationHAPIContainer        = "holmesgptapi_hapi_1"
 	HAPIIntegrationMigrationsContainer  = "holmesgptapi_migrations"
 	HAPIIntegrationNetwork              = "holmesgptapi_test-network"
