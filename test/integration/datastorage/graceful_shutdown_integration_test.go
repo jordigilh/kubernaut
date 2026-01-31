@@ -61,11 +61,12 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			testServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
 
-			// Verify readiness is healthy before shutdown
-			resp, err := http.Get(testServer.URL + "/health/ready")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(200))
-			_ = resp.Body.Close()
+		// Verify readiness is healthy before shutdown
+		// DD-AUTH-014: Use authenticated request
+		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(200))
+		_ = resp.Body.Close()
 
 			// Start shutdown in background
 			shutdownDone := make(chan error, 1)
@@ -75,17 +76,18 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 				shutdownDone <- srv.Shutdown(ctx)
 			}()
 
-			// Business Outcome 1: Readiness probe returns 503 during shutdown
-			// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
-			Eventually(func() int {
-				r, e := http.Get(testServer.URL + "/health/ready")
-				if e != nil || r == nil {
-					return 0
-				}
-				_ = r.Body.Close()
-				return r.StatusCode
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal(503),
-				"Readiness probe MUST return 503 during shutdown (DD-007 STEP 1)")
+		// Business Outcome 1: Readiness probe returns 503 during shutdown
+		// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
+		// DD-AUTH-014: Use authenticated request
+		Eventually(func() int {
+			r, e := makeAuthenticatedRequest("GET", testServer.URL+"/health/ready")
+			if e != nil || r == nil {
+				return 0
+			}
+			_ = r.Body.Close()
+			return r.StatusCode
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(503),
+			"Readiness probe MUST return 503 during shutdown (DD-007 STEP 1)")
 
 			// Get final response for detailed checks
 			resp, err = http.Get(testServer.URL + "/health/ready")
@@ -117,11 +119,12 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			testServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
 
-			// Verify liveness is healthy before shutdown
-			resp, err := http.Get(testServer.URL + "/health/live")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(200))
-			_ = resp.Body.Close()
+		// Verify liveness is healthy before shutdown
+		// DD-AUTH-014: Use authenticated request
+		resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/health/live")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(200))
+		_ = resp.Body.Close()
 
 			// Start shutdown in background
 			shutdownDone := make(chan error, 1)
@@ -143,10 +146,11 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			}, 5*time.Second, 100*time.Millisecond).Should(Equal(200),
 				"Liveness probe MUST return 200 during shutdown (DD-007)")
 
-			// Get final response for detailed checks
-			resp, err = http.Get(testServer.URL + "/health/live")
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+		// Get final response for detailed checks
+		// DD-AUTH-014: Use authenticated request
+		resp, err = makeAuthenticatedRequest("GET", testServer.URL+"/health/live")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(200),
 				"Liveness probe MUST return 200 during shutdown (pod is still alive, just draining)")
@@ -169,16 +173,17 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			responseChan := make(chan int, 1)
 			errorChan := make(chan error, 1)
 
-			go func() {
-				// This request will be in-flight when shutdown starts
-				resp, err := http.Get(testServer.URL + "/api/v1/audit/events?limit=10")
-				if err != nil {
-					errorChan <- err
-					return
-				}
-				defer func() { _ = resp.Body.Close() }()
-				responseChan <- resp.StatusCode
-			}()
+		go func() {
+			// This request will be in-flight when shutdown starts
+			// DD-AUTH-014: Use authenticated request
+			resp, err := makeAuthenticatedRequest("GET", testServer.URL+"/api/v1/audit/events?limit=10")
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			defer func() { _ = resp.Body.Close() }()
+			responseChan <- resp.StatusCode
+		}()
 
 			// Per TESTING_GUIDELINES.md: Removed time.Sleep() - let request start naturally
 			// Initiate shutdown while request is in-flight
@@ -973,6 +978,19 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 // Helper function for creating test server with direct access to server instance
 // This allows tests to access internal server state (e.g., DLQ client) for validation
+// makeAuthenticatedRequest creates an HTTP request with Bearer token authentication
+// DD-AUTH-014: All DataStorage requests require authentication
+// Token must match MockAuthenticator.ValidUsers configuration
+func makeAuthenticatedRequest(method, url string) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Add Bearer token matching MockAuthenticator configuration
+	req.Header.Set("Authorization", "Bearer test-token")
+	return http.DefaultClient.Do(req)
+}
+
 func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// Create server config
 	serverCfg := &server.Config{

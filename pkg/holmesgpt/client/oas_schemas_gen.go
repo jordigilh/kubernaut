@@ -457,21 +457,6 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
-// Ref: #/components/schemas/HTTPValidationError
-type HTTPValidationError struct {
-	Detail []ValidationError `json:"detail"`
-}
-
-// GetDetail returns the value of Detail.
-func (s *HTTPValidationError) GetDetail() []ValidationError {
-	return s.Detail
-}
-
-// SetDetail sets the value of Detail.
-func (s *HTTPValidationError) SetDetail(val []ValidationError) {
-	s.Detail = val
-}
-
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200
 // Design Decision: DD-HAPI-002 v1.2
@@ -553,12 +538,17 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	}
 }
 
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
 type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden HTTPError
 
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPValidationError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPError
 
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
@@ -568,7 +558,7 @@ type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized HTTPError
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity HTTPValidationError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity HTTPError
 
 func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
@@ -2482,12 +2472,17 @@ func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
 }
 
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
 type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPValidationError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
@@ -2497,7 +2492,7 @@ type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized HTTPError
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity HTTPValidationError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
@@ -3182,105 +3177,4 @@ func (s *ValidationAttempt) SetErrors(val []string) {
 // SetTimestamp sets the value of Timestamp.
 func (s *ValidationAttempt) SetTimestamp(val string) {
 	s.Timestamp = val
-}
-
-// Ref: #/components/schemas/ValidationError
-type ValidationError struct {
-	Loc  []ValidationErrorLocItem `json:"loc"`
-	Msg  string                   `json:"msg"`
-	Type string                   `json:"type"`
-}
-
-// GetLoc returns the value of Loc.
-func (s *ValidationError) GetLoc() []ValidationErrorLocItem {
-	return s.Loc
-}
-
-// GetMsg returns the value of Msg.
-func (s *ValidationError) GetMsg() string {
-	return s.Msg
-}
-
-// GetType returns the value of Type.
-func (s *ValidationError) GetType() string {
-	return s.Type
-}
-
-// SetLoc sets the value of Loc.
-func (s *ValidationError) SetLoc(val []ValidationErrorLocItem) {
-	s.Loc = val
-}
-
-// SetMsg sets the value of Msg.
-func (s *ValidationError) SetMsg(val string) {
-	s.Msg = val
-}
-
-// SetType sets the value of Type.
-func (s *ValidationError) SetType(val string) {
-	s.Type = val
-}
-
-// ValidationErrorLocItem represents sum type.
-type ValidationErrorLocItem struct {
-	Type   ValidationErrorLocItemType // switch on this field
-	String string
-	Int    int
-}
-
-// ValidationErrorLocItemType is oneOf type of ValidationErrorLocItem.
-type ValidationErrorLocItemType string
-
-// Possible values for ValidationErrorLocItemType.
-const (
-	StringValidationErrorLocItem ValidationErrorLocItemType = "string"
-	IntValidationErrorLocItem    ValidationErrorLocItemType = "int"
-)
-
-// IsString reports whether ValidationErrorLocItem is string.
-func (s ValidationErrorLocItem) IsString() bool { return s.Type == StringValidationErrorLocItem }
-
-// IsInt reports whether ValidationErrorLocItem is int.
-func (s ValidationErrorLocItem) IsInt() bool { return s.Type == IntValidationErrorLocItem }
-
-// SetString sets ValidationErrorLocItem to string.
-func (s *ValidationErrorLocItem) SetString(v string) {
-	s.Type = StringValidationErrorLocItem
-	s.String = v
-}
-
-// GetString returns string and true boolean if ValidationErrorLocItem is string.
-func (s ValidationErrorLocItem) GetString() (v string, ok bool) {
-	if !s.IsString() {
-		return v, false
-	}
-	return s.String, true
-}
-
-// NewStringValidationErrorLocItem returns new ValidationErrorLocItem from string.
-func NewStringValidationErrorLocItem(v string) ValidationErrorLocItem {
-	var s ValidationErrorLocItem
-	s.SetString(v)
-	return s
-}
-
-// SetInt sets ValidationErrorLocItem to int.
-func (s *ValidationErrorLocItem) SetInt(v int) {
-	s.Type = IntValidationErrorLocItem
-	s.Int = v
-}
-
-// GetInt returns int and true boolean if ValidationErrorLocItem is int.
-func (s ValidationErrorLocItem) GetInt() (v int, ok bool) {
-	if !s.IsInt() {
-		return v, false
-	}
-	return s.Int, true
-}
-
-// NewIntValidationErrorLocItem returns new ValidationErrorLocItem from int.
-func NewIntValidationErrorLocItem(v int) ValidationErrorLocItem {
-	var s ValidationErrorLocItem
-	s.SetInt(v)
-	return s
 }
