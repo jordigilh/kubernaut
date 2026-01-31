@@ -104,6 +104,9 @@ var (
 	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
 	dsClients *integration.AuthenticatedDataStorageClients
 
+	// DD-AUTH-014: ServiceAccount token for creating authenticated clients
+	serviceAccountToken string
+
 	// Per-process HAPI client (each process gets its own)
 	realHGClient *hgclient.HolmesGPTClient
 
@@ -238,7 +241,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			{
 				APIGroups: []string{""},
 				Resources: []string{"services"},
-				ResourceNames: []string{"holmesgpt-api-service"}, // Must match HAPI middleware config (main.py)
+				ResourceNames: []string{"holmesgpt-api"}, // Must match HAPI middleware config (main.py)
 				Verbs: []string{"create"}, // HAPI checks "create" verb (default in main.py)
 			},
 		},
@@ -517,6 +520,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	if token == "" {
 		Fail("ServiceAccount token from Phase 1 is empty")
 	}
+
+	// DD-AUTH-014: Store token globally for tests that need to create custom authenticated clients
+	serviceAccountToken = token
 
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
