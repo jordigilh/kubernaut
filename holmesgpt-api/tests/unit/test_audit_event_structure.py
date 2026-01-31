@@ -66,7 +66,7 @@ class TestAuditEventStructure:
 
         # Verify envelope values
         assert event.version == "1.0"
-        assert event.event_category == "analysis"  # ADR-034 v1.2: HolmesGPT API is "analysis" service
+        assert event.event_category == "aiagent"  # ADR-034 v1.6: HAPI uses "aiagent" service category
         assert event.event_type == "llm_request"
         assert event.correlation_id == "rem-456"
         assert event.event_action == "llm_request_sent"
