@@ -28,8 +28,8 @@ Events are structured per ADR-034 unified audit schema.
 
 ADR-034 Required Fields:
   - version: Schema version (always "1.0")
-  - service/event_category: Service category per ADR-034 v1.2 ("analysis" for HolmesGPT API)
-  - event_type: Event type (e.g., "llm_request")
+  - service/event_category: Service category per ADR-034 v1.2 ("aiagent" for AI Agent Provider)
+  - event_type: Event type (e.g., "llm_request", "llm_response", "llm_tool_call")
   - event_timestamp: ISO 8601 timestamp
   - correlation_id: Remediation ID for correlation
   - operation/event_action: Action performed
@@ -86,7 +86,7 @@ AUDIT_VERSION = "1.0"
 # ADR-034 v1.2: event_category must be one of the allowed service categories
 # HolmesGPT API is an AI Analysis service, so use "analysis"
 # See Data Storage OpenAPI: event_category enum values
-SERVICE_NAME = "analysis"
+SERVICE_NAME = "aiagent"  # ADR-034 v1.2: AI Agent Provider (HolmesGPT autonomous tool-calling agent)
 
 
 def _get_utc_timestamp() -> str:
