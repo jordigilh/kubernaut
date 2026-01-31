@@ -345,6 +345,43 @@ def unique_test_id(worker_id, request):
 # HELPER FUNCTIONS
 # ========================================
 
+def create_authenticated_datastorage_client(data_storage_url: str):
+    """
+    Create authenticated DataStorage API client with ServiceAccount token injection.
+    
+    DD-AUTH-014: All DataStorage clients MUST use ServiceAccount token authentication.
+    This helper ensures consistent auth pattern across all test files.
+    
+    Args:
+        data_storage_url: DataStorage service URL (e.g., "http://127.0.0.1:18098")
+    
+    Returns:
+        Tuple of (ApiClient, api_instance) ready for use
+        
+    Example:
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
+        response = search_api.search_workflows(...)
+    """
+    from datastorage import Configuration, ApiClient
+    from datastorage.apis import WorkflowCatalogAPIApi
+    
+    # Import pool manager for token injection
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
+    
+    # Create client
+    config = Configuration(host=data_storage_url)
+    api_client = ApiClient(configuration=config)
+    
+    # DD-AUTH-014: Inject ServiceAccount token via shared pool manager
+    auth_pool = get_shared_datastorage_pool_manager()
+    api_client.rest_client.pool_manager = auth_pool
+    
+    # Return client and API instance
+    search_api = WorkflowCatalogAPIApi(api_client)
+    return api_client, search_api
+
+
 def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, retry_delay: float = 1.0) -> bool:
     """
     Check if a service is available at the given URL with retries.

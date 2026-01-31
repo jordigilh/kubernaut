@@ -85,10 +85,10 @@ def ensure_test_workflows(integration_infrastructure):
 
     # Verify test workflows exist by searching using OpenAPI client (DD-STORAGE-011)
     # V1.0: Must provide all 5 mandatory filter fields
+    # DD-AUTH-014: Use authenticated client helper
     try:
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="OOMKilled",
@@ -372,9 +372,9 @@ class TestWorkflowCatalogContainerImageDirectAPI:
         data_storage_url = integration_infrastructure["data_storage_url"]
 
         # ACT: Direct API call to Data Storage using OpenAPI client (DD-STORAGE-011)
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        # DD-AUTH-014: Use authenticated client helper
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="OOMKilled",  # snake_case per DD-WORKFLOW-001 v1.6

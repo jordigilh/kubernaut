@@ -689,9 +689,9 @@ class TestDataStorageAPIContract:
         data_storage_url = integration_infrastructure["data_storage_url"]
 
         # Use OpenAPI client for type-safe API call (DD-STORAGE-011)
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        # DD-AUTH-014: Use authenticated client helper
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="OOMKilled",
@@ -724,9 +724,9 @@ class TestDataStorageAPIContract:
         data_storage_url = integration_infrastructure["data_storage_url"]
 
         # Use OpenAPI client for type-safe API call (DD-STORAGE-011)
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        # DD-AUTH-014: Use authenticated client helper
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="CrashLoopBackOff",  # snake_case per DD-WORKFLOW-001 v1.8
@@ -759,9 +759,9 @@ class TestDataStorageAPIContract:
         data_storage_url = integration_infrastructure["data_storage_url"]
 
         # Use OpenAPI client for type-safe API call (DD-STORAGE-011)
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        # DD-AUTH-014: Use authenticated client helper
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="OOMKilled",
@@ -794,9 +794,9 @@ class TestDataStorageAPIContract:
         data_storage_url = integration_infrastructure["data_storage_url"]
 
         # Use OpenAPI client for type-safe API call (DD-STORAGE-011)
-        config = Configuration(host=data_storage_url)
-        api_client = ApiClient(configuration=config)
-        search_api = WorkflowCatalogAPIApi(api_client)
+        # DD-AUTH-014: Use authenticated client helper
+        from tests.integration.conftest import create_authenticated_datastorage_client
+        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
 
         filters = WorkflowSearchFilters(
             signal_type="OOMKilled",

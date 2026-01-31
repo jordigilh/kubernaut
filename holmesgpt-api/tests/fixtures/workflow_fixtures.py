@@ -128,7 +128,7 @@ TEST_WORKFLOWS = [
         signal_type="OOMKilled",
         severity="critical",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P0",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001"
@@ -141,7 +141,7 @@ TEST_WORKFLOWS = [
         signal_type="OOMKilled",
         severity="high",
         component="deployment",
-        environment="staging",
+        environment=["staging"],
         priority="P1",
         risk_tolerance="medium",
         container_image="ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002"
@@ -154,7 +154,7 @@ TEST_WORKFLOWS = [
         signal_type="CrashLoopBackOff",
         severity="high",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P1",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003"
@@ -167,7 +167,7 @@ TEST_WORKFLOWS = [
         signal_type="NodeNotReady",
         severity="critical",
         component="node",
-        environment="production",
+        environment=["production"],
         priority="P0",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004"
@@ -180,7 +180,7 @@ TEST_WORKFLOWS = [
         signal_type="ImagePullBackOff",
         severity="high",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P1",
         risk_tolerance="medium",
         container_image="ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005"
@@ -193,6 +193,7 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     Bootstrap workflow test data into Data Storage.
 
     DD-API-001 COMPLIANCE: Uses OpenAPI generated client.
+    DD-AUTH-014: Uses shared pool manager with ServiceAccount token injection.
 
     Args:
         data_storage_url: Data Storage service URL
@@ -201,6 +202,12 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     Returns:
         Dict with 'created', 'existing', 'failed' counts and workflow IDs
     """
+    # DD-AUTH-014: Import pool manager for token injection
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
+    
     if workflows is None:
         workflows = TEST_WORKFLOWS
 
@@ -213,6 +220,9 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     }
 
     with ApiClient(config) as api_client:
+        # DD-AUTH-014: Inject ServiceAccount token via shared pool manager
+        auth_pool = get_shared_datastorage_pool_manager()
+        api_client.rest_client.pool_manager = auth_pool
         api = WorkflowCatalogAPIApi(api_client)
 
         for workflow in workflows:

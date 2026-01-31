@@ -395,7 +395,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
+test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐍 HolmesGPT API Integration Tests (Direct Business Logic)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -407,50 +407,15 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
 	@echo "✅ OpenAPI client generated (used for Data Storage audit validation only)"
 	@echo ""
-	@# Start Go infrastructure in background (PostgreSQL, Redis, Data Storage only - no HAPI container)
-	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
-	@echo "   Note: HAPI business logic called directly (no container needed)"
-	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
-	GINKGO_PID=$$!; \
-	echo "   Infrastructure PID: $$GINKGO_PID"; \
-	echo "⏳ Waiting for Data Storage to be ready..."; \
-	for i in {1..60}; do \
-		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
-			echo "✅ Data Storage ready ($$((i*5))s)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 60 ]; then \
-			echo "❌ Timeout waiting for infrastructure"; \
-			kill $$GINKGO_PID 2>/dev/null || true; \
-			exit 1; \
-		fi; \
-		sleep 5; \
-	done; \
-	echo ""; \
-	echo "🐳 Phase 2: Running Python tests in container..."; \
-	podman build -t holmesgpt-api-integration-test:latest \
-		-f docker/holmesgpt-api-integration-test.Dockerfile . && \
-	podman run --rm \
-		--network=host \
-		--add-host=host.containers.internal:host-gateway \
-		-v $(CURDIR):/workspace:z \
-		holmesgpt-api-integration-test:latest; \
-	TEST_RESULT=$$?; \
-	echo ""; \
-	echo "🧹 Phase 3: Cleanup..."; \
-	touch /tmp/hapi-integration-tests-complete; \
-	sleep 2; \
-	kill $$GINKGO_PID 2>/dev/null || true; \
-	wait $$GINKGO_PID 2>/dev/null || true; \
-	rm -f /tmp/hapi-integration-tests-complete; \
-	echo "✅ Cleanup complete"; \
-	echo ""; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ All HAPI integration tests passed (containerized)"; \
-	else \
-		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
-		exit $$TEST_RESULT; \
-	fi
+	@# FIX: HAPI-INT-CONFIG-001 - Run as standard Ginkgo test with envtest
+	@# Architecture: Go sets up infrastructure (envtest + PostgreSQL + Redis + DataStorage with auth)
+	@#              Python tests run in container via coordination test
+	@echo "🏗️  Running HAPI integration tests (hybrid Go + Python pattern)..."
+	@echo "   Pattern: DD-INTEGRATION-001 v2.0 + DD-AUTH-014 (envtest + auth)"
+	@echo "   Infrastructure: Go (envtest, PostgreSQL, Redis, DataStorage with auth)"
+	@echo "   Tests: Python (pytest in container, business logic calls)"
+	@echo ""
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=1 ./test/integration/holmesgptapi/...
 
 .PHONY: test-e2e-holmesgpt-api
 test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
