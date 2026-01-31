@@ -11,13 +11,13 @@
 | Service | INT Tests | Status | Issues | Notes |
 |---------|-----------|--------|--------|-------|
 | **Gateway (GW)** | **89/89 + 10/10** | ✅ **100%** | **0** | ✅ COMPLETE |
+| **AIAnalysis (AA)** | **59/59** | ✅ **100%** | **0** | ✅ COMPLETE |
 | DataStorage (DS) | 818/818 | ✅ 100% | 0 | ✅ Baseline |
 | SignalProcessing (SP) | All pass | ✅ 100% | 0 | ✅ Auth fixed |
 | NotificationService (NT) | All pass | ✅ 100% | 0 | ✅ Auth fixed |
 | RemediationOrchestrator (RO) | All pass | ✅ 100% | 0 | ✅ Auth fixed |
 | WorkflowExecution (WX) | All pass | ✅ 100% | 0 | ✅ Auth fixed |
 | AuthWebhook (AW) | All pass | ✅ 100% | 0 | ✅ Fixed (Ginkgo parallel data) |
-| AIAnalysis (AA) | N-1 pass | ⚠️ ~99% | 1 | ⚠️ HAPI event timing (pre-existing) |
 | HolmesGPT-API (HAPI) | ❓ Untested | ❓ Unknown | ❓ | 📋 TODO: Run tests |
 
 **Legend**:
