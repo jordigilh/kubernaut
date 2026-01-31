@@ -3,10 +3,10 @@
 # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 
 server:
-  listen_addr: ":8080"
-  read_timeout: 30s
-  write_timeout: 30s
-  idle_timeout: 120s
+  listenAddr: ":8080"
+  readTimeout: 30s
+  writeTimeout: 30s
+  idleTimeout: 120s
 
 middleware:
   # Rate limiting removed (ADR-048) - delegated to proxy
@@ -14,16 +14,16 @@ middleware:
 infrastructure:
   # DD-GATEWAY-012: Redis REMOVED - Gateway uses K8s status for state
   # DD-AUDIT-003: Data Storage URL for audit event emission
-  data_storage_url: "http://data-storage-service:8080"
+  dataStorageUrl: "http://data-storage-service:8080"
 
 processing:
   deduplication:
     ttl: 5m
   storm:
-    rate_threshold: 10
-    pattern_threshold: 5
+    rateThreshold: 10
+    patternThreshold: 5
     # DD-GATEWAY-008: Storm aggregation settings
-    buffer_threshold: 5
-    inactivity_timeout: 60s
-    max_window_duration: 5m
+    bufferThreshold: 5
+    inactivityTimeout: 60s
+    maxWindowDuration: 5m
   # environment settings removed (DD-CATEGORIZATION-001)
