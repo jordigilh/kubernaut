@@ -203,8 +203,13 @@ class TestIncidentAnalysisMetrics:
         test_registry = CollectorRegistry()
         test_metrics = HAMetrics(registry=test_registry)
         
-        # Get baseline histogram count
-        initial_count = test_metrics.investigations_duration._count.get()
+        # Get baseline histogram count (query from registry)
+        initial_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    initial_count = float(sample.value)
+                    break
         
         # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
@@ -305,7 +310,13 @@ class TestRecoveryAnalysisMetrics:
         test_registry = CollectorRegistry()
         test_metrics = HAMetrics(registry=test_registry)
         
-        initial_count = test_metrics.investigations_duration._count.get()
+        # Get baseline histogram count (query from registry)
+        initial_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    initial_count = float(sample.value)
+                    break
         
         # ACT: Call recovery business logic
         recovery_request = make_recovery_request(unique_test_id)
