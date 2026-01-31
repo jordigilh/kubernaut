@@ -50,7 +50,7 @@ import os
 import time
 import pytest
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # ========================================
 # BUSINESS LOGIC IMPORTS (Direct Calls)
