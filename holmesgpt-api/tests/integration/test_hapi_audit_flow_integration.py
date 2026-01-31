@@ -171,11 +171,13 @@ def query_audit_events_with_retry(
         )
 
     print(f"🔄 Flushing audit buffer before querying...")
-    success = audit_store.flush(timeout=5.0)
+    # Increased timeout from 5s to 10s for parallel test execution (4 workers)
+    # With connection pool contention, flush may take longer
+    success = audit_store.flush(timeout=10.0)
     if not success:
         raise AssertionError(
             "Audit flush timeout - events may not be persisted. "
-            "This indicates a problem with the audit buffer."
+            "This indicates a problem with the audit buffer or DataStorage connection pool."
         )
     print(f"✅ Audit buffer flushed")
 
@@ -263,7 +265,8 @@ class TestIncidentAnalysisAuditFlow:
 
         # ACT: Call business logic DIRECTLY (no HTTP, no API client)
         # This is the integration testing pattern - direct function call
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (audit tests don't assert on metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
 
         # Verify business operation succeeded
         assert response is not None, "Business logic should return a response"
@@ -341,7 +344,8 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify tool call events emitted
@@ -393,7 +397,8 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify validation attempt events emitted (with retry polling)
@@ -449,7 +454,8 @@ class TestRecoveryAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly (no HTTP)
-        response = await analyze_recovery(recovery_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_recovery(request_data=recovery_request, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify audit events emitted
@@ -519,7 +525,8 @@ class TestAuditEventSchemaValidation:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify all audit events have ADR-034 required fields
@@ -624,7 +631,8 @@ class TestErrorScenarioAuditFlow:
         }
 
         # ACT: Call business logic directly - will fail gracefully
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing error audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
 
         # Verify business operation completed (even if no workflow found)
         assert response is not None, "Business logic should return a response"
