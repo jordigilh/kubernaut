@@ -194,13 +194,21 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
 
     DD-API-001 COMPLIANCE: Uses OpenAPI generated client.
     DD-AUTH-014: Uses shared pool manager with ServiceAccount token injection.
+    DD-TEST-011 v2.0: Captures workflow UUIDs for Mock LLM configuration.
 
     Args:
         data_storage_url: Data Storage service URL
         workflows: List of workflow fixtures (defaults to TEST_WORKFLOWS)
 
     Returns:
-        Dict with 'created', 'existing', 'failed' counts and workflow IDs
+        Dict with 'created', 'existing', 'failed' counts and workflow_id_map
+        {
+            "created": ["workflow1", ...],
+            "existing": ["workflow2", ...],
+            "failed": [...],
+            "total": N,
+            "workflow_id_map": {"workflow_name:environment": "uuid", ...}
+        }
     """
     # DD-AUTH-014: Import pool manager for token injection
     import sys
@@ -216,7 +224,8 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
         "created": [],
         "existing": [],
         "failed": [],
-        "total": len(workflows)
+        "total": len(workflows),
+        "workflow_id_map": {}  # DD-TEST-011: Map workflow_name:environment → UUID
     }
 
     with ApiClient(config) as api_client:
@@ -233,6 +242,15 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                     remediation_workflow=remediation_workflow,
                     _request_timeout=10
                 )
+                
+                # DD-TEST-011: Capture workflow_id from response
+                workflow_id = response.workflow_id if hasattr(response, 'workflow_id') else None
+                if workflow_id:
+                    # Use first environment from list for key
+                    env = workflow.environment[0] if isinstance(workflow.environment, list) else workflow.environment
+                    key = f"{workflow.workflow_name}:{env}"
+                    results["workflow_id_map"][key] = workflow_id
+                
                 results["created"].append(workflow.workflow_name)
 
             except Exception as e:
@@ -240,6 +258,22 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                 # 409 Conflict means workflow already exists (acceptable)
                 if "409" in error_msg or "already exists" in error_msg.lower():
                     results["existing"].append(workflow.workflow_name)
+                    
+                    # DD-TEST-011: Query for existing workflow UUID
+                    try:
+                        # Query by workflow_name to get UUID
+                        search_results = api.search_workflows(
+                            query=workflow.workflow_name,
+                            top_k=1,
+                            _request_timeout=5
+                        )
+                        if search_results and len(search_results) > 0:
+                            workflow_id = search_results[0].workflow_id
+                            env = workflow.environment[0] if isinstance(workflow.environment, list) else workflow.environment
+                            key = f"{workflow.workflow_name}:{env}"
+                            results["workflow_id_map"][key] = workflow_id
+                    except Exception as query_err:
+                        print(f"⚠️  Failed to query existing workflow UUID for {workflow.workflow_name}: {query_err}")
                 else:
                     results["failed"].append({
                         "workflow": workflow.workflow_name,
