@@ -213,8 +213,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
 
 	// Start port-forward to DataStorage
+	// Service name is "data-storage-service" per DD-AUTH-011 (matches production)
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "port-forward", "svc/datastorage", "38080:8080")
+		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080")
 	if err := portForwardCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start DataStorage port-forward: %w", err)
 	}
