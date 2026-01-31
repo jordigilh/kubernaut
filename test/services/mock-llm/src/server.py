@@ -80,10 +80,10 @@ class MockScenario:
 MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "oomkilled": MockScenario(
         name="oomkilled",
-        workflow_name="oomkill-increase-memory-v1",
+        workflow_name="oomkill-increase-memory-limits",  # DD-TEST-011 v2.0: Match actual DataStorage workflow names (no -v1 suffix)
         signal_type="OOMKilled",
         severity="critical",
-        workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for oomkill-increase-memory-v1
+        workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config file
         workflow_title="OOMKill Recovery - Increase Memory Limits",
         confidence=0.95,
         root_cause="Container exceeded memory limits due to traffic spike",
@@ -94,10 +94,10 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "crashloop": MockScenario(
         name="crashloop",
-        workflow_name="crashloop-config-fix-v1",
+        workflow_name="crashloop-fix-configuration",  # DD-TEST-011 v2.0: Match actual DataStorage workflow names (no -v1 suffix)
         signal_type="CrashLoopBackOff",
         severity="high",
-        workflow_id="42b90a37-0d1b-5561-911a-2939ed9e1c30",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for crashloop-config-fix-v1
+        workflow_id="42b90a37-0d1b-5561-911a-2939ed9e1c30",  # Placeholder - overwritten by config file
         workflow_title="CrashLoopBackOff - Configuration Fix",
         confidence=0.88,
         root_cause="Container failing due to missing configuration",
@@ -108,10 +108,10 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
-        workflow_name="node-drain-reboot-v1",
+        workflow_name="node-not-ready-drain-and-reboot",  # DD-TEST-011 v2.0: Match actual DataStorage workflow names (no -v1 suffix)
         signal_type="NodeNotReady",
         severity="critical",
-        workflow_id="node-drain-reboot-v1",
+        workflow_id="node-drain-reboot-v1",  # Placeholder - overwritten by config file
         workflow_title="NodeNotReady - Drain and Reboot",
         confidence=0.90,
         root_cause="Node experiencing disk pressure",
@@ -122,10 +122,10 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "recovery": MockScenario(
         name="recovery",
-        workflow_name="memory-optimize-v1",
+        workflow_name="oomkill-scale-down-replicas",  # DD-TEST-011 v2.0: Use different OOMKill workflow for recovery (staging environment)
         signal_type="OOMKilled",
         severity="critical",
-        workflow_id="99f4a9b8-d6b5-5191-85a4-93e5dbf61321",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for memory-optimize-v1
+        workflow_id="99f4a9b8-d6b5-5191-85a4-93e5dbf61321",  # Placeholder - overwritten by config file
         workflow_title="Memory Optimization - Alternative Approach",
         confidence=0.85,
         root_cause="Previous scaling approach failed, requires optimization",
