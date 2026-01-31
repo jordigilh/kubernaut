@@ -463,6 +463,13 @@
             "type": "string",
             "format": "uri",
             "description": "URI reference identifying the specific occurrence of the problem"
+          },
+          "request_id": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "null"}
+            ],
+            "description": "Request tracing identifier (RFC 7807 extension member)"
           }
         }
       },

@@ -393,6 +393,8 @@ type HTTPError struct {
 	Detail OptString `json:"detail"`
 	// URI reference identifying the specific occurrence of the problem.
 	Instance OptURI `json:"instance"`
+	// Request tracing identifier (RFC 7807 extension member).
+	RequestID OptNilString `json:"request_id"`
 }
 
 // GetType returns the value of Type.
@@ -420,6 +422,11 @@ func (s *HTTPError) GetInstance() OptURI {
 	return s.Instance
 }
 
+// GetRequestID returns the value of RequestID.
+func (s *HTTPError) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
 // SetType sets the value of Type.
 func (s *HTTPError) SetType(val url.URL) {
 	s.Type = val
@@ -443,6 +450,11 @@ func (s *HTTPError) SetDetail(val OptString) {
 // SetInstance sets the value of Instance.
 func (s *HTTPError) SetInstance(val OptURI) {
 	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *HTTPError) SetRequestID(val OptNilString) {
+	s.RequestID = val
 }
 
 // Ref: #/components/schemas/HTTPValidationError

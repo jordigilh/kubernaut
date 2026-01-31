@@ -844,14 +844,21 @@ func (s *HTTPError) encodeFields(e *jx.Encoder) {
 			s.Instance.Encode(e)
 		}
 	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfHTTPError = [5]string{
+var jsonFieldsNameOfHTTPError = [6]string{
 	0: "type",
 	1: "title",
 	2: "status",
 	3: "detail",
 	4: "instance",
+	5: "request_id",
 }
 
 // Decode decodes HTTPError from json.
@@ -918,6 +925,16 @@ func (s *HTTPError) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
 			}
 		default:
 			return d.Skip()
