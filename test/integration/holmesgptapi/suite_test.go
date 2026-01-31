@@ -18,14 +18,24 @@ package holmesgptapi
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+)
+
+var (
+	// Shared infrastructure (created in Phase 1, cleaned up in AfterSuite)
+	testEnv                *envtest.Environment
+	hapiInfrastructure     *infrastructure.HAPIIntegrationInfra
+	envtestKubeconfigIPv4  string // IPv4-rewritten kubeconfig for DataStorage auth
+	serviceAccountToken    string // ServiceAccount token for Python tests (DD-AUTH-014)
 )
 
 func TestHolmesGPTAPIIntegration(t *testing.T) {
@@ -36,37 +46,58 @@ func TestHolmesGPTAPIIntegration(t *testing.T) {
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
 // This follows the pattern established by Gateway, Notification, AIAnalysis, etc.
 //
-// Pattern: DD-INTEGRATION-001 v2.0 - Programmatic Go Infrastructure
-// Migration: From Python pytest fixtures (subprocess.run docker-compose) to Go programmatic setup
+// Pattern: DD-INTEGRATION-001 v2.0 + DD-AUTH-014 (DataStorage auth)
+// Migration: From Python pytest fixtures to Go programmatic setup with envtest
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("HolmesGPT API Integration Test Suite - Go Infrastructure")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("Migration: From Python subprocess → Go programmatic setup")
-	GinkgoWriter.Println("Pattern:   DD-INTEGRATION-001 v2.0 (Programmatic Podman)")
+	GinkgoWriter.Println("Pattern:   DD-INTEGRATION-001 v2.0 + DD-AUTH-014 (envtest + auth)")
 	GinkgoWriter.Println("")
 	GinkgoWriter.Println("Creating test infrastructure...")
+	GinkgoWriter.Println("  • envtest (Kubernetes API)")
 	GinkgoWriter.Println("  • PostgreSQL (port 15439)")
 	GinkgoWriter.Println("  • Redis (port 16387)")
-	GinkgoWriter.Println("  • Data Storage API (port 18098)")
-	GinkgoWriter.Println("  • Mock LLM Service (port 18140 - HAPI-specific)")
-	GinkgoWriter.Println("")
-	GinkgoWriter.Println("Benefits over Python subprocess approach:")
-	GinkgoWriter.Println("  ✅ No subprocess.run() calls")
-	GinkgoWriter.Println("  ✅ Reuses 720 lines of shared Go utilities")
-	GinkgoWriter.Println("  ✅ Consistent with all other services")
-	GinkgoWriter.Println("  ✅ Programmatic health checks")
-	GinkgoWriter.Println("  ✅ Composite image tags (collision avoidance)")
+	GinkgoWriter.Println("  • Data Storage API (port 18098, with auth)")
+	GinkgoWriter.Println("  • Mock LLM Service (port 18140)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	By("Starting envtest Kubernetes API server (DD-AUTH-014 requirement)")
+	testEnv = &envtest.Environment{}
+	cfg, err := testEnv.Start()
+	Expect(err).NotTo(HaveOccurred(), "envtest must start successfully")
+	Expect(cfg).NotTo(BeNil())
+	GinkgoWriter.Println("✅ envtest started")
+
+	By("Creating ServiceAccount with DataStorage RBAC in shared envtest")
+	// DD-AUTH-014: Creates ServiceAccounts + RBAC for DataStorage access
+	// This creates:
+	// - holmesgptapi-ds-client ServiceAccount (for HAPI to call DataStorage)
+	// - datastorage-service ServiceAccount (for DataStorage to validate tokens)
+	// Also writes IPv4-rewritten kubeconfig for container compatibility
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		cfg,
+		"holmesgptapi-ds-client",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	envtestKubeconfigIPv4 = authConfig.KubeconfigPath // Store for Phase 2
+	serviceAccountToken = authConfig.Token             // Store for Python container (DD-AUTH-014)
+	GinkgoWriter.Printf("✅ ServiceAccount + RBAC created, kubeconfig written: %s\n", envtestKubeconfigIPv4)
+	GinkgoWriter.Printf("✅ ServiceAccount token available for Python tests (DD-AUTH-014)\n\n")
+
 	By("Starting HolmesGPT API integration infrastructure (Go programmatic setup)")
-	// This starts: PostgreSQL, Redis, DataStorage
+	// This starts: PostgreSQL, Redis, DataStorage (with auth)
 	// Per DD-TEST-001 v1.8: Ports 15439, 16387, 18098
-	// Per DD-INTEGRATION-001 v2.0: Uses shared utilities from test/infrastructure/shared_integration_utils.go
-	err := infrastructure.StartHolmesGPTAPIIntegrationInfrastructure(GinkgoWriter)
+	// Per DD-AUTH-014: Uses envtest kubeconfig for DataStorage auth middleware
+	var infraPtr *infrastructure.HAPIIntegrationInfra
+	infraPtr, err = infrastructure.StartHolmesGPTAPIIntegrationInfrastructure(GinkgoWriter, authConfig.KubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully (DD-INTEGRATION-001 v2.0)")
-	GinkgoWriter.Println("✅ All services started and healthy (Go programmatic setup)")
+	hapiInfrastructure = infraPtr // Store in suite-level variable for cleanup
+	GinkgoWriter.Println("✅ All services started and healthy (standardized StartDSBootstrap pattern)")
 
 	By("Building Mock LLM image (DD-TEST-004 unique tag)")
 	// Per DD-TEST-004: Generate unique image tag to prevent collisions
@@ -87,10 +118,34 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
 	GinkgoWriter.Printf("✅ Mock LLM service started and healthy (port %d)\n", mockLLMConfig.Port)
 
-	return nil // No shared data needed between processes
+	// FIX: HAPI-INT-CONFIG-001 - Share envtest kubeconfig and token between parallel processes
+	// Pattern: Same as AIAnalysis, Gateway (JSON marshaling for robust data passing)
+	// DD-AUTH-014: Share ServiceAccount token for Python test auth
+	type Phase1Data struct {
+		EnvtestKubeconfigIPv4 string `json:"envtest_kubeconfig_ipv4"`
+		Token                 string `json:"token"`
+	}
+	data := Phase1Data{
+		EnvtestKubeconfigIPv4: envtestKubeconfigIPv4,
+		Token:                 authConfig.Token,
+	}
+	dataBytes, err := json.Marshal(data)
+	Expect(err).NotTo(HaveOccurred(), "Phase 1 data marshaling must succeed")
+	return dataBytes
 }, func(data []byte) {
 	// This runs on ALL parallel processes - setup per-process resources if needed
-	GinkgoWriter.Printf("✅ Process setup complete (infrastructure shared across processes)\n")
+	// FIX: HAPI-INT-CONFIG-001 - Unmarshal shared data from Phase 1
+	type Phase1Data struct {
+		EnvtestKubeconfigIPv4 string `json:"envtest_kubeconfig_ipv4"`
+		Token                 string `json:"token"`
+	}
+	var sharedData Phase1Data
+	err := json.Unmarshal(data, &sharedData)
+	Expect(err).NotTo(HaveOccurred(), "Phase 1 data unmarshaling must succeed")
+	
+	envtestKubeconfigIPv4 = sharedData.EnvtestKubeconfigIPv4
+	serviceAccountToken = sharedData.Token
+	GinkgoWriter.Printf("✅ Process setup complete (infrastructure shared, kubeconfig=%s)\n", envtestKubeconfigIPv4)
 })
 
 // SynchronizedAfterSuite runs cleanup in two phases for parallel execution
@@ -123,8 +178,16 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// DD-INTEGRATION-001 v2.0: Stop infrastructure using programmatic Go setup
 	By("Stopping HolmesGPT API infrastructure (programmatic Podman)")
-	if err := infrastructure.StopHolmesGPTAPIIntegrationInfrastructure(GinkgoWriter); err != nil {
+	if err := infrastructure.StopHolmesGPTAPIIntegrationInfrastructure(hapiInfrastructure, GinkgoWriter); err != nil {
 		GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
+	}
+
+	// Stop envtest
+	By("Stopping shared envtest")
+	if testEnv != nil {
+		if err := testEnv.Stop(); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to stop envtest: %v\n", err)
+		}
 	}
 
 	// DD-INTEGRATION-001 v2.0: Clean up composite-tagged images

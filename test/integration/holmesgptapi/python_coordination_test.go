@@ -19,6 +19,7 @@ package holmesgptapi
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -28,11 +29,12 @@ import (
 
 var _ = Describe("Python Test Coordination", func() {
 	Context("Infrastructure Lifecycle Management", func() {
-		It("should keep infrastructure alive while Python tests run", func() {
-			// Pattern: Go starts infrastructure, blocks until Python tests complete
-			// Signal file: /tmp/hapi-integration-tests-complete
-			// Created by: Makefile after pytest completes
-			// Purpose: Prevents Ginkgo from tearing down infrastructure prematurely
+		It("should run Python integration tests against Go infrastructure", func() {
+			// Pattern: Go infrastructure (Ginkgo) + Python tests (pytest in container)
+			// Architecture:
+			// - Go: Sets up envtest, PostgreSQL, Redis, DataStorage (with DD-AUTH-014)
+			// - Python: Runs in container with --network=host, calls HAPI business logic
+			// - Coordination: Python creates signal file when complete
 
 			signalFile := "/tmp/hapi-integration-tests-complete"
 
@@ -40,65 +42,85 @@ var _ = Describe("Python Test Coordination", func() {
 			_ = os.Remove(signalFile)
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			GinkgoWriter.Println("🐍 Waiting for Python integration tests to complete...")
+			GinkgoWriter.Println("🐍 Running Python integration tests in container...")
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("")
-			GinkgoWriter.Println("Infrastructure Status:")
+			GinkgoWriter.Println("Infrastructure Status (provided by Go):")
+			GinkgoWriter.Println("  ✅ envtest (Kubernetes API with auth)")
 			GinkgoWriter.Println("  ✅ PostgreSQL (port 15439)")
 			GinkgoWriter.Println("  ✅ Redis (port 16387)")
-			GinkgoWriter.Println("  ✅ Data Storage API (port 18098)")
+			GinkgoWriter.Println("  ✅ Data Storage API (port 18098, DD-AUTH-014)")
 			GinkgoWriter.Println("")
-			GinkgoWriter.Println("Waiting for signal file:")
-			GinkgoWriter.Printf("  📄 %s\n", signalFile)
-			GinkgoWriter.Println("")
-			GinkgoWriter.Println("This test will:")
-			GinkgoWriter.Println("  1. Keep infrastructure alive")
-			GinkgoWriter.Println("  2. Wait for Python tests to complete")
-			GinkgoWriter.Println("  3. Allow AfterSuite to tear down cleanly")
-			GinkgoWriter.Println("")
-			GinkgoWriter.Println("Python tests will:")
-			GinkgoWriter.Println("  • Use TestClient (in-process HAPI)")
-			GinkgoWriter.Println("  • Connect to Data Storage at localhost:18098")
-			GinkgoWriter.Println("  • Run with pytest -n 4 (4 parallel workers)")
+			GinkgoWriter.Println("Python Test Container:")
+			GinkgoWriter.Println("  • Image: holmesgpt-api-integration-test:latest")
+			GinkgoWriter.Println("  • Network: host (direct access to Go infrastructure)")
+			GinkgoWriter.Println("  • Tests: pytest tests/integration/ (business logic)")
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+			// Get workspace root for Docker build context
+			workspaceRoot, err := filepath.Abs("../../..")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Build Python test container
+			GinkgoWriter.Println("🔨 Building Python test container...")
+			buildCmd := exec.Command("podman", "build",
+				"-t", "holmesgpt-api-integration-test:latest",
+				"-f", "docker/holmesgpt-api-integration-test.Dockerfile",
+				".")
+			buildCmd.Dir = workspaceRoot
+			buildCmd.Stdout = GinkgoWriter
+			buildCmd.Stderr = GinkgoWriter
+			err = buildCmd.Run()
+			Expect(err).NotTo(HaveOccurred(), "Python test container build must succeed")
+			GinkgoWriter.Println("✅ Container built")
+			GinkgoWriter.Println("")
+
+			// Write token to temporary file for mounting into container
+			// DD-AUTH-014: Python ServiceAccountAuthPoolManager expects token at standard K8s path
+			// NOTE: Use workspace path (not /tmp) for podman VM compatibility on macOS
+			tokenFile := filepath.Join(workspaceRoot, ".hapi-integration-sa-token")
+			GinkgoWriter.Printf("🔐 Writing ServiceAccount token to %s...\n", tokenFile)
+			GinkgoWriter.Printf("   Token length: %d chars\n", len(serviceAccountToken))
+			err = os.WriteFile(tokenFile, []byte(serviceAccountToken), 0644)
+			Expect(err).NotTo(HaveOccurred(), "Failed to write ServiceAccount token file")
+			
+			// Verify file exists
+			if _, err := os.Stat(tokenFile); err != nil {
+				Fail(fmt.Sprintf("Token file verification failed: %v", err))
+			}
+			GinkgoWriter.Printf("✅ Token file written and verified: %s\n", tokenFile)
+			defer os.Remove(tokenFile)
+
+			// Run Python tests in container
+			// DD-AUTH-014: Mount ServiceAccount token at standard Kubernetes path
+			GinkgoWriter.Println("🐍 Running Python tests with mounted ServiceAccount token...")
+			GinkgoWriter.Printf("   Token length: %d chars\n", len(serviceAccountToken))
+			GinkgoWriter.Printf("   Token file: %s → /var/run/secrets/kubernetes.io/serviceaccount/token\n", tokenFile)
+			runCmd := exec.Command("podman", "run", "--rm",
+				"--network=host",
+				"--add-host=host.containers.internal:host-gateway",
+				"-v", fmt.Sprintf("%s:/workspace:z", workspaceRoot),
+				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro", tokenFile),
+				"holmesgpt-api-integration-test:latest")
+			runCmd.Stdout = GinkgoWriter
+			runCmd.Stderr = GinkgoWriter
+
 			startTime := time.Now()
-			timeout := 20 * time.Minute // Match Ginkgo --timeout=20m
+			err = runCmd.Run()
+			duration := time.Since(startTime)
 
-			Eventually(func() bool {
-				elapsed := time.Since(startTime)
-				if elapsed > timeout {
-					Fail(fmt.Sprintf("Timeout: Python tests did not complete within %v", timeout))
-				}
+			GinkgoWriter.Println("")
+			GinkgoWriter.Printf("⏱️  Python tests completed in %v\n", duration.Round(time.Second))
 
-				// Check if signal file exists
-				absPath, err := filepath.Abs(signalFile)
-				if err != nil {
-					GinkgoWriter.Printf("⚠️  Error resolving signal file path: %v\n", err)
-					return false
-				}
+			// Check test results
+			if err != nil {
+				Fail(fmt.Sprintf("Python integration tests failed: %v", err))
+			}
 
-				_, err = os.Stat(absPath)
-				if err == nil {
-					// Signal file exists - Python tests complete
-					GinkgoWriter.Println("")
-					GinkgoWriter.Println("✅ Python integration tests completed successfully!")
-					GinkgoWriter.Printf("   Duration: %v\n", elapsed.Round(time.Second))
-					GinkgoWriter.Println("   Infrastructure will now be torn down by AfterSuite")
-					return true
-				}
+			GinkgoWriter.Println("✅ All Python integration tests passed")
 
-				// Every 30 seconds, print a status update
-				if int(elapsed.Seconds())%30 == 0 && int(elapsed.Seconds()) > 0 {
-					GinkgoWriter.Printf("⏳ Still waiting for Python tests... (%v elapsed)\n", elapsed.Round(time.Second))
-				}
-
-				return false
-			}, timeout, 1*time.Second).Should(BeTrue(),
-				"Python integration tests should complete and create signal file")
-
-			// Clean up signal file
-			_ = os.Remove(signalFile)
+			// Create signal file for coordination (if Makefile needs it)
+			_ = os.WriteFile(signalFile, []byte("complete"), 0644)
 		})
 	})
 })
