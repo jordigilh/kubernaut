@@ -264,34 +264,37 @@ def bootstrap_test_workflows(data_storage_url):
     """
     Bootstrap test workflows into Data Storage for integration tests.
 
-    This fixture runs once per test session and seeds the workflow catalog
-    with test workflows needed by label integration, container image, and
-    workflow catalog tests.
+    DD-TEST-011 v2.0 UPDATE (Jan 31, 2026):
+    Workflow seeding now handled by Go suite setup (before Mock LLM starts).
+    This fixture is kept as a no-op for backward compatibility but workflows
+    are already seeded when Python tests execute.
 
-    Workflows Seeded:
+    Pattern (matches AIAnalysis):
+    1. Go: Seed workflows → capture UUIDs
+    2. Go: Write Mock LLM config file with UUIDs
+    3. Go: Start Mock LLM with config file mounted
+    4. Python: Tests run with workflows already available
+
+    Workflows Seeded (by Go):
     - OOMKilled workflows (2)
     - CrashLoopBackOff workflows (1)
     - NodeNotReady workflows (1)
     - ImagePullBackOff workflows (1)
 
     Returns:
-        dict: Bootstrap results with 'created', 'existing', 'failed' counts
+        dict: Bootstrap results (workflows already seeded by Go)
     """
-    # Import here to avoid circular dependencies
-    sys.path.insert(0, str(Path(__file__).parent.parent / "fixtures"))
-    from workflow_fixtures import bootstrap_workflows
-
-    print(f"\n🌱 Bootstrapping test workflows into Data Storage ({data_storage_url})...")
-    results = bootstrap_workflows(data_storage_url)
-
-    print(f"   ✅ Workflows created: {len(results['created'])}")
-    print(f"   ♻️  Workflows existing: {len(results['existing'])}")
-    if results['failed']:
-        print(f"   ❌ Workflows failed: {len(results['failed'])}")
-        for failure in results['failed']:
-            print(f"      - {failure['workflow']}: {failure['error']}")
-
-    return results
+    print(f"\n✅ DD-TEST-011 v2.0: Workflows already seeded by Go suite setup")
+    print(f"   Mock LLM configured with actual DataStorage UUIDs")
+    print(f"   Data Storage URL: {data_storage_url}")
+    
+    # Return empty results (workflows already seeded)
+    return {
+        "created": [],
+        "existing": [],
+        "failed": [],
+        "total": 0
+    }
 
 
 @pytest.fixture(scope="function")
