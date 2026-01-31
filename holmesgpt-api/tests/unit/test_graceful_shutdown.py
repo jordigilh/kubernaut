@@ -69,7 +69,14 @@ def test_readiness_probe_returns_503_during_shutdown(setup_test_config):
 
     This is the critical coordination mechanism for zero-downtime deployments.
     """
-    from src.main import app
+    from src.main import create_app
+    from src.auth import MockAuthenticator, MockAuthorizer
+    
+    # Use factory pattern with mock auth (no K8s dependency)
+    app = create_app(
+        authenticator=MockAuthenticator(valid_users={"test-token": "system:serviceaccount:test:sa"}),
+        authorizer=MockAuthorizer(default_allow=True)
+    )
 
     # Create test client
     client = TestClient(app)
@@ -142,7 +149,14 @@ def test_inflight_request_completion(setup_test_config):
 
     This ensures zero request failures during rolling updates.
     """
-    from src.main import app
+    from src.main import create_app
+    from src.auth import MockAuthenticator, MockAuthorizer
+    
+    # Use factory pattern with mock auth (no K8s dependency)
+    app = create_app(
+        authenticator=MockAuthenticator(valid_users={"test-token": "system:serviceaccount:test:sa"}),
+        authorizer=MockAuthorizer(default_allow=True)
+    )
 
     # Create test client
     client = TestClient(app)

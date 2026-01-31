@@ -157,12 +157,22 @@ def mock_analyze_recovery():
 
 @pytest.fixture
 def client():
-    """Create FastAPI test client for unit tests"""
+    """Create authenticated FastAPI test client for unit tests with mock auth"""
     from fastapi.testclient import TestClient
+    from src.main import create_app
+    from src.auth import MockAuthenticator, MockAuthorizer
 
-    # Config file already set at module level
-    from src.main import app
-    return TestClient(app)
+    # Create app with mock auth components (no K8s cluster dependency)
+    # Factory pattern: Pure dependency injection, no test-specific logic in business code
+    app = create_app(
+        authenticator=MockAuthenticator(valid_users={"test-token": "system:serviceaccount:test:sa"}),
+        authorizer=MockAuthorizer(default_allow=True)
+    )
+    
+    # Create test client with default auth header for protected endpoints
+    test_client = TestClient(app)
+    test_client.headers = {"Authorization": "Bearer test-token"}
+    return test_client
 
 
 
