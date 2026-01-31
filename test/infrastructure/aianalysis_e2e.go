@@ -497,6 +497,23 @@ subjects:
   name: holmesgpt-api
   namespace: kubernaut-system
 ---
+# RoleBinding: Grant HolmesGPT-API access to DataStorage for audit writes (DD-AUTH-014)
+# Authority: DD-AUTH-014 (Middleware-based authentication) + BR-HAPI-197 (Audit trail)
+# Required for: HAPI audit events → DataStorage REST API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-datastorage-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api
+  namespace: kubernaut-system
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -653,6 +670,23 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: holmesgpt-api-client
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+# RoleBinding: Grant AIAnalysis controller access to DataStorage for audit writes (DD-AUTH-014)
+# Authority: DD-AUTH-014 (Middleware-based authentication) + BR-AI-009 (Audit trail)
+# Required for: AIAnalysis audit events → DataStorage REST API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-datastorage-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
 subjects:
 - kind: ServiceAccount
   name: aianalysis-controller
