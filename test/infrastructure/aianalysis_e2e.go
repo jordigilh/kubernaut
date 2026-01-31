@@ -637,7 +637,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["services"]
-  resourceNames: ["holmesgpt-api"]
+  resourceNames: ["holmesgpt-api", "holmesgpt-api-service"]
   verbs: ["get"]
 ---
 # RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
