@@ -35,11 +35,13 @@ metadata:
     app.kubernetes.io/name: holmesgpt-api
     app.kubernetes.io/component: rbac
 rules:
-  # OAuth-proxy SAR check: Can the ServiceAccount "get" the holmesgpt-api service?
-  # This is the authorization check performed by oauth-proxy before proxying requests
+  # DD-AUTH-014 middleware SAR check: Can the ServiceAccount "get" the holmesgpt-api service?
+  # This is the authorization check performed by DD-AUTH-014 middleware
+  # Note: Middleware checks for "holmesgpt-api-service" (hardcoded in main.py:393)
+  # but actual service name is "holmesgpt-api" - grant both for compatibility
   - apiGroups: [""]
     resources: ["services"]
-    resourceNames: ["holmesgpt-api"]
+    resourceNames: ["holmesgpt-api", "holmesgpt-api-service"]
     verbs: ["get"]
 
 ---
