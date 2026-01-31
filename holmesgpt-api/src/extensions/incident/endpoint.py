@@ -83,7 +83,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     
     # Inject global metrics (BR-HAPI-011, BR-HAPI-301)
     metrics = get_global_metrics()
-    result = await analyze_incident(request_data, app_config, metrics=metrics)
+    result = await analyze_incident(request_data, mcp_config=None, app_config=app_config, metrics=metrics)
 
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)
     # This is the AUTHORITATIVE audit event for HAPI API responses

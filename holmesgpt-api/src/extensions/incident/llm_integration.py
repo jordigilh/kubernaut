@@ -629,7 +629,11 @@ async def analyze_incident(
             else:
                 status = "success"
             
+            logger.info(f"🔍 METRICS DEBUG (analyze_incident): About to record metrics - status={status}, metrics={metrics}")
             metrics.record_investigation_complete(start_time, status)
+            logger.info(f"🔍 METRICS DEBUG (analyze_incident): Metrics recorded successfully")
+        else:
+            logger.warning(f"🔍 METRICS DEBUG (analyze_incident): metrics is None - NOT recording")
 
         return result
 
