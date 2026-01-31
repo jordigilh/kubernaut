@@ -866,9 +866,7 @@ roleRef:
 **Performance Considerations** (per DD-AUTH-014 V2.0):
 - ✅ No caching: Gateway throughput <100 signals/min (low load)
 - ✅ Network Policies: Reduce unauthorized traffic before SAR check
-- ✅ Fail-closed: API server unavailability blocks requests (secure default)
-
-**Related Requirements**:
+- ✅ Fail-closed: API server unavailability blocks requests (secure default)**Related Requirements**:
 - BR-GATEWAY-182: ServiceAccount Authentication (prerequisite)
 - BR-GATEWAY-053: RBAC Permissions (general RBAC requirement)
 
