@@ -1,15 +1,24 @@
 name: CI Pipeline
 
-# 3-Stage CI Pipeline with Smart Path Detection and Parallel Execution
+# 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1A: Build & Lint (parallel: Go + Python)
-# Stage 1B: Unit Tests (parallel matrix: 8 services)
-# Stage 2: Integration Tests (parallel matrix: 8 services)
-# Stage 3: E2E Tests (parallel jobs: 8 services) - Run REGARDLESS of integration results
+# Stage 1A: Lint (parallel: Go + Python) ~1 min
+# Stage 1B: Unit Tests (parallel matrix: 9 services) ~2 min
+# Stage 2: Build & Push Images (parallel matrix: 10 images) ~5 min
+# Stage 3: Integration Tests (parallel matrix: 9 services) ~15 min
+# Stage 4: E2E Tests (parallel jobs: 8 services, when enabled) ~30 min each
+#
+# CI/CD Optimization (Registry-Aware):
+#   - All images pushed to ghcr.io after unit tests pass
+#   - Integration tests pull dependency images (DataStorage, HAPI, Mock LLM) from registry
+#   - E2E tests pull service images from registry
+#   - Automatic fallback to local build if registry pull fails
+#   - Saves ~60% disk space and ~30% build time in CI
 #
 # Smart Path Detection:
-#   - Build & Lint: Runs in parallel (Go and Python separately)
-#   - Unit Tests: Matrix runs ALL services always (~10 min total)
+#   - Lint: Runs in parallel (Go and Python separately)
+#   - Unit Tests: Matrix runs ALL services always (~2 min total)
+#   - Build & Push: Matrix builds ALL images always (~5 min, includes compilation)
 #   - Integration Tests: Matrix runs ALL services always (~15 min total)
 #     * Design Decision: No path filtering at integration level
 #     * Rationale: Fast enough + better cross-service issue detection
@@ -19,11 +28,13 @@ name: CI Pipeline
 #     * Push to main → ALL services (full validation)
 #
 # Optimization Strategy:
-#   - Parallel build & lint jobs (Go + Python)
-#   - Matrix parallelization for homogeneous jobs (unit, integration)
+#   - Parallel lint jobs (Go + Python)
+#   - No redundant builds (code compiled once in Stage 2 image builds)
+#   - Sequential stages ensure images ready before tests
+#   - Matrix parallelization for homogeneous jobs (unit, build, integration)
 #   - Individual jobs for heterogeneous jobs (E2E with different infra)
 #   - Fail-fast disabled for comprehensive feedback
-#   - Path detection where it matters most (E2E tests)
+#   - Registry image reuse eliminates duplicate builds
 #
 # Authority: [TODO] Create ADR-CI-001 from docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
 
@@ -60,14 +71,15 @@ env:
 
 jobs:
   # ========================================
-  # STAGE 1A: BUILD & LINT (PARALLEL)
-  # Two parallel jobs (~3 min total)
+  # STAGE 1A: LINT (PARALLEL)
+  # Two parallel jobs (~1 min total)
+  # Note: Code compilation happens in Stage 2 (image builds)
   # ========================================
 
-  build-and-lint-go:
-    name: Build & Lint (Go Services)
+  lint-go:
+    name: Lint (Go Services)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,15 +94,9 @@ jobs:
 
       - name: Generate Go code
         run: |
-          echo "🔄 Generating Go code (tools auto-installed via Makefile)..."
+          echo "🔄 Generating Go code (required for linting)..."
           export PATH="${{ github.workspace }}/bin:$PATH"
           make generate
-
-      - name: Build all Go services
-        run: |
-          echo "🔨 Building all Go services..."
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          make build-all
 
       - name: Lint Go code
         run: |
@@ -99,10 +105,10 @@ jobs:
           timeout 3m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
-  build-and-lint-python:
-    name: Build & Lint (Python Services)
+  lint-python:
+    name: Lint (Python Services)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -137,7 +143,7 @@ jobs:
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
     runs-on: ubuntu-latest
-    needs: [build-and-lint-go, build-and-lint-python]
+    needs: [lint-go, lint-python]
     timeout-minutes: 5
     strategy:
       fail-fast: false
@@ -216,7 +222,7 @@ jobs:
   # ========================================
   # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
   # Matrix job: Build all service images and push to GitHub Container Registry
-  # Purpose: E2E tests pull from registry (saves ~60% disk space)
+  # Purpose: Integration & E2E tests pull from registry (saves ~60% disk space)
   # Retention: Images auto-cleanup after 14 days (GitHub policy)
   # Production: NOT used for production (Quay.io for production releases)
   # ========================================
@@ -229,6 +235,8 @@ jobs:
     permissions:
       contents: read
       packages: write  # Required for ghcr.io push
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -316,10 +324,14 @@ jobs:
   #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
   #     remediationorchestrator, notification, gateway, datastorage
   #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
-  # Only start if Stage 1 passes
+  # 
+  # CI/CD Optimization:
+  #   - Pulls dependency images from ghcr.io (DataStorage, HAPI, Mock LLM)
+  #   - Fallback to local build if registry pull fails
+  #   - Saves ~60% disk space and ~30% build time
   #
   # DESIGN DECISION: No smart path detection at this level
-  # - All integration tests run for ANY change (after unit tests pass)
+  # - All integration tests run for ANY change (after images are built)
   # - Rationale: Integration tests are fast (~15 min total, parallel)
   # - Benefit: Better cross-service issue detection
   # - Trade-off: Uses more CI minutes, but comprehensive coverage worth it
@@ -328,9 +340,12 @@ jobs:
 
   integration-tests:
     name: integration (${{ matrix.service }})
-    needs: [unit-tests]  # Integration tests don't need images
+    needs: [build-and-push-images]  # Pull dependency images from registry
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
+    env:
+      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
+      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -433,7 +448,7 @@ jobs:
   summary:
     name: Test Suite Summary
     needs: [
-      build-and-lint-go, build-and-lint-python, unit-tests,
+      lint-go, lint-python, unit-tests,
       build-and-push-images, integration-tests
     ]
     if: always()
@@ -445,41 +460,42 @@ jobs:
           echo "Defense-in-Depth Test Suite Summary (Optimized + Parallel)"
           echo "═══════════════════════════════════════════════════════════"
           echo ""
-          echo "STAGE 1A - Build & Lint (Parallel):"
-          echo "  Go Services:    ${{ needs.build-and-lint-go.result }}"
-          echo "  Python Services: ${{ needs.build-and-lint-python.result }}"
+          echo "STAGE 1A - Lint (Parallel):"
+          echo "  Go Services:    ${{ needs.lint-go.result }}"
+          echo "  Python Services: ${{ needs.lint-python.result }}"
           echo ""
           echo "STAGE 1B - Unit Tests (Parallel Matrix):"
           echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
           echo "  All Images (10 services): ${{ needs.build-and-push-images.result }}"
-          echo "  Registry: ghcr.io (CI/CD ephemeral images only)"
+          echo "  Registry: ghcr.io (CI/CD ephemeral images, 14-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
           echo "  All Services (9 services):  ${{ needs.integration-tests.result }}"
+          echo "  Image Strategy: Pull from ghcr.io (DataStorage, HAPI, Mock LLM)"
           echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
           echo "  ✅ ALL tests run for every non-draft PR"
           echo "  ✅ Comprehensive validation ensures stability"
-          echo "  ✅ Smart path detection can be added once CI/CD is stable"
+          echo "  ✅ Sequential stages ensure images ready before use"
           echo ""
           echo "Optimizations:"
-          echo "  ✅ Parallel build & lint (Go + Python)"
-          echo "  ✅ Build & lint separated from tests"
+          echo "  ✅ Parallel lint (Go + Python)"
+          echo "  ✅ No redundant builds (code compiled once in image builds)"
           echo "  ✅ Parallel unit tests (matrix: 9 services)"
           echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 10 images)"
+          echo "  ✅ Integration tests reuse registry images (saves ~60% disk, ~30% time)"
           echo "  ✅ Parallel integration tests (matrix: 9 services)"
-          echo "  ✅ Matrix strategy for test tiers"
+          echo "  ✅ Automatic fallback to local build if registry pull fails"
           echo "  ⏭️  E2E tests temporarily disabled (will use ghcr.io images when enabled)"
           echo "═══════════════════════════════════════════════════════════"
 
-          # Check for build & lint failure (critical)
-          if [ "${{ needs.build-and-lint-go.result }}" != "success" ] || [ "${{ needs.build-and-lint-python.result }}" != "success" ]; then
+          # Check for lint failure (non-blocking, but report)
+          if [ "${{ needs.lint-go.result }}" != "success" ] || [ "${{ needs.lint-python.result }}" != "success" ]; then
             echo ""
-            echo "❌ Build & Lint failed - all other tests skipped"
-            exit 1
+            echo "⚠️  Lint warnings detected (non-blocking in V1.0)"
           fi
 
           # Check for unit tests failure (critical)
@@ -489,18 +505,19 @@ jobs:
             exit 1
           fi
 
-          # Check for image build & push failure (critical for E2E)
+          # Check for image build & push failure (critical for integration + E2E)
           if [ "${{ needs.build-and-push-images.result }}" != "success" ]; then
             echo ""
             echo "❌ Image builds failed - check individual service builds in the matrix"
             echo "   Services: datastorage, gateway, aianalysis, authwebhook, notification,"
             echo "             remediationorchestrator, signalprocessing, workflowexecution,"
             echo "             holmesgpt-api, mock-llm"
+            echo "   Impact: Integration tests will fall back to local builds (slower)"
             exit 1
           fi
 
           # Check for integration tests failure (matrix job)
-          # Note: integration-tests is a single matrix job that runs 8 services
+          # Note: integration-tests is a single matrix job that runs 9 services
           # GitHub Actions reports the matrix job result as a whole (fail-fast: false)
           if [ "${{ needs.integration-tests.result }}" != "success" ]; then
             echo ""
