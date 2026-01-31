@@ -796,10 +796,10 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Execute: Validate config
 			err := invalidConfig.Validate()
 
-			// Verify: Validation fails with structured error (GAP-8)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("processing.retry.max_attempts"))
-			Expect(err.Error()).To(ContainSubstring("must be >= 1"))
+		// Verify: Validation fails with structured error (GAP-8)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("processing.retry.maxAttempts"))
+		Expect(err.Error()).To(ContainSubstring("must be >= 1"))
 		})
 
 		It("should validate MaxBackoff >= InitialBackoff", func() {
@@ -816,9 +816,9 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Execute: Validate config
 			err := invalidConfig.Validate()
 
-			// Verify: Validation fails
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("retry.max_backoff"))
+		// Verify: Validation fails
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("retry.maxBackoff"))
 		})
 	})
 
