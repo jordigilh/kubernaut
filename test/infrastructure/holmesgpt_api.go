@@ -437,9 +437,21 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📦 Deploying Mock LLM service (image: %s)...\n", imageTag)
 
-	// Create ConfigMap with default scenarios for Mock LLM
-	// For HAPI E2E, use empty scenarios since no workflows are seeded
-	scenariosYAML := "scenarios: []"
+	// Create ConfigMap with scenarios for Mock LLM
+	// If workflowUUIDs provided (AIAnalysis E2E): Use actual UUIDs
+	// If workflowUUIDs nil/empty (HAPI E2E): Use empty scenarios
+	var scenariosYAML string
+	if len(workflowUUIDs) > 0 {
+		// Build YAML map with workflow UUIDs (AIAnalysis E2E)
+		scenariosYAML = "scenarios:\n"
+		for key, uuid := range workflowUUIDs {
+			scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
+		}
+	} else {
+		// Empty scenarios (HAPI E2E - no workflows seeded)
+		scenariosYAML = "scenarios: {}"
+	}
+	
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
