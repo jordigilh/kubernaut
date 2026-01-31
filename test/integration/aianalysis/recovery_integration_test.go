@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Recovery Endpoint Integration Tests
@@ -344,10 +345,12 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 		It("should return APIError for transient failures", func() {
 			// Create client with very short timeout to simulate timeout (DD-HAPI-003)
 			// DD-TEST-001: HAPI integration port 18120
-			shortClient, err := client.NewHolmesGPTClient(client.Config{
+			// DD-AUTH-014: Must use authenticated transport (ServiceAccount token)
+			hapiAuthTransport := testauth.NewServiceAccountTransport(serviceAccountToken)
+			shortClient, err := client.NewHolmesGPTClientWithTransport(client.Config{
 				BaseURL: "http://localhost:18120",
 				Timeout: 1 * time.Nanosecond, // Effectively instant timeout
-			})
+			}, hapiAuthTransport)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create short-timeout HAPI client")
 
 			recoveryReq := &client.RecoveryRequest{
