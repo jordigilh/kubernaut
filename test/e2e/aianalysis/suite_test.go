@@ -98,7 +98,7 @@ var (
 
 var _ = SynchronizedBeforeSuite(
 	// This runs on process 1 only - create cluster once
-	func() []byte {
+	func(ctx SpecContext) []byte {
 		// Initialize logger for process 1
 		logger = kubelog.NewLogger(kubelog.Options{
 			Development: true,
@@ -154,7 +154,7 @@ var _ = SynchronizedBeforeSuite(
 		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
-	func(data []byte) {
+	func(specCtx SpecContext, data []byte) {
 		// Parse data: "kubeconfig|authToken"
 		parts := strings.Split(string(data), "|")
 		kubeconfigPath = parts[0]
@@ -162,7 +162,7 @@ var _ = SynchronizedBeforeSuite(
 			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
 		}
 
-		// Initialize context
+		// Initialize context (for test lifecycle, separate from SpecContext)
 		ctx, cancel = context.WithCancel(context.Background())
 
 		// Initialize logger for this process
@@ -250,6 +250,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • DataStorage API: %s (OpenAPI client)", dataStorageURL))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
+	NodeTimeout(15*time.Minute), // Extended timeout for parallel image builds (4 images, ~5-8 min total)
 )
 
 // Track test failures for cluster cleanup decision
