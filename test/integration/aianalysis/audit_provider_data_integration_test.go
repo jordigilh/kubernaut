@@ -259,16 +259,16 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
 
-			By("Validating HAPI event metadata with testutil")
-			actorID := "holmesgpt-api"
-			validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
-				EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
-				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
-				EventAction:   "response_sent",
-				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
-				CorrelationID: correlationID,
-				ActorID:       &actorID,
-			})
+		By("Validating HAPI event metadata with testutil")
+		actorID := "holmesgpt-api"
+		validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
+			EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
+			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: HolmesGPT API uses "aiagent" category
+			EventAction:   "response_sent",
+			EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+			CorrelationID: correlationID,
+			ActorID:       &actorID,
+		})
 
 			By("Validating HAPI event_data structure (provider perspective - full response)")
 			validators.ValidateAuditEventHasRequiredFields(hapiEvent)

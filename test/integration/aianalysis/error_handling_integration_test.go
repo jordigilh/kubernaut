@@ -155,14 +155,14 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-			// Verify holmesgpt.response.complete event exists (HAPI returned needs_human_review=true)
-			Eventually(func() bool {
-				// NT Pattern: Flush audit buffer on each retry
-				_ = auditStore.Flush(testCtx)
-				
-				// Query audit events via OpenAPI client (DD-API-001)
-				eventCategory := ogenclient.NewOptString("analysis")
-				eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+		// Verify holmesgpt.response.complete event exists (HAPI returned needs_human_review=true)
+		Eventually(func() bool {
+			// NT Pattern: Flush audit buffer on each retry
+			_ = auditStore.Flush(testCtx)
+			
+			// Query audit events via OpenAPI client (DD-API-001)
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -355,13 +355,13 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-			// Verify holmesgpt.response.complete event exists with success outcome
-			Eventually(func() bool {
-				// NT Pattern: Flush audit buffer on each retry
-				_ = auditStore.Flush(testCtx)
-				
-				eventCategory := ogenclient.NewOptString("analysis")
-				eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+		// Verify holmesgpt.response.complete event exists with success outcome
+		Eventually(func() bool {
+			// NT Pattern: Flush audit buffer on each retry
+			_ = auditStore.Flush(testCtx)
+			
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),

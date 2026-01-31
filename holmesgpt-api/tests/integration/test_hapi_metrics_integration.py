@@ -218,8 +218,13 @@ class TestIncidentAnalysisMetrics:
         
         assert result is not None
         
-        # ASSERT: Histogram count should increment
-        final_count = test_metrics.investigations_duration._count.get()
+        # ASSERT: Histogram count should increment (query from registry)
+        final_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    final_count = float(sample.value)
+                    break
         
         assert final_count == initial_count + 1, \
             f"investigations_duration_seconds count should increment (before: {initial_count}, after: {final_count})"
@@ -325,8 +330,13 @@ class TestRecoveryAnalysisMetrics:
         
         assert result is not None
         
-        # ASSERT: Histogram count incremented
-        final_count = test_metrics.investigations_duration._count.get()
+        # ASSERT: Histogram count incremented (query from registry)
+        final_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    final_count = float(sample.value)
+                    break
         
         assert final_count == initial_count + 1, \
             "Recovery should record duration histogram"

@@ -1567,6 +1567,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryNotification
 	case AuditEventEventCategoryAnalysis:
 		*s = AuditEventEventCategoryAnalysis
+	case AuditEventEventCategoryAiagent:
+		*s = AuditEventEventCategoryAiagent
 	case AuditEventEventCategorySignalprocessing:
 		*s = AuditEventEventCategorySignalprocessing
 	case AuditEventEventCategoryWorkflow:
@@ -3653,6 +3655,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryNotification
 	case AuditEventRequestEventCategoryAnalysis:
 		*s = AuditEventRequestEventCategoryAnalysis
+	case AuditEventRequestEventCategoryAiagent:
+		*s = AuditEventRequestEventCategoryAiagent
 	case AuditEventRequestEventCategorySignalprocessing:
 		*s = AuditEventRequestEventCategorySignalprocessing
 	case AuditEventRequestEventCategoryWorkflow:

@@ -280,6 +280,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "analysis":
 		return nil
+	case "aiagent":
+		return nil
 	case "signalprocessing":
 		return nil
 	case "workflow":
@@ -562,6 +564,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 	case "notification":
 		return nil
 	case "analysis":
+		return nil
+	case "aiagent":
 		return nil
 	case "signalprocessing":
 		return nil

@@ -556,12 +556,13 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.5).
+	// Service-level event category (ADR-034 v1.6).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
-	// - analysis: AI Analysis Service
+	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
@@ -783,12 +784,13 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Service-level event category (ADR-034 v1.5).
+// Service-level event category (ADR-034 v1.6).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
-// - analysis: AI Analysis Service
+// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
@@ -800,6 +802,7 @@ const (
 	AuditEventEventCategoryGateway           AuditEventEventCategory = "gateway"
 	AuditEventEventCategoryNotification      AuditEventEventCategory = "notification"
 	AuditEventEventCategoryAnalysis          AuditEventEventCategory = "analysis"
+	AuditEventEventCategoryAiagent           AuditEventEventCategory = "aiagent"
 	AuditEventEventCategorySignalprocessing  AuditEventEventCategory = "signalprocessing"
 	AuditEventEventCategoryWorkflow          AuditEventEventCategory = "workflow"
 	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
@@ -813,6 +816,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryGateway,
 		AuditEventEventCategoryNotification,
 		AuditEventEventCategoryAnalysis,
+		AuditEventEventCategoryAiagent,
 		AuditEventEventCategorySignalprocessing,
 		AuditEventEventCategoryWorkflow,
 		AuditEventEventCategoryWorkflowexecution,
@@ -829,6 +833,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryNotification:
 		return []byte(s), nil
 	case AuditEventEventCategoryAnalysis:
+		return []byte(s), nil
+	case AuditEventEventCategoryAiagent:
 		return []byte(s), nil
 	case AuditEventEventCategorySignalprocessing:
 		return []byte(s), nil
@@ -856,6 +862,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryAnalysis:
 		*s = AuditEventEventCategoryAnalysis
+		return nil
+	case AuditEventEventCategoryAiagent:
+		*s = AuditEventEventCategoryAiagent
 		return nil
 	case AuditEventEventCategorySignalprocessing:
 		*s = AuditEventEventCategorySignalprocessing
@@ -1900,12 +1909,13 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.5).
+	// Service-level event category (ADR-034 v1.6).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
-	// - analysis: AI Analysis Service
+	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
@@ -2104,12 +2114,13 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Service-level event category (ADR-034 v1.5).
+// Service-level event category (ADR-034 v1.6).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
-// - analysis: AI Analysis Service
+// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
@@ -2121,6 +2132,7 @@ const (
 	AuditEventRequestEventCategoryGateway           AuditEventRequestEventCategory = "gateway"
 	AuditEventRequestEventCategoryNotification      AuditEventRequestEventCategory = "notification"
 	AuditEventRequestEventCategoryAnalysis          AuditEventRequestEventCategory = "analysis"
+	AuditEventRequestEventCategoryAiagent           AuditEventRequestEventCategory = "aiagent"
 	AuditEventRequestEventCategorySignalprocessing  AuditEventRequestEventCategory = "signalprocessing"
 	AuditEventRequestEventCategoryWorkflow          AuditEventRequestEventCategory = "workflow"
 	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
@@ -2134,6 +2146,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryGateway,
 		AuditEventRequestEventCategoryNotification,
 		AuditEventRequestEventCategoryAnalysis,
+		AuditEventRequestEventCategoryAiagent,
 		AuditEventRequestEventCategorySignalprocessing,
 		AuditEventRequestEventCategoryWorkflow,
 		AuditEventRequestEventCategoryWorkflowexecution,
@@ -2150,6 +2163,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryNotification:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryAnalysis:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryAiagent:
 		return []byte(s), nil
 	case AuditEventRequestEventCategorySignalprocessing:
 		return []byte(s), nil
@@ -2177,6 +2192,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryAnalysis:
 		*s = AuditEventRequestEventCategoryAnalysis
+		return nil
+	case AuditEventRequestEventCategoryAiagent:
+		*s = AuditEventRequestEventCategoryAiagent
 		return nil
 	case AuditEventRequestEventCategorySignalprocessing:
 		*s = AuditEventRequestEventCategorySignalprocessing
