@@ -36,6 +36,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -169,13 +170,17 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	dataStorageURL := sharedData.DataStorageURL
 	GinkgoWriter.Printf("[Process %d] Received ServiceAccount token and DataStorage URL from Phase 1\n", GinkgoParallelProcess())
 
-	By("Initializing Data Storage OpenAPI client (DD-API-001)")
+	By("Initializing Data Storage OpenAPI client with authentication (DD-API-001 + DD-AUTH-014)")
+	// DD-AUTH-014: Use authenticated client for audit queries
+	// Pattern: test/shared/integration/datastorage_auth.go (validated in Gateway, AIAnalysis, HAPI, DataStorage)
 	var err error
-	dsClient, err = ogenclient.NewClient(dataStorageURL)
-	if err != nil {
-		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
-	}
-	GinkgoWriter.Printf("[Process %d] ✅ Data Storage Ogen client initialized\n", GinkgoParallelProcess())
+	dsClients := integration.NewAuthenticatedDataStorageClients(
+		dataStorageURL,
+		saToken,
+		5*time.Second,
+	)
+	dsClient = dsClients.OpenAPIClient // Use authenticated client for test queries
+	GinkgoWriter.Printf("[Process %d] ✅ Data Storage authenticated client initialized (DD-AUTH-014)\n", GinkgoParallelProcess())
 
 	By("Creating REAL audit store with ServiceAccount authentication (DD-AUTH-014)")
 	// Create OpenAPI DataStorage client adapter for audit writes
