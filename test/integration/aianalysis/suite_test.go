@@ -455,12 +455,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"LLM_MODEL":        "mock-model",
 			"LLM_PROVIDER":     "openai",                                  // Required by litellm
 			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
-			"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
-			"PORT":             "8080",
-			"LOG_LEVEL":        "DEBUG",
-			"ENV_MODE":         "production",                              // DD-AUTH-014: Use real K8s auth (not mock) for integration tests with envtest
-			"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real auth with envtest (same as DataStorage pattern)
-			"POD_NAMESPACE":    "default",                                 // Required for K8s client
+		"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
+		"PORT":             "8080",
+		"LOG_LEVEL":        "DEBUG",
+		"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
+		"POD_NAMESPACE":    "default",                                 // Required for K8s client
 		},
 		Volumes: map[string]string{
 			hapiConfigDir:                        "/etc/holmesgpt:ro",                                               // Mount HAPI config directory
@@ -606,7 +605,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client with authentication", processNum))
-	// DD-AUTH-014: HAPI middleware requires Bearer token even in ENV_MODE=integration
+	// DD-AUTH-014: HAPI middleware requires Bearer token (real K8s auth via envtest)
 	// Use ServiceAccount transport (HAPI will mock-validate the token)
 	hapiAuthTransport := testauth.NewServiceAccountTransport(token)
 	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
