@@ -423,6 +423,14 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
+	// 4.5. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED before deployment
+	// Creates ServiceAccount 'data-storage-sa' that deployment references
+	// Without this, pod creation will be rejected by Kubernetes (silent failure)
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC (ServiceAccount + auth permissions)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
 	// 5. Deploy Data Storage Service with OAuth2-Proxy (TD-E2E-001 Phase 1 - image from quay.io)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
