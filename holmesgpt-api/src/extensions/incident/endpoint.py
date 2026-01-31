@@ -30,6 +30,7 @@ from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_hapi_response_complete_event  # DD-AUDIT-005
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
+from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -76,9 +77,13 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     })
 
     request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
+    
     # Pass app config for LLM configuration
     from src.main import config as app_config
-    result = await analyze_incident(request_data, app_config)
+    
+    # Inject global metrics (BR-HAPI-011, BR-HAPI-301)
+    metrics = get_global_metrics()
+    result = await analyze_incident(request_data, app_config, metrics=metrics)
 
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)
     # This is the AUTHORITATIVE audit event for HAPI API responses

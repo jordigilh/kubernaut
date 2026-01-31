@@ -50,16 +50,9 @@ from src.auth.interfaces import Authenticator, Authorizer
 
 logger = logging.getLogger(__name__)
 
-# Import metrics recording functions
-try:
-    from src.middleware.metrics import record_auth_failure, record_auth_success
-except ImportError:
-    # Graceful degradation if metrics not available
-    def record_auth_failure(reason: str, endpoint: str):
-        pass
-
-    def record_auth_success(username: str, role: str):
-        pass
+# Note: Auth metrics removed (no BR backing for internal-only service)
+# Auth metrics can be added in v2.0 if service becomes externally exposed
+# See: BR-HAPI-301 (LLM metrics), BR-HAPI-302 (HTTP metrics) for approved metrics
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -205,7 +198,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
 
             if not allowed:
-                record_auth_failure("insufficient_permissions", request.url.path)
+                # Note: Auth metrics removed (no BR backing)
                 return self._create_rfc7807_response(
                     status_code=403,
                     title="Forbidden",
@@ -238,8 +231,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             status_code = getattr(e, "status_code", 500)
             detail = getattr(e, "detail", str(e))
 
-            record_auth_failure(f"error_{status_code}", request.url.path)
-
+            # Note: Auth metrics removed (no BR backing)
+            
             # Return RFC 7807 Problem Details
             return self._create_rfc7807_response(
                 status_code=status_code,

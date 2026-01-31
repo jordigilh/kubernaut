@@ -15,24 +15,30 @@ limitations under the License.
 """
 
 """
-Prometheus Metrics Middleware and Instrumentation
+HTTP Middleware Metrics (FastAPI Pattern)
 
 Business Requirements:
-- BR-HAPI-100: Track investigation request counts
-- BR-HAPI-101: Monitor investigation duration
-- BR-HAPI-102: Track LLM API call metrics
-- BR-HAPI-103: Monitor authentication failures
-- BR-HAPI-200: RFC 7807 error response metrics
+- BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
+- BR-HAPI-303: Config Hot-Reload Metrics
+- BR-HAPI-200: RFC 7807 Error Response Metrics
 
-Design Decision: DD-HOLMESGPT-013 - Observability Strategy
-- Prometheus metrics for production observability
-- Structured logging for debugging
-- Health checks for availability monitoring
-
-Design Decision: DD-005 - Observability Standards
+Design Decision: DD-005 v3.0 - Observability Standards
 - Metric naming: {service}_{component}_{metric_name}_{unit}
-- Service prefix: holmesgpt_api_ (NOT holmesgpt_)
-- See: docs/architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md
+- Service prefix: holmesgpt_api_
+- Metric name constants: MANDATORY per DD-005 v3.0 Section 1.1
+
+Architecture Note:
+- HTTP metrics stay in middleware (FastAPI best practice)
+- Business metrics moved to HAMetrics class (Go pattern)
+- See: src/metrics/instrumentation.py for business logic metrics
+
+Migration (Jan 31, 2026):
+- REMOVED: investigations_total, investigations_duration_seconds (moved to HAMetrics)
+- REMOVED: llm_calls_total, llm_call_duration_seconds, llm_token_usage (moved to HAMetrics)
+- REMOVED: active_requests, auth_*, context_api_* (no BR backing)
+- KEPT: http_requests_total, http_request_duration_seconds (BR-HAPI-302)
+- KEPT: config_reload_* (BR-HAPI-303)
+- KEPT: rfc7807_errors_total (BR-HAPI-200)
 """
 
 import logging
@@ -43,127 +49,65 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import Match
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
+# Import metric name constants (DD-005 v3.0 Section 1.1 - MANDATORY)
+from src.metrics.constants import (
+    METRIC_NAME_HTTP_REQUESTS_TOTAL,
+    METRIC_NAME_HTTP_REQUEST_DURATION,
+    METRIC_NAME_CONFIG_RELOAD_TOTAL,
+    METRIC_NAME_CONFIG_RELOAD_ERRORS,
+    METRIC_NAME_CONFIG_LAST_RELOAD_TIMESTAMP,
+    METRIC_NAME_RFC7807_ERRORS_TOTAL,
+)
+
 logger = logging.getLogger(__name__)
 
 # ========================================
-# PROMETHEUS METRICS DEFINITIONS
+# HTTP MIDDLEWARE METRICS (BR-HAPI-302)
 # ========================================
+# DD-005 v3.0 Compliance: Use metric name constants
+# Business Logic Metrics: Moved to src/metrics/instrumentation.py (HAMetrics class)
 
-# ========================================
-# DD-005 COMPLIANT METRIC NAMING
-# Format: {service}_{component}_{metric_name}_{unit}
-# Service prefix: holmesgpt_api_ (per DD-005-OBSERVABILITY-STANDARDS.md)
-# ========================================
-
-# Investigation Requests
-investigations_total = Counter(
-    'holmesgpt_api_investigations_total',
-    'Total number of investigation requests',
+http_requests_total = Counter(
+    METRIC_NAME_HTTP_REQUESTS_TOTAL,
+    'Total HTTP requests by method, endpoint, and status',
     ['method', 'endpoint', 'status']
 )
 
-investigations_duration_seconds = Histogram(
-    'holmesgpt_api_investigations_duration_seconds',
-    'Time spent processing investigation requests',
+http_request_duration_seconds = Histogram(
+    METRIC_NAME_HTTP_REQUEST_DURATION,
+    'HTTP request duration (HTTP overhead only, excludes business logic)',
     ['method', 'endpoint'],
-    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
-)
-
-# LLM API Calls
-llm_calls_total = Counter(
-    'holmesgpt_api_llm_calls_total',
-    'Total number of LLM API calls',
-    ['provider', 'model', 'status']
-)
-
-llm_call_duration_seconds = Histogram(
-    'holmesgpt_api_llm_call_duration_seconds',
-    'Time spent on LLM API calls',
-    ['provider', 'model'],
-    buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
-)
-
-llm_token_usage = Counter(
-    'holmesgpt_api_llm_token_usage_total',
-    'Total tokens consumed by LLM calls',
-    ['provider', 'model', 'type']  # type: prompt, completion
-)
-
-# Authentication Failures
-auth_failures_total = Counter(
-    'holmesgpt_api_auth_failures_total',
-    'Total number of authentication failures',
-    ['reason', 'endpoint']
-)
-
-auth_success_total = Counter(
-    'holmesgpt_api_auth_success_total',
-    'Total number of successful authentications',
-    ['username', 'role']
-)
-
-# Context API Integration
-context_api_calls_total = Counter(
-    'holmesgpt_api_context_calls_total',
-    'Total number of Context API calls',
-    ['endpoint', 'status']
-)
-
-context_api_duration_seconds = Histogram(
-    'holmesgpt_api_context_duration_seconds',
-    'Time spent on Context API calls',
-    ['endpoint'],
-    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
+    buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0)  # DD-005 standard
 )
 
 # ========================================
-# CONFIG HOT-RELOAD METRICS (BR-HAPI-199)
+# CONFIG HOT-RELOAD METRICS (BR-HAPI-303)
 # ========================================
 
 config_reload_total = Counter(
-    'holmesgpt_api_config_reload_total',
+    METRIC_NAME_CONFIG_RELOAD_TOTAL,
     'Total successful configuration reloads',
     []
 )
 
 config_reload_errors_total = Counter(
-    'holmesgpt_api_config_reload_errors_total',
+    METRIC_NAME_CONFIG_RELOAD_ERRORS,
     'Total failed configuration reload attempts',
     []
 )
 
 config_last_reload_timestamp = Gauge(
-    'holmesgpt_api_config_last_reload_timestamp',
+    METRIC_NAME_CONFIG_LAST_RELOAD_TIMESTAMP,
     'Unix timestamp of last successful configuration reload',
     []
 )
 
-# Active Requests Gauge
-active_requests = Gauge(
-    'holmesgpt_api_active_requests',
-    'Number of requests currently being processed',
-    ['method', 'endpoint']
-)
+# ========================================
+# RFC 7807 ERROR METRICS (BR-HAPI-200)
+# ========================================
 
-# HTTP Requests (General)
-http_requests_total = Counter(
-    'holmesgpt_api_http_requests_total',
-    'Total HTTP requests',
-    ['method', 'endpoint', 'status']
-)
-
-http_request_duration_seconds = Histogram(
-    'holmesgpt_api_http_request_duration_seconds',
-    'HTTP request duration',
-    ['method', 'endpoint'],
-    buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0)
-)
-
-# RFC 7807 Error Responses
-# BR-HAPI-200: RFC 7807 error response metrics
-# REFACTOR phase: Track error responses by status code and error type
 rfc7807_errors_total = Counter(
-    'holmesgpt_api_rfc7807_errors_total',
+    METRIC_NAME_RFC7807_ERRORS_TOTAL,
     'Total RFC 7807 error responses by status code and error type',
     ['status_code', 'error_type']
 )
@@ -175,24 +119,26 @@ rfc7807_errors_total = Counter(
 
 class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to automatically instrument HTTP requests with Prometheus metrics
+    HTTP middleware for automatic Prometheus metrics instrumentation.
 
-    Business Requirement: BR-HAPI-100 to 103
+    Business Requirement: BR-HAPI-302 (HTTP Request Metrics)
+    
+    Scope: HTTP-layer metrics only (requests, status codes, latency)
+    Business metrics: See src/metrics/instrumentation.py (HAMetrics class)
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
-        Instrument HTTP request with Prometheus metrics
+        Instrument HTTP request with Prometheus metrics.
+        
+        BR-HAPI-302: Record HTTP requests and latency.
         """
         # Extract endpoint info
         method = request.method
         path = request.url.path
 
-        # Normalize path (replace IDs with placeholder)
+        # Normalize path (replace IDs with placeholder) - DD-005 Section 3.1
         endpoint = self._normalize_path(path)
-
-        # Track active requests
-        active_requests.labels(method=method, endpoint=endpoint).inc()
 
         # Start timer
         start_time = time.time()
@@ -202,7 +148,7 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status = response.status_code
 
-            # Record metrics
+            # Record HTTP metrics (BR-HAPI-302)
             duration = time.time() - start_time
 
             http_requests_total.labels(
@@ -216,21 +162,8 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
                 endpoint=endpoint
             ).observe(duration)
 
-            # Track investigation-specific metrics
-            if endpoint.startswith('/api/v1/') and endpoint != '/api/v1/health':
-                investigations_total.labels(
-                    method=method,
-                    endpoint=endpoint,
-                    status=status
-                ).inc()
-
-                investigations_duration_seconds.labels(
-                    method=method,
-                    endpoint=endpoint
-                ).observe(duration)
-
             logger.debug({
-                "event": "request_completed",
+                "event": "http_request_completed",
                 "method": method,
                 "endpoint": endpoint,
                 "status": status,
@@ -255,7 +188,7 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
             ).observe(duration)
 
             logger.error({
-                "event": "request_failed",
+                "event": "http_request_failed",
                 "method": method,
                 "endpoint": endpoint,
                 "error": str(e),
@@ -263,10 +196,6 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
             })
 
             raise
-
-        finally:
-            # Decrement active requests
-            active_requests.labels(method=method, endpoint=endpoint).dec()
 
     def _normalize_path(self, path: str) -> str:
         """
@@ -309,143 +238,14 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
 
 
 # ========================================
-# HELPER FUNCTIONS FOR INSTRUMENTATION
+# CONFIG RELOAD HELPER (BR-HAPI-303)
 # ========================================
-
-def record_llm_call(
-    provider: str,
-    model: str,
-    status: str,
-    duration: float,
-    prompt_tokens: int = 0,
-    completion_tokens: int = 0
-):
-    """
-    Record LLM API call metrics
-
-    Business Requirement: BR-HAPI-102
-
-    Args:
-        provider: LLM provider (e.g., "vertex-ai", "ollama")
-        model: Model name (e.g., "claude-3-5-sonnet")
-        status: Call status ("success", "error", "timeout")
-        duration: Call duration in seconds
-        prompt_tokens: Number of tokens in prompt
-        completion_tokens: Number of tokens in completion
-    """
-    llm_calls_total.labels(
-        provider=provider,
-        model=model,
-        status=status
-    ).inc()
-
-    llm_call_duration_seconds.labels(
-        provider=provider,
-        model=model
-    ).observe(duration)
-
-    if prompt_tokens > 0:
-        llm_token_usage.labels(
-            provider=provider,
-            model=model,
-            type="prompt"
-        ).inc(prompt_tokens)
-
-    if completion_tokens > 0:
-        llm_token_usage.labels(
-            provider=provider,
-            model=model,
-            type="completion"
-        ).inc(completion_tokens)
-
-    logger.info({
-        "event": "llm_call_recorded",
-        "provider": provider,
-        "model": model,
-        "status": status,
-        "duration": duration,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens
-    })
-
-
-def record_auth_failure(reason: str, endpoint: str):
-    """
-    Record authentication failure
-
-    Business Requirement: BR-HAPI-103
-
-    Args:
-        reason: Failure reason (e.g., "invalid_token", "expired_token", "no_token")
-        endpoint: Endpoint where authentication failed
-    """
-    auth_failures_total.labels(
-        reason=reason,
-        endpoint=endpoint
-    ).inc()
-
-    logger.warning({
-        "event": "auth_failure_recorded",
-        "reason": reason,
-        "endpoint": endpoint
-    })
-
-
-def record_auth_success(username: str, role: str):
-    """
-    Record successful authentication
-
-    Business Requirement: BR-HAPI-103
-
-    Args:
-        username: Authenticated username
-        role: User role
-    """
-    auth_success_total.labels(
-        username=username,
-        role=role
-    ).inc()
-
-    logger.debug({
-        "event": "auth_success_recorded",
-        "username": username,
-        "role": role
-    })
-
-
-def record_context_api_call(endpoint: str, status: str, duration: float):
-    """
-    Record Context API call metrics
-
-    Business Requirement: BR-HAPI-070
-
-    Args:
-        endpoint: Context API endpoint (e.g., "/api/v1/context/historical")
-        status: Call status ("success", "error", "timeout")
-        duration: Call duration in seconds
-    """
-    context_api_calls_total.labels(
-        endpoint=endpoint,
-        status=status
-    ).inc()
-
-    context_api_duration_seconds.labels(
-        endpoint=endpoint
-    ).observe(duration)
-
-    logger.debug({
-        "event": "context_api_call_recorded",
-        "endpoint": endpoint,
-        "status": status,
-        "duration": duration
-    })
-
 
 def record_config_reload(success: bool):
     """
-    Record configuration reload metrics
+    Record configuration reload metrics.
 
-    Business Requirement: BR-HAPI-199
+    Business Requirement: BR-HAPI-303 (ConfigMap hot-reload observability)
     Design Decision: DD-HAPI-004
 
     Args:
@@ -457,14 +257,14 @@ def record_config_reload(success: bool):
         logger.debug({
             "event": "config_reload_recorded",
             "success": True,
-            "br": "BR-HAPI-199"
+            "br": "BR-HAPI-303"
         })
     else:
         config_reload_errors_total.inc()
         logger.debug({
             "event": "config_reload_error_recorded",
             "success": False,
-            "br": "BR-HAPI-199"
+            "br": "BR-HAPI-303"
         })
 
 
