@@ -455,12 +455,12 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"LLM_MODEL":        "mock-model",
 			"LLM_PROVIDER":     "openai",                                  // Required by litellm
 			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
-			"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
-			"PORT":             "8080",
-			"LOG_LEVEL":        "DEBUG",
-			"ENV_MODE":         "production",                              // DD-AUTH-014: Use real K8s auth (not mock) for integration tests with envtest
-			"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real auth with envtest (same as DataStorage pattern)
-			"POD_NAMESPACE":    "default",                                 // Required for K8s client
+		"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
+		"PORT":             "8080",
+		"LOG_LEVEL":        "DEBUG",
+		"ENV_MODE":         "integration",                             // DD-AUTH-014: Use mock auth (envtest has known SAR limitations per controller-runtime#983)
+		"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Kubeconfig for HAPI → DataStorage calls
+		"POD_NAMESPACE":    "default",                                 // Required for K8s client
 		},
 		Volumes: map[string]string{
 			hapiConfigDir:                        "/etc/holmesgpt:ro",                                               // Mount HAPI config directory
