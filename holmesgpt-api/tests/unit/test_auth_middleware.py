@@ -28,29 +28,32 @@ from unittest.mock import Mock, patch, AsyncMock
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
-from src.middleware.auth import AuthenticationMiddleware, User
+from src.middleware.auth import AuthenticationMiddleware
 
 
 # ========================================
 # TEST SUITE 1: User Class
 # ========================================
+# NOTE: User class removed from production code - these tests are deprecated
+# The authentication middleware now works with K8s ServiceAccount tokens directly
+# without a separate User class abstraction.
 
-class TestUser:
-    """Test User class"""
-
-    def test_user_initialization(self):
-        """Test user initialization with username and role"""
-        user = User(username="test-user", role="admin")
-
-        assert user.username == "test-user"
-        assert user.role == "admin"
-
-    def test_user_default_role(self):
-        """Test user initialization with default readonly role"""
-        user = User(username="test-user")
-
-        assert user.username == "test-user"
-        assert user.role == "readonly"
+# class TestUser:
+#     """Test User class"""
+#
+#     def test_user_initialization(self):
+#         """Test user initialization with username and role"""
+#         user = User(username="test-user", role="admin")
+#
+#         assert user.username == "test-user"
+#         assert user.role == "admin"
+#
+#     def test_user_default_role(self):
+#         """Test user initialization with default readonly role"""
+#         user = User(username="test-user")
+#
+#         assert user.username == "test-user"
+#         assert user.role == "readonly"
 
 
 # ========================================
