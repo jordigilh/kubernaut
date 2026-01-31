@@ -305,68 +305,43 @@ app.add_middleware(PrometheusMetricsMiddleware)
 logger.info("Prometheus metrics middleware enabled")
 
 # Add authentication middleware with dependency injection (DD-AUTH-014)
-# Production: Real K8s TokenReview + SAR APIs
-# Integration/E2E: Mock implementations (configurable via ENV_MODE)
-ENV_MODE = os.getenv("ENV_MODE", "production").lower()
-
-if ENV_MODE == "production":
-    # Production: Real Kubernetes TokenReview + SAR APIs
-    # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
-    try:
-        # DD-AUTH-014: Support file-based kubeconfig for integration tests
-        # If KUBECONFIG env var is set, load from file (integration tests with envtest)
-        # Otherwise, load in-cluster config (production)
-        import os
-        from kubernetes import client as k8s_client, config as k8s_config
-        
-        if os.getenv("KUBECONFIG"):
-            logger.info({
-                "event": "loading_kubeconfig",
-                "path": os.getenv("KUBECONFIG"),
-                "mode": "file-based (integration tests)"
-            })
-            k8s_config.load_kube_config()
-            api_client = k8s_client.ApiClient()
-            authenticator = K8sAuthenticator(api_client)
-            authorizer = K8sAuthorizer(api_client)
-        else:
-            logger.info({"event": "loading_incluster_config", "mode": "production"})
-            authenticator = K8sAuthenticator()
-            authorizer = K8sAuthorizer()
-        
+# Production code ONLY uses real K8s TokenReview + SAR APIs
+# Authority: DD-AUTH-014 (Middleware-based SAR authentication)
+try:
+    # DD-AUTH-014: Support file-based kubeconfig for integration tests
+    # If KUBECONFIG env var is set, load from file (integration tests with envtest)
+    # Otherwise, load in-cluster config (production)
+    import os
+    from kubernetes import client as k8s_client, config as k8s_config
+    
+    if os.getenv("KUBECONFIG"):
         logger.info({
-            "event": "auth_initialized",
-            "mode": "production" if not os.getenv("KUBECONFIG") else "integration",
-            "authenticator": "K8sAuthenticator",
-            "authorizer": "K8sAuthorizer"
+            "event": "loading_kubeconfig",
+            "path": os.getenv("KUBECONFIG"),
+            "mode": "file-based (integration tests with envtest)"
         })
-    except Exception as e:
-        logger.error({
-            "event": "auth_init_failed",
-            "mode": "production",
-            "error": str(e)
-        })
-        # In production, fail fast if K8s auth cannot be initialized
-        raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
-else:
-    # Integration/E2E tests: Mock implementations
-    # Authority: DD-AUTH-014 (Testable auth via dependency injection)
-    authenticator = MockAuthenticator(
-        valid_users={
-            "test-token-authorized": "system:serviceaccount:test:authorized-sa",
-            "test-token-readonly": "system:serviceaccount:test:readonly-sa",
-        }
-    )
-    authorizer = MockAuthorizer(
-        default_allow=True  # Permissive for integration tests
-    )
+        k8s_config.load_kube_config()
+        api_client = k8s_client.ApiClient()
+        authenticator = K8sAuthenticator(api_client)
+        authorizer = K8sAuthorizer(api_client)
+    else:
+        logger.info({"event": "loading_incluster_config", "mode": "production"})
+        authenticator = K8sAuthenticator()
+        authorizer = K8sAuthorizer()
+    
     logger.info({
         "event": "auth_initialized",
-        "mode": ENV_MODE,
-        "authenticator": "MockAuthenticator",
-        "authorizer": "MockAuthorizer",
-        "note": "Using mock auth for testing"
+        "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
+        "authenticator": "K8sAuthenticator",
+        "authorizer": "K8sAuthorizer"
     })
+except Exception as e:
+    logger.error({
+        "event": "auth_init_failed",
+        "error": str(e)
+    })
+    # In production, fail fast if K8s auth cannot be initialized
+    raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
 
 # Get pod namespace dynamically (for SAR checks)
 # In production, read from ServiceAccount namespace file
@@ -397,7 +372,6 @@ app.add_middleware(
 logger.info({
     "event": "auth_middleware_enabled",
     "authority": "DD-AUTH-014",
-    "mode": ENV_MODE,
     "namespace": POD_NAMESPACE
 })
 
@@ -439,7 +413,7 @@ async def startup_event():
     logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
     logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
     logger.info(f"Dev mode: {config.get('dev_mode', False)}")
-    logger.info(f"Auth mode: {ENV_MODE} (DD-AUTH-014)")
+    logger.info("Auth: K8s TokenReview + SAR (DD-AUTH-014)")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # MANDATORY: Validate audit initialization (ADR-032 §2)
