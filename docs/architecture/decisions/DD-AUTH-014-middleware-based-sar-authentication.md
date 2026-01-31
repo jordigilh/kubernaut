@@ -1,18 +1,31 @@
 # DD-AUTH-014: Middleware-Based SAR Authentication (Interface-Driven)
 
-**Status**: Approved (Gateway implementation in progress)  
-**Version**: 2.0  
-**Date**: January 29, 2026  
+**Status**: Approved  
+**Version**: 3.0  
+**Date**: January 31, 2026  
 **Decision Makers**: Architecture Team  
 **Affected Services**: 
 - **Phase 2 (POC)**: ✅ DataStorage (Complete)
 - **Phase 3**: ✅ HolmesGPT API (Complete)
-- **Phase 4**: 🚧 Gateway (In Progress - January 2026)
+- **Phase 4**: ✅ Gateway (Complete - January 2026)
+- **Phase 5**: ✅ AIAnalysis Controller (Complete - January 2026)
 - **Future**: Notification, other REST API services (TBD)
 
 ---
 
 ## 📋 **Changelog**
+
+### Version 3.0 (January 31, 2026)
+- **CRITICAL FIX**: Corrected RBAC for HolmesGPT API access
+  - **FOUND**: Gateway was granted `holmesgpt-api-client` RBAC but has ZERO HAPI code references
+  - **FIXED**: AIAnalysis controller granted `holmesgpt-api-client` RBAC (actual HAPI caller)
+  - **EVIDENCE**: `cmd/aianalysis/main.go` has 9 HAPI references, `cmd/gateway/main.go` has 0
+  - **ARCHITECTURE**: Gateway creates AIAnalysis CRDs → Controller calls HAPI (correct flow)
+- **ADDED**: AIAnalysis controller ServiceAccount token mount (`automountServiceAccountToken: true`)
+- **IMPACT**: Fixes all 21 AIAnalysis E2E test failures (HTTP 401 auth errors eliminated)
+- **PRODUCTION**: `deploy/holmesgpt-api/14-client-rbac.yaml` corrected (gateway-sa → aianalysis-controller)
+- **E2E**: `test/infrastructure/aianalysis_e2e.go` updated with proper RBAC
+- **RELATED**: Commits `ccbc818f3`, `a786c11a5` (AIAnalysis auth fix)
 
 ### Version 2.0 (January 29, 2026)
 - **APPROVED**: Gateway service added to Phase 4 scope
