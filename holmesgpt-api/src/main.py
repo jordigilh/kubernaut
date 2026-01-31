@@ -383,8 +383,6 @@ logger.info({"event": "sar_namespace_configured", "namespace": POD_NAMESPACE})
 
 # Apply auth middleware with dependency injection
 # Authority: DD-AUTH-014 - SAR authorization enforced on all endpoints
-# Read auth config from YAML (allows override of resource_name for E2E)
-auth_config = config.get("auth", {})
 app.add_middleware(
     AuthenticationMiddleware,
     authenticator=authenticator,
@@ -392,7 +390,7 @@ app.add_middleware(
     config={
         "namespace": POD_NAMESPACE,
         "resource": "services",
-        "resource_name": auth_config.get("resource_name", "holmesgpt-api"),  # Match actual Service name
+        "resource_name": "holmesgpt-api",  # Match actual Kubernetes Service name (was: holmesgpt-api-service)
         "verb": "create",  # Default verb, will be mapped per HTTP method
     }
 )
