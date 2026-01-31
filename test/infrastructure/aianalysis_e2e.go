@@ -458,6 +458,8 @@ data:
       flush_interval_seconds: 0.1
       buffer_size: 10000
       batch_size: 50
+    auth:
+      resource_name: "holmesgpt-api"  # Match actual Service name (DD-AUTH-014)
 ---
 # ServiceAccount: HolmesGPT-API (DD-AUTH-014 middleware needs TokenReview permissions)
 apiVersion: v1
@@ -637,7 +639,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["services"]
-  resourceNames: ["holmesgpt-api", "holmesgpt-api-service"]
+  resourceNames: ["holmesgpt-api"]
   verbs: ["get"]
 ---
 # RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
