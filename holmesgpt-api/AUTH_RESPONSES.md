@@ -139,22 +139,14 @@ Authority: DD-AUTH-014 (Granular RBAC SAR Verb Mapping)
 
 ### **Integration Tests**
 
-Integration tests use **mock implementations** that do not make real Kubernetes API calls:
+Integration tests use **real Kubernetes APIs via envtest**:
 
-```python
-from src.auth import MockAuthenticator, MockAuthorizer
+- HAPI runs with `KUBECONFIG` pointing to envtest API server
+- Uses `K8sAuthenticator` + `K8sAuthorizer` (same as production)
+- envtest provides real TokenReview and SAR APIs
+- ServiceAccount tokens validated against envtest
 
-app.add_middleware(
-    AuthenticationMiddleware,
-    authenticator=MockAuthenticator(
-        valid_users={"test-token": "system:serviceaccount:test:sa"}
-    ),
-    authorizer=MockAuthorizer(default_allow=True),
-    config={...}
-)
-```
-
-Set `ENV_MODE=integration` to enable mock auth.
+**Note**: Mock auth classes (`MockAuthenticator`, `MockAuthorizer`) are available in `src/auth/mock_auth.py` for unit tests only. They are NOT used in integration tests.
 
 ### **E2E Tests**
 
@@ -183,7 +175,7 @@ See [client-rbac.yaml](../deploy/holmesgpt-api/client-rbac.yaml) for required pe
 
 **Zero Trust**: All endpoints (except public health/metrics) require authentication and authorization.
 
-**No Runtime Disable**: Auth cannot be disabled via config flags (security risk). Mock implementations are injected via `ENV_MODE` for testing.
+**No Runtime Disable**: Auth cannot be disabled via config flags (security risk). Production code ALWAYS uses real Kubernetes auth (`K8sAuthenticator` + `K8sAuthorizer`).
 
 **SOC2 Compliance**: User attribution is tracked via `request.state.user` for audit logging (CC8.1). Handlers can access the authenticated user via `get_authenticated_user(request)` from `src.middleware.user_context`.
 

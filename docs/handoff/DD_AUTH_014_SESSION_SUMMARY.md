@@ -1,5 +1,15 @@
 # DD-AUTH-014: Session Summary - envtest Integration Complete
 
+> ⚠️ **DEPRECATION NOTICE**: ENV_MODE pattern removed as of Jan 31, 2026 (commit `5dce72c5d`)
+>
+> **What Changed**: HAPI production code no longer uses ENV_MODE conditional logic.
+> - Production & Integration: Both use `K8sAuthenticator` + `K8sAuthorizer`
+> - KUBECONFIG environment variable determines K8s API endpoint (in-cluster vs envtest)
+> - Mock auth classes available for unit tests only (not in main.py)
+>
+> **See**: `holmesgpt-api/AUTH_RESPONSES.md` for current architecture
+
+
 **Date**: 2026-01-27  
 **Session Focus**: envtest Integration for Real K8s Auth in Integration Tests  
 **Status**: Infrastructure Complete + 1 Service Migrated (RemediationOrchestrator)
