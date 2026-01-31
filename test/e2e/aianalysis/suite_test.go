@@ -136,17 +136,14 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • DD-TEST-011: Workflows seeded and ConfigMap created in infrastructure setup")
 		logger.Info("  • Mock LLM will mount ConfigMap with workflow UUIDs at startup")
 
-		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
-		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		// NOTE: ServiceAccount creation happens inside CreateAIAnalysisClusterHybrid()
+		// before workflow seeding. Get the token here for test use.
+		logger.Info("🔐 Getting E2E ServiceAccount token for test authentication (DD-AUTH-014)")
 		e2eSAName := "aianalysis-e2e-sa"
 		namespace := "kubernaut-system"
 
 		// Use context.Background() - this function has no ctx parameter
 		bgCtx := context.Background()
-		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(bgCtx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-
-		// Get ServiceAccount token for Bearer authentication
 		token, err := infrastructure.GetServiceAccountToken(bgCtx, namespace, e2eSAName, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
 		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")

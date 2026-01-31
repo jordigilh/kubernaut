@@ -202,8 +202,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage infrastructure deployed successfully")
 
-	// NOTE: ServiceAccount creation moved to test/e2e/aianalysis/suite_test.go (BeforeSuite)
-	// to avoid duplication and context issues
+	// Create ServiceAccount for workflow seeding with DataStorage access (DD-AUTH-014)
+	// This MUST happen before workflow seeding (Phase 7b) since seeding needs the SA token
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating ServiceAccount for workflow seeding...")
+	if err := createAIAnalysisE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ aianalysis-e2e-sa created with DataStorage access")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7b: Seed workflows and create ConfigMap (DD-TEST-011 Alt 2)
