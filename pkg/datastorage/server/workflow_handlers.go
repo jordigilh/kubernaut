@@ -403,6 +403,16 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Check for nil workflow (defensive check - repository should return error, not nil)
+	if workflow == nil {
+		h.logger.Info("Workflow not found (nil returned)",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
 	// Log success
 	h.logger.Info("Workflow retrieved",
 		"workflow_id", workflowID,
