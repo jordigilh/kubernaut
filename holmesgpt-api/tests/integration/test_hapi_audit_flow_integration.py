@@ -95,7 +95,7 @@ def query_audit_events_with_retry(
     event_type: Optional[str] = None,
     min_expected_events: int = 1,
     timeout_seconds: int = 30,
-    poll_interval: float = 0.5,
+    poll_interval: float = 1.0,  # Increased from 0.5s to 1.0s to match DataStorage batch flush interval
     limit: int = 100
 ) -> List[AuditEvent]:
     """
@@ -106,9 +106,9 @@ def query_audit_events_with_retry(
 
     Pattern: flush() → poll with Eventually() → assert
     
-    Timeout Alignment (Jan 31, 2026):
-    - Polling: 30s (matches Go AIAnalysis INT: Eventually(30*time.Second, 500*time.Millisecond))
-    - Poll interval: 500ms (matches Go Eventually pattern)
+    Timeout Alignment (Feb 1, 2026):
+    - Polling: 30s (matches Go AIAnalysis INT: Eventually(30*time.Second, 1*time.Second))
+    - Poll interval: 1.0s (increased from 0.5s to match DataStorage 1-second batch flush interval)
     - Flush: 10s (matches Go Gateway/AuthWebhook suite_test.go)
     
     Pattern Difference from Go:
@@ -129,7 +129,7 @@ def query_audit_events_with_retry(
         event_type: Optional event type filter (e.g., "holmesgpt.response.complete")
         min_expected_events: Minimum number of events expected (default 1)
         timeout_seconds: Maximum time to wait for events (default 30s, aligned with Go)
-        poll_interval: Time between polling attempts (default 0.5s, aligned with Go)
+        poll_interval: Time between polling attempts (default 1.0s, matches DataStorage batch flush)
         limit: Maximum events per query (1-1000, default 100 for pagination)
 
     Returns:
@@ -145,7 +145,7 @@ def query_audit_events_with_retry(
             "Ensure audit_store fixture is provided to test."
         )
 
-    print(f"🔄 Flushing audit buffer before querying...")
+    print(f"🔄 Flushing audit buffer before querying (correlation_id={correlation_id})...")
     # Increased timeout from 5s to 10s for parallel test execution (4 workers)
     # With connection pool contention, flush may take longer
     success = audit_store.flush(timeout=10.0)
@@ -154,7 +154,7 @@ def query_audit_events_with_retry(
             "Audit flush timeout - events may not be persisted. "
             "This indicates a problem with the audit buffer or DataStorage connection pool."
         )
-    print(f"✅ Audit buffer flushed")
+    print(f"✅ Audit buffer flushed successfully")
 
     start_time = time.time()
     attempts = 0
@@ -163,6 +163,13 @@ def query_audit_events_with_retry(
         attempts += 1
         
         # Query using audit_store's internal authenticated client (no separate DS access)
+        if attempts == 1:
+            print(f"🔍 AUDIT DEBUG: Querying DataStorage with:")
+            print(f"   correlation_id={correlation_id}")
+            print(f"   event_category={event_category}")
+            print(f"   event_type={event_type}")
+            print(f"   limit={limit}")
+        
         response = audit_store._audit_api.query_audit_events(
             correlation_id=correlation_id,
             event_category=event_category,
@@ -175,11 +182,15 @@ def query_audit_events_with_retry(
         if len(events) >= min_expected_events:
             elapsed = time.time() - start_time
             print(f"✅ Found {len(events)} audit events after {elapsed:.2f}s ({attempts} attempts)")
+            if events:
+                print(f"🔍 AUDIT DEBUG: Event types found: {[e.event_type for e in events]}")
             return events
 
         if attempts % 5 == 0:  # Log every 5 attempts
             elapsed = time.time() - start_time
             print(f"⏳ Waiting for audit events... {len(events)}/{min_expected_events} found after {elapsed:.2f}s")
+            if events:
+                print(f"   Event types so far: {[e.event_type for e in events]}")
 
         time.sleep(poll_interval)
 
@@ -261,6 +272,11 @@ class TestIncidentAnalysisAuditFlow:
         # Verify business operation succeeded
         assert response is not None, "Business logic should return a response"
         assert "incident_id" in response, "Response should contain incident_id"
+
+        # Give async audit operations time to complete before querying
+        # DataStorage batches events with 1-second timer
+        import asyncio
+        await asyncio.sleep(1.5)
 
         # ASSERT: Verify audit events emitted as side effect
         # Uses explicit flush to eliminate async race conditions
