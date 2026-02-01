@@ -119,9 +119,10 @@ execution:
 
 
 # Test Workflow Fixtures
+# MUST match Mock LLM server.py and AIAnalysis test_workflows.go
 TEST_WORKFLOWS = [
     WorkflowFixture(
-        workflow_name="oomkill-increase-memory-limits",
+        workflow_name="oomkill-increase-memory-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="OOMKill Remediation - Increase Memory Limits",
         description="Increases memory limits for pods experiencing OOMKilled events",
@@ -134,7 +135,7 @@ TEST_WORKFLOWS = [
         container_image="ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001"
     ),
     WorkflowFixture(
-        workflow_name="oomkill-scale-down-replicas",
+        workflow_name="memory-optimize-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="OOMKill Remediation - Scale Down Replicas",
         description="Reduces replica count for deployments experiencing OOMKilled",
@@ -147,7 +148,7 @@ TEST_WORKFLOWS = [
         container_image="ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002"
     ),
     WorkflowFixture(
-        workflow_name="crashloop-fix-configuration",
+        workflow_name="crashloop-config-fix-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="CrashLoopBackOff - Fix Configuration",
         description="Identifies and fixes configuration issues causing CrashLoopBackOff",
@@ -160,7 +161,7 @@ TEST_WORKFLOWS = [
         container_image="ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003"
     ),
     WorkflowFixture(
-        workflow_name="node-not-ready-drain-and-reboot",
+        workflow_name="node-drain-reboot-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="NodeNotReady - Drain and Reboot",
         description="Safely drains and reboots nodes in NotReady state",
