@@ -530,6 +530,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
+      - name: Login to GitHub Container Registry (for image pulls)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Install Kind v0.30.0
         run: |
           # Install Kind v0.30.0 (required by E2E test infrastructure)
