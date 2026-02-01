@@ -831,9 +831,7 @@ Can <ServiceAccount> CREATE remediationrequests.kubernaut.ai IN <namespace>?
 - **Namespace**: Target namespace from signal payload (e.g., `monitoring`, `prod`)**Authorization Outcomes**:
 - ✅ **Allowed**: SAR returns `allowed=true` → Process signal, create RemediationRequest
 - ❌ **Denied**: SAR returns `allowed=false` → Return 403 Forbidden with explanation
-- ⚠️ **Error**: SAR API fails → Return 500 Internal Server Error (fail-closed)
-
-**RBAC Example** (Prometheus AlertManager):
+- ⚠️ **Error**: SAR API fails → Return 500 Internal Server Error (fail-closed)**RBAC Example** (Prometheus AlertManager):
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

@@ -22,6 +22,7 @@ datastorage/models/ai_analysis_error_payload.py
 datastorage/models/ai_analysis_holmes_gpt_call_payload.py
 datastorage/models/ai_analysis_phase_transition_payload.py
 datastorage/models/ai_analysis_rego_evaluation_payload.py
+datastorage/models/async_acceptance_response.py
 datastorage/models/audit_event.py
 datastorage/models/audit_event_request.py
 datastorage/models/audit_event_request_event_data.py
@@ -99,6 +100,7 @@ docs/AIAnalysisErrorPayload.md
 docs/AIAnalysisHolmesGPTCallPayload.md
 docs/AIAnalysisPhaseTransitionPayload.md
 docs/AIAnalysisRegoEvaluationPayload.md
+docs/AsyncAcceptanceResponse.md
 docs/AuditEvent.md
 docs/AuditEventRequest.md
 docs/AuditEventRequestEventData.md
@@ -186,6 +188,7 @@ test/test_ai_analysis_error_payload.py
 test/test_ai_analysis_holmes_gpt_call_payload.py
 test/test_ai_analysis_phase_transition_payload.py
 test/test_ai_analysis_rego_evaluation_payload.py
+test/test_async_acceptance_response.py
 test/test_audit_event.py
 test/test_audit_event_request.py
 test/test_audit_event_request_event_data.py
