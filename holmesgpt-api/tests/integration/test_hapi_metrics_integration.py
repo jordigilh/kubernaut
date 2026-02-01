@@ -78,22 +78,33 @@ def get_counter_value(test_metrics: HAMetrics, counter_name: str, labels: Dict[s
         print(f"⚠️  Counter {counter_name} not found on metrics instance")
         return 0.0
     
+    print(f"🔍 METRICS DEBUG: Looking for counter '{counter._name}' with labels {labels}")
+    print(f"🔍 METRICS DEBUG: Registry ID: {id(test_metrics.registry)}")
+    
     # Collect metrics from registry (most reliable method)
     try:
+        all_samples = []
         for collector in test_metrics.registry.collect():
             for sample in collector.samples:
+                all_samples.append(f"{sample.name}{sample.labels}={sample.value}")
                 # Match metric name
                 if sample.name == counter._name or sample.name.startswith(counter._name):
+                    print(f"🔍 METRICS DEBUG: Found matching sample: {sample.name}{sample.labels} = {sample.value}")
                     # If labels specified, check if all match
                     if labels:
                         all_match = all(sample.labels.get(k) == v for k, v in labels.items())
                         if not all_match:
+                            print(f"🔍 METRICS DEBUG: Labels don't match. Expected {labels}, got {sample.labels}")
                             continue
                     
                     # Return the value
+                    print(f"✅ METRICS DEBUG: Returning value {sample.value}")
                     return float(sample.value)
         
-        # No matching sample found
+        # No matching sample found - print all samples for debugging
+        print(f"⚠️  No matching counter found. All samples in registry:")
+        for sample_str in all_samples:
+            print(f"   - {sample_str}")
         return 0.0
         
     except Exception as e:
@@ -167,13 +178,20 @@ class TestIncidentAnalysisMetrics:
         test_registry = CollectorRegistry()
         test_metrics = HAMetrics(registry=test_registry)
         
+        print(f"🔍 TEST DEBUG: Test registry ID: {id(test_registry)}")
+        print(f"🔍 TEST DEBUG: Metrics registry ID: {id(test_metrics.registry)}")
+        print(f"🔍 TEST DEBUG: Are they the same? {test_registry is test_metrics.registry}")
+        
         # Get baseline
+        print(f"🔍 TEST DEBUG: Getting initial counter value...")
         initial_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        print(f"🔍 TEST DEBUG: Initial value: {initial_value}")
         
         # ACT: Call business logic with test metrics (Go pattern)
         incident_request = make_incident_request(unique_test_id)
         app_config = AppConfig()
         
+        print(f"🔍 TEST DEBUG: Calling analyze_incident() with metrics={test_metrics}")
         result = await analyze_incident(
             request_data=incident_request,
             mcp_config=None,
@@ -183,9 +201,13 @@ class TestIncidentAnalysisMetrics:
         
         # Verify business operation succeeded
         assert result is not None, "Incident analysis should return result"
+        print(f"🔍 TEST DEBUG: analyze_incident() completed successfully")
+        print(f"🔍 TEST DEBUG: Result needs_human_review: {result.get('needs_human_review', 'NOT SET')}")
         
         # ASSERT: Query test registry for updated metric
+        print(f"🔍 TEST DEBUG: Getting final counter value...")
         final_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        print(f"🔍 TEST DEBUG: Final value: {final_value}")
         
         assert final_value == initial_value + 1, \
             f"investigations_total should increment by 1 (before: {initial_value}, after: {final_value})"
