@@ -613,6 +613,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 	var postgresHost string
 	var postgresPort int
 	var redisAddr string
+	var listenPort int
 	
 	if useHostNetwork {
 		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
@@ -621,11 +622,18 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		postgresHost = "localhost"
 		postgresPort = cfg.PostgresPort  // Use exposed port (e.g., 15437)
 		redisAddr = fmt.Sprintf("localhost:%d", cfg.RedisPort)
+		
+		// CRITICAL: Host network - no port mapping, so listen on external port
+		// Test infrastructure expects DataStorage on cfg.DataStoragePort
+		listenPort = cfg.DataStoragePort
 	} else {
 		// Bridge network: Access via container names at internal ports
 		postgresHost = infra.PostgresContainer
 		postgresPort = 5432  // Internal PostgreSQL port
 		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
+		
+		// Bridge network: Always listen on 8080, port mapping handles external
+		listenPort = 8080
 	}
 
 	// Common configuration
@@ -639,7 +647,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
 		"-e", "CONN_MAX_LIFETIME=30m",
 		"-e", fmt.Sprintf("REDIS_ADDR=%s", redisAddr),
-		"-e", "PORT=8080",
+		"-e", fmt.Sprintf("PORT=%d", listenPort),
 	)
 
 	// DD-AUTH-014: If EnvtestKubeconfig provided, mount it for real K8s auth
