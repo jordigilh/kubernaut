@@ -214,25 +214,37 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		logger.Info("  Expected: 18 tests")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Set environment variables for pytest
-		env := os.Environ()
-		env = append(env, fmt.Sprintf("HAPI_BASE_URL=%s", hapiURL))
-		env = append(env, fmt.Sprintf("DATA_STORAGE_URL=%s", dataStorageURL))
-		// Note: Mock LLM is now standalone service, MOCK_LLM_MODE no longer needed
+		// ========================================
+		// Run pytest in container (DO NOT run on host - Python dependency hell)
+		// Pattern: Same as unit tests (podman run with UBI Python image)
+		// ========================================
+		logger.Info("Running pytest in containerized Python environment (UBI9)...")
+		logger.Info("  Container: registry.access.redhat.com/ubi9/python-312:latest")
+		logger.Info("  Test directory: " + pytestDir)
+		logger.Info("  HAPI URL: " + hapiURL)
+		logger.Info("  DATA_STORAGE_URL: " + dataStorageURL)
 
-		// Run pytest
-		cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
-			pytestDir,
-			"-v",
-			"--tb=short",
-			// Note: -x flag removed to see all test results for Mock LLM validation
+		// Build pytest command to run in container
+		pytestCmd := fmt.Sprintf(
+			"pip install -q -r requirements.txt -r requirements-test.txt && "+
+				"HAPI_BASE_URL=%s DATA_STORAGE_URL=%s "+
+				"pytest tests/e2e -v --tb=short",
+			hapiURL,
+			dataStorageURL,
 		)
-		cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
-		cmd.Env = env
+
+		// Run pytest in container (same pattern as unit tests)
+		cmd := exec.CommandContext(ctx, "podman", "run", "--rm",
+			"-v", fmt.Sprintf("%s:/workspace:z", projectRoot),
+			"-w", "/workspace/holmesgpt-api",
+			"--network", "host", // Required to access NodePort services (30120, 30098)
+			"registry.access.redhat.com/ubi9/python-312:latest",
+			"sh", "-c", pytestCmd,
+		)
 		cmd.Stdout = GinkgoWriter
 		cmd.Stderr = GinkgoWriter
 
-		logger.Info("Executing: python3 -m pytest " + pytestDir)
+		logger.Info("Executing: podman run (containerized pytest)")
 		err := cmd.Run()
 		if err != nil {
 			anyTestFailed = true
