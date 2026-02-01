@@ -74,7 +74,7 @@ execution:
 func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 	workflows := []HAPIWorkflowFixture{
 		{
-			WorkflowName:    "oomkill-increase-memory-limits",
+			WorkflowName:    "oomkill-increase-memory-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Increase Memory Limits",
 			Description:     "Increases memory limits for pods experiencing OOMKilled events",
@@ -88,7 +88,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
 		},
 		{
-			WorkflowName:    "oomkill-scale-down-replicas",
+			WorkflowName:    "memory-optimize-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Scale Down Replicas",
 			Description:     "Reduces replica count for deployments experiencing OOMKilled",
@@ -102,7 +102,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000002",
 		},
 		{
-			WorkflowName:    "crashloop-fix-configuration",
+			WorkflowName:    "crashloop-config-fix-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "CrashLoopBackOff - Fix Configuration",
 			Description:     "Identifies and fixes configuration issues causing CrashLoopBackOff",
@@ -116,7 +116,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000003",
 		},
 		{
-			WorkflowName:    "node-not-ready-drain-and-reboot",
+			WorkflowName:    "node-drain-reboot-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "NodeNotReady - Drain and Reboot",
 			Description:     "Safely drains and reboots nodes in NotReady state",
