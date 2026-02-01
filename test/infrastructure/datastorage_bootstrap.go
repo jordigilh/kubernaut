@@ -633,6 +633,8 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
 		
 		// Bridge network: Always listen on 8080, port mapping handles external
+		// BACKWARDS COMPATIBLE: This is the original behavior for macOS
+		// Example: -p 18096:8080 maps external 18096 → internal 8080
 		listenPort = 8080
 	}
 

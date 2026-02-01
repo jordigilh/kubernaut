@@ -159,6 +159,7 @@ if useHostNetwork {
     listenPort = cfg.DataStoragePort  // e.g., 18096 for Notification
 } else {
     // Bridge network: Always listen on 8080 (port mapping handles external)
+    // BACKWARDS COMPATIBLE: This is the original behavior for macOS
     listenPort = 8080
 }
 
@@ -171,6 +172,141 @@ args = append(args,
     "-e", fmt.Sprintf("PORT=%d", listenPort),  // ✅ Correct for both modes
 )
 ```
+
+---
+
+## ✅ Backwards Compatibility Verification
+
+### macOS (Bridge Network) - **NO CHANGES TO BEHAVIOR**
+
+**Logic Flow**:
+1. `runtime.GOOS == "darwin"` → `useHostNetwork = false`
+2. Bridge network with port mapping: `-p 18096:8080`
+3. `listenPort = 8080` (same as before)
+4. Container listens on `:8080` internally
+5. Port mapping exposes it as `localhost:18096` externally
+
+**Before Fix**:
+```
+Container: PORT=8080 → listens on :8080
+Port mapping: -p 18096:8080
+Test: http://localhost:18096 → container:8080 ✅
+```
+
+**After Fix**:
+```
+Container: PORT=8080 → listens on :8080
+Port mapping: -p 18096:8080
+Test: http://localhost:18096 → container:8080 ✅
+```
+
+**Result**: ✅ **100% backwards compatible** - macOS behavior unchanged
+
+---
+
+### Linux CI (Host Network) - **FIXED**
+
+**Logic Flow**:
+1. `runtime.GOOS == "linux"` → `useHostNetwork = true`
+2. Host network: `--network=host` (no port mapping)
+3. `listenPort = cfg.DataStoragePort` (**NEW**)
+4. Container listens on the external port directly
+
+**Before Fix** (BROKEN):
+```
+Container: PORT=8080 → listens on :8080
+No port mapping (host network)
+Test: http://localhost:18096 → ECONNREFUSED ❌
+```
+
+**After Fix**:
+```
+Container: PORT=18096 → listens on :18096
+No port mapping (host network)
+Test: http://localhost:18096 → container:18096 ✅
+```
+
+**Result**: ✅ **FIXED** - Linux CI now works correctly
+
+---
+
+## 🧪 Concrete Example: Notification Service
+
+### macOS (Bridge Network) - Unchanged
+
+**Configuration**:
+- `cfg.DataStoragePort = 18096`
+- `runtime.GOOS = "darwin"`
+- `useHostNetwork = false`
+
+**Container Setup**:
+```bash
+podman run -d \
+  --name notification_datastorage_test \
+  --network notification_test_network \     # Bridge network
+  -p 18096:8080 \                           # Port mapping: external → internal
+  -e PORT=8080 \                            # ✅ Listen on 8080 (internal)
+  -e POSTGRES_HOST=notification_postgres_test \  # Container name
+  -e POSTGRES_PORT=5432 \                   # Internal port
+  -e REDIS_ADDR=notification_redis_test:6379 \   # Container name:internal port
+  datastorage:notification-abc123
+```
+
+**Test Flow**:
+```
+Test connects to: http://localhost:18096/health
+  ↓
+Port mapping routes: 18096 → container:8080
+  ↓
+Container listening on: :8080 ✅
+  ↓
+Response: 200 OK ✅
+```
+
+---
+
+### Linux CI (Host Network) - Fixed
+
+**Configuration**:
+- `cfg.DataStoragePort = 18096`
+- `runtime.GOOS = "linux"`
+- `useHostNetwork = true`
+
+**Container Setup**:
+```bash
+podman run -d \
+  --name notification_datastorage_test \
+  --network host \                          # Host network (NO port mapping)
+  -e PORT=18096 \                           # ✅ Listen on 18096 (external port)
+  -e POSTGRES_HOST=localhost \              # Host's localhost
+  -e POSTGRES_PORT=15440 \                  # External/exposed port
+  -e REDIS_ADDR=localhost:16385 \           # External/exposed port
+  datastorage:notification-abc123
+```
+
+**Test Flow**:
+```
+Test connects to: http://localhost:18096/health
+  ↓
+No port mapping (host network shares namespace)
+  ↓
+Container listening on: :18096 ✅
+  ↓
+Response: 200 OK ✅
+```
+
+---
+
+## 📊 Compatibility Matrix
+
+| Platform | Network Mode | Listen Port | Port Mapping | Test Connects To | Result |
+|----------|-------------|-------------|--------------|------------------|--------|
+| **macOS** (before) | Bridge | 8080 | `-p 18096:8080` | `localhost:18096` | ✅ WORKS |
+| **macOS** (after) | Bridge | 8080 | `-p 18096:8080` | `localhost:18096` | ✅ **UNCHANGED** |
+| **Linux CI** (before) | Host | 8080 | None | `localhost:18096` | ❌ **BROKEN** |
+| **Linux CI** (after) | Host | 18096 | None | `localhost:18096` | ✅ **FIXED** |
+
+**Key Insight**: The fix ONLY changes Linux CI behavior (host network path). macOS path remains identical.
 
 ---
 
