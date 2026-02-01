@@ -136,7 +136,12 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic ./test/unit/$*/...
+	@if [ -f coverage_unit_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
+		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
+	fi
 
 # Integration Tests
 .PHONY: test-integration-%
@@ -191,7 +196,7 @@ test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified serv
 		}; \
 		echo "✅ DataStorage client validated successfully"; \
 	fi
-	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS)"; \
+	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_$*.out --covermode=atomic"; \
 	if [ -n "$(GINKGO_LABEL)" ]; then \
 		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
 		echo "🏷️  Label filter: $(GINKGO_LABEL)"; \
@@ -205,6 +210,11 @@ test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified serv
 		echo "⏭️  Skipping: $(GINKGO_SKIP)"; \
 	fi; \
 	eval "$$GINKGO_CMD ./test/e2e/$*/..."
+	@if [ -f coverage_e2e_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_$*.out"; \
+		go tool cover -func=coverage_e2e_$*.out | grep total || echo "No coverage data"; \
+	fi
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -448,7 +458,12 @@ test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI
 		-v $(CURDIR):/workspace:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --no-cov"
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /workspace/coverage_unit_holmesgpt-api.txt"
+	@if [ -f coverage_unit_holmesgpt-api.txt ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
+		grep "TOTAL" coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+	fi
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers

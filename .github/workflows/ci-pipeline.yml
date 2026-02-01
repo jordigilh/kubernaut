@@ -135,14 +135,101 @@ jobs:
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   # TEMPORARILY DISABLED: Focus on INT/E2E test fixes
-  # Re-enable after INT/E2E tests are passing
   unit-tests:
-    name: Unit Tests (SKIPPED)
+    name: Unit Tests (${{ matrix.service }})
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - aianalysis
+          - authwebhook
+          - datastorage
+          - gateway
+          - notification
+          - remediationorchestrator
+          - signalprocessing
+          - workflowexecution
+          - holmesgpt-api
     steps:
-      - name: Skip unit tests
-        run: echo "⏭️  Unit tests temporarily skipped to speed up INT/E2E test iteration"
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Go
+        if: matrix.service != 'holmesgpt-api'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Set up Python
+        if: matrix.service == 'holmesgpt-api'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+
+      - name: Install Python dependencies
+        if: matrix.service == 'holmesgpt-api'
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Generate Go code
+        if: matrix.service != 'holmesgpt-api'
+        run: |
+          echo "🔄 Generating Go code for tests..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Run unit tests
+        run: |
+          echo "🧪 Running unit tests for ${{ matrix.service }}..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make test-unit-${{ matrix.service }}
+        env:
+          MOCK_LLM: 'true'
+
+      - name: Calculate and save coverage
+        if: always()
+        run: |
+          # Create coverage summary file for this service
+          mkdir -p coverage-reports
+          
+          # Extract coverage percentage from coverage file
+          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
+            # Python coverage from pytest output
+            if [ -f coverage_unit_holmesgpt-api.txt ]; then
+              COVERAGE=$(grep "TOTAL" coverage_unit_holmesgpt-api.txt | awk '{print $NF}' | tr -d '%')
+              echo "${{ matrix.service }},${COVERAGE}%" > coverage-reports/unit-${{ matrix.service }}.txt
+              echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}%"
+            else
+              echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+            fi
+          else
+            # Go coverage
+            if [ -f coverage_unit_${{ matrix.service }}.out ]; then
+              COVERAGE=$(go tool cover -func=coverage_unit_${{ matrix.service }}.out | grep total | awk '{print $3}')
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/unit-${{ matrix.service }}.txt
+              echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}"
+            else
+              echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+            fi
+          fi
+      
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit-${{ matrix.service }}
+          path: coverage-reports/unit-${{ matrix.service }}.txt
+          retention-days: 1
 
   # unit-tests-disabled:
   #   name: Unit Tests (${{ matrix.service }})
@@ -355,6 +442,7 @@ jobs:
 
   # TEMPORARILY DISABLED: Focus on E2E test fixes
   # Re-enable after E2E tests are passing
+  # NOTE: When re-enabled, add coverage collection similar to unit-tests above
   integration-tests:
     name: integration (SKIPPED)
     needs: [build-and-push-images]
@@ -363,6 +451,23 @@ jobs:
     steps:
       - name: Skip integration tests
         run: echo "⏭️  Integration tests temporarily skipped to speed up E2E test iteration"
+      
+      - name: Create placeholder coverage reports
+        if: always()
+        run: |
+          mkdir -p coverage-reports
+          # Create N/A placeholders for all services
+          for service in aianalysis authwebhook datastorage gateway holmesgpt-api notification remediationorchestrator signalprocessing workflowexecution; do
+            echo "${service},N/A" > coverage-reports/integration-${service}.txt
+          done
+      
+      - name: Upload placeholder coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-placeholder
+          path: coverage-reports/integration-*.txt
+          retention-days: 1
 
   # integration-tests-disabled:
   #   name: integration (${{ matrix.service }})
@@ -569,25 +674,30 @@ jobs:
           pip install -r requirements-test.txt
       - name: Run ${{ matrix.service }} E2E tests
         run: make test-e2e-${{ matrix.service }}
-      - name: Generate E2E coverage summary
+      
+      - name: Calculate and save E2E coverage
         if: always()
         run: |
-          echo "📊 Generating E2E coverage summary for ${{ matrix.service }}..."
-          COVERDATA_DIR="test/e2e/${{ matrix.service }}/coverdata"
-          if [ -d "${COVERDATA_DIR}" ] && [ "$(ls -A ${COVERDATA_DIR} 2>/dev/null)" ]; then
-            echo "✅ Found coverage data in ${COVERDATA_DIR}"
-            go tool covdata percent -i="${COVERDATA_DIR}" || echo "⚠️  Coverage report generation failed"
+          # Create coverage summary file for this service
+          mkdir -p coverage-reports
+          
+          # Check for Go coverage file
+          if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
+            COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
+            echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
+            echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
           else
-            echo "ℹ️  No coverage data found (may be expected for Python-only tests)"
+            echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+            echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
           fi
-      - name: Upload E2E coverage artifacts
+      
+      - name: Upload E2E coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-coverage-${{ matrix.service }}-${{ github.run_id }}
-          path: test/e2e/${{ matrix.service }}/coverdata/**
-          retention-days: 14
-          if-no-files-found: warn
+          name: coverage-e2e-${{ matrix.service }}
+          path: coverage-reports/e2e-${{ matrix.service }}.txt
+          retention-days: 1
       - name: Collect must-gather logs on failure
         if: failure()
         run: |
@@ -630,6 +740,64 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Download all coverage reports
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-reports
+          merge-multiple: true
+        continue-on-error: true
+      
+      - name: Generate Coverage Table
+        if: always()
+        run: |
+          echo "📊 Aggregating Coverage Data..."
+          echo ""
+          
+          # Create associative arrays for coverage data
+          declare -A unit_cov
+          declare -A integration_cov
+          declare -A e2e_cov
+          
+          # Read coverage files
+          if [ -d "coverage-reports" ]; then
+            for file in coverage-reports/*.txt; do
+              if [ -f "$file" ]; then
+                service=$(basename "$file" | sed 's/^unit-\|^integration-\|^e2e-//' | sed 's/\.txt$//')
+                coverage=$(cut -d',' -f2 "$file")
+                
+                if [[ "$file" == *"unit-"* ]]; then
+                  unit_cov[$service]="$coverage"
+                elif [[ "$file" == *"integration-"* ]]; then
+                  integration_cov[$service]="$coverage"
+                elif [[ "$file" == *"e2e-"* ]]; then
+                  e2e_cov[$service]="$coverage"
+                fi
+              fi
+            done
+          fi
+          
+          # All services (sorted alphabetically)
+          services=(aianalysis authwebhook datastorage gateway holmesgpt-api notification remediationorchestrator signalprocessing workflowexecution)
+          
+          # Generate markdown table
+          echo "## 📊 Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Unit | Integration | E2E |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|------|-------------|-----|" >> $GITHUB_STEP_SUMMARY
+          
+          for service in "${services[@]}"; do
+            unit="${unit_cov[$service]:-N/A}"
+            integration="${integration_cov[$service]:-N/A}"
+            e2e="${e2e_cov[$service]:-N/A}"
+            echo "| $service | $unit | $integration | $e2e |" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
       - name: Test Suite Summary
         run: |
           echo "═══════════════════════════════════════════════════════════"
