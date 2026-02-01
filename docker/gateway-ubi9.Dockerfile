@@ -86,8 +86,10 @@ USER gateway-user
 EXPOSE 8080 9090 8081
 
 # Health check using HTTP endpoint
+# Fixed: Use shell syntax (not JSON array + shell) to avoid /bin/sh syntax errors
+# The || exit 1 requires shell processing, so we use shell form (no JSON array)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-	CMD ["/usr/bin/curl", "-f", "http://localhost:8080/health"] || exit 1
+	CMD /usr/bin/curl -f http://localhost:8080/health || exit 1
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/gateway"]
