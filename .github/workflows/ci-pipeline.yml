@@ -579,7 +579,7 @@ jobs:
 
   e2e-tests:
     name: E2E (${{ matrix.service }})
-    needs: [build-and-push-images, integration-tests]  # Need image tag + wait for integration
+    needs: [build-and-push-images]  # INT tests temporarily disabled, only need images
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
