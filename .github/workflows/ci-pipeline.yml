@@ -259,16 +259,16 @@ jobs:
             image_name: authwebhook
           - service: notification
             dockerfile: docker/notification-controller-ubi9.Dockerfile
-            image_name: notification-controller  # Match Dockerfile naming convention
+            image_name: notification  # Operator SDK convention: image name without -controller suffix
           - service: remediationorchestrator
             dockerfile: docker/remediationorchestrator-controller.Dockerfile
-            image_name: remediationorchestrator-controller  # Match Dockerfile naming convention
+            image_name: remediationorchestrator  # Operator SDK convention: image name without -controller suffix
           - service: signalprocessing
             dockerfile: docker/signalprocessing-controller.Dockerfile
-            image_name: signalprocessing-controller  # Match Dockerfile naming convention
+            image_name: signalprocessing  # Operator SDK convention: image name without -controller suffix
           - service: workflowexecution
             dockerfile: docker/workflowexecution-controller.Dockerfile
-            image_name: workflowexecution-controller  # Match Dockerfile naming convention
+            image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
           # Python Services (1)
           - service: holmesgpt-api
             dockerfile: holmesgpt-api/Dockerfile

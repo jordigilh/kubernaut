@@ -85,9 +85,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Build SignalProcessing with coverage in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "signalprocessing-controller",  // Must match CI build matrix image_name
-			ImageName:        "kubernaut/signalprocessing-controller",
-			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile",
+			ServiceName:      "signalprocessing",  // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/signalprocessing",
+			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile",  // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
