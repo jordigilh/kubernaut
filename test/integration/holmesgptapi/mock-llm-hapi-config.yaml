@@ -1,6 +1,0 @@
-scenarios:
-  oomkill-increase-memory-limits:production: e700d0da-f621-4722-8216-ad212a7aafe1
-  oomkill-scale-down-replicas:staging: ecdf4ee8-667c-4102-a6a2-8765eea45296
-  crashloop-fix-configuration:production: 0a9fa758-3a47-4018-9c92-ef97d06bd4a8
-  node-not-ready-drain-and-reboot:production: 852d2474-53bb-4c25-a248-ea0a70e1eaf4
-  image-pull-backoff-fix-credentials:production: b759fbd5-39ab-404b-b57b-9975b82c3f4b

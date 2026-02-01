@@ -80,7 +80,7 @@ class MockScenario:
 MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "oomkilled": MockScenario(
         name="oomkilled",
-        workflow_name="oomkill-increase-memory-limits",  # Fixed: Match DataStorage workflow name exactly
+        workflow_name="oomkill-increase-memory-v1",  # MUST match test_workflows.go WorkflowID exactly
         signal_type="OOMKilled",
         severity="critical",
         workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config file
@@ -94,7 +94,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "crashloop": MockScenario(
         name="crashloop",
-        workflow_name="crashloop-fix-configuration",  # Fixed: Match DataStorage workflow name exactly
+        workflow_name="crashloop-config-fix-v1",  # MUST match test_workflows.go WorkflowID exactly
         signal_type="CrashLoopBackOff",
         severity="high",
         workflow_id="42b90a37-0d1b-5561-911a-2939ed9e1c30",  # Placeholder - overwritten by config file
@@ -108,7 +108,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
-        workflow_name="node-not-ready-drain-and-reboot",  # Fixed: Match DataStorage workflow name exactly
+        workflow_name="node-drain-reboot-v1",  # MUST match test_workflows.go WorkflowID exactly
         signal_type="NodeNotReady",
         severity="critical",
         workflow_id="node-drain-reboot-v1",  # Placeholder - overwritten by config file
@@ -122,7 +122,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "recovery": MockScenario(
         name="recovery",
-        workflow_name="oomkill-scale-down-replicas",  # Fixed: Match DataStorage workflow name exactly (for recovery scenarios)
+        workflow_name="memory-optimize-v1",  # MUST match test_workflows.go WorkflowID exactly (alternative workflow)
         signal_type="OOMKilled",
         severity="critical",
         workflow_id="99f4a9b8-d6b5-5191-85a4-93e5dbf61321",  # Placeholder - overwritten by config file
