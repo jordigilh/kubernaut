@@ -469,17 +469,24 @@ var _ = SynchronizedAfterSuite(
 				logger.Info("   Step 2: Waiting for graceful shutdown to complete...")
 				time.Sleep(10 * time.Second)
 
-				// DD-TEST-007: Extract coverage files from Kind node container
-				// Coverage files are written INSIDE the Kind node container at /coverdata/
-				// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-				// We must use podman cp to extract them to the host
-				logger.Info("   Step 3: Extracting coverage files from Kind node container...")
-				kindNodeContainer := clusterName + "-worker"
+			// DD-TEST-007: Extract coverage files from Kind node container
+			// Coverage files are written INSIDE the Kind node container at /coverdata/
+			// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
+			// We must use podman cp to extract them to the host
+			logger.Info("   Step 3: Extracting coverage files from Kind node container...")
+			kindNodeContainer := clusterName + "-worker"
 
-				// Use podman cp to copy coverage files from Kind node to host
-				cpCmd := exec.Command("podman", "cp",
-					kindNodeContainer+":/coverdata/.",
-					coverDir)
+			// Ensure coverdata directory exists before extraction
+			if err := os.MkdirAll(coverDir, 0755); err != nil {
+				logger.Info("⚠️  Failed to create coverage directory",
+					"error", err,
+					"path", coverDir)
+			}
+
+			// Use podman cp to copy coverage files from Kind node to host
+			cpCmd := exec.Command("podman", "cp",
+				kindNodeContainer+":/coverdata/.",
+				coverDir)
 				if cpOutput, cpErr := cpCmd.CombinedOutput(); cpErr != nil {
 					logger.Info("⚠️  Failed to extract coverage from Kind node",
 						"error", cpErr,
