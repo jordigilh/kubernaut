@@ -72,7 +72,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 		GinkgoWriter.Printf("📊 Direct query found %d RRs in namespace\n", len(allRRs.Items))
 		Expect(len(allRRs.Items)).To(Equal(1), "Should find 1 RR via direct query")
 
-		By("Querying by field index (spec.signalFingerprint)")
+		By("Querying by field selector (spec.signalFingerprint) - server-side with CRD selectableFields")
 		indexedRRs := &remediationv1.RemediationRequestList{}
 		err = k8sManager.GetAPIReader().List(ctx, indexedRRs,
 			client.InNamespace(testNamespace),
