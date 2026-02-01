@@ -232,15 +232,15 @@ Eventually(func() int {
 
 ---
 
-## 3. HAPI E2E: ❌ **PYTHON ENVIRONMENT ISSUE**
+## 3. HAPI E2E: ✅ **FIXED (Commit `9766d941e`)**
 
-### Test Results
+### Test Results (Before Fix)
 ```
 Ran 1 of 1 Specs in 345.289 seconds
 FAIL! -- 0 Passed | 1 Failed | 0 Pending | 0 Skipped
 ```
 
-### Root Cause: **Local Python Dependencies Missing**
+### Root Cause: **Python Tests Running on Host (Not Advisable)**
 
 ```python
 ImportError while loading conftest '/Users/jgil/go/src/github.com/jordigilh/kubernaut/holmesgpt-api/tests/conftest.py'.
@@ -249,7 +249,7 @@ tests/conftest.py:28: in <module>
 E   ModuleNotFoundError: No module named 'fastapi'
 ```
 
-**This is NOT a code bug** - it's a **local environment configuration issue**.
+**This was NOT a code bug** - but **running Python tests on host is bad practice**.
 
 ### Evidence: CI vs Local Execution
 
