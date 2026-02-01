@@ -208,7 +208,7 @@ func buildAndLoadWorkflowBundle(clusterName, workflowName, bundleRef, pipelineYA
 
 	buildCmd := exec.Command("tkn", "bundle", "push", bundleRef,
 		"-f", pipelineYAML,
-		"--override", // Allow overwriting existing bundles for test iterations
+		// Note: --override flag does not exist in tkn CLI - bundles are naturally overwritable
 	)
 	buildCmd.Stdout = output
 	buildCmd.Stderr = output
