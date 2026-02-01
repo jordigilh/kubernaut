@@ -1233,7 +1233,14 @@ func CreateServiceAccountForHTTPService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to write kubeconfig file: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Kubeconfig generated: %s\n", kubeconfigPath)
+	
+	// Fix file permissions for Podman rootless (DD-AUTH-014)
+	// Container runs as non-root user and needs to read the mounted kubeconfig
+	err = os.Chmod(kubeconfigPath, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to chmod kubeconfig file: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Kubeconfig generated: %s (mode: 0644, Podman-mountable)\n", kubeconfigPath)
 
 	authConfig := &IntegrationAuthConfig{
 		Token:              token,
