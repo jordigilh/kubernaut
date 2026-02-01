@@ -51,16 +51,17 @@ jobs:
           sudo apt-get install -y podman
           podman --version
 
-      - name: Install Latest Kind
+      - name: Install Kind v0.30.0
         if: inputs.infrastructure == 'kind'
         run: |
-          # Install latest Kind release
-          LATEST_KIND_VERSION=$(curl -sL https://api.github.com/repos/kubernetes-sigs/kind/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Installing Kind version: ${LATEST_KIND_VERSION}"
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${LATEST_KIND_VERSION}/kind-linux-amd64"
+          # Install Kind v0.30.0 (required by integration test infrastructure)
+          # Authority: test/infrastructure/kind_cluster_helpers.go (version validation)
+          KIND_VERSION="v0.30.0"
+          echo "Installing Kind version: ${KIND_VERSION}"
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
-          kind --version
+          kind version
 
       - name: Set up Python
         if: inputs.service == 'holmesgpt'
