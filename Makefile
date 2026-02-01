@@ -130,9 +130,15 @@ clean: ## Clean build artifacts
 
 ##@ Pattern-Based Service Targets
 
+# Coverage Directory Setup
+.PHONY: ensure-coverage-dirs
+ensure-coverage-dirs: ## Ensure coverage directories exist for all test tiers
+	@mkdir -p coverdata coverage-reports
+	@chmod -f 777 coverdata coverage-reports 2>/dev/null || true
+
 # Unit Tests
 .PHONY: test-unit-%
-test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-unit-gateway)
+test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service (e.g., make test-unit-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -145,45 +151,22 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: generate ginkgo setup-envtest ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "💡 For coverage: make test-integration-$*-coverage"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
-
-# Integration Tests with Coverage (WorkflowExecution pattern)
-.PHONY: test-integration-%-coverage
-test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 $* - Integration Tests with Production Code Coverage"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: go test with -coverpkg (captures goroutine controller code)"
-	@echo "⏱️  Note: Sequential execution (no parallel) for accurate coverage"
-	@go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) \
-		-coverprofile=coverage_integration_$*.out \
-		-coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$* \
-		./test/integration/$*/...
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ Coverage report: coverage_integration_$*.out"
-	@echo "📊 View details: go tool cover -func=coverage_integration_$*.out"
-	@echo "🌐 HTML report: go tool cover -html=coverage_integration_$*.out"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# E2E Tests
-.PHONY: ensure-coverdata
-ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collection (DD-TEST-007)
-	@if [ ! -d "coverdata" ]; then \
-		echo "📁 Creating coverdata directory for E2E coverage collection..."; \
-		mkdir -p coverdata; \
-		chmod 777 coverdata; \
-		echo "   ✅ coverdata directory created"; \
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going ./test/integration/$*/...
+	@if [ -f coverage_integration_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_$*.out"; \
+		go tool cover -func=coverage_integration_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+
+# E2E Tests
 .PHONY: test-e2e-%
-test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -247,7 +230,7 @@ test-tier-unit: $(addprefix test-unit-,$(SERVICES)) ## Run unit tests for all se
 test-tier-integration: $(addprefix test-integration-,$(SERVICES)) ## Run integration tests for all services
 
 .PHONY: test-tier-e2e
-test-tier-e2e: ensure-coverdata $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
+test-tier-e2e: ensure-coverage-dirs $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
 
 .PHONY: test-all-services
 test-all-services: $(addprefix test-all-,$(SERVICES)) ## Run all tests for all services
@@ -405,7 +388,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
+test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports ensure-coverage-dirs ## Run holmesgpt-api integration tests (direct business logic calls)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐍 HolmesGPT API Integration Tests (Direct Business Logic)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -425,10 +408,15 @@ test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports 
 	@echo "   Infrastructure: Go (envtest, PostgreSQL, Redis, DataStorage with auth)"
 	@echo "   Tests: Python (pytest in container, business logic calls)"
 	@echo ""
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=1 ./test/integration/holmesgptapi/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=1 --coverprofile=coverage_integration_holmesgpt-api.out --covermode=atomic ./test/integration/holmesgptapi/...
+	@if [ -f coverage_integration_holmesgpt-api.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_holmesgpt-api.out"; \
+		go tool cover -func=coverage_integration_holmesgpt-api.out | grep total || echo "No coverage data"; \
+	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests in container, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs ## Run holmesgpt-api E2E tests (Kind cluster + Python tests in container, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Containerized Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -443,7 +431,12 @@ test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (
 	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests in UBI9 container)..."
 	@echo "   Container: registry.access.redhat.com/ubi9/python-312:latest"
 	@echo "   Network: host (access NodePort services: HAPI 30120, DS 30098)"
-	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --coverprofile=../../../coverage_e2e_holmesgpt-api.out --covermode=atomic
+	@if [ -f coverage_e2e_holmesgpt-api.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_holmesgpt-api.out"; \
+		go tool cover -func=coverage_e2e_holmesgpt-api.out | grep total || echo "No coverage data"; \
+	fi
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
@@ -454,13 +447,18 @@ test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api t
 	@echo "════════════════════════════════════════════════════════════════════════"
 
 .PHONY: test-unit-holmesgpt-api
-test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI)
+test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (containerized with UBI)
 	@echo "🧪 Running holmesgpt-api unit tests (containerized with Red Hat UBI)..."
 	@podman run --rm \
 		-v $(CURDIR):/workspace:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --no-cov"
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /workspace/coverage_unit_holmesgpt-api.txt"
+	@if [ -f coverage_unit_holmesgpt-api.txt ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
+		grep "TOTAL" coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+	fi
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
@@ -481,19 +479,29 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 ##@ Special Cases - Authentication Webhook
 
 .PHONY: test-unit-authwebhook
-test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
+test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic ./test/unit/authwebhook/...
+	@if [ -f coverage_unit_authwebhook.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \
+		go tool cover -func=coverage_unit_authwebhook.out | grep total || echo "No coverage data"; \
+	fi
 
 # test-integration-authwebhook now uses the general test-integration-% pattern (no override needed)
 .PHONY: test-e2e-authwebhook
-test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
+test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind cluster)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/e2e/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic ./test/e2e/authwebhook/...
+	@if [ -f coverage_e2e_authwebhook.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_authwebhook.out"; \
+		go tool cover -func=coverage_e2e_authwebhook.out | grep total || echo "No coverage data"; \
+	fi
 
 .PHONY: test-all-authwebhook
 test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)
