@@ -124,10 +124,13 @@ func postAuditEvent(
 
 	// Extract event ID from response (ogen unions require type checking)
 	switch r := resp.(type) {
-	case *ogenclient.CreateAuditEventCreated:
+	case *ogenclient.AuditEventResponse:
+		// 201 Created - synchronous response with event ID
 		return r.EventID.String(), nil
-	case *ogenclient.CreateAuditEventAccepted:
-		return r.EventID.String(), nil
+	case *ogenclient.AsyncAcceptanceResponse:
+		// 202 Accepted - async response (no event ID yet)
+		// Return status message as placeholder since ID not available yet
+		return "", fmt.Errorf("async response (no event ID): %s", r.Message)
 	default:
 		return "", fmt.Errorf("unexpected response type: %T", resp)
 	}
