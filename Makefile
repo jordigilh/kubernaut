@@ -458,12 +458,7 @@ test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI
 		-v $(CURDIR):/workspace:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /workspace/coverage_unit_holmesgpt-api.txt"
-	@if [ -f coverage_unit_holmesgpt-api.txt ]; then \
-		echo ""; \
-		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
-		grep "TOTAL" coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
-	fi
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing"
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
