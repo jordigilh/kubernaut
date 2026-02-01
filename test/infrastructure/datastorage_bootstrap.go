@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -570,30 +571,76 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 // startDSBootstrapService starts the DataStorage container using a pre-built image
 // The image should be built using BuildDataStorageImage() before calling this function
 //
-// DD-AUTH-014: Option A (macOS) - Bridge network + kubeconfig rewrite to IPv4
-// Requires IPv6 disabled on macOS: sudo networksetup -setv6off Wi-Fi
+// DD-AUTH-014: Platform-specific network configuration (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
+//   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
+//   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
 // Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
 
-	// Always use bridge network (--network=host doesn't work on macOS Podman)
+	// DD-AUTH-014: Platform-specific network configuration
+	// Linux: Use --network=host when envtest kubeconfig is provided (allows direct localhost access)
+	// macOS: Always use bridge network (--network=host doesn't work on macOS Podman VM)
+	useHostNetwork := false
+	if cfg.EnvtestKubeconfig != "" && runtime.GOOS == "linux" {
+		useHostNetwork = true
+		_, _ = fmt.Fprintf(writer, "   🌐 Using host network (Linux CI/CD) - container can reach localhost directly\n")
+	} else if cfg.EnvtestKubeconfig != "" {
+		_, _ = fmt.Fprintf(writer, "   🌐 Using bridge network (macOS) - kubeconfig rewrites 127.0.0.1 → host.containers.internal\n")
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Requires IPv6 disabled: sudo networksetup -setv6off Wi-Fi\n")
+	}
+
+	// Base container arguments
 	args := []string{"run", "-d",
 		"--name", infra.DataStorageContainer,
-		"--network", infra.Network,
-		"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
-		"-p", fmt.Sprintf("%d:9090", cfg.MetricsPort),
+	}
+
+	// Network configuration (platform-specific)
+	if useHostNetwork {
+		// Linux: Host network mode (no port mapping needed)
+		args = append(args, "--network", "host")
+	} else {
+		// macOS: Bridge network (requires port mapping)
+		args = append(args,
+			"--network", infra.Network,
+			"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
+			"-p", fmt.Sprintf("%d:9090", cfg.MetricsPort),
+		)
+	}
+
+	// Database/Redis configuration (network-dependent)
+	var postgresHost string
+	var postgresPort int
+	var redisAddr string
+	
+	if useHostNetwork {
+		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
+		// PostgreSQL exposes internal 5432 → external cfg.PostgresPort
+		// Redis exposes internal 6379 → external cfg.RedisPort
+		postgresHost = "localhost"
+		postgresPort = cfg.PostgresPort  // Use exposed port (e.g., 15437)
+		redisAddr = fmt.Sprintf("localhost:%d", cfg.RedisPort)
+	} else {
+		// Bridge network: Access via container names at internal ports
+		postgresHost = infra.PostgresContainer
+		postgresPort = 5432  // Internal PostgreSQL port
+		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
+	}
+
+	// Common configuration
+	args = append(args,
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"-e", fmt.Sprintf("POSTGRES_HOST=%s", infra.PostgresContainer),
-		"-e", "POSTGRES_PORT=5432",
+		"-e", fmt.Sprintf("POSTGRES_HOST=%s", postgresHost),
+		"-e", fmt.Sprintf("POSTGRES_PORT=%d", postgresPort),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
 		"-e", "CONN_MAX_LIFETIME=30m",
-		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", infra.RedisContainer),
+		"-e", fmt.Sprintf("REDIS_ADDR=%s", redisAddr),
 		"-e", "PORT=8080",
-	}
+	)
 
 	// DD-AUTH-014: If EnvtestKubeconfig provided, mount it for real K8s auth
 	if cfg.EnvtestKubeconfig != "" {
