@@ -777,6 +777,22 @@ jobs:
           echo "📊 Aggregating Coverage Data..."
           echo ""
           
+          # Debug: List all downloaded files
+          echo "🔍 Debug: Listing downloaded coverage files..."
+          if [ -d "coverage-reports" ]; then
+            ls -la coverage-reports/ || echo "No coverage-reports directory"
+            echo ""
+            echo "📋 Coverage file contents:"
+            for f in coverage-reports/*.txt 2>/dev/null; do
+              if [ -f "$f" ]; then
+                echo "  File: $(basename $f) -> Content: $(cat $f)"
+              fi
+            done
+            echo ""
+          else
+            echo "⚠️  No coverage-reports directory found"
+          fi
+          
           # Create associative arrays for coverage data
           declare -A unit_cov
           declare -A integration_cov
@@ -784,21 +800,51 @@ jobs:
           
           # Read coverage files
           if [ -d "coverage-reports" ]; then
+            shopt -s nullglob  # Handle case when no files match
             for file in coverage-reports/*.txt; do
               if [ -f "$file" ]; then
-                service=$(basename "$file" | sed 's/^unit-\|^integration-\|^e2e-//' | sed 's/\.txt$//')
-                coverage=$(cut -d',' -f2 "$file")
+                filename=$(basename "$file")
+                service=$(echo "$filename" | sed 's/^unit-\|^integration-\|^e2e-//' | sed 's/\.txt$//')
+                coverage=$(cut -d',' -f2 "$file" | tr -d '[:space:]')  # Remove whitespace
                 
-                if [[ "$file" == *"unit-"* ]]; then
+                echo "  Parsing: $filename -> Service: $service, Coverage: $coverage"
+                
+                if [[ "$filename" == unit-* ]]; then
                   unit_cov[$service]="$coverage"
-                elif [[ "$file" == *"integration-"* ]]; then
+                  echo "    ✅ Added to unit_cov array"
+                elif [[ "$filename" == integration-* ]]; then
                   integration_cov[$service]="$coverage"
-                elif [[ "$file" == *"e2e-"* ]]; then
+                  echo "    ✅ Added to integration_cov array"
+                elif [[ "$filename" == e2e-* ]]; then
                   e2e_cov[$service]="$coverage"
+                  echo "    ✅ Added to e2e_cov array"
+                else
+                  echo "    ⚠️  Filename didn't match any tier pattern"
                 fi
               fi
             done
+            shopt -u nullglob
           fi
+          
+          echo ""
+          echo "✅ Parsed coverage data:"
+          echo "  Unit tests: ${#unit_cov[@]} services"
+          echo "  Integration tests: ${#integration_cov[@]} services"
+          echo "  E2E tests: ${#e2e_cov[@]} services"
+          echo ""
+          
+          # Debug: Show array contents
+          echo "🔍 Array contents:"
+          for key in "${!unit_cov[@]}"; do
+            echo "  unit_cov[$key] = ${unit_cov[$key]}"
+          done
+          for key in "${!integration_cov[@]}"; do
+            echo "  integration_cov[$key] = ${integration_cov[$key]}"
+          done
+          for key in "${!e2e_cov[@]}"; do
+            echo "  e2e_cov[$key] = ${e2e_cov[$key]}"
+          done
+          echo ""
           
           # All services (sorted alphabetically)
           services=(aianalysis authwebhook datastorage gateway holmesgpt-api notification remediationorchestrator signalprocessing workflowexecution)
@@ -814,6 +860,7 @@ jobs:
             integration="${integration_cov[$service]:-N/A}"
             e2e="${e2e_cov[$service]:-N/A}"
             echo "| $service | $unit | $integration | $e2e |" >> $GITHUB_STEP_SUMMARY
+            echo "  Generated row: | $service | $unit | $integration | $e2e |"
           done
           
           echo "" >> $GITHUB_STEP_SUMMARY
