@@ -55,6 +55,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -276,12 +277,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	
 	// DD-AUTH-014: Create ServiceAccount for HAPI service (for TokenReview/SAR validation)
 	// HAPI is an HTTP server (like DataStorage) that validates incoming Bearer tokens
+	// Platform-specific: Linux uses host network, macOS uses bridge network
 	By("Creating ServiceAccount for HAPI service with TokenReview/SAR permissions")
+	useHostNetworkForHAPI := runtime.GOOS == "linux"
 	hapiServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
 		sharedCfg,
 		"holmesgpt-service",
 		"default",
-		false, // HAPI uses bridge network (aianalysis_test_network), not host network
+		useHostNetworkForHAPI, // Linux: host network (127.0.0.1), macOS: bridge network (host.containers.internal)
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
@@ -416,8 +419,13 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig = infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
-	mockLLMConfig.Network = "aianalysis_test_network" // Join same network as HAPI for container-to-container DNS
 	mockLLMConfig.ConfigFilePath = mockLLMConfigPath  // DD-TEST-011 v2.0: Mount config file
+	// DD-AUTH-014: Platform-specific network (must match HAPI's network mode)
+	if runtime.GOOS == "linux" {
+		mockLLMConfig.Network = "host" // Linux CI: Host network (HAPI will reach via 127.0.0.1)
+	} else {
+		mockLLMConfig.Network = "aianalysis_test_network" // macOS: Bridge network with container-to-container DNS
+	}
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
@@ -446,35 +454,51 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 	
+	// DD-AUTH-014: Platform-specific network configuration for HAPI
+	// Linux CI: Use host network (can reach envtest on 127.0.0.1 directly)
+	// macOS Dev: Use bridge network with host.containers.internal rewriting
+	useHostNetwork := runtime.GOOS == "linux"
+	
 	hapiConfig := infrastructure.GenericContainerConfig{
-		Name:    "aianalysis_hapi_test",
-		Image:   hapiImageName, // Use pre-built image from parallel build
-		Network: "aianalysis_test_network",
-		Ports:   map[int]int{8080: 18120}, // container:host
+		Name:  "aianalysis_hapi_test",
+		Image: hapiImageName, // Use pre-built image from parallel build
 		Env: map[string]string{
-			"LLM_ENDPOINT":     infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig), // http://mock-llm-aianalysis:8080 (container-to-container)
-			"LLM_MODEL":        "mock-model",
-			"LLM_PROVIDER":     "openai",                                  // Required by litellm
-			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
-		"DATA_STORAGE_URL": "http://host.containers.internal:18095",   // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
-		"PORT":             "8080",
-		"LOG_LEVEL":        "DEBUG",
-		"KUBECONFIG":       "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
-		"POD_NAMESPACE":    "default",                                 // Required for K8s client
+			"LLM_MODEL":      "mock-model",
+			"LLM_PROVIDER":   "openai",                             // Required by litellm
+			"OPENAI_API_KEY": "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
+			"PORT":           "8080",
+			"LOG_LEVEL":      "DEBUG",
+			"KUBECONFIG":     "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
+			"POD_NAMESPACE":  "default",                                 // Required for K8s client
 		},
 		Volumes: map[string]string{
-			hapiConfigDir:                        "/etc/holmesgpt:ro",                                               // Mount HAPI config directory
-			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",                                              // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
-			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",                // DD-AUTH-014: Mount HAPI ServiceAccount secrets (HAPI's own token for DataStorage auth)
-		},
-		ExtraHosts: []string{
-			"host.containers.internal:host-gateway", // DD-AUTH-014: Linux bridge network needs explicit host resolution
+			hapiConfigDir:                        "/etc/holmesgpt:ro",                                // Mount HAPI config directory
+			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",                               // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
+			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro", // DD-AUTH-014: Mount HAPI ServiceAccount secrets (HAPI's own token for DataStorage auth)
 		},
 		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
 			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
 		},
+	}
+	
+	if useHostNetwork {
+		// Linux CI: Host network mode (can reach localhost directly)
+		hapiConfig.Network = "host"
+		hapiConfig.Env["LLM_ENDPOINT"] = "http://127.0.0.1:18085" // Mock LLM also on host network
+		hapiConfig.Env["DATA_STORAGE_URL"] = "http://127.0.0.1:18095"
+		GinkgoWriter.Printf("   🌐 HAPI using host network (Linux CI) - localhost access enabled\n")
+	} else {
+		// macOS Dev: Bridge network with host.containers.internal
+		hapiConfig.Network = "aianalysis_test_network"
+		hapiConfig.Ports = map[int]int{8080: 18120} // container:host
+		hapiConfig.Env["LLM_ENDPOINT"] = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig) // http://mock-llm-aianalysis:8080 (container-to-container)
+		hapiConfig.Env["DATA_STORAGE_URL"] = "http://host.containers.internal:18095"
+		hapiConfig.ExtraHosts = []string{
+			"host.containers.internal:host-gateway", // macOS: Explicit host resolution (redundant but harmless)
+		}
+		GinkgoWriter.Printf("   🌐 HAPI using bridge network (macOS) - host.containers.internal routing enabled\n")
 	}
 	hapiContainer, err = infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
