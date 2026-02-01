@@ -542,6 +542,16 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
+      - name: Install Tekton CLI (tkn)
+        run: |
+          # Install tkn CLI (required by WorkflowExecution E2E tests for bundle creation)
+          # Authority: test/infrastructure/tekton_bundles.go
+          TKN_VERSION="0.39.0"
+          curl -LO "https://github.com/tektoncd/cli/releases/download/v${TKN_VERSION}/tkn_${TKN_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf "tkn_${TKN_VERSION}_Linux_x86_64.tar.gz" tkn
+          chmod +x tkn
+          sudo mv tkn /usr/local/bin/tkn
+          tkn version
       - name: Setup Python (for holmesgpt-api E2E)
         if: matrix.service == 'holmesgpt-api'
         uses: actions/setup-python@v5
