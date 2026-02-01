@@ -281,6 +281,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		sharedCfg,
 		"holmesgpt-service",
 		"default",
+		false, // HAPI uses bridge network (aianalysis_test_network), not host network
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
