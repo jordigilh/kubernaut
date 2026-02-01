@@ -67,6 +67,24 @@ func CreateKindClusterWithExtraMounts(
 	extraMounts []ExtraMount,
 	writer io.Writer,
 ) error {
+	// 0. Validate Kind version (v0.30.x required for E2E tests)
+	versionCmd := exec.Command("kind", "version")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get kind version: %w", err)
+	}
+	versionStr := string(versionOutput)
+	
+	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
+	if !strings.Contains(versionStr, "kind v0.30.") {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")
+		_, _ = fmt.Fprintf(writer, "     Current: %s", versionStr)
+		_, _ = fmt.Fprintf(writer, "     Expected: kind v0.30.x\n")
+		_, _ = fmt.Fprintf(writer, "     Install: go install sigs.k8s.io/kind@v0.30.0\n")
+		return fmt.Errorf("kind version mismatch: expected v0.30.x, got: %s", versionStr)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
+
 	// 1. Find workspace root
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
@@ -267,6 +285,24 @@ type KindClusterOptions struct {
 // Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
+
+	// 0. Validate Kind version (v0.30.x required for E2E tests)
+	versionCmd := exec.Command("kind", "version")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get kind version: %w", err)
+	}
+	versionStr := string(versionOutput)
+	
+	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
+	if !strings.Contains(versionStr, "kind v0.30.") {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")
+		_, _ = fmt.Fprintf(writer, "     Current: %s", versionStr)
+		_, _ = fmt.Fprintf(writer, "     Expected: kind v0.30.x\n")
+		_, _ = fmt.Fprintf(writer, "     Install: go install sigs.k8s.io/kind@v0.30.0\n")
+		return fmt.Errorf("kind version mismatch: expected v0.30.x, got: %s", versionStr)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
 
 	// 1. Check if cluster already exists
 	checkCmd := exec.Command("kind", "get", "clusters")
