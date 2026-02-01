@@ -467,6 +467,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			hapiServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",                                              // DD-AUTH-014: Mount envtest kubeconfig (real auth!)
 			hapiSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",                // DD-AUTH-014: Mount HAPI ServiceAccount secrets (HAPI's own token for DataStorage auth)
 		},
+		ExtraHosts: []string{
+			"host.containers.internal:host-gateway", // DD-AUTH-014: Linux bridge network needs explicit host resolution
+		},
 		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",

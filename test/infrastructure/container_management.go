@@ -62,12 +62,13 @@ import (
 //	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, writer)
 type GenericContainerConfig struct {
 	// Container Configuration
-	Name    string            // Container name (e.g., "aianalysis_hapi_test")
-	Image   string            // Container image (e.g., "robusta-dev/holmesgpt:latest")
-	Network string            // Network to attach to (e.g., "aianalysis_test_network")
-	Ports   map[int]int       // Port mappings: container_port -> host_port
-	Env     map[string]string // Environment variables
-	Volumes map[string]string // Volume mounts: host_path -> container_path
+	Name       string            // Container name (e.g., "aianalysis_hapi_test")
+	Image      string            // Container image (e.g., "robusta-dev/holmesgpt:latest")
+	Network    string            // Network to attach to (e.g., "aianalysis_test_network")
+	Ports      map[int]int       // Port mappings: container_port -> host_port
+	Env        map[string]string // Environment variables
+	Volumes    map[string]string // Volume mounts: host_path -> container_path
+	ExtraHosts []string          // Extra host entries (e.g., "host.containers.internal:host-gateway")
 
 	// Build Configuration (optional, if image needs to be built)
 	BuildContext    string            // Build context directory (e.g., project root)
@@ -183,6 +184,11 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// Add network
 	if cfg.Network != "" {
 		args = append(args, "--network", cfg.Network)
+	}
+
+	// Add extra host entries (for host.containers.internal on Linux)
+	for _, host := range cfg.ExtraHosts {
+		args = append(args, "--add-host", host)
 	}
 
 	// Add port mappings
