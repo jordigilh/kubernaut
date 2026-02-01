@@ -852,7 +852,7 @@ func stringContains(s, substr string) bool {
 func waitForReconciliationComplete(ctx context.Context, client client.Client, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) error {
 	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
 		notif := &notificationv1alpha1.NotificationRequest{}
-		err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, notif)
+		err := client.Get(pollCtx, types.NamespacedName{Name: name, Namespace: namespace}, notif)
 		if err != nil {
 			return false, err
 		}
@@ -882,7 +882,7 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 
 	// Wait for deletion to complete
 	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
-		err := client.Get(ctx, types.NamespacedName{
+		err := client.Get(pollCtx, types.NamespacedName{
 			Name:      notif.Name,
 			Namespace: notif.Namespace,
 		}, &notificationv1alpha1.NotificationRequest{})
