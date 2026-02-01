@@ -107,6 +107,7 @@ def get_shared_datastorage_pool_manager() -> ServiceAccountAuthPoolManager:
             logger.info("🔧 Creating singleton ServiceAccountAuthPoolManager for DataStorage (shared across all HAPI components)")
             # BR-HAPI-301: Increase pool size for parallel test execution (4 pytest workers)
             # Default num_pools=10, but also set maxsize for connections per pool
+            # DD-AUTH-014: Token path defaults to /var/run/secrets/kubernetes.io/serviceaccount/token
             _shared_datastorage_pool_manager = ServiceAccountAuthPoolManager(
                 num_pools=20,   # Number of connection pools
                 maxsize=20,     # Max connections per pool (handles parallel tests)
