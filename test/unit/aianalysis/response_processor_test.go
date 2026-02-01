@@ -97,7 +97,7 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 
 			// THEN: Processing should succeed without error
 			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
-			Expect(result.Requeue).To(BeFalse(), "Should not requeue")
+			Expect(result.RequeueAfter).To(BeZero(), "Should not requeue")
 			Expect(result.RequeueAfter).To(BeZero(), "No retry for recovery impossibility")
 
 			// AND: Phase should transition to Failed (no recovery possible)
@@ -149,7 +149,7 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 
 			// THEN: Should be treated as recovery not possible
 			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
-			Expect(result.Requeue).To(BeFalse(), "Should not requeue")
+			Expect(result.RequeueAfter).To(BeZero(), "Should not requeue")
 
 			// AND: Phase should fail
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
@@ -225,7 +225,7 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 
 			// THEN: Should be treated as recovery not possible (not needed)
 			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
-			Expect(result.Requeue).To(BeFalse(), "Should not requeue")
+			Expect(result.RequeueAfter).To(BeZero(), "Should not requeue")
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"Failed because recovery not needed (issue resolved)")
 

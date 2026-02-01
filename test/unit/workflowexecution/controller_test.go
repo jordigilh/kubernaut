@@ -283,7 +283,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			result, err := reconciler.HandleAlreadyExists(ctx, wfe, pr, alreadyExistsErr)
 			// Should fail to get PR and mark WFE as Failed
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result.RequeueAfter).To(BeZero())
 
 			// Verify WFE was marked Failed
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -395,7 +395,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 			result, err := reconciler.HandleAlreadyExists(ctx, wfe, pr, alreadyExistsErr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result.RequeueAfter).To(BeZero())
 
 			// Verify WFE status updated to Failed
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
