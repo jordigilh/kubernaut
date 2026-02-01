@@ -546,7 +546,8 @@ jobs:
         run: |
           # Install tkn CLI (required by WorkflowExecution E2E tests for bundle creation)
           # Authority: test/infrastructure/tekton_bundles.go
-          TKN_VERSION="0.39.0"
+          # v0.40.0+ required for --override flag support
+          TKN_VERSION="0.40.0"
           curl -LO "https://github.com/tektoncd/cli/releases/download/v${TKN_VERSION}/tkn_${TKN_VERSION}_Linux_x86_64.tar.gz"
           tar xzf "tkn_${TKN_VERSION}_Linux_x86_64.tar.gz" tkn
           chmod +x tkn
