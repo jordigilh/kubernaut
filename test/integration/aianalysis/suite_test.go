@@ -466,7 +466,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"LLM_MODEL":      "mock-model",
 			"LLM_PROVIDER":   "openai",                             // Required by litellm
 			"OPENAI_API_KEY": "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
-			"PORT":           "8080",
+			"PORT":           "18120",                                   // External port (matches health check URL and host port mapping)
 			"LOG_LEVEL":      "DEBUG",
 			"KUBECONFIG":     "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
 			"POD_NAMESPACE":  "default",                                 // Required for K8s client
@@ -492,7 +492,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	} else {
 		// macOS Dev: Bridge network with host.containers.internal
 		hapiConfig.Network = "aianalysis_test_network"
-		hapiConfig.Ports = map[int]int{8080: 18120} // container:host
+		hapiConfig.Ports = map[int]int{18120: 18120} // container:host (both use 18120 now)
 		hapiConfig.Env["LLM_ENDPOINT"] = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig) // http://mock-llm-aianalysis:8080 (container-to-container)
 		hapiConfig.Env["DATA_STORAGE_URL"] = "http://host.containers.internal:18095"
 		hapiConfig.ExtraHosts = []string{
