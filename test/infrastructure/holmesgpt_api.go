@@ -181,6 +181,16 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		defer GinkgoRecover()
 		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
 		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar
+		
+		// DD-AUTH-014: Create ServiceAccount BEFORE deployment (required for pod creation)
+		// Fix for: "serviceaccount 'data-storage-sa' not found" error
+		// Same fix as Gateway/RO/Notification E2E (commit 81823ef8d)
+		_, _ = fmt.Fprintf(writer, "  🔐 Creating DataStorage ServiceAccount + RBAC...\n")
+		if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to create ServiceAccount: %w", err)}
+			return
+		}
+		
 		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
