@@ -177,13 +177,15 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			sp.Status.Phase = signalprocessingv1alpha1.PhasePending
 			sp.Status.StartTime = &metav1.Time{Time: time.Now()}
 			return nil
-		})
-		if err != nil {
-			logger.Error(err, "Failed to initialize status")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true}, nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to initialize status")
+		return ctrl.Result{}, err
 	}
+	// Requeue after short delay to process Pending phase
+	// Using RequeueAfter instead of deprecated Requeue field
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+}
 
 	// Skip if already completed or failed
 	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
@@ -269,7 +271,8 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 
 	// DD-005: Track phase processing success
 	r.Metrics.IncrementProcessingTotal("pending", "success")
-	return ctrl.Result{Requeue: true}, nil
+	// Requeue quickly to continue to next phase
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
 // reconcileEnriching performs context enrichment based on the signal's target type.
@@ -329,7 +332,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		currentPhase == signalprocessingv1alpha1.PhaseFailed {
 		logger.V(1).Info("Skipping Enriching phase - already transitioned (non-cached check)",
 			"current_phase", currentPhase)
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// DD-005: Track phase processing attempt
@@ -496,7 +499,8 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	r.Metrics.IncrementProcessingTotal("enriching", "success")
 	r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
 
-	return ctrl.Result{Requeue: true}, nil
+	// Requeue quickly to continue to next phase
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
 // reconcileClassifying performs environment and priority classification.
@@ -516,7 +520,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		currentPhase == signalprocessingv1alpha1.PhaseFailed {
 		logger.V(1).Info("Skipping Classifying phase - already transitioned (non-cached check)",
 			"current_phase", currentPhase)
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// DD-005: Track phase processing attempt and duration
@@ -574,7 +578,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 			fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
 
 			// Do not requeue - requires manual policy fix by operator
-			return ctrl.Result{Requeue: false}, nil
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -642,7 +646,8 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	r.Metrics.IncrementProcessingTotal("classifying", "success")
 	r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
 
-	return ctrl.Result{Requeue: true}, nil
+	// Requeue quickly to continue to next phase
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
 // reconcileCategorizing performs business classification and completes processing.
@@ -660,7 +665,7 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		currentPhase == signalprocessingv1alpha1.PhaseFailed {
 		logger.V(1).Info("Skipping Categorizing phase - already transitioned (non-cached check)",
 			"current_phase", currentPhase)
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// DD-005: Track phase processing attempt and duration

@@ -458,12 +458,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Refetching here would risk getting a cached/stale version.
 
 	// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
-		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
-		// This happens AFTER status initialization to capture actual defaults
-		r.emitRemediationCreatedAudit(ctx, rr)
+	// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
+	// This happens AFTER status initialization to capture actual defaults
+	r.emitRemediationCreatedAudit(ctx, rr)
 
-		// Requeue immediately to process the Pending phase
-		return ctrl.Result{Requeue: true}, nil
+	// Requeue after short delay to process the Pending phase
+	// Using RequeueAfter instead of deprecated Requeue field
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// Skip terminal phases
@@ -1263,7 +1264,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		logger.V(1).Info("Phase transition skipped - already in target phase",
 			"currentPhase", oldPhase,
 			"requestedPhase", newPhase)
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1308,8 +1309,8 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		// Check child CRD progress every 5 seconds
 		requeueAfter = 5 * time.Second
 	default:
-		// Immediate requeue for other phases
-		return ctrl.Result{Requeue: true}, nil
+		// Quick requeue for other phases (using RequeueAfter instead of deprecated Requeue)
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
