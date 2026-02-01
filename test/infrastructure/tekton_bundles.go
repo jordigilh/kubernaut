@@ -118,9 +118,9 @@ func buildTektonBundle(bundleRef, pipelineYAML string, output io.Writer) error {
 
 	// Build bundle using tkn CLI
 	// Note: tkn bundle push creates an OCI image in the local container registry
+	// The --override flag does not exist in tkn CLI - bundles are naturally overwritable
 	cmd := exec.Command("tkn", "bundle", "push", bundleRef,
 		"-f", pipelineYAML,
-		"--override", // Allow overwriting existing bundles
 	)
 	cmd.Stdout = output
 	cmd.Stderr = output

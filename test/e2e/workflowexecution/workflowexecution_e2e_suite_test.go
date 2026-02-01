@@ -367,33 +367,41 @@ var _ = SynchronizedAfterSuite(
 		// DD-TEST-001 v1.1: E2E Test Image Cleanup (MANDATORY)
 		// Clean up service images built for Kind to prevent disk space exhaustion
 		// This runs regardless of test success/failure to prevent image accumulation
-		logger.Info("🗑️  Cleaning up service images built for Kind...")
-
-		// Service-specific images built during E2E test setup
-		// Per DD-TEST-001: Use service-specific tags to avoid conflicts when multiple services run E2E tests
-		imagesToClean := []string{
-			"localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // This service's controller
-			"localhost/kubernaut-datastorage:e2e-test-datastorage",             // DataStorage infrastructure
-		}
-
-		// DD-TEST-001: Clean up IMAGE_TAG if set (CI/CD builds with unique tags)
-		// Format: {service}:{service}-{user}-{git-hash}-{timestamp}
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		if imageTag != "" {
-			imagesToClean = append(imagesToClean,
-				fmt.Sprintf("workflowexecution:%s", imageTag))
-		}
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else {
+			// Local build mode: Remove locally built images
+			logger.Info("🗑️  Cleaning up service images built for Kind...")
 
-		// Remove each image
-		for _, imageName := range imagesToClean {
-			rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
-			rmiOutput, rmiErr := rmiCmd.CombinedOutput()
-			if rmiErr != nil {
-				logger.Info("⚠️  Failed to remove image (may not exist)",
-					"image", imageName,
-					"output", string(rmiOutput))
-			} else {
-				logger.Info("✅ Image removed", "image", imageName)
+			// Service-specific images built during E2E test setup
+			// Per DD-TEST-001: Use service-specific tags to avoid conflicts when multiple services run E2E tests
+			imagesToClean := []string{
+				"localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // This service's controller
+				"localhost/kubernaut-datastorage:e2e-test-datastorage",             // DataStorage infrastructure
+			}
+
+			// DD-TEST-001: Clean up IMAGE_TAG if set (local builds with unique tags)
+			if imageTag != "" {
+				imagesToClean = append(imagesToClean,
+					fmt.Sprintf("workflowexecution:%s", imageTag))
+			}
+
+			// Remove each image
+			for _, imageName := range imagesToClean {
+				rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+				rmiOutput, rmiErr := rmiCmd.CombinedOutput()
+				if rmiErr != nil {
+					logger.Info("⚠️  Failed to remove image (may not exist)",
+						"image", imageName,
+						"output", string(rmiOutput))
+				} else {
+					logger.Info("✅ Image removed", "image", imageName)
+				}
 			}
 		}
 

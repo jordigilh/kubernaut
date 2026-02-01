@@ -333,8 +333,16 @@ var _ = SynchronizedAfterSuite(
 
 		By("Cleaning up service images built for Kind")
 		// Remove service image built for this test run
-		imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
-		if imageTag != "" {
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
+		imageTag := os.Getenv("IMAGE_TAG")
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		// In registry mode, images are pulled (not built locally), so local removal fails
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else if imageTag != "" {
+			// Local build mode: Remove locally built images
 			serviceName := "aianalysis"
 			imageName := fmt.Sprintf("%s:%s", serviceName, imageTag)
 
