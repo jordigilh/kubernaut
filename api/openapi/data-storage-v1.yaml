@@ -399,11 +399,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuditEventResponse'
         '202':
-          description: Database write failed, queued to DLQ
+          description: Database write failed, queued to DLQ for async processing
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuditEventResponse'
+                $ref: '#/components/schemas/AsyncAcceptanceResponse'
         '400':
           description: Validation error
           content:
@@ -1740,6 +1740,22 @@ components:
             format: uuid
         message:
           type: string
+
+    AsyncAcceptanceResponse:
+      type: object
+      description: Response when audit event is queued for async processing (202 Accepted)
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: Status of the async operation
+          example: "accepted"
+        message:
+          type: string
+          description: Explanation of the async processing
+          example: "audit event queued for async processing"
 
     AuditEventsQueryResponse:
       type: object

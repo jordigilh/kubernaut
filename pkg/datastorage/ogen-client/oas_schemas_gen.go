@@ -547,6 +547,37 @@ func (s *AIAnalysisRegoEvaluationPayload) SetReason(val string) {
 	s.Reason = val
 }
 
+// Response when audit event is queued for async processing (202 Accepted).
+// Ref: #/components/schemas/AsyncAcceptanceResponse
+type AsyncAcceptanceResponse struct {
+	// Status of the async operation.
+	Status string `json:"status"`
+	// Explanation of the async processing.
+	Message string `json:"message"`
+}
+
+// GetStatus returns the value of Status.
+func (s *AsyncAcceptanceResponse) GetStatus() string {
+	return s.Status
+}
+
+// GetMessage returns the value of Message.
+func (s *AsyncAcceptanceResponse) GetMessage() string {
+	return s.Message
+}
+
+// SetStatus sets the value of Status.
+func (s *AsyncAcceptanceResponse) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetMessage sets the value of Message.
+func (s *AsyncAcceptanceResponse) SetMessage(val string) {
+	s.Message = val
+}
+
+func (*AsyncAcceptanceResponse) createAuditEventRes() {}
+
 // Merged schema.
 // Ref: #/components/schemas/AuditEvent
 type AuditEvent struct {
@@ -3268,6 +3299,8 @@ func (s *AuditEventResponse) SetMessage(val string) {
 	s.Message = val
 }
 
+func (*AuditEventResponse) createAuditEventRes() {}
+
 // Ref: #/components/schemas/AuditEventsQueryResponse
 type AuditEventsQueryResponse struct {
 	Data       []AuditEvent                          `json:"data"`
@@ -3872,17 +3905,9 @@ func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
 }
 
-type CreateAuditEventAccepted AuditEventResponse
-
-func (*CreateAuditEventAccepted) createAuditEventRes() {}
-
 type CreateAuditEventBadRequest RFC7807Problem
 
 func (*CreateAuditEventBadRequest) createAuditEventRes() {}
-
-type CreateAuditEventCreated AuditEventResponse
-
-func (*CreateAuditEventCreated) createAuditEventRes() {}
 
 type CreateAuditEventForbidden RFC7807Problem
 

@@ -14,7 +14,7 @@ import (
 
 func encodeCreateAuditEventResponse(response CreateAuditEventRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *CreateAuditEventCreated:
+	case *AuditEventResponse:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(201)
 		span.SetStatus(codes.Ok, http.StatusText(201))
@@ -27,7 +27,7 @@ func encodeCreateAuditEventResponse(response CreateAuditEventRes, w http.Respons
 
 		return nil
 
-	case *CreateAuditEventAccepted:
+	case *AsyncAcceptanceResponse:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(202)
 		span.SetStatus(codes.Ok, http.StatusText(202))

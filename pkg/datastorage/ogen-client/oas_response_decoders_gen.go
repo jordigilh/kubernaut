@@ -30,7 +30,7 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response CreateAuditEventCreated
+			var response AuditEventResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -65,7 +65,7 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response CreateAuditEventAccepted
+			var response AsyncAcceptanceResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
