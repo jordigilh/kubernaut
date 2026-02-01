@@ -1083,6 +1083,7 @@ func CreateServiceAccountForHTTPService(
 	cfg *rest.Config,
 	saName string,
 	namespace string,
+	useHostNetwork bool,
 	writer io.Writer,
 ) (*IntegrationAuthConfig, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -1185,20 +1186,20 @@ func CreateServiceAccountForHTTPService(
 	// Generate kubeconfig for Podman container
 	_, _ = fmt.Fprintf(writer, "📄 Generating kubeconfig for Podman container...\n")
 	
-	// DD-AUTH-014: Platform-specific API server URL (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
-	// - Linux (--network=host): Use localhost directly (no rewrite needed)
-	// - macOS (bridge network): Rewrite 127.0.0.1 → host.containers.internal
+	// DD-AUTH-014: Network-mode-specific API server URL (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
+	// - Host network: Use localhost directly (container shares host network namespace)
+	// - Bridge network: Rewrite 127.0.0.1 → host.containers.internal (all platforms)
 	var containerAPIServer string
-	if runtime.GOOS == "linux" {
-		// Linux: Container uses host network, can reach localhost directly
+	if useHostNetwork {
+		// Host network mode: Container can reach localhost directly
 		containerAPIServer = cfg.Host
 		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
 		_, _ = fmt.Fprintf(writer, "   🌐 Container URL: %s (host network, no rewrite needed)\n", containerAPIServer)
 	} else {
-		// macOS: Container uses bridge network, needs host.containers.internal
+		// Bridge network mode: Needs host.containers.internal on ALL platforms
 		containerAPIServer = strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
 		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
-		_, _ = fmt.Fprintf(writer, "   🔄 Container URL: %s (TLS verification skipped)\n", containerAPIServer)
+		_, _ = fmt.Fprintf(writer, "   🔄 Container URL: %s (bridge network)\n", containerAPIServer)
 		_, _ = fmt.Fprintf(writer, "   ℹ️  host.containers.internal routes to host's 127.0.0.1\n")
 	}
 
