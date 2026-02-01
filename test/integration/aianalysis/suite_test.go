@@ -466,7 +466,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"LLM_MODEL":      "mock-model",
 			"LLM_PROVIDER":   "openai",                             // Required by litellm
 			"OPENAI_API_KEY": "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
-			"PORT":           "18120",                                   // External port (matches health check URL and host port mapping)
+			"API_PORT":       "18120",                                   // HAPI uses API_PORT, not PORT (see entrypoint.sh)
 			"LOG_LEVEL":      "DEBUG",
 			"KUBECONFIG":     "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
 			"POD_NAMESPACE":  "default",                                 // Required for K8s client
