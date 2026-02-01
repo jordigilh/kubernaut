@@ -2108,47 +2108,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	return nil
 }
 
-// loadDataStorageImageWithTag loads DataStorage image into Kind cluster with specific tag
-// Per DD-TEST-001: Each service loads its own fresh-built DataStorage image
-func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  📦 Loading DataStorage image: %s\n", imageTag)
-
-	// Save image to tar
-	saveCmd := exec.Command("podman", "save", imageTag, "-o", "/tmp/datastorage-e2e.tar")
-	saveCmd.Stdout = writer
-	saveCmd.Stderr = writer
-
-	if err := saveCmd.Run(); err != nil {
-		return fmt.Errorf("failed to save image: %w", err)
-	}
-
-	// Load image into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/datastorage-e2e.tar", "--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image into Kind: %w", err)
-	}
-
-	// Clean up tar file
-	_ = exec.Command("rm", "-f", "/tmp/datastorage-e2e.tar").Run()
-
-	// CRITICAL: Remove Podman image immediately to free disk space
-	// Image is now in Kind, Podman copy is duplicate
-	_, _ = fmt.Fprintf(writer, "     🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageTag)
-	rmiCmd.Stdout = writer
-	rmiCmd.Stderr = writer
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "     ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
-	} else {
-		_, _ = fmt.Fprintf(writer, "     ✅ Podman image removed: %s\n", imageTag)
-	}
-
-	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
-	return nil
-}
+// Removed: loadDataStorageImageWithTag (unused) - E2E tests now use loadImageToKind from shared_integration_utils.go
 
 // InstallCertManager installs cert-manager into the Kind cluster for SOC2 E2E testing.
 // This is ONLY needed for DataStorage SOC2 compliance tests to validate production

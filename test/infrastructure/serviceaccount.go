@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -199,40 +198,7 @@ func GetServiceAccountToken(ctx context.Context, namespace, saName, kubeconfigPa
 	return tokenResp.Status.Token, nil
 }
 
-// waitForServiceAccountToken waits for ServiceAccount token Secret to be created.
-// Kubernetes 1.24+ creates token Secrets automatically, but there's a delay.
-func waitForServiceAccountToken(ctx context.Context, clientset *kubernetes.Clientset, namespace, saName string, writer io.Writer) error {
-	timeout := 30 * time.Second
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		// Check if token Secret exists
-		secrets, err := clientset.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("type=kubernetes.io/service-account-token"),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to list Secrets: %w", err)
-		}
-
-		// Find Secret for this ServiceAccount
-		for i := range secrets.Items {
-			secret := &secrets.Items[i]
-			if secret.Annotations["kubernetes.io/service-account.name"] == saName {
-				// Check if token exists and is non-empty
-				if token, ok := secret.Data["token"]; ok && len(token) > 0 {
-					_, _ = fmt.Fprintf(writer, "   ✅ Token Secret ready: %s\n", secret.Name)
-					return nil
-				}
-			}
-		}
-
-		// Wait before retry
-		_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for token Secret creation...\n")
-		time.Sleep(2 * time.Second)
-	}
-
-	return fmt.Errorf("timeout waiting for ServiceAccount token Secret (waited %v)", timeout)
-}
+// Removed: waitForServiceAccountToken (unused) - K8s 1.24+ creates tokens automatically, no explicit wait needed
 
 // CreateDataStorageAccessRoleBinding creates a RoleBinding for a ServiceAccount
 // to access DataStorage in a specific namespace. This is used for E2E tests where
