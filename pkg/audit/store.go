@@ -194,6 +194,16 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		return fmt.Errorf("invalid audit event: %w", err)
 	}
 
+	// Check if store is closed before sending (prevents panic during test cleanup)
+	if atomic.LoadInt32(&s.closed) == 1 {
+		s.logger.V(1).Info("⚠️ Audit store closed, dropping event",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID)
+		atomic.AddInt64(&s.droppedCount, 1)
+		s.metrics.RecordDropped()
+		return nil // Silently drop event during graceful shutdown
+	}
+
 	// DEBUG: Validation passed
 	s.logger.Info("✅ Validation passed, attempting to buffer event",
 		"event_type", event.EventType,
