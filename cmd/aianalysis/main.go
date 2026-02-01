@@ -24,6 +24,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -212,7 +214,25 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	
+	// Per RCA (Jan 31, 2026): Readyz must wait for controller caches to sync.
+	// healthz.Ping returns 200 immediately, causing tests to start before watches are ready.
+	// This leads to 10-15 second delay between test creation and first reconciliation.
+	// Solution: Custom check that verifies manager's cache sync status.
+	cacheSyncCheck := func(_ *http.Request) error {
+		// Use a short timeout context for the sync check
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		
+		// Check if caches have synced (non-blocking)
+		// WaitForCacheSync returns immediately if already synced, or false if not yet synced
+		if synced := mgr.GetCache().WaitForCacheSync(ctx); !synced {
+			return fmt.Errorf("controller caches not yet synced")
+		}
+		return nil
+	}
+	
+	if err := mgr.AddReadyzCheck("readyz", cacheSyncCheck); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
