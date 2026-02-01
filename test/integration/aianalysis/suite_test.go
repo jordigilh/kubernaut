@@ -486,7 +486,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	if useHostNetwork {
 		// Linux CI: Host network mode (can reach localhost directly)
 		hapiConfig.Network = "host"
-		hapiConfig.Env["LLM_ENDPOINT"] = "http://127.0.0.1:18085" // Mock LLM also on host network
+		hapiConfig.Env["LLM_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port) // Mock LLM also on host network (AIAnalysis port: 18141)
 		hapiConfig.Env["DATA_STORAGE_URL"] = "http://127.0.0.1:18095"
 		GinkgoWriter.Printf("   🌐 HAPI using host network (Linux CI) - localhost access enabled\n")
 	} else {
