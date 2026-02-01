@@ -99,9 +99,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "aianalysis-controller",
-			ImageName:        "kubernaut/aianalysis-controller",
-			DockerfilePath:   "docker/aianalysis.Dockerfile",
+			ServiceName:      "aianalysis",  // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/aianalysis",
+			DockerfilePath:   "docker/aianalysis.Dockerfile",  // Dockerfile can have suffix (but this one doesn't)
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
