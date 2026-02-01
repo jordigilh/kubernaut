@@ -187,7 +187,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
 	
 	// Force envtest to bind to IPv4 (critical for macOS!)
-	os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
+	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
 	
 	sharedTestEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},

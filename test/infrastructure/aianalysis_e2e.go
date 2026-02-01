@@ -240,13 +240,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		time.Sleep(1 * time.Second)
 		resp, err := http.Get(fmt.Sprintf("%s/health", dataStorageURL))
 		if err == nil && resp.StatusCode == 200 {
-			resp.Body.Close()
+			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
 			ready = true
 			_, _ = fmt.Fprintf(writer, "  ✅ Port-forward ready after %d seconds\n", i+1)
 			break
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
 		}
 	}
 	if !ready {

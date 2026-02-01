@@ -92,16 +92,16 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// even though SynchronizedBeforeSuite health check passed. Add defensive health check.
 		By("Verifying DataStorage connectivity before test")
 		Eventually(func() error {
-			healthURL := datastorageURL + "/health"
-			resp, err := http.Get(healthURL)
-			if err != nil {
-				return fmt.Errorf("health check failed: %w", err)
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
+		healthURL := datastorageURL + "/health"
+		resp, err := http.Get(healthURL)
+		if err != nil {
+			return fmt.Errorf("health check failed: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }() // Explicitly ignore - test cleanup
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("health check returned status %d", resp.StatusCode)
+		}
+		return nil
 		}, 30*time.Second, 2*time.Second).Should(Succeed(),
 			"DataStorage must be healthy before test starts (CI resource contention mitigation)")
 		GinkgoWriter.Println("✅ DataStorage health check passed")
