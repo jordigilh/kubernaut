@@ -357,6 +357,10 @@ spec:
           value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
           value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
+        - name: USE_SERVICE_ACCOUNT_AUTH
+          value: "true"  # DD-AUTH-014: Enable ServiceAccountAuthPoolManager for E2E tests
+        - name: KUBERNETES_SERVICE_ACCOUNT_TOKEN_PATH
+          value: "/var/run/secrets/kubernetes.io/serviceaccount/token"  # DD-AUTH-014: Token path
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
