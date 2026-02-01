@@ -75,7 +75,7 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 6  # Increased: Allow time for DataStorage client init (30s timeout) + manager startup, same as AuthWebhook
         resources:
           limits:
             cpu: 500m
