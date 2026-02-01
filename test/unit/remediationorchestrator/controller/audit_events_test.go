@@ -142,7 +142,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Requeue).To(BeTrue())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 		// Verify lifecycle.started audit event was emitted
 		// Note: Gap #8 also emits lifecycle.created, so filter by event type
@@ -259,7 +259,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 			// Verify approval requested audit event
 			// Filter by event type since phase transition also emits an event
@@ -406,7 +406,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Requeue).To(BeTrue())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 		// Verify lifecycle.started event was emitted (Gap #8 also emits lifecycle.created)
 		lifecycleStartedEvents := mockAuditStore.GetEventsByType("orchestrator.lifecycle.started")

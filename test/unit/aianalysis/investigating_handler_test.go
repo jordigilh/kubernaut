@@ -501,7 +501,7 @@ var _ = Describe("InvestigatingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should be Failed, not Analyzing")
-				Expect(result.Requeue).To(BeFalse(), "Should NOT requeue (terminal)")
+				Expect(result.RequeueAfter).To(BeZero(), "Should NOT requeue (terminal)")
 				Expect(result.RequeueAfter).To(BeZero(), "Should NOT schedule requeue")
 			})
 
@@ -642,7 +642,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"), "Should indicate no workflow needed")
 				Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"), "Should specify problem self-resolved")
 				// Terminal state - no requeue
-				Expect(result.Requeue).To(BeFalse(), "Should NOT requeue (terminal success)")
+				Expect(result.RequeueAfter).To(BeZero(), "Should NOT requeue (terminal success)")
 				Expect(result.RequeueAfter).To(BeZero(), "Should NOT schedule requeue")
 			})
 

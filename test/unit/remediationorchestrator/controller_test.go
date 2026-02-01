@@ -122,7 +122,7 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 
 				// Then: Should skip reconciliation (no processing)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse(), "Terminal phases should not requeue")
+				Expect(result.RequeueAfter).To(BeZero(), "Terminal phases should not requeue")
 				Expect(result.RequeueAfter).To(BeZero(), "Terminal phases should not schedule requeue")
 
 				// Verify: Phase remains Completed (not modified)
@@ -173,7 +173,7 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 
 				// Then: Should skip reconciliation
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify: Phase remains Failed
 				updatedRR := &remediationv1.RemediationRequest{}
@@ -223,7 +223,7 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 
 				// Then: Should skip reconciliation (terminal phase)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify: Phase remains Skipped, DuplicateOf preserved
 				updatedRR := &remediationv1.RemediationRequest{}
