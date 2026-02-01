@@ -488,30 +488,3 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 
 // Removed: simulateFailedPhase (unused) - Tests now use createFailedRemediationRequestWithFingerprint
 // Removed: simulateCompletedPhase (unused) - Tests now rely on natural controller progression
-
-	// Now set to Completed (controller has stabilized)
-	Eventually(func() error {
-		rr := &remediationv1.RemediationRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
-			return err
-		}
-
-		now := metav1.Now()
-		rr.Status.OverallPhase = "Completed"
-		rr.Status.Outcome = "Remediated"
-		rr.Status.CompletedAt = &now
-
-		return k8sClient.Status().Update(ctx, rr)
-	}, timeout, interval).Should(Succeed(), "Should set Completed status for %s/%s", namespace, name)
-
-	// Verify Completed status persisted
-	Eventually(func() string {
-		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
-			return ""
-		}
-		return string(fetched.Status.OverallPhase)
-	}, timeout, interval).Should(Equal("Completed"), "Should confirm Completed phase persisted for %s/%s", namespace, name)
-
-	GinkgoWriter.Printf("✅ Set to Completed (after natural progression): %s/%s\n", namespace, name)
-}
