@@ -399,41 +399,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 // - Creates ConfigMap with workflow_name → UUID mapping
 // - Mock LLM reads ConfigMap at startup (no HTTP self-discovery needed)
 // - Deterministic ordering, no timing issues
-func createMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  Creating Mock LLM ConfigMap with workflow UUIDs...")
-
-	// Build YAML content for scenarios (properly indented for ConfigMap data field)
-	yamlContent := "    scenarios:\n"
-	for key, uuid := range workflowUUIDs {
-		// key format: "workflow_name:environment"
-		// We'll simplify the key for the Mock LLM (just use workflow_name without environment for now)
-		yamlContent += fmt.Sprintf("      %s: %s\n", key, uuid)
-	}
-
-	manifest := fmt.Sprintf(`
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: mock-llm-scenarios
-  namespace: %s
-  labels:
-    app: mock-llm
-    component: test-infrastructure
-data:
-  scenarios.yaml: |
-%s`, namespace, yamlContent)
-
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
-	}
-
-	return nil
-}
+// Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
 func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
