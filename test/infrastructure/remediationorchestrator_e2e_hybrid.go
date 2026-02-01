@@ -77,9 +77,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Build RemediationOrchestrator with coverage in parallel using consolidated API
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "remediationorchestrator-controller",
-			ImageName:        "kubernaut/remediationorchestrator-controller",
-			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",
+			ServiceName:      "remediationorchestrator",  // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/remediationorchestrator",
+			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",  // Dockerfile can have suffix
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
 		}

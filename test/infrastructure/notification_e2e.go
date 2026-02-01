@@ -64,9 +64,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build Notification Controller in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "notification-controller",  // Must match CI build matrix image_name
-			ImageName:        "kubernaut/notification-controller",  // Match Dockerfile naming convention
-			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
+			ServiceName:      "notification",  // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/notification",
+			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",  // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
