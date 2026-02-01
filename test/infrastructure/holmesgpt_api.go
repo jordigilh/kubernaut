@@ -196,6 +196,15 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}()
 	go func() {
 		defer GinkgoRecover()
+		// DD-AUTH-014: Create ServiceAccount BEFORE deployment (required for DataStorage auth)
+		// Fix for: "Missing Authorization header" 401 errors
+		// HAPI uses ServiceAccountAuthPoolManager to read token from /var/run/secrets/kubernetes.io/serviceaccount/token
+		_, _ = fmt.Fprintf(writer, "  🔐 Creating HAPI ServiceAccount + RBAC...\n")
+		if err := deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+			deployResults <- deployResult{"HolmesGPT-API", fmt.Errorf("failed to create ServiceAccount: %w", err)}
+			return
+		}
+		
 		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
@@ -327,6 +336,7 @@ spec:
       labels:
         app: holmesgpt-api
     spec:
+      serviceAccountName: holmesgpt-api-sa  # DD-AUTH-014: Required for DataStorage authentication
       containers:
       - name: holmesgpt-api
         image: %s
@@ -378,6 +388,38 @@ spec:
 	cmd.Stderr = writer
 
 	return cmd.Run()
+}
+
+// deployHAPIServiceRBAC creates ServiceAccount for HAPI to authenticate with DataStorage
+// DD-AUTH-014: HAPI uses ServiceAccountAuthPoolManager to inject Bearer tokens
+// Token is read from /var/run/secrets/kubernetes.io/serviceaccount/token (auto-mounted by K8s)
+func deployHAPIServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// HAPI doesn't need special permissions - just needs a ServiceAccount for identity
+	// The ServiceAccount token will be used to authenticate WITH DataStorage
+	rbacManifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api-sa
+  namespace: %s
+  labels:
+    app: holmesgpt-api
+    component: auth
+    authorization: dd-auth-014
+`, namespace)
+
+	// Apply manifest
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	applyCmd.Stdin = strings.NewReader(rbacManifest)
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply HAPI service RBAC: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ HAPI ServiceAccount deployed (for DataStorage authentication)\n")
+	return nil
 }
 
 // waitForHAPIServicesReady waits for DataStorage and HolmesGPT-API pods to be ready
