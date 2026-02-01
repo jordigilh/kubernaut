@@ -949,8 +949,9 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
+        # Fix: Correct service name is data-storage-service (not datastorage)
         - name: DATA_STORAGE_URL
-          value: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+          value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
         # E2E Coverage: Set GOCOVERDIR to enable coverage capture
         - name: GOCOVERDIR
           value: /coverdata

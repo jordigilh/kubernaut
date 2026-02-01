@@ -2,6 +2,11 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  # Pin to stable Kind node version (v1.27.3)
+  # Default (v1.34.0) has bootstrap issues with Podman
+  # Matches DataStorage, Gateway, other working services
+  image: kindest/node:v1.27.3
+  
   # Expose Notification Controller metrics via NodePort to host machine
   # This eliminates kubectl port-forward instability for E2E tests
   # Using 8081 on host (gateway uses 8080) - proven port pattern
