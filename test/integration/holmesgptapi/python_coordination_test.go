@@ -84,12 +84,12 @@ var _ = Describe("Python Test Coordination", func() {
 			err = os.WriteFile(tokenFile, []byte(serviceAccountToken), 0644)
 			Expect(err).NotTo(HaveOccurred(), "Failed to write ServiceAccount token file")
 			
-			// Verify file exists
-			if _, err := os.Stat(tokenFile); err != nil {
-				Fail(fmt.Sprintf("Token file verification failed: %v", err))
-			}
-			GinkgoWriter.Printf("✅ Token file written and verified: %s\n", tokenFile)
-			defer os.Remove(tokenFile)
+		// Verify file exists
+		if _, err := os.Stat(tokenFile); err != nil {
+			Fail(fmt.Sprintf("Token file verification failed: %v", err))
+		}
+		GinkgoWriter.Printf("✅ Token file written and verified: %s\n", tokenFile)
+		defer func() { _ = os.Remove(tokenFile) }() // Explicitly ignore - test cleanup
 
 			// Run Python tests in container
 			// DD-AUTH-014: Mount ServiceAccount token at standard Kubernetes path

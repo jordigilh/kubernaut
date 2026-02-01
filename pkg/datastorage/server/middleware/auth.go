@@ -322,5 +322,6 @@ func (m *AuthMiddleware) writeError(w http.ResponseWriter, status int, title, de
 		"detail": detail,
 	}
 	
-	json.NewEncoder(w).Encode(problem)
+	// Explicitly ignore encode error - response headers already sent, nothing we can do
+	_ = json.NewEncoder(w).Encode(problem)
 }
