@@ -41,19 +41,30 @@ func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
 	imageTag := generateInfrastructureImageTag("holmesgpt-api", serviceName)
-	imageName := fmt.Sprintf("localhost/holmesgpt-api:%s", imageTag) // Podman auto-prefixes with localhost/
+	localImageName := fmt.Sprintf("localhost/holmesgpt-api:%s", imageTag) // Podman auto-prefixes with localhost/
 
+	// CI/CD Optimization: Try to pull from registry if IMAGE_REGISTRY + IMAGE_TAG are set
+	registryImage, pulled, err := tryPullFromRegistry(ctx, "holmesgpt-api", localImageName, writer)
+	if err != nil {
+		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
+	}
+	if pulled {
+		// Success! Return the registry-pulled image (already tagged as localImageName)
+		return registryImage, nil
+	}
+
+	// Registry pull not available or failed - proceed with local build
 	// Check if image already exists (cache hit)
-	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
 	if checkCmd.Run() == nil {
-		_, _ = fmt.Fprintf(writer, "   ✅ HAPI image already exists: %s\n", imageName)
-		return imageName, nil
+		_, _ = fmt.Fprintf(writer, "   ✅ HAPI image already exists: %s\n", localImageName)
+		return localImageName, nil
 	}
 
 	// Build the image
 	_, _ = fmt.Fprintf(writer, "   🔨 Building HAPI image (tag: %s)...\n", imageTag)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
-		"-t", imageName,
+		"-t", localImageName,
 		"--force-rm=false",                                                  // Disable auto-cleanup to avoid podman cleanup errors
 		"-f", filepath.Join(projectRoot, "holmesgpt-api", "Dockerfile.e2e"), // E2E Dockerfile: minimal dependencies, no lib64 issues
 		projectRoot,
@@ -63,14 +74,14 @@ func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (
 
 	if err := buildCmd.Run(); err != nil {
 		// Check if image was actually built despite error (podman cleanup issue)
-		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		checkAgain := exec.Command("podman", "image", "exists", localImageName)
 		if checkAgain.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
-			return imageName, nil // Image exists, treat as success
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", localImageName)
+			return localImageName, nil // Image exists, treat as success
 		}
 		return "", fmt.Errorf("failed to build HAPI image: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ HAPI image built: %s\n", imageName)
-	return imageName, nil
+	_, _ = fmt.Fprintf(writer, "   ✅ HAPI image built: %s\n", localImageName)
+	return localImageName, nil
 }
