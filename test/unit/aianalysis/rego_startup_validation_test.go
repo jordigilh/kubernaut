@@ -191,10 +191,10 @@ approval {
 
 			policyPath = filepath.Join(tmpDir, "approval.rego")
 
-			// Write initial valid policy
-			validPolicy := `package aianalysis
+		// Write initial valid policy
+		validPolicy := `package aianalysis
 
-approval = result {
+approval = result if {
 	input.environment == "staging"
 	result := {
 		"require_approval": false,
@@ -202,7 +202,7 @@ approval = result {
 	}
 }
 
-approval = result {
+approval = result if {
 	input.environment == "production"
 	result := {
 		"require_approval": true,
@@ -274,10 +274,10 @@ approval {
 			// Get initial policy hash
 			initialHash := evaluator.GetPolicyHash()
 
-			// Write updated valid policy (different logic)
-			updatedPolicy := `package aianalysis
+		// Write updated valid policy (different logic)
+		updatedPolicy := `package aianalysis
 
-approval = result {
+approval = result if {
 	# Updated: ALL environments auto-approve
 	result := {
 		"require_approval": false,
