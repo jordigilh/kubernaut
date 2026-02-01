@@ -963,8 +963,11 @@ spec:
                 x-kubernetes-map-type: atomic
             type: object
         type: object
-    selectableFields:
-    - jsonPath: .spec.signalFingerprint
+    # selectableFields removed for Kubernetes 1.27.3 compatibility (E2E tests)
+    # Feature requires Kubernetes 1.30+ (not available in kindest/node:v1.27.3)
+    # TODO: Re-enable when upgrading to Kubernetes 1.30+ for E2E testing
+    # selectableFields:
+    # - jsonPath: .spec.signalFingerprint
     served: true
     storage: true
     subresources:
