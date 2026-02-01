@@ -202,18 +202,26 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 				},
 			}
 
-			// Attempt to write audit event with authorized client
-			resp, err := authorizedClient.CreateAuditEvent(testCtx, &auditReq)
-			
-			// Verify request succeeded
-			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to write audit events")
-			Expect(resp).ToNot(BeNil())
-			
-			// Verify response is 201 Created
-			_, isCreated := resp.(*dsgen.CreateAuditEventCreated)
-			Expect(isCreated).To(BeTrue(), "Response should be 201 Created")
-			
-			logger.Info("✅ Authorized ServiceAccount successfully wrote audit event")
+		// Attempt to write audit event with authorized client
+		resp, err := authorizedClient.CreateAuditEvent(testCtx, &auditReq)
+		
+		// Verify request succeeded
+		Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to write audit events")
+		Expect(resp).ToNot(BeNil())
+		
+		// Verify response is either 201 Created (synchronous) or 202 Accepted (async)
+		// Per DD-009: DataStorage may queue events to DLQ if database is unavailable
+		// 201 = AuditEventResponse (event_id + event_timestamp)
+		// 202 = AsyncAcceptanceResponse (status + message)
+		_, isCreated := resp.(*dsgen.AuditEventResponse)
+		_, isAccepted := resp.(*dsgen.AsyncAcceptanceResponse)
+		Expect(isCreated || isAccepted).To(BeTrue(), "Response should be AuditEventResponse (201) or AsyncAcceptanceResponse (202)")
+		
+		if isAccepted {
+			logger.Info("✅ Authorized ServiceAccount successfully queued audit event (async)", "status", "202 Accepted")
+		} else {
+			logger.Info("✅ Authorized ServiceAccount successfully wrote audit event", "status", "201 Created")
+		}
 		})
 
 		It("should reject unauthorized ServiceAccount with 403 Forbidden", func() {

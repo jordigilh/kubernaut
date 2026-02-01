@@ -798,8 +798,18 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 		resp, err := DSClient.CreateAuditEvent(ctx, &req)
 		Expect(err).ToNot(HaveOccurred())
 
-		// UUID type is already a string wrapper, just convert directly
-		eventIDs[i] = resp.(*dsgen.CreateAuditEventCreated).EventID.String()
+		// Handle both synchronous and async responses
+		switch r := resp.(type) {
+		case *dsgen.AuditEventResponse:
+			// 201 Created - synchronous write with event_id
+			eventIDs[i] = r.EventID.String()
+		case *dsgen.AsyncAcceptanceResponse:
+			// 202 Accepted - async processing (DD-009: queued to DLQ)
+			// Use correlation_id as identifier (event not yet persisted)
+			eventIDs[i] = req.CorrelationID
+		default:
+			Fail(fmt.Sprintf("Unexpected response type: %T", resp))
+		}
 	}
 
 	return eventIDs

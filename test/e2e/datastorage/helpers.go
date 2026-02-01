@@ -179,10 +179,14 @@ func createAuditEventOpenAPI(ctx context.Context, client *dsgen.Client, event ds
 
 	// Ogen returns concrete types - extract event ID or handle errors
 	switch r := resp.(type) {
-	case *dsgen.CreateAuditEventCreated:
+	case *dsgen.AuditEventResponse:
+		// 201 Created - synchronous write with event_id
 		return r.EventID.String()
-	case *dsgen.CreateAuditEventAccepted:
-		return r.EventID.String()
+	case *dsgen.AsyncAcceptanceResponse:
+		// 202 Accepted - async processing (DD-009: queued to DLQ)
+		// Async response doesn't return event_id (not yet persisted)
+		// Return correlation_id from request instead
+		return event.CorrelationID
 	case *dsgen.CreateAuditEventBadRequest:
 		Fail(fmt.Sprintf("API returned 400 Bad Request: %+v", r))
 		return ""
@@ -233,10 +237,14 @@ func postAuditEvent(
 
 	// Extract event ID from response (ogen unions require type checking)
 	switch r := resp.(type) {
-	case *dsgen.CreateAuditEventCreated:
+	case *dsgen.AuditEventResponse:
+		// 201 Created - synchronous write with event_id
 		return r.EventID.String(), nil
-	case *dsgen.CreateAuditEventAccepted:
-		return r.EventID.String(), nil
+	case *dsgen.AsyncAcceptanceResponse:
+		// 202 Accepted - async processing (DD-009: queued to DLQ)
+		// Async response doesn't return event_id (not yet persisted)
+		// Return correlation_id from request instead
+		return event.CorrelationID, nil
 	case *dsgen.CreateAuditEventBadRequest:
 		return "", fmt.Errorf("bad request: %s", r.Detail.Value)
 	default:
