@@ -31,7 +31,9 @@ import (
 
 var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 	const (
-		timeout  = 10 * time.Second       // Realistic for local E2E (was 3 min - excessive)
+		// Uses 30s timeout to match SetDefaultEventuallyTimeout (per RCA Jan 31, 2026)
+		// Allows controller initialization + reconciliation time
+		timeout  = 30 * time.Second       // Matches suite default (was 10s - too short)
 		interval = 500 * time.Millisecond // Poll twice per second
 	)
 
