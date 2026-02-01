@@ -298,6 +298,26 @@ def load_scenarios_from_file(config_path: str):
                 print(f"  ⚠️  No matching scenario for config entry: {workflow_key}")
 
         print(f"✅ Mock LLM loaded {synced_count}/{len(MOCK_SCENARIOS)} scenarios from file")
+        
+        # Validate that all scenarios with workflow_name matched successfully
+        # This prevents silent failures from workflow name drift between Mock LLM and test fixtures
+        expected_scenarios_with_workflows = len([s for s in MOCK_SCENARIOS.values() if s.workflow_name])
+        if synced_count < expected_scenarios_with_workflows:
+            missing = expected_scenarios_with_workflows - synced_count
+            unsynced_scenarios = [name for name, s in MOCK_SCENARIOS.items() if s.workflow_name and s.workflow_id == "mock-workflow-v1"]
+            error_msg = (
+                f"\n❌ Mock LLM configuration error: {missing}/{expected_scenarios_with_workflows} scenarios failed to load UUIDs\n"
+                f"   Unsynced scenarios: {unsynced_scenarios}\n"
+                f"   This indicates Mock LLM scenario workflow_name doesn't match DataStorage workflow catalog\n"
+                f"   Check that scenario workflow_name in server.py matches test workflow fixtures in:\n"
+                f"     - test/integration/holmesgptapi/test_workflows.go\n"
+                f"     - test/integration/aianalysis/test_workflows.go\n"
+                f"\n   Integration tests will FAIL with 'workflow_not_found' errors until this is fixed.\n"
+            )
+            print(error_msg)
+            raise RuntimeError(error_msg)
+        
+        print(f"✅ Mock LLM validation: All {expected_scenarios_with_workflows} scenarios synced successfully")
         return True
 
     except FileNotFoundError:
