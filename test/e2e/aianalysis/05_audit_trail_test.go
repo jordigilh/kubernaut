@@ -191,11 +191,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
@@ -322,11 +323,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
@@ -384,11 +386,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
@@ -454,11 +457,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
@@ -522,11 +526,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}).Should(Equal("Completed"))
 
 			By("Verifying approval is required for production")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
