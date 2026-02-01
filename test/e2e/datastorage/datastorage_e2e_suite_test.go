@@ -588,8 +588,16 @@ var _ = SynchronizedAfterSuite(
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
 		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		if imageTag != "" {
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		// In registry mode, images are pulled (not built locally), so local removal fails
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else if imageTag != "" {
+			// Local build mode: Remove locally built images
 			serviceName := "datastorage"
 			imageName := fmt.Sprintf("%s:%s", serviceName, imageTag)
 

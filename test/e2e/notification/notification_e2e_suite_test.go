@@ -372,17 +372,27 @@ var _ = SynchronizedAfterSuite(
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
 		// Prevents disk space accumulation (~200-500MB per run)
-		logger.Info("Cleaning up Notification controller image built for Kind...")
-		imageTag := "e2e-test" // Default tag used for E2E tests
-		imageName := "localhost/kubernaut-notification:" + imageTag
-
-		pruneCmd := exec.Command("podman", "rmi", imageName)
-		_, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			logger.Info("⚠️  Failed to remove service image (may not exist)",
-				"image", imageName, "error", pruneErr)
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
+		imageTag := os.Getenv("IMAGE_TAG")
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
 		} else {
-			logger.Info("✅ Service image removed", "image", imageName)
+			// Local build mode: Remove locally built images
+			logger.Info("Cleaning up Notification controller image built for Kind...")
+			localImageTag := "e2e-test" // Default tag used for E2E tests
+			imageName := "localhost/kubernaut-notification:" + localImageTag
+
+			pruneCmd := exec.Command("podman", "rmi", imageName)
+			_, pruneErr := pruneCmd.CombinedOutput()
+			if pruneErr != nil {
+				logger.Info("⚠️  Failed to remove service image (may not exist)",
+					"image", imageName, "error", pruneErr)
+			} else {
+				logger.Info("✅ Service image removed", "image", imageName)
+			}
 		}
 
 		// Prune dangling images from failed builds
