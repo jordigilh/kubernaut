@@ -117,7 +117,7 @@ class AuditWriteAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuditEventResponse",
-            '202': "AuditEventResponse",
+            '202': "AsyncAcceptanceResponse",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
@@ -189,7 +189,7 @@ class AuditWriteAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuditEventResponse",
-            '202': "AuditEventResponse",
+            '202': "AsyncAcceptanceResponse",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
@@ -261,7 +261,7 @@ class AuditWriteAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuditEventResponse",
-            '202': "AuditEventResponse",
+            '202': "AsyncAcceptanceResponse",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",

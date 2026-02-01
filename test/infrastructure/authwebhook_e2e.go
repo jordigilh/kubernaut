@@ -94,9 +94,17 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		buildResults <- buildResult{name: "DataStorage", imageName: dsImageName, err: err}
 	}()
 
-	// Goroutine 2: Build AuthWebhook image
+	// Goroutine 2: Build AuthWebhook image using standardized BuildImageForKind (with registry pull fallback)
+	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
 	go func() {
-		awImageName, err := buildAuthWebhookImageOnly(writer)
+		cfg := E2EImageConfig{
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",  // No repo prefix, just service name
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
+			BuildContextPath: "", // Empty = project root
+			EnableCoverage:   false, // AuthWebhook doesn't support coverage yet
+		}
+		awImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("AuthWebhook image build failed: %w", err)
 		}

@@ -171,6 +171,7 @@ Class | Method | HTTP request | Description
  - [AIAnalysisHolmesGPTCallPayload](docs/AIAnalysisHolmesGPTCallPayload.md)
  - [AIAnalysisPhaseTransitionPayload](docs/AIAnalysisPhaseTransitionPayload.md)
  - [AIAnalysisRegoEvaluationPayload](docs/AIAnalysisRegoEvaluationPayload.md)
+ - [AsyncAcceptanceResponse](docs/AsyncAcceptanceResponse.md)
  - [AuditEvent](docs/AuditEvent.md)
  - [AuditEventRequest](docs/AuditEventRequest.md)
  - [AuditEventRequestEventData](docs/AuditEventRequestEventData.md)

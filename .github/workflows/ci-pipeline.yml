@@ -461,10 +461,10 @@ jobs:
   #     remediationorchestrator, notification, gateway, datastorage
   #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
   # 
-  # CI/CD Optimization:
-  #   - Pulls service images from ghcr.io (built in Stage 2)
-  #   - Fallback to local build if registry pull fails
-  #   - Saves ~60% disk space and ~30% build time
+  # Image Strategy:
+  #   - E2E tests attempt registry pull first (fast path, ~30% time savings)
+  #   - Fallback to local build on 403/failure (with coverage instrumentation)
+  #   - BuildImageForKind() handles this automatically via IMAGE_REGISTRY + IMAGE_TAG
   #
   # DESIGN DECISION: Runs after integration tests pass
   # - E2E tests are slower (30 min each) and more resource-intensive
@@ -478,8 +478,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
+      # E2E Image Strategy: Pull from registry first, fallback to local build
+      # - BuildImageForKind() attempts registry pull if IMAGE_REGISTRY + IMAGE_TAG set
+      # - Falls back to local build on 403/failure (with coverage instrumentation)
+      # - Ensures fastest possible E2E execution when registry is accessible
       IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
       IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+      E2E_COVERAGE: true  # Enable coverage instrumentation for local builds (GOFLAGS=-cover)
     strategy:
       fail-fast: false
       matrix:
@@ -550,6 +555,25 @@ jobs:
           pip install -r requirements-test.txt
       - name: Run ${{ matrix.service }} E2E tests
         run: make test-e2e-${{ matrix.service }}
+      - name: Generate E2E coverage summary
+        if: always()
+        run: |
+          echo "📊 Generating E2E coverage summary for ${{ matrix.service }}..."
+          COVERDATA_DIR="test/e2e/${{ matrix.service }}/coverdata"
+          if [ -d "${COVERDATA_DIR}" ] && [ "$(ls -A ${COVERDATA_DIR} 2>/dev/null)" ]; then
+            echo "✅ Found coverage data in ${COVERDATA_DIR}"
+            go tool covdata percent -i="${COVERDATA_DIR}" || echo "⚠️  Coverage report generation failed"
+          else
+            echo "ℹ️  No coverage data found (may be expected for Python-only tests)"
+          fi
+      - name: Upload E2E coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-coverage-${{ matrix.service }}-${{ github.run_id }}
+          path: test/e2e/${{ matrix.service }}/coverdata/**
+          retention-days: 14
+          if-no-files-found: warn
       - name: Collect must-gather logs on failure
         if: failure()
         run: |

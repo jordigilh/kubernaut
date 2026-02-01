@@ -114,21 +114,18 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	buildResults := make(chan buildResult, 2)
 
-	// Build Gateway image (with or without coverage)
+	// Build Gateway image using standardized BuildImageForKind (with registry pull fallback)
 	// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
+	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
 	go func() {
-		var imageName string
-		var err error
-		if enableCoverage {
-			// Use coverage-enabled build (DD-TEST-007)
-			err = BuildGatewayImageWithCoverage(writer)
-			if err == nil {
-				imageName = GetGatewayCoverageFullImageName()
-			}
-		} else {
-			// Use standard build
-			imageName, err = buildGatewayImageOnly(writer)
+		cfg := E2EImageConfig{
+			ServiceName:      "gateway",
+			ImageName:        "gateway",  // No repo prefix, just service name
+			DockerfilePath:   "docker/gateway-ubi9.Dockerfile",
+			BuildContextPath: "", // Empty = project root
+			EnableCoverage:   enableCoverage,
 		}
+		imageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("Gateway image build failed: %w", err)
 		}
