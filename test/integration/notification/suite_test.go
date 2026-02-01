@@ -850,7 +850,7 @@ func stringContains(s, substr string) bool {
 // waitForReconciliationComplete waits for controller to fully complete reconciliation
 // CRITICAL: Prevents "not found" errors when tests delete CRDs before controller finishes
 func waitForReconciliationComplete(ctx context.Context, client client.Client, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) error {
-	return wait.PollImmediate(500*time.Millisecond, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
 		notif := &notificationv1alpha1.NotificationRequest{}
 		err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, notif)
 		if err != nil {
@@ -881,7 +881,7 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 	}
 
 	// Wait for deletion to complete
-	return wait.PollImmediate(100*time.Millisecond, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
 		err := client.Get(ctx, types.NamespacedName{
 			Name:      notif.Name,
 			Namespace: notif.Namespace,

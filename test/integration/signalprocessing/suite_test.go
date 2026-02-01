@@ -807,7 +807,7 @@ func deleteTestNamespace(ns string) {
 // waitForPhase waits for a SignalProcessing CR to reach a specific phase.
 // Returns error if timeout is exceeded.
 func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1.SignalProcessingPhase, timeout time.Duration) error {
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
 		if err != nil {
@@ -819,7 +819,7 @@ func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1
 
 // waitForCompletion waits for a SignalProcessing CR to reach Completed phase with CompletionTime set.
 func waitForCompletion(name, namespace string, timeout time.Duration) error {
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
 		if err != nil {
@@ -840,7 +840,7 @@ func deleteAndWait(sp *signalprocessingv1alpha1.SignalProcessing, timeout time.D
 	}
 
 	// Wait for deletion to complete
-	return wait.PollImmediate(100*time.Millisecond, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      sp.Name,
 			Namespace: sp.Namespace,
