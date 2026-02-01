@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -938,16 +939,22 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	// ════════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(writer, "📝 Writing kubeconfig for envtest...\n")
 
-	// DD-AUTH-014: Rewrite 127.0.0.1 → host.containers.internal for Podman bridge networking
-	// envtest now binds to 127.0.0.1 (via /etc/hosts localhost fix)
-	// Container uses host.containers.internal to reach host's 127.0.0.1
-	// TLS: Skip verification (cert is for "localhost", not "host.containers.internal")
-	// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
-	containerAPIServer := strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
-	
-	_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
-	_, _ = fmt.Fprintf(writer, "   🔄 Container URL: %s (TLS verification skipped)\n", containerAPIServer)
-	_, _ = fmt.Fprintf(writer, "   ℹ️  host.containers.internal routes to host's 127.0.0.1\n")
+	// DD-AUTH-014: Platform-specific API server URL (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
+	// - Linux (--network=host): Use localhost directly (no rewrite needed)
+	// - macOS (bridge network): Rewrite 127.0.0.1 → host.containers.internal
+	var containerAPIServer string
+	if runtime.GOOS == "linux" {
+		// Linux: Container uses host network, can reach localhost directly
+		containerAPIServer = cfg.Host
+		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
+		_, _ = fmt.Fprintf(writer, "   🌐 Container URL: %s (host network, no rewrite needed)\n", containerAPIServer)
+	} else {
+		// macOS: Container uses bridge network, needs host.containers.internal
+		containerAPIServer = strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
+		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
+		_, _ = fmt.Fprintf(writer, "   🔄 Container URL: %s (TLS verification skipped)\n", containerAPIServer)
+		_, _ = fmt.Fprintf(writer, "   ℹ️  host.containers.internal routes to host's 127.0.0.1\n")
+	}
 
 	// DD-AUTH-014: Kubeconfig uses DataStorage service token (for TokenReview API calls)
 	// Client token is returned separately for audit client authentication
@@ -1210,11 +1217,24 @@ func CreateServiceAccountForHTTPService(
 	_, _ = fmt.Fprintf(writer, "   ✅ Token retrieved (length: %d bytes)\n", len(token))
 
 	// Generate kubeconfig for Podman container
-	_, _ = fmt.Fprintf(writer, "📄 Generating kubeconfig for Podman container (envtest → host.containers.internal)\n")
+	_, _ = fmt.Fprintf(writer, "📄 Generating kubeconfig for Podman container...\n")
 	
-	// Rewrite envtest URL for Podman bridge networking
-	containerAPIServer := strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
-	_, _ = fmt.Fprintf(writer, "   🔄 API server URL: %s → %s\n", cfg.Host, containerAPIServer)
+	// DD-AUTH-014: Platform-specific API server URL (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
+	// - Linux (--network=host): Use localhost directly (no rewrite needed)
+	// - macOS (bridge network): Rewrite 127.0.0.1 → host.containers.internal
+	var containerAPIServer string
+	if runtime.GOOS == "linux" {
+		// Linux: Container uses host network, can reach localhost directly
+		containerAPIServer = cfg.Host
+		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
+		_, _ = fmt.Fprintf(writer, "   🌐 Container URL: %s (host network, no rewrite needed)\n", containerAPIServer)
+	} else {
+		// macOS: Container uses bridge network, needs host.containers.internal
+		containerAPIServer = strings.Replace(cfg.Host, "127.0.0.1", "host.containers.internal", 1)
+		_, _ = fmt.Fprintf(writer, "   📍 envtest URL: %s\n", cfg.Host)
+		_, _ = fmt.Fprintf(writer, "   🔄 Container URL: %s (TLS verification skipped)\n", containerAPIServer)
+		_, _ = fmt.Fprintf(writer, "   ℹ️  host.containers.internal routes to host's 127.0.0.1\n")
+	}
 
 	kubeconfig := clientcmdapi.Config{
 		Clusters: map[string]*clientcmdapi.Cluster{
