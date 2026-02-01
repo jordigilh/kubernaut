@@ -79,7 +79,7 @@ jobs:
   lint-go:
     name: Lint (Go Services)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "🔍 Linting Go code..."
           export PATH="${{ github.workspace }}/bin:$PATH"
-          timeout 4m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
+          timeout 7m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   lint-python:
