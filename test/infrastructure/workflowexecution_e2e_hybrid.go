@@ -124,7 +124,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		// Disable coverage on ARM64 (Go runtime crash workaround)
 		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
 		cfg := E2EImageConfig{
-			ServiceName:      "workflowexecution",  // Must match CI build matrix image_name
+			ServiceName:      "workflowexecution-controller",  // Must match CI build matrix image_name
 			ImageName:        "kubernaut/workflowexecution-controller",
 			DockerfilePath:   "docker/workflowexecution-controller.Dockerfile",
 			BuildContextPath: "",
