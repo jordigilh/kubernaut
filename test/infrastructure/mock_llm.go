@@ -207,11 +207,21 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 
 	// Start Mock LLM container
 	_, _ = fmt.Fprintf(writer, "🚀 Starting Mock LLM container...\n")
+	
+	// DD-AUTH-014: Platform-specific port configuration
+	// - Bridge network: Internal port 8080 with port mapping (e.g., 18085:8080)
+	// - Host network: Internal port matches external (e.g., 18085) since no port mapping
+	internalPort := 8080
+	if config.Network == "host" {
+		internalPort = config.Port // Host network: Bind directly to external port
+		_, _ = fmt.Fprintf(writer, "   🌐 Host network mode: Mock LLM will bind to port %d directly\n", internalPort)
+	}
+	
 	args := []string{"run", "-d", "--rm",
 		"--name", config.ContainerName,
-		"-p", fmt.Sprintf("%d:8080", config.Port),
+		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
-		"-e", "MOCK_LLM_PORT=8080",
+		"-e", fmt.Sprintf("MOCK_LLM_PORT=%d", internalPort),
 		"-e", "MOCK_LLM_FORCE_TEXT=false",
 	}
 
