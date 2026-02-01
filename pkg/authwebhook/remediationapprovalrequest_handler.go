@@ -127,10 +127,9 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	auditEvent.EventData = api.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
-	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		// Log error but don't fail the webhook (audit should not block operations)
-		// The audit store has retry + DLQ mechanisms
-	}
+	// Explicitly ignore errors - audit should not block webhook operations
+	// The audit store has retry + DLQ mechanisms for reliability
+	_ = h.auditStore.StoreAudit(ctx, auditEvent)
 
 	// Marshal the patched object
 	marshaledRAR, err := json.Marshal(rar)
