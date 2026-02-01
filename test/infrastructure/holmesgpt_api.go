@@ -390,12 +390,17 @@ spec:
 	return cmd.Run()
 }
 
-// deployHAPIServiceRBAC creates ServiceAccount for HAPI to authenticate with DataStorage
+// deployHAPIServiceRBAC creates ServiceAccount + RoleBinding for HAPI to access DataStorage
 // DD-AUTH-014: HAPI uses ServiceAccountAuthPoolManager to inject Bearer tokens
 // Token is read from /var/run/secrets/kubernetes.io/serviceaccount/token (auto-mounted by K8s)
+// 
+// CRITICAL: ServiceAccount alone is NOT enough!
+// DataStorage middleware performs SubjectAccessReview (SAR) to check permissions.
+// Without RoleBinding → SAR fails → 401 Unauthorized
 func deployHAPIServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// HAPI doesn't need special permissions - just needs a ServiceAccount for identity
-	// The ServiceAccount token will be used to authenticate WITH DataStorage
+	// HAPI needs:
+	// 1. ServiceAccount (for token generation and identity)
+	// 2. RoleBinding (so DataStorage middleware SAR check passes)
 	rbacManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
@@ -406,7 +411,44 @@ metadata:
     app: holmesgpt-api
     component: auth
     authorization: dd-auth-014
-`, namespace)
+---
+# ClusterRole: DataStorage client permissions (for middleware SAR check)
+# NOTE: This ClusterRole should already exist from DataStorage deployment
+# If not, E2E test will fail - this is expected (DataStorage must be deployed first)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-client
+  labels:
+    app: data-storage-service
+    component: rbac
+    authorization: dd-auth-014
+rules:
+  # Middleware SAR check: Full CRUD permissions for DataStorage REST API
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["create", "get", "list", "update", "delete"]
+---
+# RoleBinding: Grant HAPI ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-data-storage-client
+  namespace: %s
+  labels:
+    app: holmesgpt-api
+    component: rbac
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: %s
+`, namespace, namespace, namespace)
 
 	// Apply manifest
 	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
