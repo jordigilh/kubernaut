@@ -33,6 +33,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1080,6 +1081,84 @@ password: test_password`,
 		}
 	}
 
+	// 2.5. Create ServiceAccount + RBAC for middleware-based auth (DD-AUTH-014)
+	// Required for TokenReview and SubjectAccessReview API calls
+	_, _ = fmt.Fprintf(writer, "   🔐 Creating DataStorage ServiceAccount + RBAC...\n")
+	
+	// ServiceAccount
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "data-storage-sa",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+	}
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, serviceAccount, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount: %w", err)
+	}
+
+	// ClusterRole for TokenReview + SubjectAccessReview
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-storage-auth-middleware",
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"authentication.k8s.io"},
+				Resources: []string{"tokenreviews"},
+				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"authorization.k8s.io"},
+				Resources: []string{"subjectaccessreviews"},
+				Verbs:     []string{"create"},
+			},
+		},
+	}
+	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ClusterRole: %w", err)
+	}
+
+	// ClusterRoleBinding
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-storage-auth-middleware",
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "data-storage-auth-middleware",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "data-storage-sa",
+				Namespace: namespace,
+			},
+		},
+	}
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ClusterRoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage RBAC configured\n")
+
 	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
 	// DD-AUTH-014: Direct to DataStorage (no oauth-proxy)
 	service := &corev1.Service{
@@ -1253,18 +1332,18 @@ password: test_password`,
 									corev1.ResourceCPU:    resource.MustParse("500m"),
 								},
 							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/health",
-										Port: intstr.FromInt(8080), // DataStorage listens on 8080
-									},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/health",
+									Port: intstr.FromInt(8080), // DataStorage listens on 8080
 								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-								TimeoutSeconds:      3,
-								FailureThreshold:    3,
 							},
+							InitialDelaySeconds: 30, // Allow PostgreSQL/Redis startup (was 5s - too short)
+							PeriodSeconds:       5,
+							TimeoutSeconds:      3,
+							FailureThreshold:    3,
+						},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
