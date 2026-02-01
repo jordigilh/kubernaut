@@ -702,16 +702,38 @@ jobs:
         if: failure()
         run: |
           echo "📋 Collecting must-gather logs for triage..."
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          CLUSTER_NAME="kubernaut-e2e"
+          
           if [ -d "/tmp/kubernaut-must-gather" ]; then
-            echo "✅ Found must-gather directory"
+            echo "✅ Found must-gather directory (AfterSuite executed)"
             ls -la /tmp/kubernaut-must-gather/
-            # Create timestamped archive for this service
-            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
             echo "✅ Created must-gather archive: must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
           else
-            echo "⚠️  No must-gather directory found at /tmp/kubernaut-must-gather"
-            echo "    This may be expected if tests failed before must-gather was triggered"
+            echo "⚠️  No must-gather directory found (BeforeSuite failure)"
+            echo "📋 Manually exporting Kind cluster logs..."
+            
+            # Check if Kind cluster exists
+            if kind get clusters 2>&1 | grep -q "$CLUSTER_NAME"; then
+              echo "✅ Found Kind cluster: $CLUSTER_NAME"
+              
+              # Export Kind logs to temporary directory
+              EXPORT_DIR=$(mktemp -d)
+              kind export logs "$EXPORT_DIR" --name "$CLUSTER_NAME" || echo "⚠️  Kind export logs failed"
+              
+              if [ -d "$EXPORT_DIR" ]; then
+                echo "✅ Exported Kind logs to $EXPORT_DIR"
+                ls -la "$EXPORT_DIR"
+                tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C "$EXPORT_DIR" .
+                echo "✅ Created must-gather archive from Kind export"
+                rm -rf "$EXPORT_DIR"
+              else
+                echo "❌ Failed to export Kind logs"
+              fi
+            else
+              echo "❌ No Kind cluster found - tests failed before cluster creation"
+            fi
           fi
       - name: Upload must-gather logs as artifacts
         if: failure()
