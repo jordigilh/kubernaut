@@ -18,6 +18,7 @@ package notification
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -110,6 +111,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			})
 
 			startTime := time.Now()
+
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
 
@@ -144,7 +146,10 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			By("Verifying file audit trail was created")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
-			pattern := "notification-e2e-priority-critical-*.json"
+			// CRITICAL: Use exact notification name to avoid matching other tests (e2e-priority-critical-2, etc.)
+			// BUG FIX: Pattern "notification-e2e-priority-critical-*.json" was matching files from Scenario 2
+			//          (e2e-priority-critical-2) which has NO Metadata, causing false positives
+			pattern := fmt.Sprintf("notification-%s-*.json", notification.Name)
 
 			Eventually(EventuallyCountFilesInPod(pattern),
 				60*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
@@ -161,6 +166,14 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			var savedNotification notificationv1alpha1.NotificationRequest
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
+
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			// BUG FIX: Pattern "notification-e2e-priority-critical-*.json" also matches
+			//          "notification-e2e-priority-critical-2-*.json" (from Scenario 2)
+			//          causing test to read wrong file with NO Metadata
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
 
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
 				"Priority field must be preserved in file audit (BR-NOT-052)")
@@ -183,14 +196,16 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			// Create 4 notifications with different priorities
 			// NOTE: We create them in reverse order (Low → Critical) to test priority queue
+			// NOTE: Use unique names to avoid cross-test file pattern pollution
+			//       (e.g., "e2e-priority-critical-2" would match "e2e-priority-critical-*" pattern)
 			priorities := []struct {
 				name     string
 				priority notificationv1alpha1.NotificationPriority
 			}{
-				{"e2e-priority-low", notificationv1alpha1.NotificationPriorityLow},
-				{"e2e-priority-medium", notificationv1alpha1.NotificationPriorityMedium},
-				{"e2e-priority-high", notificationv1alpha1.NotificationPriorityHigh},
-				{"e2e-priority-critical-2", notificationv1alpha1.NotificationPriorityCritical},
+				{"e2e-ordering-low", notificationv1alpha1.NotificationPriorityLow},
+				{"e2e-ordering-medium", notificationv1alpha1.NotificationPriorityMedium},
+				{"e2e-ordering-high", notificationv1alpha1.NotificationPriorityHigh},
+				{"e2e-ordering-critical", notificationv1alpha1.NotificationPriorityCritical},
 			}
 
 			creationTimes := make(map[string]time.Time)
@@ -271,6 +286,12 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				err = json.Unmarshal(fileContent, &savedNotification)
 				Expect(err).ToNot(HaveOccurred())
 
+				// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+				// DEFENSE IN DEPTH: Ensure file belongs to intended test, not another scenario
+				Expect(savedNotification.Name).To(Equal(p.name),
+					"File must belong to notification '%s' (found: '%s') - cross-test pollution detected!",
+					p.name, savedNotification.Name)
+
 				Expect(savedNotification.Spec.Priority).To(Equal(p.priority),
 					"Priority must be preserved in file audit for "+p.name)
 			}
@@ -298,7 +319,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-priority-high-multi",
+					Name:      "e2e-multichannel-high",
 					Namespace: "default",
 					Labels: map[string]string{
 						"test-scenario": "priority-high-multi-channel",
@@ -354,7 +375,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			By("Verifying file audit trail contains priority metadata")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
-			pattern := "notification-e2e-priority-high-multi-*.json"
+			pattern := fmt.Sprintf("notification-%s-*.json", notification.Name)
 
 			Eventually(EventuallyCountFilesInPod(pattern),
 				60*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
@@ -370,6 +391,11 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			var savedNotification notificationv1alpha1.NotificationRequest
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred())
+
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
 
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh),
 				"Priority must be preserved in file audit")
