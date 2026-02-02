@@ -33,6 +33,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -99,9 +102,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "aianalysis",  // Operator SDK convention: no -controller suffix in image name
+			ServiceName:      "aianalysis", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/aianalysis",
-			DockerfilePath:   "docker/aianalysis.Dockerfile",  // Dockerfile can have suffix (but this one doesn't)
+			DockerfilePath:   "docker/aianalysis.Dockerfile", // Dockerfile can have suffix (but this one doesn't)
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
@@ -180,7 +183,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 6.5: Deploy DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 6.5: Deploying DataStorage RBAC (DD-AUTH-014)...")
-	
+
 	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
 	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
 	_, _ = fmt.Fprintf(writer, "  🔐 Deploying data-storage-client ClusterRole...\n")
@@ -254,7 +257,54 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// Seed workflows and capture UUIDs (with DD-AUTH-014 authentication)
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(kubeconfigPath, namespace, dataStorageURL, writer)
+	// Pattern: Uses shared workflow_seeding.go library (refactored from duplicate code)
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating authenticated DataStorage client for workflow seeding...")
+
+	// Get ServiceAccount token for authentication
+	// GetServiceAccountToken signature: (ctx, namespace, saName, kubeconfigPath)
+	saToken, err := GetServiceAccountToken(context.Background(), namespace, "aianalysis-e2e-sa", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+
+	// Create authenticated OpenAPI client for DataStorage
+	seedClient, err := ogenclient.NewClient(
+		dataStorageURL,
+		ogenclient.WithClient(&http.Client{
+			Transport: testauth.NewServiceAccountTransport(saToken),
+			Timeout:   30 * time.Second,
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create DataStorage client: %w", err)
+	}
+
+	// Call shared workflow seeding function
+	// Note: GetAIAnalysisTestWorkflows() is still defined in test/integration/aianalysis/test_workflows.go
+	// We need to convert those workflows to the shared infrastructure.TestWorkflow type
+	// For now, inline the workflow definitions temporarily (TODO: refactor GetAIAnalysisTestWorkflows)
+	testWorkflows := []TestWorkflow{
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0"},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "staging", Priority: "P1"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "production", Priority: "P1"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "test", Priority: "P1"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "production", Priority: "P0"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "test", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "staging", Priority: "P2"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "production", Priority: "P2"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "test", Priority: "P2"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "staging", Priority: "P1"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "production", Priority: "P1"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "test", Priority: "P1"},
+	}
+
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
@@ -1078,7 +1128,7 @@ data:
 func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	// Create a fresh context (workaround for potential context issues)
 	freshCtx := context.Background()
-	
+
 	// Create ServiceAccount
 	saName := "aianalysis-e2e-sa"
 	if err := CreateServiceAccount(freshCtx, namespace, kubeconfigPath, saName, writer); err != nil {
