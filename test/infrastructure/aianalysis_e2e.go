@@ -279,10 +279,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	// Call shared workflow seeding function
-	// Note: GetAIAnalysisTestWorkflows() is still defined in test/integration/aianalysis/test_workflows.go
-	// We need to convert those workflows to the shared infrastructure.TestWorkflow type
-	// For now, inline the workflow definitions temporarily (TODO: refactor GetAIAnalysisTestWorkflows)
+	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
+	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
+	// Acceptable trade-off: Small duplication avoids architectural issues
+	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
 	testWorkflows := []TestWorkflow{
 		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0"},
 		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0"},
