@@ -47,59 +47,84 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 HAPI E2E Infrastructure Setup")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  Strategy: Sequential builds → Create cluster → Deploy services")
-	_, _ = fmt.Fprintln(writer, "  Duration: ~5-7 minutes (sequential to avoid Python build OOM)")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Parallel builds → Create cluster → Deploy services")
+	_, _ = fmt.Fprintln(writer, "  Duration: ~3-5 minutes (parallel builds per DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v1.8: Dedicated HAPI ports")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	projectRoot := getProjectRoot()
 
-	// Generate unique image tags per DD-TEST-001: {infrastructure}:{consumer}-{uuid}
-	dataStorageImage := GenerateInfraImageName("datastorage", "holmesgpt-api")
-	hapiImage := GenerateInfraImageName("holmesgpt-api", "holmesgpt-api")
-	mockLLMImage := GenerateInfraImageName("mock-llm", "holmesgpt-api-e2e")
-
-	_, _ = fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
-	_, _ = fmt.Fprintf(writer, "  📦 HAPI image: %s\n", hapiImage)
-	_, _ = fmt.Fprintf(writer, "  📦 Mock LLM image: %s\n", mockLLMImage)
-
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Build images SEQUENTIALLY (Data Storage, then HAPI)
+	// PHASE 1: Build images IN PARALLEL (per DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images sequentially...")
-	_, _ = fmt.Fprintln(writer, "  (Sequential to avoid OOM - Python pip uses 2-3GB)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
-	_, _ = fmt.Fprintln(writer, "  └── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  └── Mock LLM (<1 min)")
 
-	// Build Data Storage
-	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building Data Storage...\n", time.Now().Format("15:04:05"))
-	if err := buildImageOnly("Data Storage", dataStorageImage,
-		"docker/data-storage.Dockerfile", projectRoot, writer); err != nil {
-		return fmt.Errorf("failed to build datastorage image: %w", err)
+	type imageBuildResult struct {
+		name  string
+		image string
+		err   error
 	}
-	_, _ = fmt.Fprintf(writer, "✅ [%s] Data Storage image built: %s\n", time.Now().Format("15:04:05"), dataStorageImage)
 
-	// Build HAPI (using E2E Dockerfile with minimal dependencies)
-	// Uses requirements-e2e.txt (no google-cloud-aiplatform 1.5GB)
-	// Expected: 2-3 minutes (vs 5-15 minutes with full Dockerfile)
-	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API (E2E - minimal deps)...\n", time.Now().Format("15:04:05"))
-	if err := buildImageOnly("HolmesGPT-API (E2E)", hapiImage,
-		"holmesgpt-api/Dockerfile.e2e", projectRoot, writer); err != nil {
-		return fmt.Errorf("failed to build holmesgpt-api E2E image: %w", err)
+	buildResults := make(chan imageBuildResult, 3)
+
+	// Build Data Storage in parallel
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "datastorage", // No kubernaut/ prefix (matches old behavior)
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   false,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"datastorage", imageName, err}
+	}()
+
+	// Build HAPI in parallel (using E2E Dockerfile with minimal dependencies)
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "holmesgpt-api",
+			ImageName:        "holmesgpt-api", // No kubernaut/ prefix (matches old behavior)
+			DockerfilePath:   "holmesgpt-api/Dockerfile.e2e",
+			BuildContextPath: "",
+			EnableCoverage:   false, // HAPI does not support coverage
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"holmesgpt-api", imageName, err}
+	}()
+
+	// Build Mock LLM in parallel
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "mock-llm",
+			ImageName:        "mock-llm", // No kubernaut/ prefix (matches old behavior)
+			DockerfilePath:   "test/services/mock-llm/Dockerfile",
+			BuildContextPath: filepath.Join(projectRoot, "test/services/mock-llm"),
+			EnableCoverage:   false,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"mock-llm", imageName, err}
+	}()
+
+	// Collect build results
+	builtImages := make(map[string]string)
+	for i := 0; i < 3; i++ {
+		result := <-buildResults
+		if result.err != nil {
+			return fmt.Errorf("failed to build %s image: %w", result.name, result.err)
+		}
+		builtImages[result.name] = result.image
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image built: %s\n", result.name, result.image)
 	}
-	_, _ = fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
 
-	// Build Mock LLM (standalone test service)
-	// Zero external dependencies, minimal build time
-	// Expected: <1 minute
-	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building Mock LLM...\n", time.Now().Format("15:04:05"))
-	if err := buildImageOnly("Mock LLM", mockLLMImage,
-		"Dockerfile", filepath.Join(projectRoot, "test/services/mock-llm"), writer); err != nil {
-		return fmt.Errorf("failed to build mock-llm image: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "✅ [%s] Mock LLM image built: %s\n", time.Now().Format("15:04:05"), mockLLMImage)
+	dataStorageImage := builtImages["datastorage"]
+	hapiImage := builtImages["holmesgpt-api"]
+	mockLLMImage := builtImages["mock-llm"]
 
-	_, _ = fmt.Fprintln(writer, "\n✅ All images built sequentially!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built in parallel! (~3-5 min)")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster
@@ -181,7 +206,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		defer GinkgoRecover()
 		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
 		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar
-		
+
 		// DD-AUTH-014: Create ServiceAccount BEFORE deployment (required for pod creation)
 		// Fix for: "serviceaccount 'data-storage-sa' not found" error
 		// Same fix as Gateway/RO/Notification E2E (commit 81823ef8d)
@@ -190,7 +215,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to create ServiceAccount: %w", err)}
 			return
 		}
-		
+
 		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -204,7 +229,14 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 			deployResults <- deployResult{"HolmesGPT-API", fmt.Errorf("failed to create ServiceAccount: %w", err)}
 			return
 		}
-		
+
+		// Create E2E test ServiceAccount (mimics AIAnalysis calling HAPI)
+		_, _ = fmt.Fprintf(writer, "  🔐 Creating E2E test ServiceAccount...\n")
+		if err := createHolmesGPTAPIE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+			deployResults <- deployResult{"HolmesGPT-API", fmt.Errorf("failed to create E2E ServiceAccount: %w", err)}
+			return
+		}
+
 		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
@@ -393,15 +425,17 @@ spec:
 // deployHAPIServiceRBAC creates ServiceAccount + RoleBinding for HAPI to access DataStorage
 // DD-AUTH-014: HAPI uses ServiceAccountAuthPoolManager to inject Bearer tokens
 // Token is read from /var/run/secrets/kubernetes.io/serviceaccount/token (auto-mounted by K8s)
-// 
+//
 // CRITICAL: ServiceAccount alone is NOT enough!
 // DataStorage middleware performs SubjectAccessReview (SAR) to check permissions.
 // Without RoleBinding → SAR fails → 401 Unauthorized
 func deployHAPIServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// HAPI needs:
-	// 1. ServiceAccount (for token generation and identity)
-	// 2. RoleBinding (so DataStorage middleware SAR check passes)
+	// HAPI RBAC Strategy (DD-AUTH-014):
+	// 1. holmesgpt-api-sa: HAPI pod identity (TokenReview/SAR + DataStorage client)
+	// 2. holmesgpt-api-e2e-sa: E2E test identity (mimics AIAnalysis calling HAPI)
+	//    Pattern matches other E2E tests: aianalysis-e2e-sa, gateway-e2e-sa, etc.
 	rbacManifest := fmt.Sprintf(`---
+# HAPI Pod ServiceAccount (for HAPI pod itself)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -430,7 +464,7 @@ rules:
     resourceNames: ["data-storage-service"]
     verbs: ["create", "get", "list", "update", "delete"]
 ---
-# RoleBinding: Grant HAPI ServiceAccount access to DataStorage
+# RoleBinding: Grant HAPI pod access to DataStorage
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -448,7 +482,27 @@ subjects:
   - kind: ServiceAccount
     name: holmesgpt-api-sa
     namespace: %s
-`, namespace, namespace, namespace)
+---
+# ClusterRoleBinding: Grant HAPI auth middleware permissions (TokenReview + SAR)
+# DD-AUTH-014: HAPI middleware needs to validate incoming Bearer tokens
+# Uses existing data-storage-auth-middleware ClusterRole (same permissions needed)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-auth-middleware
+  labels:
+    app: holmesgpt-api
+    component: rbac
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: %s
+`, namespace, namespace, namespace, namespace)
 
 	// Apply manifest
 	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
@@ -525,6 +579,70 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 	return nil
 }
 
+// createHolmesGPTAPIE2EServiceAccount creates the E2E test ServiceAccount with HAPI client permissions
+// Pattern matches other E2E tests: aianalysis-e2e-sa, gateway-e2e-sa, etc.
+// DD-AUTH-014: E2E SA needs permissions to call HAPI endpoints (mimics AIAnalysis)
+func createHolmesGPTAPIE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	saName := "holmesgpt-api-e2e-sa"
+
+	// Create ServiceAccount
+	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
+		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
+	}
+
+	// Create Role + RoleBinding for HAPI client access
+	rbacYAML := fmt.Sprintf(`---
+# Role: HAPI client access (for E2E test SA - mimics AIAnalysis)
+# DD-AUTH-014: E2E SA needs permission to call HAPI endpoints
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: holmesgpt-api-e2e-client-access
+  namespace: %s
+  labels:
+    app: holmesgpt-api
+    component: e2e-testing
+    authorization: dd-auth-014
+rules:
+  # SAR check: POST /api/v1/incident/analyze and /api/v1/recovery/analyze
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["holmesgpt-api"]
+    verbs: ["create", "get"]  # create=POST, get=GET
+---
+# RoleBinding: Grant E2E SA access to HAPI
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-e2e-client-access
+  namespace: %s
+  labels:
+    app: holmesgpt-api
+    component: e2e-testing
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: holmesgpt-api-e2e-client-access
+subjects:
+  - kind: ServiceAccount
+    name: %s
+    namespace: %s
+`, namespace, namespace, saName, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd.Stdin = strings.NewReader(rbacYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply E2E RBAC: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ %s created with HAPI client access\n", saName)
+	return nil
+}
+
 // deployMockLLMInNamespace deploys the standalone Mock LLM service to a namespace
 // This is the V2.0 Mock LLM service extracted from HAPI business code
 // Uses ClusterIP for internal access only (no NodePort needed for E2E)
@@ -545,7 +663,7 @@ func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		// Empty scenarios (HAPI E2E - no workflows seeded)
 		scenariosYAML = "scenarios: {}"
 	}
-	
+
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
