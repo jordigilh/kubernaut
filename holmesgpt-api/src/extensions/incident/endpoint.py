@@ -40,7 +40,15 @@ logger = logging.getLogger(__name__)
     "/incident/analyze",
     status_code=status.HTTP_200_OK,
     response_model=IncidentResponse,
-    response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    response_model_exclude_unset=False,  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    responses={
+        200: {"description": "Successful Response - Incident analyzed with RCA and workflow selection"},
+        400: {"description": "Bad Request - Invalid input format or missing required fields"},
+        401: {"description": "Unauthorized - Missing or invalid authentication token"},
+        403: {"description": "Forbidden - Insufficient permissions (SAR check failed)"},
+        422: {"description": "Validation Error - Request body validation failed"},
+        500: {"description": "Internal Server Error - LLM or workflow catalog failure"}
+    }
 )
 async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Request) -> IncidentResponse:
     """
@@ -65,6 +73,19 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     8. Emit audit event with complete response (DD-AUDIT-005)
     9. Return IncidentResponse with RCA and workflow selection
     """
+    # 🔍 DEBUG: Log raw request details for body parsing investigation
+    try:
+        body_bytes = await request.body()
+        logger.info({
+            "event": "incident_endpoint_request_received",
+            "body_length": len(body_bytes),
+            "content_type": request.headers.get('content-type'),
+            "body_preview": body_bytes[:300].decode('utf-8', errors='replace'),
+            "headers": dict(request.headers),
+        })
+    except Exception as e:
+        logger.error(f"🔍 DEBUG: Failed to read request body for debugging: {e}")
+    
     # DD-AUTH-006: Extract authenticated user for logging/audit
     # OAuth-proxy has already validated token and performed SAR
     # This is for cost tracking, security auditing, and future SOC2 readiness

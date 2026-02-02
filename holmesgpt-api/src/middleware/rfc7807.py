@@ -33,6 +33,7 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from pydantic import ValidationError
 
 from src.errors import create_rfc7807_error, RFC7807Error
 from src.middleware.metrics import rfc7807_errors_total
@@ -59,8 +60,20 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
     instance = request.url.path
 
     # Determine status code and detail based on exception type
-    if isinstance(exc, RequestValidationError):
-        # Pydantic validation error → 400 Bad Request
+    # 🔍 DEBUG: Check for Pydantic ValidationError first (before Starlette wraps it)
+    if isinstance(exc, ValidationError):
+        # Pure Pydantic validation error (caught before Starlette wrapping)
+        status_code = status.HTTP_400_BAD_REQUEST
+        detail = f"Pydantic validation error: {str(exc.errors()[0]['msg'])}"
+        logger.error({
+            "event": "pydantic_validation_error_raw",
+            "request_id": request_id,
+            "path": instance,
+            "errors": exc.errors(),
+            "error_count": len(exc.errors()),
+        })
+    elif isinstance(exc, RequestValidationError):
+        # FastAPI RequestValidationError (wraps Pydantic ValidationError)
         status_code = status.HTTP_400_BAD_REQUEST
         detail = f"Validation error: {str(exc.errors()[0]['msg'])}"
         logger.warning({
@@ -119,7 +132,7 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
     ).inc()
 
     # Return JSON response with RFC 7807 format
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status_code,
         content=error.dict(),
         headers={
@@ -127,6 +140,17 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
             "X-Request-ID": request_id
         }
     )
+    
+    # 🔍 DEBUG: Log response creation (troubleshooting 400→401 conversion)
+    logger.info({
+        "event": "rfc7807_response_created",
+        "request_id": request_id,
+        "status_code": status_code,
+        "response_type": type(response).__name__,
+        "detail": detail[:100] if len(detail) > 100 else detail,
+    })
+    
+    return response
 
 
 def add_rfc7807_exception_handlers(app):
@@ -135,10 +159,12 @@ def add_rfc7807_exception_handlers(app):
 
     Business Requirement: BR-HAPI-200
     """
+    # 🔍 DEBUG: Register ValidationError handler FIRST (highest priority)
+    app.add_exception_handler(ValidationError, rfc7807_exception_handler)
     app.add_exception_handler(RequestValidationError, rfc7807_exception_handler)
     app.add_exception_handler(HTTPException, rfc7807_exception_handler)
     app.add_exception_handler(StarletteHTTPException, rfc7807_exception_handler)
     app.add_exception_handler(Exception, rfc7807_exception_handler)
-
-    logger.info("RFC 7807 exception handlers registered")
+    
+    logger.info("RFC 7807 exception handlers registered (with ValidationError debug)")
 
