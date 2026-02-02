@@ -85,7 +85,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     - 500 Internal Server Error: TokenReview/SAR API failure (RFC 7807)
     """
 
-    PUBLIC_ENDPOINTS = ["/health", "/ready", "/metrics", "/docs", "/redoc", "/openapi.json"]
+    PUBLIC_ENDPOINTS = ["/health", "/health/ready", "/ready", "/metrics", "/docs", "/redoc", "/openapi.json"]
 
     def __init__(
         self,
@@ -166,23 +166,49 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         - 403: Insufficient permissions
         - 500: K8s API failure
         """
+        # 🔍 DEBUG: Log ALL incoming request details (troubleshooting body parsing)
+        # Also capture body for POST requests to incident/analyze
+        body_preview = None
+        if request.method == "POST" and "incident/analyze" in request.url.path:
+            try:
+                body_bytes = await request.body()
+                body_preview = body_bytes[:500].decode('utf-8', errors='replace')
+                logger.info({
+                    "event": "auth_middleware_body_captured",
+                    "path": request.url.path,
+                    "body_length": len(body_bytes),
+                    "body_preview": body_preview,
+                })
+            except Exception as e:
+                logger.error(f"🔍 DEBUG: Failed to read body: {e}")
+        
+        logger.info({
+            "event": "auth_middleware_request_received",
+            "path": request.url.path,
+            "method": request.method,
+            "content_type": request.headers.get('content-type'),
+            "content_length": request.headers.get('content-length'),
+            "authorization": 'Bearer ***' if request.headers.get('authorization') else 'None',
+            "all_headers": {k: v for k, v in request.headers.items() if k.lower() not in ['authorization']},
+        })
+        
         # Step 1: Skip auth for public endpoints
         if request.url.path in self.PUBLIC_ENDPOINTS:
             return await call_next(request)
 
+        # Step 2: Extract Bearer token from Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            # Note: Auth metrics removed (no BR backing)
+            return self._create_rfc7807_response(
+                status_code=401,
+                title="Unauthorized",
+                detail="Missing Authorization header with Bearer token",
+            )
+
+        token = auth_header[7:]  # Remove "Bearer " prefix
+
         try:
-            # Step 2: Extract Bearer token from Authorization header
-            auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                # Note: Auth metrics removed (no BR backing)
-                return self._create_rfc7807_response(
-                    status_code=401,
-                    title="Unauthorized",
-                    detail="Missing Authorization header with Bearer token",
-                )
-
-            token = auth_header[7:]  # Remove "Bearer " prefix
-
             # Step 3: Authenticate token using TokenReview API
             # Authority: DD-AUTH-014 (uses injected Authenticator)
             user = await self.authenticator.validate_token(token)
@@ -212,12 +238,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             #   - request.state.user (direct access)
             request.state.user = user
 
-            # Step 6: Pass request to next handler
-            # Note: Auth success metrics removed (no BR backing)
-            return await call_next(request)
-
         except Exception as e:
-            # Handle authentication/authorization exceptions
+            # Handle ONLY authentication/authorization exceptions
+            # NOTE: Downstream endpoint exceptions (400, 422, 500) should NOT be caught here
             logger.error({
                 "event": "auth_middleware_error",
                 "error": str(e),
@@ -237,6 +260,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 title=self._get_title_for_status(status_code),
                 detail=detail,
             )
+
+        # Step 6: Pass request to next handler (OUTSIDE try-except)
+        # This ensures endpoint exceptions (400, 422, 500) are handled by their own handlers
+        # Note: Auth success metrics removed (no BR backing)
+        return await call_next(request)
 
     def _get_verb_for_request(self, request: Request) -> str:
         """
