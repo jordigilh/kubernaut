@@ -204,7 +204,7 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
-// Main E2E test: Run Python pytest suite
+	// Main E2E test: Run Python pytest suite
 var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 	It("should pass all 18 Python E2E tests", func() {
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -215,6 +215,16 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// ========================================
+		// DD-AUTH-014: Generate ServiceAccount token for pytest authentication
+		// ========================================
+		// DD-AUTH-014: Generate E2E test ServiceAccount token (mimics AIAnalysis calling HAPI)
+		// Pattern matches other E2E tests: aianalysis-e2e-sa, gateway-e2e-sa, etc.
+		logger.Info("🔐 Generating ServiceAccount token for pytest authentication...")
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token for pytest")
+		logger.Info("✅ E2E ServiceAccount token generated for pytest")
+
+		// ========================================
 		// Run pytest in container (DO NOT run on host - Python dependency hell)
 		// Pattern: Same as unit tests (podman run with UBI Python image)
 		// ========================================
@@ -223,19 +233,40 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		logger.Info("  Test directory: " + pytestDir)
 		logger.Info("  HAPI URL: " + hapiURL)
 		logger.Info("  DATA_STORAGE_URL: " + dataStorageURL)
+		logger.Info("  Auth: ServiceAccount token (DD-AUTH-014)")
 
 		// Build pytest command to run in container
+		// NOTE: Must install holmesgpt first to avoid httpx version conflicts
+		// Same pattern as integration tests
+		// DD-AUTH-014: Pass HAPI_AUTH_TOKEN for Bearer token authentication
 		pytestCmd := fmt.Sprintf(
-			"pip install -q -r requirements.txt -r requirements-test.txt && "+
-				"HAPI_BASE_URL=%s DATA_STORAGE_URL=%s "+
+			"cd /workspace && "+
+				"pip install -q --break-system-packages dependencies/holmesgpt && "+
+				"cd holmesgpt-api && "+
+				"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
+				"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
+				"HAPI_BASE_URL=%s DATA_STORAGE_URL=%s HAPI_AUTH_TOKEN=%s "+
 				"pytest tests/e2e -v --tb=short",
 			hapiURL,
 			dataStorageURL,
+			saToken,
 		)
 
 		// Run pytest in container (same pattern as unit tests)
+		// 
+		// Storage Optimization (BR-TEST-008):
+		// - Mount pip cache to avoid "No space left on device" errors
+		// - Use tmpfs for /tmp (2GB limit) for CI/CD compatibility
+		// - Cache directory empty in CI but reusable across local runs
+		//
+		// Performance: Pip installs write ~500MB to cache + temp files
+		pipCacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "pip")
+		_ = os.MkdirAll(pipCacheDir, 0755) // Create if doesn't exist (safe no-op if exists)
+		
 		cmd := exec.CommandContext(ctx, "podman", "run", "--rm",
 			"-v", fmt.Sprintf("%s:/workspace:z", projectRoot),
+			"-v", fmt.Sprintf("%s:/root/.cache/pip:z", pipCacheDir), // Pip cache (empty in CI, reusable locally)
+			"--tmpfs", "/tmp:size=2G,mode=1777",                     // 2GB tmpfs for pip temp files
 			"-w", "/workspace/holmesgpt-api",
 			"--network", "host", // Required to access NodePort services (30120, 30098)
 			"registry.access.redhat.com/ubi9/python-312:latest",
@@ -245,7 +276,7 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		cmd.Stderr = GinkgoWriter
 
 		logger.Info("Executing: podman run (containerized pytest)")
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			anyTestFailed = true
 			logger.Info("❌ pytest execution failed")
