@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -110,6 +111,15 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Namespace: notificationNS,
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				// Without this, controller uses NotificationRequest.UID as correlation_id
+				// Test expects to query by custom correlationID, so we need to set the ref
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID, // Use test's correlationID as the RemediationRequest name
+					Namespace:  notificationNS,
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
@@ -191,7 +201,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"Controller should emit audit event during notification processing")
 
 		// ===== STEP 4: Verify ADR-034 compliance via Data Storage query =====

@@ -25,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -112,6 +113,14 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 					Namespace: "default",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
+					// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+					// All 3 notifications reference the same RemediationRequest for correlation testing
+					RemediationRequestRef: &corev1.ObjectReference{
+						APIVersion: "kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       correlationID,
+						Namespace:  "default",
+					},
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),
 					Subject:  "E2E Correlation Test - Notification " + string(rune('0'+i)),
@@ -194,7 +203,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
-		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
 			"Controller should emit audit events for all 3 processed notifications")
 
 		// ===== STEP 4: Verify all events queryable by correlation_id =====

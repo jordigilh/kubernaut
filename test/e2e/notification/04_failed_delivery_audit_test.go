@@ -25,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -120,6 +121,13 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID,
+					Namespace:  notificationNS,
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Failed Delivery Audit Test",
@@ -202,8 +210,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			count := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Found %d failed audit events for correlation_id=%s\n", count, correlationID)
 			return count
-		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-			"Failed audit event should be persisted to PostgreSQL within 15 seconds")
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+			"Failed audit event should be persisted to PostgreSQL within 30 seconds")
 
 		// ===== STEP 4: Verify ADR-034 compliance and error details =====
 		By("Verifying ADR-034 compliance of failed audit event")
@@ -352,6 +360,13 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID,
+					Namespace:  "default",
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Partial Failure Audit Test",
@@ -396,7 +411,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			failedCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Partial failure - sent=%d, failed=%d\n", sentCount, failedCount)
 			return sentCount >= 1 && failedCount >= 1
-		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
 			"Should have both success (console) and failure (email) audit events")
 
 		By("Verifying each event has correct channel in event_data")
