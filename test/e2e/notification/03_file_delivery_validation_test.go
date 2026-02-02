@@ -314,6 +314,11 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred())
 
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
+
 			// Verify priority is preserved exactly
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
 				"Priority must be preserved as Critical (BR-NOT-056)")

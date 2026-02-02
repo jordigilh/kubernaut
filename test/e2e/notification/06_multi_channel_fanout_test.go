@@ -157,7 +157,10 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
-			Expect(savedNotification.Name).To(Equal("e2e-multi-channel-fanout"))
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Multi-Channel Fanout"))
 			Expect(savedNotification.Spec.Body).To(Equal("Testing delivery to console, file, and log channels simultaneously"))
 
