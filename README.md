@@ -104,10 +104,13 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
   - **Audit Flow Enhancements**: AIAnalysis controller automatic audit event generation
   - **Integration Test Stability**: "Wait for Processing First" pattern for controller-aware testing
   - Plans: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md)
-- 📋 **Next V1.0 Features** (3 PRs):
-  - **Envoy SAR Validation**: HAPI + DataStorage endpoint authorization (ADR-036)
-  - **Resource Scope Management**: `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053)
+- 📋 **Next V1.0 Features** (2 PRs):
+  - **Resource Scope Management**: `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053) - **NEXT PRIORITY**
   - **Segmented E2E Scenarios**: Progressive integration validation across all services
+- ✅ **Recently Completed** (February 2026):
+  - **Middleware-Based SAR Authentication**: All stateless services (DD-AUTH-014)
+  - **RAR Audit Trail**: SOC2-compliant approval workflow auditing (BR-AUDIT-006)
+  - **CI/CD Coverage Infrastructure**: Automated test coverage reporting
 - 🎉 **V1.0 Core Services Complete**: All 9 services production-ready (8 core + Must-Gather)
 - ✅ **Gateway v1.0**: 339 tests (221U+22I+96E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), HTTP anti-pattern refactoring complete (Jan 10, 2026)
 - ✅ **Signal Processing v1.0**: SOC2-compliant audit traces (original_payload, signal_labels, signal_annotations)
@@ -423,7 +426,7 @@ Apache License 2.0
 
 **V1.0 Status**: All 9 services production-ready (100%) ✅ | SOC2 compliance completed ✅ | 3 PRs remaining for V1.0 | 1 deferred to V1.1 (DD-017) | **V1.0 Pre-release**: February 2026
 
-**Current Sprint**: ✅ SOC2 Compliance Complete (RR reconstruction + operator attribution + hash chain integrity) → 🚧 Next: Envoy SAR validation → Resource scope management (BR-SCOPE-001, ADR-053) → Segmented E2E scenarios → Pre-release + feedback solicitation.
+**Current Sprint**: ✅ SAR Middleware + RAR Audit Complete (DD-AUTH-014, BR-AUDIT-006) → 🚧 Next: Resource Scope Management (BR-SCOPE-001, ADR-053) → Segmented E2E scenarios → V1.0 Pre-release + feedback solicitation.
 
 ---
 
