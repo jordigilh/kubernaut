@@ -71,6 +71,12 @@ const (
 	// Condition metrics (BR-ORCH-043, DD-CRD-002)
 	MetricNameConditionStatus           = "kubernaut_remediationorchestrator_condition_status"
 	MetricNameConditionTransitionsTotal = "kubernaut_remediationorchestrator_condition_transitions_total"
+
+	// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
+	MetricNameApprovalDecisionsTotal = "kubernaut_remediationorchestrator_approval_decisions_total"
+
+	// Audit event metrics (BR-AUDIT-006 - SOC 2 CC7.2 audit trail completeness)
+	MetricNameAuditEventsTotal = "kubernaut_remediationorchestrator_audit_events_total"
 )
 
 // Metrics holds all Prometheus metrics for the Remediation Orchestrator controller.
@@ -110,6 +116,14 @@ type Metrics struct {
 	// === CONDITION METRICS (BR-ORCH-043, DD-CRD-002) ===
 	ConditionStatus           *prometheus.GaugeVec
 	ConditionTransitionsTotal *prometheus.CounterVec
+
+	// === APPROVAL DECISION METRICS (BR-AUDIT-006 - SOC 2 Compliance) ===
+	// Business Value: Track approval/rejection rates for compliance reporting and operational insights
+	ApprovalDecisionsTotal *prometheus.CounterVec
+
+	// === AUDIT EVENT METRICS (BR-AUDIT-006 - SOC 2 CC7.2 Audit Trail Completeness) ===
+	// Business Value: Track audit event success/failure for compliance alerting
+	AuditEventsTotal *prometheus.CounterVec
 }
 
 // NewMetrics creates a new Metrics instance and registers with controller-runtime.
@@ -266,6 +280,24 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"crd_type", "condition_type", "from_status", "to_status", "namespace"},
 		),
+
+		// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
+		ApprovalDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameApprovalDecisionsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of approval decisions (approved/rejected/expired). Business Value: Track approval rates for compliance reporting and operational insights (SOC 2 CC8.1).",
+			},
+			[]string{"decision", "namespace"},
+		),
+
+		// Audit event metrics (BR-AUDIT-006 - SOC 2 CC7.2)
+		AuditEventsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameAuditEventsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of audit event emissions (success/failure). Business Value: Track audit trail completeness for compliance alerting (SOC 2 CC7.2 - audit integrity).",
+			},
+			[]string{"crd_type", "event_type", "status", "namespace"},
+		),
 	}
 
 	// Register all metrics with controller-runtime's global registry
@@ -290,6 +322,8 @@ func NewMetrics() *Metrics {
 		m.StatusUpdateConflictsTotal,
 		m.ConditionStatus,
 		m.ConditionTransitionsTotal,
+		m.ApprovalDecisionsTotal,
+		m.AuditEventsTotal,
 	)
 
 	// Initialize all metrics with 0 values so they appear in /metrics endpoint
@@ -311,6 +345,13 @@ func NewMetrics() *Metrics {
 	m.StatusUpdateConflictsTotal.WithLabelValues("default").Add(0)
 	m.ConditionStatus.WithLabelValues("RemediationRequest", "SignalProcessingReady", "True", "default").Set(0)
 	m.ConditionTransitionsTotal.WithLabelValues("RemediationRequest", "SignalProcessingReady", "", "True", "default").Add(0)
+
+	// BR-AUDIT-006: Initialize approval decision and audit event metrics
+	m.ApprovalDecisionsTotal.WithLabelValues("Approved", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Rejected", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Expired", "default").Add(0)
+	m.AuditEventsTotal.WithLabelValues("RAR", "approval_decision", "success", "default").Add(0)
+	m.AuditEventsTotal.WithLabelValues("RAR", "approval_decision", "failure", "default").Add(0)
 
 	return m
 }
@@ -455,6 +496,24 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"crd_type", "condition_type", "from_status", "to_status", "namespace"},
 		),
+
+		// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
+		ApprovalDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameApprovalDecisionsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of approval decisions (approved/rejected/expired). Business Value: Track approval rates for compliance reporting and operational insights (SOC 2 CC8.1).",
+			},
+			[]string{"decision", "namespace"},
+		),
+
+		// Audit event metrics (BR-AUDIT-006 - SOC 2 CC7.2)
+		AuditEventsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameAuditEventsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of audit event emissions (success/failure). Business Value: Track audit trail completeness for compliance alerting (SOC 2 CC7.2 - audit integrity).",
+			},
+			[]string{"crd_type", "event_type", "status", "namespace"},
+		),
 	}
 
 	// Register with provided registry (test registry)
@@ -478,6 +537,8 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		m.StatusUpdateConflictsTotal,
 		m.ConditionStatus,
 		m.ConditionTransitionsTotal,
+		m.ApprovalDecisionsTotal,
+		m.AuditEventsTotal,
 	)
 
 	// Initialize all metrics with 0 values so they appear in /metrics endpoint
@@ -499,6 +560,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	m.StatusUpdateConflictsTotal.WithLabelValues("default").Add(0)
 	m.ConditionStatus.WithLabelValues("RemediationRequest", "SignalProcessingReady", "True", "default").Set(0)
 	m.ConditionTransitionsTotal.WithLabelValues("RemediationRequest", "SignalProcessingReady", "", "True", "default").Add(0)
+
+	// BR-AUDIT-006: Initialize approval decision and audit event metrics
+	m.ApprovalDecisionsTotal.WithLabelValues("Approved", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Rejected", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Expired", "default").Add(0)
+	m.AuditEventsTotal.WithLabelValues("RAR", "approval_decision", "success", "default").Add(0)
+	m.AuditEventsTotal.WithLabelValues("RAR", "approval_decision", "failure", "default").Add(0)
 
 	return m
 }
@@ -536,7 +604,7 @@ func (m *Metrics) RecordConditionStatus(crdType, conditionType, status, namespac
 //   - crdType: "RemediationRequest" or "RemediationApprovalRequest"
 //   - conditionType: The condition type (e.g., "SignalProcessingReady")
 //   - fromStatus: Previous status ("True", "False", "Unknown", or "" for initial set)
-//   - toStatus: New status ("True", "False", or "Unknown")
+//   - toStatus: New status ("True", "False", "Unknown")
 //   - namespace: K8s namespace
 //
 // Example:
@@ -544,4 +612,68 @@ func (m *Metrics) RecordConditionStatus(crdType, conditionType, status, namespac
 //	m.RecordConditionTransition("RemediationRequest", "SignalProcessingReady", "False", "True", "default")
 func (m *Metrics) RecordConditionTransition(crdType, conditionType, fromStatus, toStatus, namespace string) {
 	m.ConditionTransitionsTotal.WithLabelValues(crdType, conditionType, fromStatus, toStatus, namespace).Inc()
+}
+
+// ========================================
+// APPROVAL DECISION METRICS HELPERS (BR-AUDIT-006 - SOC 2 Compliance)
+// ========================================
+
+// RecordApprovalDecision records a RemediationApprovalRequest decision.
+//
+// Business Value:
+//   - Tracks approval/rejection rates for compliance reporting (SOC 2 CC8.1)
+//   - Operational insights: Identify rejection patterns, approval trends
+//   - Alerting: Monitor for unexpected approval spikes or policy violations
+//
+// Parameters:
+//   - decision: "Approved", "Rejected", or "Expired"
+//   - namespace: K8s namespace
+//
+// Example:
+//
+//	m.RecordApprovalDecision("Approved", "production")
+func (m *Metrics) RecordApprovalDecision(decision, namespace string) {
+	m.ApprovalDecisionsTotal.WithLabelValues(decision, namespace).Inc()
+}
+
+// ========================================
+// AUDIT EVENT METRICS HELPERS (BR-AUDIT-006 - SOC 2 CC7.2)
+// ========================================
+
+// RecordAuditEventSuccess records successful audit event emission.
+//
+// Business Value:
+//   - Tracks audit trail completeness for SOC 2 CC7.2 compliance
+//   - Ensures all approval decisions are properly audited
+//   - Baseline for compliance dashboards and reports
+//
+// Parameters:
+//   - crdType: "RAR", "RR", "WFE", etc.
+//   - eventType: "approval_decision", "lifecycle_event", etc.
+//   - namespace: K8s namespace
+//
+// Example:
+//
+//	m.RecordAuditEventSuccess("RAR", "approval_decision", "production")
+func (m *Metrics) RecordAuditEventSuccess(crdType, eventType, namespace string) {
+	m.AuditEventsTotal.WithLabelValues(crdType, eventType, "success", namespace).Inc()
+}
+
+// RecordAuditEventFailure records failed audit event emission.
+//
+// Business Value:
+//   - CRITICAL: Audit failures indicate compliance gaps (SOC 2 CC7.2 violation)
+//   - Triggers immediate alerting for audit trail integrity issues
+//   - Tracks DataStorage availability and audit infrastructure health
+//
+// Parameters:
+//   - crdType: "RAR", "RR", "WFE", etc.
+//   - eventType: "approval_decision", "lifecycle_event", etc.
+//   - namespace: K8s namespace
+//
+// Example:
+//
+//	m.RecordAuditEventFailure("RAR", "approval_decision", "production")
+func (m *Metrics) RecordAuditEventFailure(crdType, eventType, namespace string) {
+	m.AuditEventsTotal.WithLabelValues(crdType, eventType, "failure", namespace).Inc()
 }
