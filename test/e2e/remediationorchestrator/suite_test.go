@@ -205,7 +205,7 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
 		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 		// Per DD-AUTH-014: Use ServiceAccount token for authentication
-		dataStorageURL := "http://localhost:8089" // DD-TEST-001: RO → DataStorage dependency port
+		dataStorageURL := "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
 		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,
