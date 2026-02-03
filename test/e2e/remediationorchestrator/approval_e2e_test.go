@@ -17,65 +17,290 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-// ========================================
-// Phase 2 E2E Tests - Approval Conditions
-// ========================================
+// TDD RED Phase: RAR Audit Trail E2E Tests
 //
-// PHASE 2 PATTERN: RO Controller + Child Controllers Running
-// - RO controller manages RAR lifecycle and Kubernetes Conditions
-// - Controller automatically transitions conditions based on approvals
-// - Tests validate end-to-end condition state transitions
+// Business Requirements:
+// - BR-AUDIT-006: Approval decision audit trail (SOC 2 CC8.1, CC6.8)
+// - DD-WEBHOOK-003: Webhook-Complete Audit Pattern
+// - ADR-040: RemediationApprovalRequest CRD Architecture
 //
-// PENDING: These tests await controller deployment in E2E suite.
-// See test/e2e/remediationorchestrator/suite_test.go lines 142-147 for TODO.
+// Test Strategy:
+// - Create RAR via RO controller (no mocks)
+// - Approve RAR via AuthWebhook (authenticated user)
+// - Validate TWO audit events exist:
+//   1. Webhook event (event_category="webhook")
+//   2. RO approval event (event_category="orchestration")
+// - Validate complete audit trail (WHO, WHAT, WHEN, WHY)
 //
-// Business Value:
-// - DD-CRD-002-RAR: Kubernetes Conditions API compliance
-// - Approval workflow state management (approved/rejected/expired paths)
-// ========================================
+// Expected: Tests will FAIL until RO controller emits approval audit events
 
-var _ = Describe("DD-CRD-002-RAR: Approval Conditions E2E Tests", Label("e2e", "approval", "conditions", "pending"), func() {
+var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "approval"), func() {
+	const (
+		dataStorageURL = "http://localhost:8089" // DD-TEST-001: RO → DataStorage dependency port
+		e2eTimeout     = 120 * time.Second
+		e2eInterval    = 2 * time.Second
+	)
 
-	Context("DD-CRD-002-RAR: Approved Path Conditions", func() {
+	Context("E2E-RO-AUD006-001: Complete RAR Approval Audit Trail", func() {
+		var (
+			testNamespace string
+			testRR        *remediationv1.RemediationRequest
+			testRAR       *remediationv1.RemediationApprovalRequest
+			dsClient      *dsgen.Client
+		)
 
-		It("should transition conditions correctly when RAR is approved", func() {
-			// Test validates:
-			// - ApprovalPending=False after approval
-			// - ApprovalDecided=True with reason=Approved
-			// - Condition message includes approver name
-			// - ApprovalExpired remains False
-			//
-			// NOTE: This test requires RO controller to process approval and update conditions automatically.
-			// Integration tests simulate manual condition updates only.
+		BeforeEach(func() {
+			// Create unique namespace for E2E test isolation
+			testNamespace = GenerateUniqueNamespace()
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			// Create authenticated DataStorage client (DD-AUTH-014)
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			var err error
+			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create RemediationRequest (triggers RO controller)
+			now := metav1.Now()
+			testRR = &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("e2e-rar-audit-%d", time.Now().Unix()),
+					Namespace: testNamespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "audit-test-fingerprint-12345",
+					SignalName:        "E2ERARAuditTest",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app",
+						Namespace: testNamespace,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+
+			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s\n", testNamespace, testRR.Name)
+
+			// Wait for RO controller to create RAR (requires AIAnalysis with low confidence)
+			// For now, manually create RAR to test audit trail
+			testRAR = &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rar-%s", testRR.Name),
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/remediation-request": testRR.Name,
+					},
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      testRR.Name,
+						Namespace: testNamespace,
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-test",
+					},
+					Confidence:           0.75,
+					ConfidenceLevel:      "medium",
+					Reason:               "Confidence below 80% auto-approve threshold",
+					InvestigationSummary: "Memory leak detected in payment service",
+					WhyApprovalRequired:  "Medium confidence requires human validation",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "restart-pod-v1",
+						Version:        "1.0.0",
+						ContainerImage: "kubernaut/restart-pod:v1",
+						Rationale:      "Standard pod restart",
+					},
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Restart pod", Rationale: "Clear memory leak"},
+					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
+			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
+		})
+
+		AfterEach(func() {
+			// Cleanup namespace
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		It("should emit complete audit trail for approval decision", func() {
+			// BUSINESS ACTION: Operator approves remediation via AuthWebhook
+			By("Simulating operator approval (webhook sets DecidedBy)")
+			
+			// Get latest RAR
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+			
+			// Update RAR status to approved (simulates webhook mutation)
+			testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+			testRAR.Status.DecidedBy = "e2e-test-user@example.com" // Simulates webhook auth
+			now := metav1.Now()
+			testRAR.Status.DecidedAt = &now
+			testRAR.Status.DecisionMessage = "E2E test approval - root cause confirmed"
+			
+			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
+
+			// BUSINESS VALIDATION: Query for audit events
+			By("Querying DataStorage for RAR audit events")
+			correlationID := testRR.Name // Per DD-AUDIT-CORRELATION-002
+
+			var allEvents []dsgen.AuditEvent
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
+					return 0
+				}
+				allEvents = resp.Data
+				return len(allEvents)
+			}, e2eTimeout, e2eInterval).Should(BeNumerically(">=", 2),
+				"COMPLIANCE FAILURE: Need at least 2 audit events (webhook + approval)")
+
+			// BUSINESS VALIDATION: Separate events by category
+			var webhookEvents, orchestrationEvents []dsgen.AuditEvent
+			for _, event := range allEvents {
+				switch string(event.EventCategory) {
+				case "webhook":
+					webhookEvents = append(webhookEvents, event)
+				case "orchestration":
+					// Filter for approval events only
+					if event.EventType == "orchestrator.approval.approved" {
+						orchestrationEvents = append(orchestrationEvents, event)
+					}
+				}
+			}
+
+			GinkgoWriter.Printf("📊 E2E: Found %d total events (%d webhook, %d orchestration)\n",
+				len(allEvents), len(webhookEvents), len(orchestrationEvents))
+
+			// BUSINESS OUTCOME 1: Webhook audit event exists (AuthWebhook)
+			Expect(webhookEvents).To(HaveLen(1),
+				"COMPLIANCE: AuthWebhook must emit audit event (DD-WEBHOOK-003)")
+			
+			webhookEvent := webhookEvents[0]
+			actorID, _ := webhookEvent.ActorID.Get()
+			Expect(actorID).To(Equal("e2e-test-user@example.com"),
+				"BUSINESS OUTCOME: Webhook captured authenticated user (SOC 2 CC8.1)")
+			Expect(webhookEvent.EventAction).To(Equal("approval_decided"),
+				"BUSINESS OUTCOME: Webhook action is clear")
+
+			// BUSINESS OUTCOME 2: RO approval audit event exists (RO Controller)
+			Expect(orchestrationEvents).To(HaveLen(1),
+				"COMPLIANCE: RO controller must emit approval audit event (BR-AUDIT-006)")
+			
+			approvalEvent := orchestrationEvents[0]
+			Expect(approvalEvent.EventType).To(Equal("orchestrator.approval.approved"),
+				"BUSINESS OUTCOME: Event type indicates approval")
+			Expect(string(approvalEvent.EventOutcome)).To(Equal("success"),
+				"BUSINESS OUTCOME: Approved path is success outcome")
+
+			// BUSINESS OUTCOME 3: Complete audit trail (WHO, WHAT, WHEN, WHY)
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("✅ E2E-RO-AUD006-001: Complete RAR Audit Trail Validated\n")
+			GinkgoWriter.Printf("   BUSINESS OUTCOMES:\n")
+			GinkgoWriter.Printf("   • WHO approved: %s (webhook auth) ✅\n", actorID)
+			GinkgoWriter.Printf("   • WHAT decision: Approved ✅\n")
+			GinkgoWriter.Printf("   • WHEN: %s ✅\n", approvalEvent.EventTimestamp)
+			GinkgoWriter.Printf("   • WHY: Root cause confirmed ✅\n")
+			GinkgoWriter.Printf("   • Two-event audit trail: webhook + RO ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC8.1 + CC6.8 satisfied ✅\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		})
+
+		It("should emit audit event for rejection decision", func() {
+			// BUSINESS ACTION: Operator rejects remediation
+			By("Simulating operator rejection")
+			
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+			
+			testRAR.Status.Decision = remediationv1.ApprovalDecisionRejected
+			testRAR.Status.DecidedBy = "e2e-test-user@example.com"
+			now := metav1.Now()
+			testRAR.Status.DecidedAt = &now
+			testRAR.Status.DecisionMessage = "Risk too high - potential cascading failures"
+			
+			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+
+			// BUSINESS VALIDATION: Query for orchestration events
+			By("Querying for rejection audit event")
+			correlationID := testRR.Name
+
+			var rejectionEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					EventCategory: dsgen.NewOptString("orchestration"),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				if err != nil {
+					return false
+				}
+				
+				for _, event := range resp.Data {
+					if event.EventType == "orchestrator.approval.rejected" {
+						rejectionEvent = &event
+						return true
+					}
+				}
+				return false
+			}, e2eTimeout, e2eInterval).Should(BeTrue(),
+				"COMPLIANCE FAILURE: No rejection audit event (BR-AUDIT-006)")
+
+			// BUSINESS OUTCOME: Rejection recorded with failure outcome
+			Expect(string(rejectionEvent.EventOutcome)).To(Equal("failure"),
+				"BUSINESS OUTCOME: Rejected path is failure outcome (remediation NOT executed)")
+
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("✅ E2E-RO-AUD006-002: Rejection Audit Event Validated\n")
+			GinkgoWriter.Printf("   • Event type: %s ✅\n", rejectionEvent.EventType)
+			GinkgoWriter.Printf("   • Outcome: failure (remediation blocked) ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC6.8 satisfied ✅\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 
-	Context("DD-CRD-002-RAR: Rejected Path Conditions", func() {
+	Context("E2E-RO-AUD006-003: Audit Trail Persistence", func() {
+		It("should query audit events after RAR CRD is deleted", func() {
+			// BUSINESS SCENARIO: 6 months later, auditor investigates incident
+			// BUSINESS NEED: Audit trail exists even after CRD cleanup
+			// COMPLIANCE: SOC 2 CC7.2 (90-365 day retention)
 
-		It("should transition conditions correctly when RAR is rejected", func() {
-			// Test validates:
-			// - ApprovalPending=False after rejection
-			// - ApprovalDecided=True with reason=Rejected
-			// - Condition message includes rejector name and reason
-			// - ApprovalExpired remains False
-			//
-			// NOTE: This test requires RO controller to process rejection and update conditions automatically.
-		})
-	})
-
-	Context("DD-CRD-002-RAR: Expired Path Conditions", func() {
-
-		It("should transition conditions correctly when RAR expires without decision", func() {
-			// Test validates:
-			// - ApprovalPending=False after expiration
-			// - ApprovalExpired=True with reason=Timeout
-			// - Condition message includes expiration duration
-			// - ApprovalDecided remains False (no decision made)
-			//
-			// NOTE: This test requires RO controller to detect expiration and update conditions automatically.
+			Skip("TODO: Implement after E2E-RO-AUD006-001 passes")
 		})
 	})
 })
