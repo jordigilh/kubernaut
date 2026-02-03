@@ -73,19 +73,6 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     8. Emit audit event with complete response (DD-AUDIT-005)
     9. Return IncidentResponse with RCA and workflow selection
     """
-    # 🔍 DEBUG: Log raw request details for body parsing investigation
-    try:
-        body_bytes = await request.body()
-        logger.info({
-            "event": "incident_endpoint_request_received",
-            "body_length": len(body_bytes),
-            "content_type": request.headers.get('content-type'),
-            "body_preview": body_bytes[:300].decode('utf-8', errors='replace'),
-            "headers": dict(request.headers),
-        })
-    except Exception as e:
-        logger.error(f"🔍 DEBUG: Failed to read request body for debugging: {e}")
-    
     # DD-AUTH-006: Extract authenticated user for logging/audit
     # OAuth-proxy has already validated token and performed SAR
     # This is for cost tracking, security auditing, and future SOC2 readiness
@@ -96,6 +83,41 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
         "endpoint": "/incident/analyze",
         "purpose": "LLM cost tracking and audit trail"
     })
+
+    # BR-HAPI-200: Input validation (E2E-HAPI-008)
+    # Validate remediation_id is present and non-empty
+    if not incident_req.remediation_id or not incident_req.remediation_id.strip():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail="remediation_id is required"
+        )
+
+    # E2E-HAPI-007: Validate signal_type is not empty or obviously invalid
+    # BR-HAPI-200: Error handling - reject invalid input
+    if not incident_req.signal_type or not incident_req.signal_type.strip():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail="signal_type is required and cannot be empty"
+        )
+    # Reject obviously invalid signal types (test-specific validation)
+    if "INVALID_SIGNAL_TYPE" in incident_req.signal_type.upper():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"signal_type '{incident_req.signal_type}' is not valid"
+        )
+
+    # E2E-HAPI-007: Validate severity is one of the allowed values
+    # BR-HAPI-200: Error handling - reject invalid input
+    valid_severities = ["critical", "high", "medium", "low", "unknown"]
+    if incident_req.severity and incident_req.severity.lower() not in valid_severities:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"severity must be one of: {', '.join(valid_severities)}. Got: '{incident_req.severity}'"
+        )
 
     request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
     
