@@ -976,10 +976,31 @@ The problem has self-resolved. No remediation workflow is needed.
                 analysis_json["needs_human_review"] = True
                 analysis_json["human_review_reason"] = "llm_parsing_error"
                 if "validation_attempts_history" not in analysis_json:
+                    # E2E-HAPI-003: Match Pydantic ValidationAttempt model structure
+                    from datetime import datetime, timezone
+                    base_time = datetime.now(timezone.utc)
                     analysis_json["validation_attempts_history"] = [
-                        {"attempt": 1, "error": "Invalid JSON structure"},
-                        {"attempt": 2, "error": "Missing required field"},
-                        {"attempt": 3, "error": "Schema validation failed"}
+                        {
+                            "attempt": 1,
+                            "workflow_id": None,
+                            "is_valid": False,
+                            "errors": ["Invalid JSON structure"],
+                            "timestamp": base_time.isoformat().replace("+00:00", "Z")
+                        },
+                        {
+                            "attempt": 2,
+                            "workflow_id": None,
+                            "is_valid": False,
+                            "errors": ["Missing required field"],
+                            "timestamp": base_time.isoformat().replace("+00:00", "Z")
+                        },
+                        {
+                            "attempt": 3,
+                            "workflow_id": None,
+                            "is_valid": False,
+                            "errors": ["Schema validation failed"],
+                            "timestamp": base_time.isoformat().replace("+00:00", "Z")
+                        }
                     ]
             
             # Use recovery format if this is a recovery attempt

@@ -482,29 +482,32 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			By("Querying audit events by timestamp range (compliance audit scenario)")
 			
 			// Query for events in the last hour (simulates auditor querying historical data)
-			startTime := time.Now().Add(-1 * time.Hour)
-			endTime := time.Now()
-
+			// DataStorage API uses "since" (relative time like "1h") and "until" (absolute RFC3339)
 			respByTime, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
-				StartTime:     dsgen.NewOptDateTime(startTime),
-				EndTime:       dsgen.NewOptDateTime(endTime),
+				Since:         dsgen.NewOptString("1h"), // Last 1 hour
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
 			Expect(respByTime.Data).To(HaveLen(2),
 				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
 
-			// BUSINESS OUTCOME 5: Query by actor (simulates forensic investigation)
-			By("Querying audit events by actor (forensic investigation scenario)")
+			// BUSINESS OUTCOME 5: Verify actor is present in audit data (forensic investigation)
+			By("Verifying actor identity is retrievable (forensic investigation scenario)")
 			
-			respByActor, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-				ActorID: dsgen.NewOptString("e2e-auditor@example.com"),
-				Limit:   dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred(), "Actor query must succeed")
-			Expect(len(respByActor.Data)).To(BeNumerically(">=", 1),
-				"COMPLIANCE: Audit events must be queryable by actor (forensic investigation)")
+			// DataStorage API doesn't support actor_id filtering in query params
+			// Instead, verify actor_id is present in the returned audit events
+			var actorFound bool
+			for _, event := range persistedEvents {
+				if actorID, hasActor := event.ActorID.Get(); hasActor {
+					if actorID == "e2e-auditor@example.com" {
+						actorFound = true
+						break
+					}
+				}
+			}
+			Expect(actorFound).To(BeTrue(),
+				"COMPLIANCE: Actor identity must be retrievable from audit events (forensic investigation)")
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 			GinkgoWriter.Printf("✅ E2E-RO-AUD006-003: Audit Trail Persistence Validated\n")
@@ -513,8 +516,8 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			GinkgoWriter.Printf("   • WHO: %s (retrievable) ✅\n", actorID)
 			GinkgoWriter.Printf("   • WHEN: %s (retrievable) ✅\n", approvalEvent.EventTimestamp)
 			GinkgoWriter.Printf("   • Queryable by correlation_id ✅\n")
-			GinkgoWriter.Printf("   • Queryable by timestamp range ✅\n")
-			GinkgoWriter.Printf("   • Queryable by actor (forensics) ✅\n")
+			GinkgoWriter.Printf("   • Queryable by timestamp range (since) ✅\n")
+			GinkgoWriter.Printf("   • Actor identity retrievable (forensics) ✅\n")
 			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.2 (90-365 day retention) satisfied ✅\n")
 			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.4 (Audit completeness) satisfied ✅\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
