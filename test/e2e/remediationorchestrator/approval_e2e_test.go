@@ -295,12 +295,229 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 	})
 
 	Context("E2E-RO-AUD006-003: Audit Trail Persistence", func() {
+		var (
+			testNamespace string
+			testRR        *remediationv1.RemediationRequest
+			testRAR       *remediationv1.RemediationApprovalRequest
+			dsClient      *dsgen.Client
+			correlationID string
+		)
+
+		BeforeEach(func() {
+			// Create unique namespace for E2E test isolation
+			testNamespace = GenerateUniqueNamespace()
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			// Create authenticated DataStorage client
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			var err error
+			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create RemediationRequest
+			now := metav1.Now()
+			testRR = &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("e2e-rar-persist-%d", time.Now().Unix()),
+					Namespace: testNamespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000003",
+					SignalName:        "E2ERARAuditPersistenceTest",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app-persist",
+						Namespace: testNamespace,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+			correlationID = testRR.Name
+
+			// Create RAR
+			testRAR = &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rar-%s", testRR.Name),
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/remediation-request": testRR.Name,
+					},
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      testRR.Name,
+						Namespace: testNamespace,
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-test-persist",
+					},
+					Confidence:           0.70,
+					ConfidenceLevel:      "medium",
+					Reason:               "Persistence test scenario",
+					InvestigationSummary: "Testing audit trail durability",
+					WhyApprovalRequired:  "Compliance validation",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "restart-pod-v1",
+						Version:        "1.0.0",
+						ContainerImage: "kubernaut/restart-pod:v1",
+						Rationale:      "Standard pod restart",
+					},
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Restart pod", Rationale: "Clear memory leak"},
+					},
+					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
+
+			// Approve RAR (triggers audit events)
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+			testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+			testRAR.Status.DecidedBy = "e2e-auditor@example.com"
+			now = metav1.Now()
+			testRAR.Status.DecidedAt = &now
+			testRAR.Status.DecisionMessage = "Approved for persistence test"
+			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+
+			// Wait for audit events to be persisted
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				if err != nil {
+					return 0
+				}
+				return len(resp.Data)
+			}, e2eTimeout, e2eInterval).Should(BeNumerically(">=", 2),
+				"Audit events must be persisted before CRD deletion")
+
+			GinkgoWriter.Printf("🚀 E2E-RO-AUD006-003: Created RAR %s and persisted audit events\n", testRAR.Name)
+		})
+
+		AfterEach(func() {
+			// Cleanup namespace
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
 		It("should query audit events after RAR CRD is deleted", func() {
 			// BUSINESS SCENARIO: 6 months later, auditor investigates incident
 			// BUSINESS NEED: Audit trail exists even after CRD cleanup
 			// COMPLIANCE: SOC 2 CC7.2 (90-365 day retention)
 
-			Skip("TODO: Implement after E2E-RO-AUD006-001 passes")
+			By("Deleting RAR CRD (simulates cleanup after incident resolution)")
+			Expect(k8sClient.Delete(ctx, testRAR)).To(Succeed())
+
+			// Wait for CRD deletion to complete
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)
+				return err != nil // CRD should not exist
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"RAR CRD should be deleted")
+
+			GinkgoWriter.Printf("🗑️  E2E: Deleted RAR CRD %s\n", testRAR.Name)
+
+			By("Querying DataStorage for audit events (CRD deleted, audit trail persists)")
+			
+			// BUSINESS VALIDATION: Audit events still exist after CRD deletion
+			var persistedEvents []dsgen.AuditEvent
+			resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "DataStorage query must succeed")
+			persistedEvents = resp.Data
+
+			// BUSINESS OUTCOME 1: Audit trail persists after CRD deletion
+			Expect(persistedEvents).To(HaveLen(2),
+				"COMPLIANCE FAILURE: Audit trail must persist after CRD cleanup (SOC 2 CC7.2)")
+
+			// BUSINESS OUTCOME 2: Separate events by category
+			var webhookEvents, orchestrationEvents []dsgen.AuditEvent
+			for _, event := range persistedEvents {
+				switch string(event.EventCategory) {
+				case "webhook":
+					webhookEvents = append(webhookEvents, event)
+				case "orchestration":
+					if event.EventType == "orchestrator.approval.approved" {
+						orchestrationEvents = append(orchestrationEvents, event)
+					}
+				}
+			}
+
+			Expect(webhookEvents).To(HaveLen(1),
+				"COMPLIANCE: Webhook audit event must persist")
+			Expect(orchestrationEvents).To(HaveLen(1),
+				"COMPLIANCE: Orchestration audit event must persist")
+
+			// BUSINESS OUTCOME 3: Complete audit data is retrievable
+			webhookEvent := webhookEvents[0]
+			approvalEvent := orchestrationEvents[0]
+
+			actorID, _ := webhookEvent.ActorID.Get()
+			Expect(actorID).To(Equal("e2e-auditor@example.com"),
+				"BUSINESS OUTCOME: Auditor can identify WHO approved (SOC 2 CC8.1)")
+
+			resourceID, _ := approvalEvent.ResourceID.Get()
+			Expect(resourceID).ToNot(BeEmpty(),
+				"BUSINESS OUTCOME: Auditor can identify WHAT was approved")
+
+			Expect(approvalEvent.EventTimestamp).ToNot(BeZero(),
+				"BUSINESS OUTCOME: Auditor can identify WHEN decision was made (SOC 2 CC7.2)")
+
+			// BUSINESS OUTCOME 4: Query by timestamp range (simulates compliance audit)
+			By("Querying audit events by timestamp range (compliance audit scenario)")
+			
+			// Query for events in the last hour (simulates auditor querying historical data)
+			startTime := time.Now().Add(-1 * time.Hour)
+			endTime := time.Now()
+
+			respByTime, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				StartTime:     dsgen.NewOptDateTime(startTime),
+				EndTime:       dsgen.NewOptDateTime(endTime),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
+			Expect(respByTime.Data).To(HaveLen(2),
+				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
+
+			// BUSINESS OUTCOME 5: Query by actor (simulates forensic investigation)
+			By("Querying audit events by actor (forensic investigation scenario)")
+			
+			respByActor, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				ActorID: dsgen.NewOptString("e2e-auditor@example.com"),
+				Limit:   dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "Actor query must succeed")
+			Expect(len(respByActor.Data)).To(BeNumerically(">=", 1),
+				"COMPLIANCE: Audit events must be queryable by actor (forensic investigation)")
+
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("✅ E2E-RO-AUD006-003: Audit Trail Persistence Validated\n")
+			GinkgoWriter.Printf("   BUSINESS OUTCOMES:\n")
+			GinkgoWriter.Printf("   • Audit trail persists after CRD deletion ✅\n")
+			GinkgoWriter.Printf("   • WHO: %s (retrievable) ✅\n", actorID)
+			GinkgoWriter.Printf("   • WHEN: %s (retrievable) ✅\n", approvalEvent.EventTimestamp)
+			GinkgoWriter.Printf("   • Queryable by correlation_id ✅\n")
+			GinkgoWriter.Printf("   • Queryable by timestamp range ✅\n")
+			GinkgoWriter.Printf("   • Queryable by actor (forensics) ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.2 (90-365 day retention) satisfied ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.4 (Audit completeness) satisfied ✅\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 })
