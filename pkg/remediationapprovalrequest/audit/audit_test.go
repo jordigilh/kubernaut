@@ -261,6 +261,123 @@ var _ = Describe("RemediationApprovalRequest Audit", func() {
 		})
 	})
 
+	// ========================================
+	// TDD RED Phase: Cycle 2 - Additional Scenarios
+	// ========================================
+
+	Context("UT-RO-AUD006-003: Expired decision audit event", func() {
+		It("should emit approval.decision event for expired decision", func() {
+			// Given: RAR with expired decision
+			rar.Status.Decision = remediationapprovalrequestv1alpha1.ApprovalDecisionExpired
+			rar.Status.DecidedBy = "system"
+			rar.Status.DecisionMessage = "Approval timeout - no operator response"
+
+			// When: RecordApprovalDecision is called
+			auditClient.RecordApprovalDecision(ctx, rar)
+
+			// Then: Audit event emitted with outcome=failure
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+
+			Expect(event.EventType).To(Equal("approval.decision"))
+			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure),
+				"Event outcome should be failure for expired")
+
+			// Verify actor is system (not user)
+			actorType, _ := event.ActorType.Get()
+			Expect(actorType).To(Equal("user"), "Actor type should still be user")
+			actorID, _ := event.ActorID.Get()
+			Expect(actorID).To(Equal("system"), "Actor ID should be system for timeout")
+
+			payload, ok := event.EventData.GetRemediationApprovalDecisionPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Decision).To(Equal(ogenclient.RemediationApprovalDecisionPayloadDecisionExpired))
+
+			GinkgoWriter.Printf("✅ UT-RO-AUD006-003: Expired decision audit event\n")
+		})
+	})
+
+	Context("UT-RO-AUD006-005: Authenticated user captured correctly", func() {
+		It("should capture authenticated user from webhook", func() {
+			// Given: RAR with different authenticated user
+			rar.Status.DecidedBy = "bob@example.com"
+
+			// When: RecordApprovalDecision is called
+			auditClient.RecordApprovalDecision(ctx, rar)
+
+			// Then: Authenticated user captured in actor_id
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+
+			actorID, hasActorID := event.ActorID.Get()
+			Expect(hasActorID).To(BeTrue())
+			Expect(actorID).To(Equal("bob@example.com"),
+				"Should capture authenticated user from webhook")
+
+			payload, _ := event.EventData.GetRemediationApprovalDecisionPayload()
+			Expect(payload.DecidedBy).To(Equal("bob@example.com"),
+				"Payload should also have authenticated user")
+
+			GinkgoWriter.Printf("✅ UT-RO-AUD006-005: Authenticated user captured correctly\n")
+		})
+	})
+
+	Context("UT-RO-AUD006-006: Correlation ID matches parent RR", func() {
+		It("should use parent RR name as correlation ID", func() {
+			// Given: RAR with specific parent RR
+			rar.Spec.RemediationRequestRef.Name = "rr-custom-parent-789"
+
+			// When: RecordApprovalDecision is called
+			auditClient.RecordApprovalDecision(ctx, rar)
+
+			// Then: Correlation ID matches parent RR
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+
+			Expect(event.CorrelationID).To(Equal("rr-custom-parent-789"),
+				"Correlation ID should match parent RemediationRequest name")
+
+			GinkgoWriter.Printf("✅ UT-RO-AUD006-006: Correlation ID matches parent RR\n")
+		})
+	})
+
+	Context("UT-RO-AUD006-007: Complete approval context included", func() {
+		It("should include all approval context fields in payload", func() {
+			// When: RecordApprovalDecision is called
+			auditClient.RecordApprovalDecision(ctx, rar)
+
+			// Then: All required context fields present
+			Expect(mockStore.StoredEvents).To(HaveLen(1))
+			event := mockStore.StoredEvents[0]
+
+			payload, ok := event.EventData.GetRemediationApprovalDecisionPayload()
+			Expect(ok).To(BeTrue())
+
+			// Verify all required fields
+			Expect(payload.RemediationRequestName).ToNot(BeEmpty(),
+				"Should have RR name")
+			Expect(payload.AiAnalysisName).ToNot(BeEmpty(),
+				"Should have AI analysis name")
+			Expect(payload.Decision).ToNot(BeEmpty(),
+				"Should have decision")
+			Expect(payload.DecidedBy).ToNot(BeEmpty(),
+				"Should have decided_by")
+			Expect(payload.Confidence).To(BeNumerically(">", 0),
+				"Should have confidence score")
+			Expect(payload.WorkflowID).ToNot(BeEmpty(),
+				"Should have workflow ID")
+
+			// Verify optional fields are set
+			_, hasDecisionMsg := payload.DecisionMessage.Get()
+			Expect(hasDecisionMsg).To(BeTrue(), "Should have decision message")
+
+			_, hasWorkflowVer := payload.WorkflowVersion.Get()
+			Expect(hasWorkflowVer).To(BeTrue(), "Should have workflow version")
+
+			GinkgoWriter.Printf("✅ UT-RO-AUD006-007: Complete approval context included\n")
+		})
+	})
+
 	Context("UT-RO-AUD006-008: Graceful degradation", func() {
 		It("should not fail on audit store error (fire-and-forget)", func() {
 			// Given: Mock store returns error
