@@ -40,7 +40,7 @@ router = APIRouter()
     "/recovery/analyze",
     status_code=status.HTTP_200_OK,
     response_model=RecoveryResponse,
-    response_model_exclude_none=True,  # E2E-HAPI-023/024: Exclude None values (selected_workflow, alternative_workflows)
+    response_model_exclude_none=True,  # E2E-HAPI-023/024: Exclude None values (selected_workflow). Note: alternative_workflows always included per BR-AUDIT-005
     responses={
         200: {"description": "Successful Response - Recovery analyzed with workflow selection"},
         400: {"description": "Bad Request - Invalid input format or missing required fields"},
