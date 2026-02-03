@@ -63,7 +63,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Data Storage** | 8081 | 30081 | 9181 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Signal Processing** | 8082 | 30082 | 9182 | 30182 | — | — | `test/infrastructure/kind-signalprocessing-config.yaml` |
 | **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
-| **RO → Data Storage** | 8089 | 30081 | — | — | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` (dependency) |
+| **RO → Data Storage** | 8090 | 30081 | — | — | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` (dependency) |
 | **AIAnalysis** | 8084 | 30084 | 9184 | 30184 | 8184 | 30284 | `test/infrastructure/kind-aianalysis-config.yaml` |
 | **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` |
 | **WE → Data Storage** | 8092 | 30081 | — | — | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` (dependency) |
