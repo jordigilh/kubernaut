@@ -30,7 +30,7 @@ nodes:
   extraPortMappings:
   # DataStorage API Port (for audit event queries in E2E tests)
   - containerPort: 30081  # DataStorage NodePort in cluster
-    hostPort: 8089        # DD-TEST-001: RO → DataStorage dependency (avoids conflicts with WE:8092, DS:8081)
+    hostPort: 8090        # DD-TEST-001: RO → DataStorage dependency (8089=HAPI, 8091=AIAnalysis, 8092=WE)
     protocol: TCP
   # API Port (if needed in future)
   - containerPort: 30083
