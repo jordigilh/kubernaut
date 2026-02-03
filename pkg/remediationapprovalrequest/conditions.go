@@ -30,7 +30,7 @@ import (
 )
 
 // ========================================
-// CONDITION TYPES (3 per DD-CRD-002-remediationapprovalrequest-conditions)
+// CONDITION TYPES (4 per DD-CRD-002-remediationapprovalrequest-conditions)
 // ========================================
 
 const (
@@ -42,6 +42,11 @@ const (
 
 	// ConditionApprovalExpired indicates the approval request timed out
 	ConditionApprovalExpired = "ApprovalExpired"
+
+	// ConditionAuditRecorded indicates audit event was written to DataStorage
+	// Per BR-AUDIT-006: Track audit emission for idempotency
+	// Pattern: WorkflowExecution AuditRecorded condition
+	ConditionAuditRecorded = "AuditRecorded"
 )
 
 // ========================================
@@ -65,6 +70,12 @@ const (
 const (
 	ReasonTimeout    = "Timeout"
 	ReasonNotExpired = "NotExpired"
+)
+
+// AuditRecorded reasons
+const (
+	ReasonAuditSucceeded = "AuditSucceeded"
+	ReasonAuditFailed    = "AuditFailed"
 )
 
 // ========================================
@@ -153,4 +164,26 @@ func SetApprovalExpired(rar *remediationv1.RemediationApprovalRequest, expired b
 		reason = ReasonNotExpired
 	}
 	SetCondition(rar, ConditionApprovalExpired, status, reason, message, m)
+}
+
+// SetAuditRecorded sets the AuditRecorded condition
+//
+// Per BR-AUDIT-006: Track audit event emission for idempotency
+// Pattern: WorkflowExecution SetAuditRecorded (pkg/workflowexecution/conditions.go)
+//
+// Usage:
+//
+//	// Audit succeeded
+//	SetAuditRecorded(rar, true, ReasonAuditSucceeded,
+//	    "Approval audit event recorded to DataStorage")
+//
+//	// Audit failed
+//	SetAuditRecorded(rar, false, ReasonAuditFailed,
+//	    "Failed to record audit event: DataStorage unavailable")
+func SetAuditRecorded(rar *remediationv1.RemediationApprovalRequest, succeeded bool, reason, message string, m *rometrics.Metrics) {
+	status := metav1.ConditionTrue
+	if !succeeded {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(rar, ConditionAuditRecorded, status, reason, message, m)
 }
