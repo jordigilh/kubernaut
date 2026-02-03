@@ -91,12 +91,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Name:      fmt.Sprintf("e2e-rar-audit-%d", time.Now().Unix()),
 					Namespace: testNamespace,
 				},
-				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "audit-test-fingerprint-12345",
-					SignalName:        "E2ERARAuditTest",
-					Severity:          "critical",
-					SignalType:        "prometheus",
-					TargetType:        "kubernetes",
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000001",
+				SignalName:        "E2ERARAuditTest",
+				Severity:          "critical",
+				SignalType:        "prometheus",
+				TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "test-app",
