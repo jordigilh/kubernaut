@@ -1692,6 +1692,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryOrchestration
 	case AuditEventEventCategoryWebhook:
 		*s = AuditEventEventCategoryWebhook
+	case AuditEventEventCategoryApproval:
+		*s = AuditEventEventCategoryApproval
 	default:
 		*s = AuditEventEventCategory(v)
 	}
@@ -3871,6 +3873,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryOrchestration
 	case AuditEventRequestEventCategoryWebhook:
 		*s = AuditEventRequestEventCategoryWebhook
+	case AuditEventRequestEventCategoryApproval:
+		*s = AuditEventRequestEventCategoryApproval
 	default:
 		*s = AuditEventRequestEventCategory(v)
 	}

@@ -121,6 +121,8 @@ def _get_holmes_config(
         logger.info(f"Registering MCP servers: {list(mcp_servers_config.keys())}")
 
     # Create HolmesGPT SDK Config
+    # NOTE: api_key is obtained from OPENAI_API_KEY environment variable via SDK's model registry
+    # Do NOT pass api_key to Config() - it's not a valid field and will cause Pydantic validation error
     config_data = {
         "model": model_name,
         "api_base": os.getenv("LLM_ENDPOINT"),

@@ -136,6 +136,8 @@ def load_config() -> AppConfig:
     """
     import os
 
+    # ANTI-PATTERN EXCEPTION: CONFIG_FILE is the ONLY allowed env var (ADR-030)
+    # All other configuration MUST come from YAML files
     # ADR-030 EXCEPTION: Read from env var (set by entrypoint.sh from -config flag)
     config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
     config_path = Path(config_file)

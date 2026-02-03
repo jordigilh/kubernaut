@@ -39,9 +39,6 @@ from datetime import datetime, timezone
 # HolmesGPT SDK imports
 from holmes.core.models import InvestigationResult
 
-# Application constants
-from src.config.constants import CONFIDENCE_THRESHOLD_HUMAN_REVIEW
-
 logger = logging.getLogger(__name__)
 
 
@@ -256,10 +253,9 @@ def parse_and_validate_investigation_result(
         warnings.append("No workflows matched the search criteria")
         needs_human_review = True
         human_review_reason = "no_matching_workflows"
-    elif confidence < CONFIDENCE_THRESHOLD_HUMAN_REVIEW:
-        warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
-        needs_human_review = True
-        human_review_reason = "low_confidence"
+    # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
+    # HAPI only sets needs_human_review for validation failures, not confidence thresholds
+    # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)
     # BR-HAPI-212: Validate affectedResource is present when workflow selected
     # This check must happen AFTER problem_resolved check (workflow not needed if resolved)
     elif selected_workflow is not None and not rca_target:
@@ -604,10 +600,8 @@ def parse_investigation_result(
         warnings.append("No workflows matched the search criteria")
         needs_human_review = True
         human_review_reason = "no_matching_workflows"
-    elif confidence < CONFIDENCE_THRESHOLD_HUMAN_REVIEW:
-        warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
-        needs_human_review = True
-        human_review_reason = "low_confidence"
+    # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
+    # (Duplicate check removed here as well)
 
     # DD-HAPI-002 v1.2: Set needs_human_review if workflow validation failed
     if workflow_validation_failed:

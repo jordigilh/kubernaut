@@ -87,9 +87,14 @@ var _ = Describe("Python Test Coordination", func() {
 			GinkgoWriter.Println("🐍 Running Python tests in UBI9 container (runtime deps)...")
 			
 			// Build pytest command with dependency installation
+			// NOTE: Must install holmesgpt first to avoid httpx version conflicts
+			// Same pattern as custom Dockerfile (holmesgpt-api-integration-test.Dockerfile)
 			pytestCmd := fmt.Sprintf(
-				"cd /workspace/holmesgpt-api && "+
-					"pip install -q -r requirements.txt -r requirements-test.txt && "+
+				"cd /workspace && "+
+					"pip install -q --break-system-packages dependencies/holmesgpt && "+
+					"cd holmesgpt-api && "+
+					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
+					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
 					"HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true "+
 					"pytest tests/integration/ -v --tb=short --no-cov",
 			)

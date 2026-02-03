@@ -67,6 +67,7 @@ datastorage/models/reconstruction_response.py
 datastorage/models/release_legal_hold200_response.py
 datastorage/models/release_legal_hold_request.py
 datastorage/models/remediation_approval_audit_payload.py
+datastorage/models/remediation_approval_decision_payload.py
 datastorage/models/remediation_orchestrator_audit_payload.py
 datastorage/models/remediation_request_webhook_audit_payload.py
 datastorage/models/remediation_workflow.py
@@ -150,6 +151,7 @@ docs/ReconstructionResponse.md
 docs/ReleaseLegalHold200Response.md
 docs/ReleaseLegalHoldRequest.md
 docs/RemediationApprovalAuditPayload.md
+docs/RemediationApprovalDecisionPayload.md
 docs/RemediationOrchestratorAuditPayload.md
 docs/RemediationRequestWebhookAuditPayload.md
 docs/RemediationWorkflow.md
@@ -237,6 +239,7 @@ test/test_reconstruction_response.py
 test/test_release_legal_hold200_response.py
 test/test_release_legal_hold_request.py
 test/test_remediation_approval_audit_payload.py
+test/test_remediation_approval_decision_payload.py
 test/test_remediation_orchestrator_audit_payload.py
 test/test_remediation_request_webhook_audit_payload.py
 test/test_remediation_workflow.py

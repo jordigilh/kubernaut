@@ -817,14 +817,10 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: 
 - `test/unit/gateway/middleware/auth_test.go` (pending)
 - `test/integration/gateway/auth_integration_test.go` (pending)
-- `test/e2e/gateway/auth_e2e_test.go` (pending)
-
-**Authorization Check**:
+- `test/e2e/gateway/auth_e2e_test.go` (pending)**Authorization Check**:
 ```
 Can <ServiceAccount> CREATE remediationrequests.kubernaut.ai IN <namespace>?
-```
-
-**SAR Parameters**:
+```**SAR Parameters**:
 - **User**: Authenticated ServiceAccount name (from BR-GATEWAY-182)
 - **Resource**: `remediationrequests.kubernaut.ai` (CRD API group)
 - **Verb**: `create` (Gateway creates RemediationRequest CRDs)
@@ -854,20 +850,12 @@ roleRef:
   kind: ClusterRole
   name: gateway-signal-sender
   apiGroup: rbac.authorization.k8s.io
-```
-
-**Error Handling**:
+```**Error Handling**:
 - **401 Unauthorized**: Token validation fails (BR-GATEWAY-182)
 - **403 Forbidden**: SAR denies access (this BR)
-- **500 Internal Server Error**: TokenReview/SAR API failure (fail-closed for security)
-
-**Performance Considerations** (per DD-AUTH-014 V2.0):
+- **500 Internal Server Error**: TokenReview/SAR API failure (fail-closed for security)**Performance Considerations** (per DD-AUTH-014 V2.0):
 - ✅ No caching: Gateway throughput <100 signals/min (low load)
 - ✅ Network Policies: Reduce unauthorized traffic before SAR check
 - ✅ Fail-closed: API server unavailability blocks requests (secure default)**Related Requirements**:
 - BR-GATEWAY-182: ServiceAccount Authentication (prerequisite)
-- BR-GATEWAY-053: RBAC Permissions (general RBAC requirement)
-
-**Decision Reference**: [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)
-
-**Authority**: DD-AUTH-014 V2.0 (January 29, 2026)
+- BR-GATEWAY-053: RBAC Permissions (general RBAC requirement)**Decision Reference**: [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)**Authority**: DD-AUTH-014 V2.0 (January 29, 2026)

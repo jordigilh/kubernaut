@@ -356,6 +356,7 @@ class TestWorkflowCatalogContainerImageDirectAPI:
 
         # DD-API-001: Direct API call using OpenAPI client (not raw requests)
         config = Configuration(host=data_storage_url)
+        config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
         api_client = ApiClient(configuration=config)
         search_api = WorkflowCatalogAPIApi(api_client)
 

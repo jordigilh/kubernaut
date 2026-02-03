@@ -135,7 +135,7 @@ var _ = Describe("RemediationApprovalRequest Audit", func() {
 			// Verify event metadata
 			Expect(event.EventType).To(Equal("approval.decision"),
 				"Event type should be approval.decision")
-			Expect(event.EventCategory).To(Equal("approval"),
+			Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryApproval),
 				"Event category should be approval")
 			Expect(event.EventAction).To(Equal("decision_made"),
 				"Event action should be decision_made")
@@ -143,9 +143,14 @@ var _ = Describe("RemediationApprovalRequest Audit", func() {
 				"Event outcome should be success for approved")
 
 			// Verify actor (SOC 2 CC8.1 - User Attribution)
-			Expect(event.ActorType).To(Equal("user"),
+			actorType, hasActorType := event.ActorType.Get()
+			Expect(hasActorType).To(BeTrue(), "Actor type should be set")
+			Expect(actorType).To(Equal("user"),
 				"Actor type should be user")
-			Expect(event.ActorID).To(Equal("alice@example.com"),
+			
+			actorID, hasActorID := event.ActorID.Get()
+			Expect(hasActorID).To(BeTrue(), "Actor ID should be set")
+			Expect(actorID).To(Equal("alice@example.com"),
 				"Actor ID should match authenticated user")
 
 			// Verify correlation ID (DD-AUDIT-CORRELATION-002)
@@ -153,11 +158,19 @@ var _ = Describe("RemediationApprovalRequest Audit", func() {
 				"Correlation ID should match parent RR name")
 
 			// Verify resource
-			Expect(event.ResourceType).To(Equal("RemediationApprovalRequest"),
+			resourceType, hasRT := event.ResourceType.Get()
+			Expect(hasRT).To(BeTrue(), "Resource type should be set")
+			Expect(resourceType).To(Equal("RemediationApprovalRequest"),
 				"Resource type should be RemediationApprovalRequest")
-			Expect(event.ResourceID).To(Equal("rar-test-001"),
+			
+			resourceID, hasRID := event.ResourceID.Get()
+			Expect(hasRID).To(BeTrue(), "Resource ID should be set")
+			Expect(resourceID).To(Equal("rar-test-001"),
 				"Resource ID should match RAR name")
-			Expect(event.Namespace).To(Equal("production"),
+			
+			namespace, hasNS := event.Namespace.Get()
+			Expect(hasNS).To(BeTrue(), "Namespace should be set")
+			Expect(namespace).To(Equal("production"),
 				"Namespace should match RAR namespace")
 
 			// Verify payload structure
@@ -223,7 +236,7 @@ var _ = Describe("RemediationApprovalRequest Audit", func() {
 
 			payload, ok := event.EventData.GetRemediationApprovalDecisionPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.Decision).To(Equal("rejected"))
+			Expect(payload.Decision).To(Equal(ogenclient.RemediationApprovalDecisionPayloadDecisionRejected))
 
 			decisionMsg, _ := payload.DecisionMessage.Get()
 			Expect(decisionMsg).To(Equal("Risk too high for production"))
