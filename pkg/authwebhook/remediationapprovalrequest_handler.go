@@ -179,7 +179,10 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
 	audit.SetResource(auditEvent, "RemediationApprovalRequest", string(rar.UID))
-	audit.SetCorrelationID(auditEvent, rar.Name) // Use RAR name for correlation
+	// CRITICAL: Use parent RR name for correlation (DD-AUDIT-CORRELATION-002)
+	// This ensures all RAR audit events (webhook + orchestration) share the same correlation_id
+	parentRRName := rar.Spec.RemediationRequestRef.Name
+	audit.SetCorrelationID(auditEvent, parentRRName)
 	audit.SetNamespace(auditEvent, rar.Namespace)
 
 	// Set event data payload

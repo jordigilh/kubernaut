@@ -279,6 +279,10 @@ def parse_and_validate_investigation_result(
         "json_data_keys": list(json_data.keys()) if json_data else None
     })
 
+    # E2E-HAPI-003: Track if LLM explicitly provided these values to prevent override later
+    llm_provided_human_review = (needs_human_review_from_llm is not None or 
+                                   human_review_reason_from_llm is not None)
+    
     # Initialize with LLM values if provided, otherwise use defaults
     if needs_human_review_from_llm is not None:
         needs_human_review = bool(needs_human_review_from_llm)
@@ -288,9 +292,21 @@ def parse_and_validate_investigation_result(
             "incident_id": incident_id,
             "needs_human_review": needs_human_review,
             "human_review_reason": human_review_reason,
+            "llm_provided": True
+        })
+    elif human_review_reason_from_llm is not None:
+        # E2E-HAPI-003: LLM provided reason without needs flag
+        needs_human_review = True
+        human_review_reason = human_review_reason_from_llm
+        logger.info({
+            "event": "human_review_reason_from_llm_only",
+            "incident_id": incident_id,
+            "human_review_reason": human_review_reason,
+            "llm_provided": True
         })
     else:
         # BR-HAPI-197: Default - HAPI doesn't set human review based on confidence
+        # Will be overridden by investigation outcome checks below
         needs_human_review = False
         human_review_reason = None
 
@@ -325,15 +341,13 @@ def parse_and_validate_investigation_result(
         })
     elif selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
-        # E2E-HAPI-003: Only override if LLM didn't provide values
-        # Check BOTH needs_human_review AND human_review_reason (LLM may provide reason without needs flag)
-        if needs_human_review_from_llm is None and human_review_reason_from_llm is None:
+        # E2E-HAPI-003: Only override if LLM didn't explicitly provide human review values
+        if not llm_provided_human_review:
             needs_human_review = True
             human_review_reason = "no_matching_workflows"
-        elif human_review_reason_from_llm is not None:
-            # LLM provided reason, use it
-            needs_human_review = True
-            human_review_reason = human_review_reason_from_llm
+            logger.info("E2E-HAPI-003: Using default no_matching_workflows (LLM didn't provide)")
+        else:
+            logger.info(f"E2E-HAPI-003: Preserving LLM-provided values - needs_human_review={needs_human_review}, reason={human_review_reason}")
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # HAPI only sets needs_human_review for validation failures, not confidence thresholds
     # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)
@@ -341,8 +355,10 @@ def parse_and_validate_investigation_result(
     # This check must happen AFTER problem_resolved check (workflow not needed if resolved)
     elif selected_workflow is not None and not rca_target:
         warnings.append("RCA is missing affectedResource field - cannot determine target for remediation")
-        needs_human_review = True
-        human_review_reason = "rca_incomplete"
+        # E2E-HAPI-003: Only override if LLM didn't provide values
+        if not llm_provided_human_review:
+            needs_human_review = True
+            human_review_reason = "rca_incomplete"
         logger.warning({
             "event": "rca_incomplete_missing_affected_resource",
             "incident_id": incident_id,
@@ -350,6 +366,16 @@ def parse_and_validate_investigation_result(
             "message": "BR-HAPI-212: Workflow selected but affectedResource missing from RCA"
         })
 
+    # E2E-HAPI-003: Extract validation_attempts_history from LLM if provided
+    validation_attempts_from_llm = json_data.get("validation_attempts_history") if json_data else None
+    logger.info({
+        "event": "validation_attempts_extraction",
+        "incident_id": incident_id,
+        "from_llm": validation_attempts_from_llm is not None,
+        "count": len(validation_attempts_from_llm) if validation_attempts_from_llm else 0,
+        "type": type(validation_attempts_from_llm).__name__ if validation_attempts_from_llm else "None"
+    })
+    
     result = {
         "incident_id": incident_id,
         "analysis": analysis,
@@ -369,6 +395,14 @@ def parse_and_validate_investigation_result(
         result["human_review_reason"] = human_review_reason
     if alternative_workflows:  # Only if non-empty list
         result["alternative_workflows"] = alternative_workflows
+    # E2E-HAPI-003: Include LLM-provided validation history (for max_retries_exhausted simulation)
+    if validation_attempts_from_llm:
+        result["validation_attempts_history"] = validation_attempts_from_llm
+        logger.info({
+            "event": "validation_attempts_added_to_result",
+            "incident_id": incident_id,
+            "count": len(validation_attempts_from_llm)
+        })
 
     return result, validation_result
 
