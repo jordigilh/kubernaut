@@ -53,7 +53,7 @@ import (
 
 var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "approval"), func() {
 	const (
-		dataStorageURL = "http://localhost:8089" // DD-TEST-001: RO → DataStorage dependency port
+		dataStorageURL = "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
 		e2eTimeout     = 120 * time.Second
 		e2eInterval    = 2 * time.Second
 	)

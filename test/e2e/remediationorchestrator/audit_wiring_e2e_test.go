@@ -51,7 +51,7 @@ import (
 
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 	const (
-		dataStorageURL = "http://localhost:8089" // DD-TEST-001: RO → DataStorage dependency port
+		dataStorageURL = "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
 		e2eTimeout     = 120 * time.Second       // Same as suite timeout
 		e2eInterval    = 500 * time.Millisecond
 	)
