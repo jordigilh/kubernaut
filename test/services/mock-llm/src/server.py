@@ -622,8 +622,34 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
+        # Check for signal types FIRST (most specific first to avoid false matches)
+        # DD-TEST-010: Match exact signal types, not generic substrings
+        # FIX: Move signal type checks BEFORE Category F scenarios to avoid incorrect matches
+        # "crashloop" is more specific than "oom", check it first
+        if "crashloop" in content:
+            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "oomkilled" in content:
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "nodenotready" in content or "node not ready" in content:
+            matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+
+        # Check for generic recovery scenario (has priority over Category F scenarios)
+        # DD-TEST-011 v2.1: Detect recovery via JSON fields OR prompt keywords
+        # Recovery requests include: {"is_recovery_attempt": true, "recovery_attempt_number": 1}
+        if ("is_recovery_attempt" in all_text or "recovery_attempt_number" in all_text) or \
+           ("recovery" in content and ("previous remediation" in content or "failed attempt" in content or "previous execution" in content)) or \
+           ("workflow execution failed" in content and "recovery" in content):
+            logger.info("✅ SCENARIO DETECTED: RECOVERY (generic)")
+            return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
+
         # Check for Category F recovery scenarios (E2E-HAPI-049 to E2E-HAPI-054)
-        # These have priority over generic recovery detection
+        # These are checked LAST to avoid over-matching generic keywords
         if "mock_multi_step_recovery" in content or "multi_step_recovery" in content or "multi step recovery" in content:
             logger.info("✅ SCENARIO DETECTED: MULTI_STEP_RECOVERY")
             return MOCK_SCENARIOS.get("multi_step_recovery", DEFAULT_SCENARIO)
@@ -642,31 +668,6 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "mock_recovery_basic" in content or "recovery_basic" in content or ("recovery" in content and "basic" in content):
             logger.info("✅ SCENARIO DETECTED: RECOVERY_BASIC")
             return MOCK_SCENARIOS.get("recovery_basic", DEFAULT_SCENARIO)
-
-        # Check for generic recovery scenario (has priority over regular signals)
-        # DD-TEST-011 v2.1: Detect recovery via JSON fields OR prompt keywords
-        # Recovery requests include: {"is_recovery_attempt": true, "recovery_attempt_number": 1}
-        if ("is_recovery_attempt" in all_text or "recovery_attempt_number" in all_text) or \
-           ("recovery" in content and ("previous remediation" in content or "failed attempt" in content or "previous execution" in content)) or \
-           ("workflow execution failed" in content and "recovery" in content):
-            logger.info("✅ SCENARIO DETECTED: RECOVERY (generic)")
-            return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
-
-        # Check for signal types (most specific first to avoid false matches)
-        # DD-TEST-010: Match exact signal types, not generic substrings
-        # "crashloop" is more specific than "oom", check it first
-        if "crashloop" in content:
-            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "oomkilled" in content:
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "nodenotready" in content or "node not ready" in content:
-            matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
 
         # PHASE 2: Fallback to current_scenario or DEFAULT_SCENARIO
         fallback_scenario = MockLLMRequestHandler.current_scenario
