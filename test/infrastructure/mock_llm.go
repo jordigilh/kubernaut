@@ -53,8 +53,10 @@ import (
 
 // Port allocation per DD-TEST-001 v2.5 (Mock LLM Service)
 // Integration Tests (Podman): Per-service isolation
-//   HAPI: 18140
-//   AIAnalysis: 18141
+//
+//	HAPI: 18140
+//	AIAnalysis: 18141
+//
 // E2E Tests (Kind): ClusterIP only (no NodePort)
 const (
 	MockLLMPortHAPI       = 18140 // HAPI integration tests (Podman)
@@ -107,19 +109,20 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 		}
 		// Also tag as base image for cache consistency
 		tagBaseCmd := exec.CommandContext(ctx, "podman", "tag", pulledImageName, baseImageName)
-		_ = tagBaseCmd.Run() // Ignore errors (not critical)
+		_ = tagBaseCmd.Run()        // Ignore errors (not critical)
 		return pulledImageName, nil // Use registry image
 	}
 
-	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (cache-friendly)\n", baseImageName)
+	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image locally: %s (--no-cache for fresh code)\n", baseImageName)
 	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
 	// Build context is test/services/mock-llm/
 	projectRoot := getProjectRoot()
 	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
-	// Build with stable tag for cache reuse
+	// Build with --no-cache to ensure fresh code (addresses recurring cache issues)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"--no-cache",
 		"-t", baseImageName,
 		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
 		buildContext,
@@ -134,7 +137,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 		return "", fmt.Errorf("failed to build Mock LLM image: %w\nOutput: %s", err, string(output))
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Mock LLM image built with cache: %s\n", baseImageName)
+	_, _ = fmt.Fprintf(writer, "✅ Mock LLM image built (no cache): %s\n", baseImageName)
 
 	// Tag with unique name for DD-TEST-004 compliance
 	tagCmd := exec.CommandContext(ctx, "podman", "tag", baseImageName, uniqueImageName)
@@ -177,9 +180,9 @@ func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
 // - Parallel-safe (called from SynchronizedBeforeSuite)
 //
 // Prerequisites:
-// - Mock LLM image built with unique tag per DD-TEST-004
-//   Example: localhost/mock-llm:hapi-a3b5c7d9 (generated via GenerateInfraImageName)
-// - Ports per DD-TEST-001 v2.5: HAPI=18140, AIAnalysis=18141
+//   - Mock LLM image built with unique tag per DD-TEST-004
+//     Example: localhost/mock-llm:hapi-a3b5c7d9 (generated via GenerateInfraImageName)
+//   - Ports per DD-TEST-001 v2.5: HAPI=18140, AIAnalysis=18141
 //
 // Returns:
 // - containerID: Container ID for cleanup
@@ -207,7 +210,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 
 	// Start Mock LLM container
 	_, _ = fmt.Fprintf(writer, "🚀 Starting Mock LLM container...\n")
-	
+
 	// DD-AUTH-014: Platform-specific port configuration
 	// - Bridge network: Internal port 8080 with port mapping (e.g., 18085:8080)
 	// - Host network: Internal port matches external (e.g., 18085) since no port mapping
@@ -216,7 +219,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		internalPort = config.Port // Host network: Bind directly to external port
 		_, _ = fmt.Fprintf(writer, "   🌐 Host network mode: Mock LLM will bind to port %d directly\n", internalPort)
 	}
-	
+
 	args := []string{"run", "-d", "--rm",
 		"--name", config.ContainerName,
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
@@ -285,15 +288,15 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		default:
 		}
 
-	resp, err := http.Get(healthURL)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		_ = resp.Body.Close()
-		_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
-		return nil
-	}
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
+		resp, err := http.Get(healthURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
+			return nil
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 
 		if i < maxRetries-1 {
 			_, _ = fmt.Fprintf(writer, "⏳ Mock LLM not ready yet (attempt %d/%d), retrying in %v...\n",

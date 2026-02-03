@@ -114,12 +114,12 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
 		_, _ = fmt.Fprintf(writer, "🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 		_, _ = fmt.Fprintf(writer, "   Skipping local build, will pull from registry\n")
-		
+
 		// Extract service name from ImageName (remove repo prefix if present)
 		// e.g., "kubernaut/datastorage" → "datastorage"
 		parts := strings.Split(cfg.ImageName, "/")
 		serviceName := parts[len(parts)-1]
-		
+
 		imageName, err := PullImageFromRegistry(serviceName, writer)
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
@@ -155,7 +155,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "🔨 Building E2E image: %s\n", fullImageName)
 
 	// Build image with optional coverage instrumentation
-	buildArgs := []string{"build", "-t", localImageName}
+	buildArgs := []string{"build", "-t", localImageName, "--no-cache"}
 
 	// DD-TEST-007: E2E Coverage Collection
 	// Support coverage instrumentation when E2E_COVERAGE=true or EnableCoverage flag is set
@@ -164,6 +164,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 		_, _ = fmt.Fprintf(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
 	}
 
+	_, _ = fmt.Fprintf(writer, "   🚫 Building with --no-cache to ensure fresh code\n")
 	buildArgs = append(buildArgs, "-f", filepath.Join(projectRoot, cfg.DockerfilePath), cfg.BuildContextPath)
 
 	// DD-TEST-009: Add 15-minute timeout to prevent infinite hangs

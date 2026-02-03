@@ -205,14 +205,107 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         include_affected_resource=False,  # BR-HAPI-212: Trigger missing affectedResource scenario
         parameters={"ACTION": "restart"}
     ),
+    # ========================================
+    # Category F: Advanced Recovery Scenarios (Mock LLM)
+    # E2E-HAPI-049 to E2E-HAPI-054
+    # ========================================
+    # ========================================
+    # Category F: Advanced Recovery Scenarios (NOT YET IMPLEMENTED - E2E-HAPI-049 to 054)
+    # These scenarios use hardcoded workflow_id until workflows are seeded
+    # ========================================
+    "multi_step_recovery": MockScenario(
+        name="multi_step_recovery",
+        # workflow_name="autoscaler-enable-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-049
+        signal_type="InsufficientResources",
+        severity="high",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Enable Cluster Autoscaler",
+        confidence=0.85,
+        root_cause="Step 1 (memory increase) succeeded. Step 2 (scale deployment) failed due to cluster capacity exhaustion. Need to add nodes or reduce scope.",
+        rca_resource_kind="Deployment",
+        rca_resource_namespace="production",
+        rca_resource_name="api-server",
+        parameters={"ACTION": "enable_autoscaler", "MIN_NODES": "3", "MAX_NODES": "10"}
+    ),
+    "cascading_failure": MockScenario(
+        name="cascading_failure",
+        # workflow_name="memory-increase-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-050
+        signal_type="CrashLoopBackOff",
+        severity="high",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Increase Memory Limit (Leak Mitigation)",
+        confidence=0.75,
+        root_cause="Memory leak detected. Constant growth rate (50MB/min) repeats after restart. Pattern indicates application bug, not load-based issue. Restart failed previously.",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="api-server",
+        parameters={"ACTION": "increase_memory", "CURRENT_LIMIT": "2Gi", "NEW_LIMIT": "4Gi"}
+    ),
+    "near_attempt_limit": MockScenario(
+        name="near_attempt_limit",
+        # workflow_name="rollback-deployment-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-051
+        signal_type="DatabaseConnectionError",
+        severity="critical",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Rollback to Last Known Good Version",
+        confidence=0.90,
+        root_cause="Database migration broke compatibility. This is the final recovery attempt (2 of 3 exhausted). Both forward fixes failed with different errors. Conservative rollback is most reliable strategy.",
+        rca_resource_kind="Deployment",
+        rca_resource_namespace="production",
+        rca_resource_name="payment-service",
+        parameters={"ACTION": "rollback", "TARGET_REVISION": "previous", "REASON": "final_attempt_conservative"}
+    ),
+    "noisy_neighbor": MockScenario(
+        name="noisy_neighbor",
+        # workflow_name="resource-quota-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-052
+        signal_type="HighDatabaseLatency",
+        severity="high",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Set Resource Quotas for Namespace",
+        confidence=0.80,
+        root_cause="Noisy neighbor detected. ML batch job in ml-workloads namespace consuming excessive resources on same nodes as database. Database pods experiencing CPU throttling.",
+        rca_resource_kind="Namespace",
+        rca_resource_namespace="ml-workloads",
+        rca_resource_name="ml-workloads",
+        parameters={"ACTION": "set_quota", "NAMESPACE": "ml-workloads", "CPU_LIMIT": "16", "MEMORY_LIMIT": "64Gi"}
+    ),
+    "network_partition": MockScenario(
+        name="network_partition",
+        # workflow_name="wait-for-heal-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-053
+        signal_type="NodeUnreachable",
+        severity="high",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Wait for Network Partition Heal",
+        confidence=0.70,
+        root_cause="Network partition detected (3 nodes unreachable for 8+ minutes). Split-brain risk. Conservative approach: wait for partition to heal before taking action.",
+        rca_resource_kind="Node",
+        rca_resource_namespace="",  # Cluster-scoped
+        rca_resource_name="node-3",
+        parameters={"ACTION": "wait_for_heal", "MAX_WAIT": "15m", "MONITOR_INTERVAL": "30s"}
+    ),
+    "recovery_basic": MockScenario(
+        name="recovery_basic",
+        # workflow_name="memory-increase-basic-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-054
+        signal_type="OOMKilled",
+        severity="high",
+        workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
+        workflow_title="Increase Memory Limit",
+        confidence=0.85,
+        root_cause="Container killed due to out of memory. Simple recovery: increase memory limit from current 512Mi to 1Gi to prevent OOMKilled errors.",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="api-pod",
+        parameters={"ACTION": "increase_memory", "CURRENT_LIMIT": "512Mi", "NEW_LIMIT": "1Gi"}
+    ),
 }
 
 # Default scenario if none matches
 DEFAULT_SCENARIO = MockScenario(
     name="default",
+    workflow_name="generic-restart-v1",  # Set workflow_name so UUID gets loaded from config
     signal_type="Unknown",
     severity="medium",
-    workflow_id="generic-restart-v1",
+    workflow_id="placeholder-uuid-default",  # Placeholder - overwritten by config file
     workflow_title="Generic Pod Restart",
     confidence=0.75,
     root_cause="Unable to determine specific root cause",
@@ -283,6 +376,9 @@ def load_scenarios_from_file(config_path: str):
             # Match against MOCK_SCENARIOS by workflow_name (environment-agnostic)
             # DD-TEST-011 v2.2: Match workflows for all environments (staging/production/test)
             # Tests may use different environments but expect same Mock LLM scenarios
+            matched = False
+            
+            # Check MOCK_SCENARIOS
             for scenario_name, scenario in MOCK_SCENARIOS.items():
                 if not scenario.workflow_name:
                     continue  # Skip scenarios without workflow_name
@@ -292,8 +388,19 @@ def load_scenarios_from_file(config_path: str):
                     scenario.workflow_id = workflow_uuid
                     synced_count += 1
                     print(f"  ✅ Loaded {scenario_name} ({workflow_name_from_config}:{env_from_config}) → {workflow_uuid}")
-                    break  # Found match, move to next config entry
-            else:
+                    matched = True
+                    # DON'T BREAK - multiple scenarios may share same workflow_name (e.g., low_confidence + DEFAULT_SCENARIO)
+            
+            # Also check DEFAULT_SCENARIO (not in MOCK_SCENARIOS dict)
+            # Check this ALWAYS, not just when matched=False, because multiple scenarios can share same workflow
+            if DEFAULT_SCENARIO.workflow_name == workflow_name_from_config:
+                DEFAULT_SCENARIO.workflow_id = workflow_uuid
+                if not matched:  # Only increment synced_count if this is the first match
+                    synced_count += 1
+                print(f"  ✅ Loaded default ({workflow_name_from_config}:{env_from_config}) → {workflow_uuid}")
+                matched = True
+            
+            if not matched:
                 # No match found for this config entry
                 print(f"  ⚠️  No matching scenario for config entry: {workflow_key}")
 
@@ -301,10 +408,20 @@ def load_scenarios_from_file(config_path: str):
         
         # Validate that all scenarios with workflow_name matched successfully
         # This prevents silent failures from workflow name drift between Mock LLM and test fixtures
+        # Check both MOCK_SCENARIOS and DEFAULT_SCENARIO
         expected_scenarios_with_workflows = len([s for s in MOCK_SCENARIOS.values() if s.workflow_name])
+        if DEFAULT_SCENARIO.workflow_name:
+            expected_scenarios_with_workflows += 1
+        
         if synced_count < expected_scenarios_with_workflows:
             missing = expected_scenarios_with_workflows - synced_count
-            unsynced_scenarios = [name for name, s in MOCK_SCENARIOS.items() if s.workflow_name and s.workflow_id == "mock-workflow-v1"]
+            # Find scenarios that have workflow_name but still have placeholder UUIDs
+            unsynced_scenarios = [name for name, s in MOCK_SCENARIOS.items() 
+                                if s.workflow_name and s.workflow_id.startswith("placeholder-")]
+            # Also check DEFAULT_SCENARIO
+            if DEFAULT_SCENARIO.workflow_name and DEFAULT_SCENARIO.workflow_id.startswith("placeholder-"):
+                unsynced_scenarios.append("DEFAULT_SCENARIO")
+            
             error_msg = (
                 f"\n❌ Mock LLM configuration error: {missing}/{expected_scenarios_with_workflows} scenarios failed to load UUIDs\n"
                 f"   Unsynced scenarios: {unsynced_scenarios}\n"
@@ -406,11 +523,14 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
     force_text_response: bool = False  # For backward compatibility with integration tests
 
     def log_message(self, format, *args):
-        """Suppress default logging to reduce test noise."""
-        pass
+        """Enable HTTP request logging for debugging."""
+        logger.info(format % args)
 
     def do_POST(self):
         """Handle POST requests (chat completions)."""
+        # EXPLICIT LOGGING: Track all POST requests using logger (not print)
+        logger.info(f"📥 Mock LLM received POST {self.path} from {self.client_address[0]}")
+        
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')
 
@@ -421,13 +541,17 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         # Route based on endpoint
         if self.path in ["/v1/chat/completions", "/chat/completions"]:
+            logger.info(f"  → Handling OpenAI chat completion request")
             response = self._handle_openai_request(request_data)
         elif self.path == "/api/generate" or self.path == "/api/chat":
+            logger.info(f"  → Handling Ollama request")
             response = self._handle_ollama_request(request_data)
         else:
+            logger.info(f"  → Unknown path {self.path}, returning OK")
             response = {"status": "ok", "path": self.path}
 
         self._send_json_response(response)
+        logger.info(f"✅ Mock LLM sent response for {self.path}")
 
     def do_GET(self):
         """Handle GET requests (health checks, model list)."""
@@ -489,6 +613,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
         if "mock_problem_resolved" in content or "mock problem resolved" in content:
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
+        if "mock_not_reproducible" in content or "mock not reproducible" in content:
+            return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)  # Same scenario: issue self-resolved
         if "mock_rca_incomplete" in content or "mock rca incomplete" in content:
             return MOCK_SCENARIOS.get("rca_incomplete", DEFAULT_SCENARIO)
 
@@ -496,26 +622,57 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
-        # Check for recovery scenario (has priority over regular signals)
+        # Check for Category F recovery scenarios (E2E-HAPI-049 to E2E-HAPI-054)
+        # These have priority over generic recovery detection
+        if "mock_multi_step_recovery" in content or "multi_step_recovery" in content or "multi step recovery" in content:
+            logger.info("✅ SCENARIO DETECTED: MULTI_STEP_RECOVERY")
+            return MOCK_SCENARIOS.get("multi_step_recovery", DEFAULT_SCENARIO)
+        if "mock_cascading_failure" in content or "cascading_failure" in content or "cascading failure" in content:
+            logger.info("✅ SCENARIO DETECTED: CASCADING_FAILURE")
+            return MOCK_SCENARIOS.get("cascading_failure", DEFAULT_SCENARIO)
+        if "mock_near_attempt_limit" in content or "near_attempt_limit" in content or "near attempt limit" in content:
+            logger.info("✅ SCENARIO DETECTED: NEAR_ATTEMPT_LIMIT")
+            return MOCK_SCENARIOS.get("near_attempt_limit", DEFAULT_SCENARIO)
+        if "mock_noisy_neighbor" in content or "noisy_neighbor" in content or "noisy neighbor" in content:
+            logger.info("✅ SCENARIO DETECTED: NOISY_NEIGHBOR")
+            return MOCK_SCENARIOS.get("noisy_neighbor", DEFAULT_SCENARIO)
+        if "mock_network_partition" in content or "network_partition" in content or "network partition" in content:
+            logger.info("✅ SCENARIO DETECTED: NETWORK_PARTITION")
+            return MOCK_SCENARIOS.get("network_partition", DEFAULT_SCENARIO)
+        if "mock_recovery_basic" in content or "recovery_basic" in content or ("recovery" in content and "basic" in content):
+            logger.info("✅ SCENARIO DETECTED: RECOVERY_BASIC")
+            return MOCK_SCENARIOS.get("recovery_basic", DEFAULT_SCENARIO)
+
+        # Check for generic recovery scenario (has priority over regular signals)
         # DD-TEST-011 v2.1: Detect recovery via JSON fields OR prompt keywords
         # Recovery requests include: {"is_recovery_attempt": true, "recovery_attempt_number": 1}
         if ("is_recovery_attempt" in all_text or "recovery_attempt_number" in all_text) or \
            ("recovery" in content and ("previous remediation" in content or "failed attempt" in content or "previous execution" in content)) or \
            ("workflow execution failed" in content and "recovery" in content):
-            logger.info("✅ SCENARIO DETECTED: RECOVERY")
+            logger.info("✅ SCENARIO DETECTED: RECOVERY (generic)")
             return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
 
         # Check for signal types (most specific first to avoid false matches)
         # DD-TEST-010: Match exact signal types, not generic substrings
         # "crashloop" is more specific than "oom", check it first
         if "crashloop" in content:
-            return MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
         elif "oomkilled" in content:
-            return MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
         elif "nodenotready" in content or "node not ready" in content:
-            return MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
+            matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
 
-        return MockLLMRequestHandler.current_scenario
+        # PHASE 2: Fallback to current_scenario or DEFAULT_SCENARIO
+        fallback_scenario = MockLLMRequestHandler.current_scenario
+        logger.warning(f"⚠️  PHASE 2: NO MATCH - Falling back to current_scenario={fallback_scenario.name}, workflow_id={fallback_scenario.workflow_id}")
+        logger.warning(f"⚠️  PHASE 2: Content preview for debugging: {content[:500]}")
+        return fallback_scenario
 
     def _has_tool_result(self, messages: List[Dict[str, Any]]) -> bool:
         """Check if messages contain a tool result."""
@@ -577,6 +734,78 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
+    def _get_category_f_strategies(self, scenario: MockScenario) -> List[Dict[str, Any]]:
+        """
+        Get recovery strategies for Category F scenarios (E2E-HAPI-049 to E2E-HAPI-054)
+        
+        Returns structured strategies array for advanced recovery scenarios.
+        These scenarios support multiple strategy alternatives with varying confidence.
+        """
+        strategies_map = {
+            "multi_step_recovery": [{
+                "action_type": "enable_autoscaler",
+                "confidence": 0.85,
+                "rationale": "Step 1 memory increase successful. Step 2 failed due to cluster capacity. Enable cluster autoscaler to add nodes for scaling.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }],
+            "cascading_failure": [{
+                "action_type": "increase_memory_limit",
+                "confidence": 0.75,
+                "rationale": "Memory leak detected. Constant growth rate (50MB/min) repeats after restart. Increase memory limit as temporary mitigation while root cause investigation continues.",
+                "estimated_risk": "medium",
+                "prerequisites": []
+            }, {
+                "action_type": "rollback_deployment",
+                "confidence": 0.70,
+                "rationale": "Memory leak pattern indicates application bug. Rollback to last known good version to restore service.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }],
+            "near_attempt_limit": [{
+                "action_type": "rollback_deployment",
+                "confidence": 0.90,
+                "rationale": "This is the final recovery attempt (2 of 3 exhausted). Both forward fixes failed with different errors. Conservative rollback to last known good version is most reliable strategy to restore service.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }],
+            "noisy_neighbor": [{
+                "action_type": "set_resource_quotas",
+                "confidence": 0.80,
+                "rationale": "Noisy neighbor detected. ML batch job consuming excessive resources on same nodes as database. Set resource quotas for ml-workloads namespace to enforce fairness.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }, {
+                "action_type": "set_priority_classes",
+                "confidence": 0.75,
+                "rationale": "Database is P0 service but lacks priority class. Set high priority for database pods to ensure scheduling preference during contention.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }],
+            "network_partition": [{
+                "action_type": "wait_for_partition_heal",
+                "confidence": 0.70,
+                "rationale": "Network partition detected (3 nodes unreachable for 8+ minutes). Wait for partition to heal before taking action to avoid split-brain scenario. Monitor partition status.",
+                "estimated_risk": "medium",
+                "prerequisites": []
+            }, {
+                "action_type": "drain_partition_nodes",
+                "confidence": 0.65,
+                "rationale": "If partition persists, drain affected nodes and reschedule pods to healthy side of cluster. Risk: service disruption during drain.",
+                "estimated_risk": "medium",
+                "prerequisites": []
+            }],
+            "recovery_basic": [{
+                "action_type": "increase_memory",
+                "confidence": 0.85,
+                "rationale": "Container killed due to out of memory. Increase memory limit from current 512Mi to 1Gi to prevent OOMKilled errors.",
+                "estimated_risk": "low",
+                "prerequisites": []
+            }]
+        }
+        
+        return strategies_map.get(scenario.name, [])
+
     def _final_analysis_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate final analysis response after tool result (Phase 2)."""
         # Detect if this is a recovery scenario
@@ -621,6 +850,15 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                     "current_signal_type": scenario.signal_type
                 }
             }
+            
+            # Category F: Advanced Recovery Scenarios (E2E-HAPI-049 to E2E-HAPI-054)
+            # Return structured recovery format with multiple strategies
+            if scenario.name in ["multi_step_recovery", "cascading_failure", "near_attempt_limit", 
+                                  "noisy_neighbor", "network_partition", "recovery_basic"]:
+                logger.info(f"✅ CATEGORY F SCENARIO DETECTED: {scenario.name} - Returning structured recovery format")
+                analysis_json["strategies"] = self._get_category_f_strategies(scenario)
+                analysis_json["can_recover"] = True
+                analysis_json["confidence"] = scenario.confidence
         else:
             logger.info(f"⚠️  NO RECOVERY detected in _final_analysis_response - is_recovery={is_recovery}")
 
