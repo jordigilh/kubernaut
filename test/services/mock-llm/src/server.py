@@ -1034,10 +1034,10 @@ No suitable alternative workflow found. Human review required.
 {analysis_json.get("confidence", 0.0)}
 
 # selected_workflow
-None
+{json.dumps(analysis_json.get("selected_workflow"))}
 
 # needs_human_review
-{str(analysis_json.get("needs_human_review", False))}
+{json.dumps(analysis_json.get("needs_human_review", False))}
 
 # human_review_reason
 {json.dumps(analysis_json.get("human_review_reason", ""))}

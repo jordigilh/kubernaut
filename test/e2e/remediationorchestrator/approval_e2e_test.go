@@ -214,7 +214,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			
 			webhookEvent := webhookEvents[0]
 			actorID, _ := webhookEvent.ActorID.Get()
-			Expect(actorID).To(Equal("e2e-test-user@example.com"),
+			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
+			// AuthWebhook correctly overwrites user-provided "e2e-test-user@example.com"
+			Expect(actorID).To(Equal("kubernetes-admin"),
 				"BUSINESS OUTCOME: Webhook captured authenticated user (SOC 2 CC8.1)")
 			Expect(webhookEvent.EventAction).To(Equal("approval_decided"),
 				"BUSINESS OUTCOME: Webhook action is clear")
@@ -468,7 +470,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			approvalEvent := orchestrationEvents[0]
 
 			actorID, _ := webhookEvent.ActorID.Get()
-			Expect(actorID).To(Equal("e2e-auditor@example.com"),
+			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
+			// AuthWebhook correctly overwrites user-provided "e2e-auditor@example.com"
+			Expect(actorID).To(Equal("kubernetes-admin"),
 				"BUSINESS OUTCOME: Auditor can identify WHO approved (SOC 2 CC8.1)")
 
 			resourceID, _ := approvalEvent.ResourceID.Get()

@@ -1,0 +1,25 @@
+mode: atomic
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:56.50,121.35 3 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:121.35,136.3 9 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:138.2,138.21 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:154.109,158.31 3 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:158.31,170.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:173.2,173.109 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:183.105,189.39 4 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:189.39,191.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:194.2,194.85 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:194.85,196.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:198.2,199.12 2 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:207.130,217.16 5 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:217.16,219.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:222.2,229.16 6 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:229.16,231.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:232.2,236.16 4 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:236.16,238.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:239.2,239.15 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:239.15,239.40 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:241.2,241.38 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:241.38,244.3 2 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:246.2,247.73 2 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:247.73,249.3 1 0
+github.com/jordigilh/kubernaut/test/integration/aianalysis/test_workflows.go:251.2,254.12 3 0
