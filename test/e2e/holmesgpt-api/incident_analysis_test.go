@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 )
 
 // Incident Analysis E2E Tests
@@ -393,7 +394,8 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ========================================
 			// ACT
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
 
 			// ========================================
 			// ASSERT
@@ -436,7 +438,8 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			// ========================================
 			// ACT
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
 
 			// ========================================
 			// ASSERT

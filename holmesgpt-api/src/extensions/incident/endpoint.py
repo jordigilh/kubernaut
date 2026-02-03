@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
     "/incident/analyze",
     status_code=status.HTTP_200_OK,
     response_model=IncidentResponse,
-    response_model_exclude_unset=False,  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    response_model_exclude_none=True,  # E2E-HAPI-002/003: Exclude None values (selected_workflow, alternative_workflows, human_review_reason)
     responses={
         200: {"description": "Successful Response - Incident analyzed with RCA and workflow selection"},
         400: {"description": "Bad Request - Invalid input format or missing required fields"},

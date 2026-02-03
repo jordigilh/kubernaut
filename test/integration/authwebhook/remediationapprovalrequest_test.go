@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,7 +56,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 	createRAR := func(scenario ApprovalDecisionScenario, testSuffix string) *remediationv1.RemediationApprovalRequest {
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-rar-" + testSuffix + "-" + randomSuffix(),
+				Name:      "test-rar-" + strings.ToLower(testSuffix) + "-" + randomSuffix(),
 				Namespace: namespace,
 			},
 			Spec: remediationv1.RemediationApprovalRequestSpec{

@@ -22,6 +22,7 @@ package ogenx
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -33,17 +34,25 @@ import (
 // This function converts those typed error responses into Go errors.
 //
 // Usage:
-//   resp, err := client.SomeEndpoint(ctx, req)
-//   err = ogenx.ToError(resp, err)
-//   if err != nil {
-//       // Handle error (works for both network errors and HTTP errors)
-//   }
+//
+//	resp, err := client.SomeEndpoint(ctx, req)
+//	err = ogenx.ToError(resp, err)
+//	if err != nil {
+//	    // Handle error (works for both network errors and HTTP errors)
+//	}
 //
 // Handles two cases:
 //  1. Error strings (undefined status codes): "unexpected status code: 503"
 //  2. Typed responses (defined status codes): *BadRequest, *InternalServerError, etc.
 //
-// Automatically extracts RFC 7807 Problem Details when available.
+// Automatically extracts RFC 7807 Problem Details when available:
+//   - Status code (via GetStatus() int32)
+//   - Title (via GetTitle() string)
+//   - Message (via GetMessage() string)
+//
+// Note: Detailed RFC 7807 "detail" field extraction has limitations with current
+// implementation. The HTTPError preserves the original typed response in the Response
+// field for manual inspection if detailed error messages are needed.
 //
 // Authority: SME-validated pattern from OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md
 func ToError(resp any, err error) error {
@@ -73,7 +82,7 @@ func parseStatusFromErrorString(err error) error {
 			statusStr := strings.TrimSpace(parts[1])
 			// Extract just the numeric code (e.g., "503 Service Unavailable" -> "503")
 			statusStr = strings.Fields(statusStr)[0]
-			
+
 			if statusCode, parseErr := strconv.Atoi(statusStr); parseErr == nil {
 				return &HTTPError{
 					StatusCode: statusCode,
@@ -119,7 +128,7 @@ func checkResponseStatus(resp any) error {
 // Tries multiple common patterns used by ogen-generated code:
 //  1. GetStatus() int32
 //  2. GetStatus() int
-//  3. Status field (int32 or int)
+//  3. Status field (int32 or int) via reflection
 func getStatusCode(resp any) int {
 	// Pattern 1: GetStatus() int32 (most common in ogen)
 	type statusGetter32 interface {
@@ -137,29 +146,123 @@ func getStatusCode(resp any) int {
 		return v.GetStatus()
 	}
 
+	// Pattern 3: Status field (HAPI uses this)
+	// Use reflection to access struct fields when method doesn't exist
+	val := reflect.ValueOf(resp)
+
+	// Handle pointer types
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return 200 // Treat nil as success
+		}
+		val = val.Elem()
+	}
+
+	// Check if it's a struct with a Status field
+	if val.Kind() == reflect.Struct {
+		statusField := val.FieldByName("Status")
+		if statusField.IsValid() {
+			switch statusField.Kind() {
+			case reflect.Int32:
+				return int(statusField.Int())
+			case reflect.Int:
+				return int(statusField.Int())
+			}
+		}
+	}
+
 	// No status code found - treat as success
 	return 200
+}
+
+// OptionalString is an interface matching ogen-generated optional string types.
+// ogen typically generates: type OptString struct { Value string; Set bool }
+// with methods like IsSet() bool.
+type OptionalString interface {
+	IsSet() bool
 }
 
 // extractErrorDetail extracts error detail from RFC 7807 Problem Details or fallback fields.
 //
 // Tries common field patterns:
-//  1. GetDetail() OptString (RFC 7807)
+//  1. GetDetail() returning optional string (RFC 7807)
 //  2. GetMessage() string (common alternative)
-//  3. Detail string field
-//  4. Message string field
+//
+// Uses reflection to access ogen-generated OptString.Value field when available.
 func extractErrorDetail(resp any) string {
-	// Pattern 1: RFC 7807 GetDetail() OptString
-	type detailGetter interface {
-		GetDetail() interface{ IsSet() bool; Value string }
+	// Pattern 1: RFC 7807 GetDetail() returning OptString
+	// ogen generates: type OptString struct { Value string; Set bool }
+	// with methods: IsSet() bool
+	type optionalString interface {
+		IsSet() bool
 	}
-	if v, ok := resp.(detailGetter); ok {
-		if detail := v.GetDetail(); detail.IsSet() {
-			return detail.Value
+
+	// Try GetDetail() - returns any type that we'll check for optional string interface
+	if detailResp, ok := resp.(interface {
+		GetDetail() any
+	}); ok {
+		optDetail := detailResp.GetDetail()
+		if optDetail != nil {
+			// Check if the returned value implements our optional string interface
+			if opt, ok := optDetail.(optionalString); ok && opt.IsSet() {
+				// Try to extract Value field using reflection
+				// ogen-generated OptString has: struct { Value string; Set bool }
+				val := reflect.ValueOf(optDetail)
+
+				// Handle pointer types
+				if val.Kind() == reflect.Ptr {
+					if val.IsNil() {
+						return ""
+					}
+					val = val.Elem()
+				}
+
+				// Check if it's a struct
+				if val.Kind() == reflect.Struct {
+					// Try to get Value field
+					valueField := val.FieldByName("Value")
+					if valueField.IsValid() && valueField.Kind() == reflect.String {
+						return valueField.String()
+					}
+				}
+			}
 		}
 	}
 
-	// Pattern 2: GetMessage() string
+	// Pattern 2: Detail field (HAPI uses this)
+	// Use reflection to access struct fields when GetDetail() method doesn't exist
+	val := reflect.ValueOf(resp)
+
+	// Handle pointer types
+	if val.Kind() == reflect.Ptr {
+		if !val.IsNil() {
+			val = val.Elem()
+		}
+	}
+
+	// Check if it's a struct with a Detail field
+	if val.Kind() == reflect.Struct {
+		detailField := val.FieldByName("Detail")
+		if detailField.IsValid() {
+			// Detail is likely an OptString (struct with Value and Set)
+			// Check if it has IsSet() method
+			if detailField.CanInterface() {
+				detailVal := detailField.Interface()
+				if opt, ok := detailVal.(optionalString); ok && opt.IsSet() {
+					// Try to get Value field from the optional string
+					detailStructVal := reflect.ValueOf(detailVal)
+					if detailStructVal.Kind() == reflect.Struct {
+						valueField := detailStructVal.FieldByName("Value")
+						if valueField.IsValid() && valueField.Kind() == reflect.String {
+							return valueField.String()
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Pattern 3: GetMessage() string
 	type messageGetter interface {
 		GetMessage() string
 	}
@@ -169,9 +272,6 @@ func extractErrorDetail(resp any) string {
 		}
 	}
 
-	// Pattern 3: Try reflection for common field names
-	// (Avoid for now - explicit interface checking is safer)
-
 	return "" // No detail found
 }
 
@@ -179,15 +279,34 @@ func extractErrorDetail(resp any) string {
 //
 // Tries common field patterns:
 //  1. GetTitle() string (RFC 7807)
-//  2. Title string field
+//  2. Title string field (HAPI uses this)
 func extractErrorTitle(resp any) string {
-	// Pattern 1: RFC 7807 GetTitle() string
+	// Pattern 1: RFC 7807 GetTitle() string (method-based)
 	type titleGetter interface {
 		GetTitle() string
 	}
 	if v, ok := resp.(titleGetter); ok {
 		if title := v.GetTitle(); title != "" {
 			return title
+		}
+	}
+
+	// Pattern 2: Title field (HAPI uses this)
+	// Use reflection to access struct fields when GetTitle() method doesn't exist
+	val := reflect.ValueOf(resp)
+
+	// Handle pointer types
+	if val.Kind() == reflect.Ptr {
+		if !val.IsNil() {
+			val = val.Elem()
+		}
+	}
+
+	// Check if it's a struct with a Title field
+	if val.Kind() == reflect.Struct {
+		titleField := val.FieldByName("Title")
+		if titleField.IsValid() && titleField.Kind() == reflect.String {
+			return titleField.String()
 		}
 	}
 
@@ -240,12 +359,13 @@ func IsHTTPError(err error) bool {
 // GetHTTPError returns the HTTPError if err is an HTTPError, nil otherwise.
 //
 // Useful for accessing structured error details:
-//   if httpErr := ogenx.GetHTTPError(err); httpErr != nil {
-//       // Access structured fields
-//       if httpErr.StatusCode == 400 {
-//           // Handle validation error
-//       }
-//   }
+//
+//	if httpErr := ogenx.GetHTTPError(err); httpErr != nil {
+//	    // Access structured fields
+//	    if httpErr.StatusCode == 400 {
+//	        // Handle validation error
+//	    }
+//	}
 func GetHTTPError(err error) *HTTPError {
 	if httpErr, ok := err.(*HTTPError); ok {
 		return httpErr

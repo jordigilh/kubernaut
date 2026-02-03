@@ -483,19 +483,17 @@ Provide natural language summary + structured JSON with workflow and parameters.
 
 If your investigation confirms the problem has **already resolved** (e.g., pod recovered, resource pressure normalized):
 
-```json
-{{
-  "root_cause_analysis": {{
-    "summary": "Problem self-resolved. [Describe what you found]",
-    "severity": "low",
-    "contributing_factors": ["Transient condition", "Auto-recovery"]
-  }},
-  "selected_workflow": null,
-  "confidence": 0.85,
-  "investigation_outcome": "resolved",
-  "rationale": "Investigation confirms problem no longer exists. Current state: [describe healthy state]. No remediation required."
-}}
-```
+# root_cause_analysis
+{{"summary": "Problem self-resolved. [Describe what you found]", "severity": "low", "contributing_factors": ["Transient condition", "Auto-recovery"]}}
+
+# confidence
+0.85
+
+# selected_workflow
+None
+
+# investigation_outcome
+resolved
 
 **When to use**: High confidence (≥0.7) that the problem is resolved:
 - Pod status shows Running/Ready after previous OOMKilled
@@ -507,19 +505,17 @@ If your investigation confirms the problem has **already resolved** (e.g., pod r
 
 If your investigation **cannot determine** the root cause or current state:
 
-```json
-{{
-  "root_cause_analysis": {{
-    "summary": "Unable to determine root cause. [Describe ambiguity]",
-    "severity": "unknown",
-    "contributing_factors": ["Insufficient data", "Conflicting signals"]
-  }},
-  "selected_workflow": null,
-  "confidence": 0.3,
-  "investigation_outcome": "inconclusive",
-  "rationale": "Investigation inconclusive: [specific reason]. Human review recommended."
-}}
-```
+# root_cause_analysis
+{{"summary": "Unable to determine root cause. [Describe ambiguity]", "severity": "unknown", "contributing_factors": ["Insufficient data", "Conflicting signals"]}}
+
+# confidence
+0.3
+
+# selected_workflow
+None
+
+# investigation_outcome
+inconclusive
 
 **When to use**: Low confidence (<0.5) due to:
 - Metrics/events unavailable or stale
@@ -603,49 +599,37 @@ For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/clus
 
 ## Expected Response Format
 
-Provide your analysis in two parts:
+**CRITICAL**: Use section header format (NOT a single JSON block) to ensure all fields are preserved:
 
 ### Part 1: Natural Language Analysis
 
 Explain your investigation findings, root cause analysis, and reasoning for workflow selection.
 
-### Part 2: Structured JSON
+### Part 2: Structured Data (Section Header Format)
 
-```json
-{{
-  "root_cause_analysis": {{
-    "summary": "Brief summary of root cause",
-    "severity": "critical|high|medium|low",
-    "contributing_factors": ["factor1", "factor2"]
-  }},
-  "selected_workflow": {{
-    "workflow_id": "workflow-id-from-mcp-search-results",
-    "version": "1.0.0",
-    "confidence": 0.95,
-    "rationale": "Why your search parameters led to this workflow selection (based on RCA findings)",
-    "parameters": {{
-      "PARAM_NAME": "value",
-      "ANOTHER_PARAM": "value"
-    }}
-  }},
-  "alternative_workflows": [
-    {{
-      "workflow_id": "alternative-workflow-id",
-      "container_image": "image:tag",
-      "confidence": 0.75,
-      "rationale": "Why this alternative was considered but not selected"
-    }}
-  ]
-}}
-```
+**REQUIRED FORMAT** - Each field must be on its own line with section header:
+
+# root_cause_analysis
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low", "contributing_factors": ["factor1", "factor2"]}}
+
+# confidence
+0.95
+
+# selected_workflow
+{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+
+# alternative_workflows
+[{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
 
 **IMPORTANT**:
+- **DO NOT** use a single ```json block - use section headers as shown above
 - Select ONE workflow per incident as `selected_workflow`
-- Include up to 2-3 alternative workflows considered but not selected
-- `alternative_workflows` are for AUDIT/CONTEXT only - they help operators understand what options were considered
+- Include up to 2-3 `alternative_workflows` (for AUDIT/CONTEXT only)
+- Each field must have its own `# field_name` header
+- If a field is not applicable, use `None` or `[]` as the value
+- Alternative workflows help operators understand what options were considered
 - Populate ALL required parameters from the workflow schema
 - Use your RCA findings to determine parameter values
-- Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
 """
 
     return prompt

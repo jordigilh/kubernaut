@@ -70,6 +70,15 @@ def parse_and_validate_investigation_result(
 
     # Extract analysis text
     analysis = investigation.analysis if investigation and investigation.analysis else "No analysis available"
+    
+    # DEBUG: Log what we received from SDK
+    logger.info({
+        "event": "sdk_analysis_received",
+        "incident_id": incident_id,
+        "analysis_length": len(analysis),
+        "has_json_marker": "```json" in analysis,
+        "analysis_preview": analysis[:500]
+    })
 
     # Try to parse JSON from analysis
     # Pattern 1: JSON code block (standard format)
@@ -125,6 +134,30 @@ def parse_and_validate_investigation_result(
         if conf_match:
             parts['confidence'] = conf_match.group(1)
             logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
+        
+        # E2E-HAPI-002: Extract alternative_workflows
+        alt_wf_match = re.search(r'# alternative_workflows\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if alt_wf_match:
+            parts['alternative_workflows'] = alt_wf_match.group(1)
+            logger.debug(f"Pattern 2B: Extracted alternative_workflows: {parts['alternative_workflows'][:100]}...")
+        
+        # E2E-HAPI-003: Extract needs_human_review
+        nhr_match = re.search(r'# needs_human_review\s*\n\s*(True|False|true|false)\s*(?:\n#|$|\n\n)', analysis, re.IGNORECASE)
+        if nhr_match:
+            parts['needs_human_review'] = nhr_match.group(1)
+            logger.debug(f"Pattern 2B: Extracted needs_human_review: {parts['needs_human_review']}")
+        
+        # E2E-HAPI-003: Extract human_review_reason
+        hrr_match = re.search(r'# human_review_reason\s*\n\s*["\']?([^"\'\n]+)["\']?\s*(?:\n#|$|\n\n)', analysis)
+        if hrr_match:
+            parts['human_review_reason'] = f'"{hrr_match.group(1)}"'
+            logger.debug(f"Pattern 2B: Extracted human_review_reason: {parts['human_review_reason']}")
+        
+        # E2E-HAPI-003: Extract validation_attempts_history
+        vah_match = re.search(r'# validation_attempts_history\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if vah_match:
+            parts['validation_attempts_history'] = vah_match.group(1)
+            logger.debug(f"Pattern 2B: Extracted validation_attempts_history")
 
         if parts:
             # Combine into a single dict string
@@ -174,14 +207,27 @@ def parse_and_validate_investigation_result(
 
             # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
             raw_alternatives = json_data.get("alternative_workflows", [])
+            logger.info({
+                "event": "alternative_workflows_extraction",
+                "incident_id": incident_id,
+                "raw_alternatives_count": len(raw_alternatives),
+                "raw_alternatives": raw_alternatives
+            })
             for alt in raw_alternatives:
                 if isinstance(alt, dict) and alt.get("workflow_id"):
+                    # E2E-HAPI-002: rationale is required by Pydantic, provide non-empty default
+                    rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
                         "container_image": alt.get("container_image"),
                         "confidence": float(alt.get("confidence", 0.0)),
-                        "rationale": alt.get("rationale", "")
+                        "rationale": rationale
                     })
+            logger.info({
+                "event": "alternative_workflows_parsed",
+                "incident_id": incident_id,
+                "parsed_count": len(alternative_workflows)
+            })
 
             # DD-HAPI-002 v1.2: Workflow Response Validation
             # Validates: workflow existence, container image consistency, parameter schema
@@ -220,9 +266,33 @@ def parse_and_validate_investigation_result(
                 "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
             )
 
-    # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
-    needs_human_review = False
-    human_review_reason = None
+    # E2E-HAPI-003: Check if LLM explicitly set human review fields
+    needs_human_review_from_llm = json_data.get("needs_human_review") if json_data else None
+    human_review_reason_from_llm = json_data.get("human_review_reason") if json_data else None
+    
+    # DEBUG: Log what we extracted
+    logger.info({
+        "event": "llm_value_extraction",
+        "incident_id": incident_id,
+        "needs_human_review_from_llm": needs_human_review_from_llm,
+        "human_review_reason_from_llm": human_review_reason_from_llm,
+        "json_data_keys": list(json_data.keys()) if json_data else None
+    })
+
+    # Initialize with LLM values if provided, otherwise use defaults
+    if needs_human_review_from_llm is not None:
+        needs_human_review = bool(needs_human_review_from_llm)
+        human_review_reason = human_review_reason_from_llm if needs_human_review else None
+        logger.info({
+            "event": "human_review_from_llm",
+            "incident_id": incident_id,
+            "needs_human_review": needs_human_review,
+            "human_review_reason": human_review_reason,
+        })
+    else:
+        # BR-HAPI-197: Default - HAPI doesn't set human review based on confidence
+        needs_human_review = False
+        human_review_reason = None
 
     # BR-HAPI-200: Handle special investigation outcomes
     investigation_outcome = json_data.get("investigation_outcome") if json_data else None
@@ -230,8 +300,10 @@ def parse_and_validate_investigation_result(
     # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
     if investigation_outcome == "resolved":
         warnings.append("Problem self-resolved - no remediation required")
-        needs_human_review = False
-        human_review_reason = None
+        # Don't override if LLM already set these
+        if needs_human_review_from_llm is None:
+            needs_human_review = False
+            human_review_reason = None
         logger.info({
             "event": "problem_self_resolved",
             "incident_id": incident_id,
@@ -241,8 +313,10 @@ def parse_and_validate_investigation_result(
     # BR-HAPI-200: Outcome B - Investigation inconclusive (human review required)
     elif investigation_outcome == "inconclusive":
         warnings.append("Investigation inconclusive - human review recommended")
-        needs_human_review = True
-        human_review_reason = "investigation_inconclusive"
+        # Don't override if LLM already set these
+        if needs_human_review_from_llm is None:
+            needs_human_review = True
+            human_review_reason = "investigation_inconclusive"
         logger.warning({
             "event": "investigation_inconclusive",
             "incident_id": incident_id,
@@ -251,8 +325,15 @@ def parse_and_validate_investigation_result(
         })
     elif selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
-        needs_human_review = True
-        human_review_reason = "no_matching_workflows"
+        # E2E-HAPI-003: Only override if LLM didn't provide values
+        # Check BOTH needs_human_review AND human_review_reason (LLM may provide reason without needs flag)
+        if needs_human_review_from_llm is None and human_review_reason_from_llm is None:
+            needs_human_review = True
+            human_review_reason = "no_matching_workflows"
+        elif human_review_reason_from_llm is not None:
+            # LLM provided reason, use it
+            needs_human_review = True
+            human_review_reason = human_review_reason_from_llm
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # HAPI only sets needs_human_review for validation failures, not confidence thresholds
     # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)
@@ -273,15 +354,21 @@ def parse_and_validate_investigation_result(
         "incident_id": incident_id,
         "analysis": analysis,
         "root_cause_analysis": rca,
-        "selected_workflow": selected_workflow,
         "confidence": confidence,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         "needs_human_review": needs_human_review,
-        "human_review_reason": human_review_reason,
-        "alternative_workflows": alternative_workflows
     }
+    
+    # E2E-HAPI-002/003: Only include optional fields if they have values
+    # This ensures Pydantic Optional fields have Set=false when not provided
+    if selected_workflow is not None:
+        result["selected_workflow"] = selected_workflow
+    if human_review_reason is not None:
+        result["human_review_reason"] = human_review_reason
+    if alternative_workflows:  # Only if non-empty list
+        result["alternative_workflows"] = alternative_workflows
 
     return result, validation_result
 
@@ -485,14 +572,27 @@ def parse_investigation_result(
 
             # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
             raw_alternatives = json_data.get("alternative_workflows", [])
+            logger.info({
+                "event": "alternative_workflows_extraction",
+                "incident_id": incident_id,
+                "raw_alternatives_count": len(raw_alternatives),
+                "raw_alternatives": raw_alternatives
+            })
             for alt in raw_alternatives:
                 if isinstance(alt, dict) and alt.get("workflow_id"):
+                    # E2E-HAPI-002: rationale is required by Pydantic, provide non-empty default
+                    rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
                         "container_image": alt.get("container_image"),
                         "confidence": float(alt.get("confidence", 0.0)),
-                        "rationale": alt.get("rationale", "")
+                        "rationale": rationale
                     })
+            logger.info({
+                "event": "alternative_workflows_parsed",
+                "incident_id": incident_id,
+                "parsed_count": len(alternative_workflows)
+            })
 
             # DD-HAPI-002 v1.2: Workflow Response Validation
             # Validates: workflow existence, container image consistency, parameter schema
@@ -562,23 +662,36 @@ def parse_investigation_result(
             })
 
     # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
-    needs_human_review = False
-    human_review_reason = None
-
-    # BR-HAPI-200: Handle special investigation outcomes
+    # E2E-HAPI-003: Extract LLM-provided human review fields first
+    needs_human_review_from_llm = None
+    human_review_reason_from_llm = None
     investigation_outcome = None
     if json_match:
         try:
             json_data_outcome = json.loads(json_match.group(1))
             investigation_outcome = json_data_outcome.get("investigation_outcome")
+            needs_human_review_from_llm = json_data_outcome.get("needs_human_review")
+            human_review_reason_from_llm = json_data_outcome.get("human_review_reason")
         except json.JSONDecodeError:
             pass
+    
+    # Initialize with LLM values if provided, otherwise use defaults
+    if needs_human_review_from_llm is not None:
+        needs_human_review = bool(needs_human_review_from_llm)
+        human_review_reason = human_review_reason_from_llm if needs_human_review else None
+    else:
+        needs_human_review = False
+        human_review_reason = None
+
+    # BR-HAPI-200: Handle special investigation outcomes
 
     # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
     if investigation_outcome == "resolved":
         warnings.append("Problem self-resolved - no remediation required")
-        needs_human_review = False
-        human_review_reason = None
+        # Don't override if LLM already set these
+        if needs_human_review_from_llm is None:
+            needs_human_review = False
+            human_review_reason = None
         logger.info({
             "event": "problem_self_resolved",
             "incident_id": incident_id,
@@ -588,8 +701,10 @@ def parse_investigation_result(
     # BR-HAPI-200: Outcome B - Investigation inconclusive (human review required)
     elif investigation_outcome == "inconclusive":
         warnings.append("Investigation inconclusive - human review recommended")
-        needs_human_review = True
-        human_review_reason = "investigation_inconclusive"
+        # Don't override if LLM already set these
+        if needs_human_review_from_llm is None:
+            needs_human_review = True
+            human_review_reason = "investigation_inconclusive"
         logger.warning({
             "event": "investigation_inconclusive",
             "incident_id": incident_id,
@@ -598,8 +713,15 @@ def parse_investigation_result(
         })
     elif selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
-        needs_human_review = True
-        human_review_reason = "no_matching_workflows"
+        # E2E-HAPI-003: Only override if LLM didn't provide values
+        # Check BOTH needs_human_review AND human_review_reason (LLM may provide reason without needs flag)
+        if needs_human_review_from_llm is None and human_review_reason_from_llm is None:
+            needs_human_review = True
+            human_review_reason = "no_matching_workflows"
+        elif human_review_reason_from_llm is not None:
+            # LLM provided reason, use it
+            needs_human_review = True
+            human_review_reason = human_review_reason_from_llm
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # (Duplicate check removed here as well)
 
@@ -616,20 +738,26 @@ def parse_investigation_result(
         else:
             human_review_reason = "parameter_validation_failed"
 
-    return {
+    result = {
         "incident_id": incident_id,
         "analysis": analysis,
         "root_cause_analysis": rca,
-        "selected_workflow": selected_workflow,
         "confidence": confidence,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         # DD-HAPI-002 v1.2, BR-HAPI-197: Human review flag and structured reason
         "needs_human_review": needs_human_review,
-        "human_review_reason": human_review_reason,
-        # Alternative workflows for audit/context (ADR-045 v1.2)
-        # IMPORTANT: These are for INFORMATIONAL purposes only - NOT for automatic execution
-        "alternative_workflows": alternative_workflows
     }
+    
+    # E2E-HAPI-002/003: Only include optional fields if they have values
+    # This ensures Pydantic Optional fields have Set=false when not provided
+    if selected_workflow is not None:
+        result["selected_workflow"] = selected_workflow
+    if human_review_reason is not None:
+        result["human_review_reason"] = human_review_reason
+    if alternative_workflows:  # Only if non-empty list
+        result["alternative_workflows"] = alternative_workflows
+    
+    return result
 

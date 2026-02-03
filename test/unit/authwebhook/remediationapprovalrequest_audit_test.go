@@ -73,12 +73,12 @@ func (m *MockAuditStore) Close() error {
 
 var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail", func() {
 	var (
-		ctx        context.Context
-		handler    *authwebhook.RemediationApprovalRequestAuthHandler
-		mockStore  *MockAuditStore
-		decoder    admission.Decoder
-		scheme     *runtime.Scheme
-		testUserID string
+		ctx           context.Context
+		handler       *authwebhook.RemediationApprovalRequestAuthHandler
+		mockStore     *MockAuditStore
+		decoder       admission.Decoder
+		scheme        *runtime.Scheme
+		testUserID    string
 		testUserEmail string
 	)
 
@@ -210,10 +210,36 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 		It("UNIT-RAR-AUDIT-AW-004: should preserve existing DecidedBy (prevent identity forgery)", func() {
 			// BUSINESS RISK: Attacker attempts to change DecidedBy to frame another operator
 			// CONTROL: Webhook preserves existing DecidedBy (immutable after first decision)
+			// SECURITY: Per AUTHWEBHOOK_SECURITY_FIX_SUCCESS_FEB_03_2026.md - OLD object comparison for true idempotency
 
 			existingDecidedBy := "original-operator@kubernaut.ai"
 			attackerEmail := "attacker@malicious.com"
 
+			// OLD object: RAR with existing decision (TRUE idempotency scenario)
+			oldRAR := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rar-forgery-test",
+					Namespace: "production",
+					UID:       "rar-uid-forgery",
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: "rr-parent-456",
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-analysis-789",
+					},
+				},
+				Status: remediationv1.RemediationApprovalRequestStatus{
+					Decision:        remediationv1.ApprovalDecisionApproved,
+					DecidedBy:       existingDecidedBy, // Already decided by original operator
+					DecidedAt:       &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+					DecisionMessage: "Original decision",
+				},
+			}
+			oldRARJSON, _ := json.Marshal(oldRAR)
+
+			// NEW object: Attacker attempts to modify DecidedBy (will be ignored due to OLD object check)
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rar-forgery-test",
@@ -255,6 +281,9 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 					},
 					Object: runtime.RawExtension{
 						Raw: rarJSON,
+					},
+					OldObject: runtime.RawExtension{
+						Raw: oldRARJSON, // CRITICAL: OLD object has existing decision (true idempotency)
 					},
 				},
 			}

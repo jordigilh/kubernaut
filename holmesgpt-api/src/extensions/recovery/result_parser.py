@@ -148,7 +148,18 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
         # E2E-HAPI-023: Extract can_recover (boolean)
         can_recover_match = re.search(r'# can_recover\s*\n\s*(True|False|true|false)\s*(?:\n#|$)', analysis_text, re.IGNORECASE)
         if can_recover_match:
-            parts['can_recover'] = can_recover_match.group(1).lower()
+            # Convert string to Python boolean (not just lowercase string)
+            parts['can_recover'] = 'True' if can_recover_match.group(1).lower() == 'true' else 'False'
+
+        # E2E-HAPI-024: Extract needs_human_review (boolean)
+        needs_human_review_match = re.search(r'# needs_human_review\s*\n\s*(True|False|true|false)\s*(?:\n#|$)', analysis_text, re.IGNORECASE)
+        if needs_human_review_match:
+            parts['needs_human_review'] = 'True' if needs_human_review_match.group(1).lower() == 'true' else 'False'
+
+        # E2E-HAPI-024: Extract human_review_reason (string)
+        human_review_reason_match = re.search(r'# human_review_reason\s*\n\s*["\']?([^"\'\n]+)["\']?\s*(?:\n#|$)', analysis_text)
+        if human_review_reason_match:
+            parts['human_review_reason'] = f'"{human_review_reason_match.group(1)}"'
 
         # Extract confidence (float)
         confidence_match = re.search(r'# confidence\s*\n\s*([0-9.]+)\s*(?:\n#|$)', analysis_text)
@@ -257,16 +268,15 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
 
         # Extract investigation outcome to detect self-resolved issues
         investigation_outcome = structured.get("investigation_outcome")
-        confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+        # E2E-HAPI-023: Use top-level confidence if present (problem_resolved case), else from selected_workflow
+        confidence = structured.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
 
-        # BR-HAPI-197: Determine human review requirement
-        # HAPI only sets needs_human_review for validation failures, not confidence thresholds
-        needs_human_review = False
-        human_review_reason = None
-
-        # E2E-HAPI-023: Use LLM's can_recover value if present, otherwise calculate it
+        # E2E-HAPI-023/024: Use LLM's values if present, otherwise calculate them
         can_recover_from_llm = structured.get("can_recover")
+        needs_human_review_from_llm = structured.get("needs_human_review")
+        human_review_reason_from_llm = structured.get("human_review_reason")
         
+        # Initialize with LLM values if provided
         if can_recover_from_llm is not None:
             # E2E-HAPI-023: LLM explicitly set can_recover - use that value
             can_recover = bool(can_recover_from_llm)
@@ -278,21 +288,36 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             })
         elif investigation_outcome == "resolved":
             # BR-HAPI-200: Problem resolved itself - no recovery needed
-            needs_human_review = False
-            human_review_reason = None
             can_recover = False  # No recovery action needed
         elif not selected_workflow:
             # No automated workflow available - manual recovery possible
-            needs_human_review = True
-            human_review_reason = "no_matching_workflows"
             can_recover = True  # Manual recovery is possible
         else:
             # Automated workflow available
             # BR-HAPI-197: Manual recovery is possible even with automated workflow if human review needed
             can_recover = True
         
-        # BR-HAPI-200: Set human review flags based on investigation outcome
-        if investigation_outcome == "resolved":
+        # E2E-HAPI-024: Use LLM's human review fields if provided
+        if needs_human_review_from_llm is not None:
+            needs_human_review = bool(needs_human_review_from_llm)
+            human_review_reason = human_review_reason_from_llm if needs_human_review else None
+            logger.info({
+                "event": "human_review_from_llm",
+                "incident_id": incident_id,
+                "needs_human_review": needs_human_review,
+                "human_review_reason": human_review_reason,
+            })
+        elif investigation_outcome == "resolved":
+            # BR-HAPI-200: Problem resolved - no human review needed
+            needs_human_review = False
+            human_review_reason = None
+        elif not selected_workflow:
+            # No automated workflow available - manual review required
+            needs_human_review = True
+            human_review_reason = "no_matching_workflows"
+        else:
+            # BR-HAPI-197: HAPI doesn't set needs_human_review based on confidence
+            # That's AIAnalysis's responsibility
             needs_human_review = False
             human_review_reason = None
 
@@ -325,12 +350,16 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             # Recovery-specific fields
             "recovery_analysis": recovery_analysis,
             "recovery_strategy": recovery_strategy,
-            "selected_workflow": selected_workflow,
             "raw_analysis": analysis_text,
             # BR-HAPI-197: Human review fields for recovery
             "needs_human_review": needs_human_review,
             "human_review_reason": human_review_reason,
         }
+        
+        # E2E-HAPI-023/024: Only include selected_workflow if not None
+        # This ensures SelectedWorkflow.Set=false when LLM returns None
+        if selected_workflow is not None:
+            result["selected_workflow"] = selected_workflow
 
         logger.info(f"Successfully parsed recovery-specific response for incident {incident_id}")
         return result
