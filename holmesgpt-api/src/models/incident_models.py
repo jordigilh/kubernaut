@@ -213,6 +213,18 @@ class IncidentRequest(BaseModel):
     # Enrichment results with DetectedLabels (DD-RECOVERY-003)
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
+    @field_validator('remediation_id')
+    @classmethod
+    def validate_remediation_id(cls, v: str) -> str:
+        """
+        Validate remediation_id is non-empty (E2E-HAPI-008).
+        BR-HAPI-200: Input validation
+        DD-WORKFLOW-002 v2.2: remediation_id is MANDATORY
+        """
+        if not v or not v.strip():
+            raise ValueError('remediation_id is required and cannot be empty')
+        return v
+
 
 class ValidationAttempt(BaseModel):
     """

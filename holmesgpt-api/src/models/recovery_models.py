@@ -164,6 +164,46 @@ class RecoveryRequest(BaseModel):
     cluster_name: Optional[str] = Field(None, description="Cluster name")
     signal_source: Optional[str] = Field(None, description="Signal source")
 
+    @field_validator('remediation_id')
+    @classmethod
+    def validate_remediation_id(cls, v: str) -> str:
+        """Validate remediation_id is not empty (DD-WORKFLOW-002 v2.2)."""
+        if not v or not v.strip():
+            raise ValueError("remediation_id is required and cannot be empty")
+        return v
+    
+    @field_validator('incident_id')
+    @classmethod
+    def validate_incident_id(cls, v: str) -> str:
+        """Validate incident_id is not empty."""
+        if not v or not v.strip():
+            raise ValueError("incident_id is required and cannot be empty")
+        return v
+
+    @field_validator('recovery_attempt_number')
+    @classmethod
+    def validate_recovery_attempt_number(cls, v: Optional[int]) -> Optional[int]:
+        """
+        Validate recovery_attempt_number >= 1 when provided (E2E-HAPI-018).
+        BR-AI-080: Recovery flow validation
+        """
+        if v is not None and v < 1:
+            raise ValueError('recovery_attempt_number must be >= 1')
+        return v
+
+    @field_validator('recovery_attempt_number')
+    @classmethod
+    def validate_recovery_attempt_number(cls, v: Optional[int], info) -> Optional[int]:
+        """Validate recovery_attempt_number when is_recovery_attempt is True."""
+        # Get is_recovery_attempt from the data being validated
+        is_recovery = info.data.get('is_recovery_attempt', False)
+        if is_recovery:
+            if v is None:
+                raise ValueError("recovery_attempt_number is required when is_recovery_attempt is True")
+            if v < 1 or v > 3:
+                raise ValueError("recovery_attempt_number must be between 1 and 3")
+        return v
+
     class Config:
         json_schema_extra = {
             "example": {
