@@ -124,21 +124,41 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     })
 
     # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
-    # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
+    # Format: "# field_name\n{'key': 'value', ...}" OR "# field_name\n'value'"
+    # E2E-HAPI-023: Extract ALL section headers, not just root_cause_analysis and selected_workflow
     if not json_match and ('# selected_workflow' in analysis_text or '# root_cause_analysis' in analysis_text):
         # Extract the dict portions and combine them
         parts = {}
 
-        # Extract root_cause_analysis
-        # Match from { to the last } before the next section or end
+        # Extract root_cause_analysis (dict)
         rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, re.DOTALL)
         if rca_match:
             parts['root_cause_analysis'] = rca_match.group(1)
 
-        # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis_text, re.DOTALL)
+        # Extract selected_workflow (dict or None)
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(None|\{.*?\})\s*(?:\n#|$|\n\n)', analysis_text, re.DOTALL)
         if wf_match:
             parts['selected_workflow'] = wf_match.group(1)
+
+        # E2E-HAPI-023: Extract investigation_outcome (string)
+        outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?([^"\'\n]+)["\']?\s*(?:\n#|$)', analysis_text)
+        if outcome_match:
+            parts['investigation_outcome'] = f'"{outcome_match.group(1)}"'
+
+        # E2E-HAPI-023: Extract can_recover (boolean)
+        can_recover_match = re.search(r'# can_recover\s*\n\s*(True|False|true|false)\s*(?:\n#|$)', analysis_text, re.IGNORECASE)
+        if can_recover_match:
+            parts['can_recover'] = can_recover_match.group(1).lower()
+
+        # Extract confidence (float)
+        confidence_match = re.search(r'# confidence\s*\n\s*([0-9.]+)\s*(?:\n#|$)', analysis_text)
+        if confidence_match:
+            parts['confidence'] = confidence_match.group(1)
+
+        # Extract recovery_analysis (dict)
+        recovery_analysis_match = re.search(r'# recovery_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, re.DOTALL)
+        if recovery_analysis_match:
+            parts['recovery_analysis'] = recovery_analysis_match.group(1)
 
         if parts:
             # Combine into a single dict string
@@ -235,22 +255,46 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
                 "reason": "LLM response did not include recovery_analysis field",
             })
 
-        # Build recovery response
-        can_recover = selected_workflow is not None
+        # Extract investigation outcome to detect self-resolved issues
+        investigation_outcome = structured.get("investigation_outcome")
         confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
 
-        # BR-HAPI-197: Determine human review requirement based on confidence threshold
-        # Authority: .cursor/rules/04-ai-ml-guidelines.mdc
-        CONFIDENCE_THRESHOLD = 0.5
+        # BR-HAPI-197: Determine human review requirement
+        # HAPI only sets needs_human_review for validation failures, not confidence thresholds
         needs_human_review = False
         human_review_reason = None
 
-        if not selected_workflow:
+        # E2E-HAPI-023: Use LLM's can_recover value if present, otherwise calculate it
+        can_recover_from_llm = structured.get("can_recover")
+        
+        if can_recover_from_llm is not None:
+            # E2E-HAPI-023: LLM explicitly set can_recover - use that value
+            can_recover = bool(can_recover_from_llm)
+            logger.info({
+                "event": "can_recover_from_llm",
+                "incident_id": incident_id,
+                "can_recover": can_recover,
+                "investigation_outcome": investigation_outcome,
+            })
+        elif investigation_outcome == "resolved":
+            # BR-HAPI-200: Problem resolved itself - no recovery needed
+            needs_human_review = False
+            human_review_reason = None
+            can_recover = False  # No recovery action needed
+        elif not selected_workflow:
+            # No automated workflow available - manual recovery possible
             needs_human_review = True
             human_review_reason = "no_matching_workflows"
-        elif confidence < CONFIDENCE_THRESHOLD:
-            needs_human_review = True
-            human_review_reason = "low_confidence"
+            can_recover = True  # Manual recovery is possible
+        else:
+            # Automated workflow available
+            # BR-HAPI-197: Manual recovery is possible even with automated workflow if human review needed
+            can_recover = True
+        
+        # BR-HAPI-200: Set human review flags based on investigation outcome
+        if investigation_outcome == "resolved":
+            needs_human_review = False
+            human_review_reason = None
 
         # Convert to standard RecoveryResponse format
         strategies = []
