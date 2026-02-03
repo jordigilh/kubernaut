@@ -209,6 +209,20 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}
+
+	// TDD GREEN: Setup RemediationApprovalRequest audit controller (BR-AUDIT-006)
+	// This controller watches RAR for status.Decision changes and emits audit events
+	setupLog.Info("Setting up RemediationApprovalRequest audit controller (BR-AUDIT-006)")
+	if err = controller.NewRARReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		auditStore,
+		auditManager,
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RemediationApprovalRequestAudit")
+		os.Exit(1)
+	}
+	setupLog.Info("RemediationApprovalRequest audit controller ready")
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
