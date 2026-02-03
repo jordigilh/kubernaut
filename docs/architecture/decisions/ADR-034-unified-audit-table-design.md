@@ -2,8 +2,8 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
-**Version**: 1.6
-**Last Updated**: 2026-01-31
+**Version**: 1.7
+**Last Updated**: 2026-02-03
 **Deciders**: Architecture Team
 **Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator, Authentication Webhook, HolmesGPT API teams
 
@@ -20,6 +20,7 @@
 | **v1.4** | 2026-01-06 | Added Authentication Webhook Service (`webhook` category) for SOC2 CC8.1 operator attribution. Webhook service captures WHO (authenticated user) for CRD operations requiring manual approval. Cross-references DD-WEBHOOK-003, BR-AUTH-001. Expected volume: +100 events/day. | Architecture Team |
 | **v1.5** | 2026-01-08 | **BREAKING**: Fixed WorkflowExecution event naming inconsistency. Changed Gap #5 (`workflow.selection.completed` → `workflowexecution.selection.completed`) and Gap #6 (`execution.workflow.started` → `workflowexecution.execution.started`) to align with ADR-034 v1.2 service-level category naming convention. All WorkflowExecution controller events now use `workflowexecution` prefix. Updated event_category from `"workflow"`/`"execution"` to `"workflowexecution"`. Discovered during ogen migration architectural review. | Architecture Team |
 | **v1.6** | 2026-01-31 | **BREAKING**: Fixed event_category collision between AIAnalysis and HolmesGPT API. Added new `aiagent` category for HolmesGPT API Service (AI Agent Provider with autonomous tool-calling). Clarified `analysis` category is exclusively for AIAnalysis controller (remediation workflow orchestration). **Rationale**: Two distinct services were incorrectly sharing `"analysis"` category, violating ADR-034 v1.2 service-level naming rule. HolmesGPT is architecturally an autonomous AI agent (per HolmesGPT documentation), not an analysis controller. New name is implementation-agnostic (supports future agent replacements). **Impact**: (1) Historical queries filtering by `event_category='analysis'` will now miss HAPI events (must use `'aiagent'`). (2) **KNOWN ISSUE**: AIAnalysis INT tests will temporarily fail - they query with `event_category='analysis'` expecting to find HAPI events (`holmesgpt.response.complete`). **Migration Path**: Fix HAPI INT tests first (Priority 1), then update AIAnalysis INT tests to query `event_category='aiagent'` for HAPI events (Priority 2). Estimated 20-30 test updates across `test/integration/aianalysis/`. | Architecture Team |
+| **v1.7** | 2026-02-03 | Added RemediationOrchestrator approval decision audit events (`orchestration` category) to complete two-event audit trail pattern for RemediationApprovalRequest decisions. New event types: `orchestrator.approval.approved`, `orchestrator.approval.rejected`, `orchestrator.approval.expired`. **Rationale**: SOC 2 CC8.1 compliance requires complete audit trail showing both authenticated user (from AuthWebhook `webhook` category) AND business context (from RO controller `orchestration` category). Two-event pattern ensures tamper-proof WHO attribution (webhook intercepts CRD update) and complete forensic context (RO controller provides correlation_id, workflow details, confidence scores). **Integration**: Events share `correlation_id` (parent RR name) for cross-service querying. RO controller uses `Status.DecidedBy` field populated by AuthWebhook to attribute approval to authenticated operator. **Implementation**: Uses AuditRecorded condition for secure, controller-managed idempotency (not annotations). Cross-references: BR-AUDIT-006 (RAR Audit Trail), DD-WEBHOOK-003 (Webhook Audit Pattern), DD-AUDIT-006 (RAR Implementation), ADR-040 (RAR Architecture). | Architecture Team |
 
 ---
 
@@ -143,7 +144,7 @@ CREATE TABLE audit_events (
 | `signalprocessing` | Signal Processing Service | Signal enrichment and classification | `signalprocessing.enrichment.completed`, `signalprocessing.classification.decision`, `signalprocessing.phase.transition` |
 | `workflow` | Workflow Catalog Service | Workflow search and selection | `workflow.catalog.search_completed` (DD-WORKFLOW-014) |
 | `workflowexecution` | WorkflowExecution Controller | Tekton workflow orchestration and execution | `workflowexecution.workflow.started`, `workflowexecution.selection.completed`, `workflowexecution.execution.started`, `workflowexecution.workflow.completed`, `workflowexecution.workflow.failed` (BR-AUDIT-005 Gap #5, #6) |
-| `orchestration` | Remediation Orchestrator Service | Remediation lifecycle orchestration | `orchestrator.lifecycle.started`, `orchestrator.phase.transitioned`, `orchestrator.approval.requested` |
+| `orchestration` | Remediation Orchestrator Service | Remediation lifecycle orchestration | `orchestrator.lifecycle.started`, `orchestrator.phase.transitioned`, `orchestrator.approval.requested`, `orchestrator.approval.approved`, `orchestrator.approval.rejected`, `orchestrator.approval.expired` |
 | `webhook` | Authentication Webhook Service | Operator attribution for CRD operations (SOC2 CC8.1) | `webhook.workflowexecution.block_cleared`, `webhook.notificationrequest.deleted`, `webhook.remediationapprovalrequest.decided` (DD-WEBHOOK-003) |
 
 **Query Pattern**:
@@ -189,6 +190,68 @@ audit.SetEventCategory(event, "orchestration")  // Service-level
 **Migration Note**: RemediationOrchestrator is the **ONLY** service using operation-level categories. This violates the service-level convention and MUST be consolidated to `"orchestration"` for V1.0 release. See [RO Event Category Migration Notice](../../handoff/NOTICE_ADR_034_V1_2_RO_EVENT_CATEGORY_MIGRATION_DEC_18_2025.md).
 
 **Cross-Reference**: DD-AUDIT-003 (Service Audit Trace Requirements) - Defines which services MUST generate audit traces.
+
+---
+
+### 1.1.1. Two-Event Audit Trail Pattern (RemediationApprovalRequest)
+
+**Pattern**: RemediationApprovalRequest approval decisions generate **TWO audit events** from different services to provide complete SOC 2 compliance coverage.
+
+**Architecture**:
+
+| Event # | Service | Category | Event Type | Purpose | Actor | Critical Fields |
+|---------|---------|----------|------------|---------|-------|-----------------|
+| **Event 1** | AuthWebhook | `webhook` | `webhook.remediationapprovalrequest.decided` | Captures **WHO** (authenticated user identity) at CRD interception point | `user` (authenticated operator) | `actor_id` (operator email), `event_timestamp` (decision time) |
+| **Event 2** | RemediationOrchestrator | `orchestration` | `orchestrator.approval.{approved\|rejected\|expired}` | Captures **WHAT/WHY** (business context, workflow details, confidence) | `service` (remediationorchestrator-controller) | `correlation_id` (parent RR), `event_data.workflow_id`, `event_data.confidence`, `event_data.decided_by` |
+
+**Integration Point**: `Status.DecidedBy` field
+- **Set by**: AuthWebhook (authenticated user from K8s API request)
+- **Read by**: RemediationOrchestrator controller (includes in Event 2 for attribution)
+- **Immutability**: ADR-040 guarantees field is immutable once set (tamper-proof)
+
+**Query Pattern** (Forensic Investigation):
+```sql
+-- Get complete approval audit trail for remediation request
+SELECT 
+    event_category,
+    event_type,
+    actor_type,
+    actor_id,
+    event_timestamp,
+    event_data->>'decided_by' AS decided_by,
+    event_data->>'workflow_id' AS workflow_id,
+    event_data->>'confidence' AS confidence
+FROM audit_events
+WHERE correlation_id = 'rr-production-cpu-spike-2026-02-03'
+  AND (event_category = 'webhook' OR event_category = 'orchestration')
+  AND (event_type LIKE '%approval%')
+ORDER BY event_timestamp;
+
+-- Result (Two Events):
+-- 1. webhook | webhook.remediationapprovalrequest.decided | user | alice@example.com | 2026-02-03 10:15:23 | NULL | NULL | NULL
+-- 2. orchestration | orchestrator.approval.approved | service | remediationorchestrator-controller | 2026-02-03 10:15:24 | alice@example.com | wf-restart-pod-abc | 0.89
+```
+
+**SOC 2 Compliance Coverage**:
+
+| Control | Requirement | Event 1 (Webhook) | Event 2 (Orchestration) |
+|---------|-------------|-------------------|-------------------------|
+| **CC8.1** (User Attribution) | WHO approved? | ✅ `actor_id` = authenticated user | ✅ `event_data.decided_by` = cross-validation |
+| **CC6.8** (Non-Repudiation) | Defensible rationale? | ✅ Tamper-proof timestamp | ✅ Business context (workflow, confidence) |
+| **CC7.2** (Monitoring) | Complete audit trail? | ✅ Interception at CRD update | ✅ Controller-emitted context |
+| **CC7.4** (Completeness) | No missing decisions? | ✅ Every CRD update intercepted | ✅ Idempotent emission (AuditRecorded condition) |
+
+**Why Two Events?**:
+1. **Security Separation**: Webhook captures authentication at interception point (cannot be bypassed)
+2. **Business Context**: Controller provides complete remediation context for forensics
+3. **Cross-Validation**: Both events share `decided_by` field for integrity verification
+4. **Compliance**: Satisfies "defense in depth" audit requirements (multiple independent sources)
+
+**Idempotency**:
+- **Webhook**: Uses `Status.DecidedBy` field check (`if DecidedBy != "" { skip }`)
+- **RO Controller**: Uses `AuditRecorded` status condition (`if AuditRecorded == True { skip }`)
+
+**Authority**: BR-AUDIT-006 (RAR Audit Trail), DD-WEBHOOK-003 (Webhook Audit Pattern), DD-AUDIT-006 (RAR Implementation)
 
 ---
 
@@ -507,15 +570,17 @@ ORDER BY event_count DESC;
    - `aianalysis.approval.required`
    - `aianalysis.error.occurred`
 
-3. **RemediationApprovalRequest Controller** (4 hours) - **NEW**
-   - `remediationapprovalrequest.requested` (actor: remediationorchestrator)
-   - `remediationapprovalrequest.approved` (actor: operator or remediationapprovalrequest-controller)
-   - `remediationapprovalrequest.rejected` (actor: operator or remediationapprovalrequest-controller)
-   - `remediationapprovalrequest.expired` (actor: remediationapprovalrequest-controller)
-   - **Actor Pattern**:
-     - `actor_type: "service"`, `actor_id: "remediationorchestrator"` → Creation event
-     - `actor_type: "user"`, `actor_id: "operator@example.com"` → Manual approval/rejection
-     - `actor_type: "service"`, `actor_id: "remediationapprovalrequest-controller"` → Timeout expiration
+3. **RemediationApprovalRequest Audit Trail** (6 hours) - ✅ **IMPLEMENTED (v1.7)**
+   - **Two-Event Pattern** (see Section 1.1.1 for architecture):
+     - **Event 1 (Webhook)**: `webhook.remediationapprovalrequest.decided` (actor: user, captures WHO)
+     - **Event 2 (Orchestration)**: 
+       - `orchestrator.approval.approved` (actor: remediationorchestrator-controller)
+       - `orchestrator.approval.rejected` (actor: remediationorchestrator-controller)
+       - `orchestrator.approval.expired` (actor: remediationorchestrator-controller)
+   - **Integration**: `Status.DecidedBy` field bridges both events (set by webhook, read by RO controller)
+   - **Idempotency**: Webhook uses field check, RO controller uses AuditRecorded condition
+   - **Authority**: BR-AUDIT-006, DD-WEBHOOK-003, DD-AUDIT-006
+   - **Test Coverage**: 17 tests (8 unit, 6 integration, 3 E2E)
 
 4. **Workflow Catalog Service** (4 hours) - **NEW**
    - `workflow.catalog.search_completed` (actor: holmesgpt-api)
@@ -524,10 +589,13 @@ ORDER BY event_count DESC;
    - **Use Cases**: Debugging workflow selection, tuning workflow definitions, compliance tracking
    - **Authority**: DD-WORKFLOW-014 (Workflow Selection Audit Trail)
 
-5. **Remediation Orchestrator Service** (6 hours)
+5. **Remediation Orchestrator Service** (8 hours, partially implemented)
    - `remediationorchestrator.request.created`
    - `remediationorchestrator.phase.transitioned`
    - `remediationorchestrator.approval.requested` (creates RemediationApprovalRequest)
+   - ✅ **IMPLEMENTED**: `orchestrator.approval.approved` (v1.7, BR-AUDIT-006)
+   - ✅ **IMPLEMENTED**: `orchestrator.approval.rejected` (v1.7, BR-AUDIT-006)
+   - ✅ **IMPLEMENTED**: `orchestrator.approval.expired` (v1.7, BR-AUDIT-006)
    - `remediationorchestrator.child.created`
    - `remediationorchestrator.error.occurred`
 
@@ -665,7 +733,9 @@ This ADR establishes the following subdocument as authoritative for specific imp
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Defines who writes audit traces (distributed pattern)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 - **DD-AUDIT-003**: [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) - Defines which 8 of 11 services must generate audit traces
+- **DD-AUDIT-006**: [RemediationApprovalRequest Audit Implementation](./DD-AUDIT-006-remediation-approval-audit-implementation.md) - Defines RAR approval audit trail architecture (two-event pattern, BR-AUDIT-006)
 - **DD-WORKFLOW-014**: [Workflow Selection Audit Trail](./DD-WORKFLOW-014-workflow-selection-audit-trail.md) - Defines workflow catalog search audit events with scoring breakdown
+- **DD-WEBHOOK-003**: [Webhook Complete Audit Pattern](./DD-WEBHOOK-003-webhook-complete-audit-pattern.md) - Defines webhook audit emission pattern for operator attribution (SOC 2 CC8.1)
 - **DD-007**: [Graceful Shutdown Pattern](./DD-007-kubernetes-aware-graceful-shutdown.md) - 4-step Kubernetes-aware shutdown (ensures audit flush)
 
 ---
