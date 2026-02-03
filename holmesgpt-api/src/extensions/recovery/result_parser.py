@@ -271,6 +271,24 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
         # E2E-HAPI-023: Use top-level confidence if present (problem_resolved case), else from selected_workflow
         confidence = structured.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
 
+        # ADR-045 v1.2: Extract alternative workflows for audit/context
+        # BR-AUDIT-005 Gap #4: Required for SOC2 compliance
+        raw_alternatives = structured.get("alternative_workflows", [])
+        alternative_workflows = []
+        for alt in raw_alternatives:
+            if isinstance(alt, dict) and alt.get("workflow_id"):
+                alternative_workflows.append({
+                    "workflow_id": alt.get("workflow_id", ""),
+                    "container_image": alt.get("container_image"),
+                    "confidence": float(alt.get("confidence", 0.0)),
+                    "rationale": alt.get("rationale") or "Alternative recovery workflow"
+                })
+        logger.info({
+            "event": "alternative_workflows_extracted_recovery",
+            "incident_id": incident_id,
+            "count": len(alternative_workflows)
+        })
+
         # E2E-HAPI-023/024: Use LLM's values if present, otherwise calculate them
         can_recover_from_llm = structured.get("can_recover")
         needs_human_review_from_llm = structured.get("needs_human_review")
@@ -360,6 +378,10 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
         # This ensures SelectedWorkflow.Set=false when LLM returns None
         if selected_workflow is not None:
             result["selected_workflow"] = selected_workflow
+        
+        # BR-AUDIT-005 Gap #4: Always include alternative_workflows for audit trail (even if empty)
+        # ADR-045 v1.2: Required for SOC2 compliance and RR reconstruction
+        result["alternative_workflows"] = alternative_workflows
 
         logger.info(f"Successfully parsed recovery-specific response for incident {incident_id}")
         return result

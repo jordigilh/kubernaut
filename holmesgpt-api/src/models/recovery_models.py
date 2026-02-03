@@ -26,8 +26,8 @@ Design Decision: DD-RECOVERY-002, DD-RECOVERY-003 (Recovery prompt design)
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
 
-# Import EnrichmentResults for type hints
-from src.models.incident_models import EnrichmentResults
+# Import EnrichmentResults and AlternativeWorkflow for type hints
+from src.models.incident_models import EnrichmentResults, AlternativeWorkflow
 
 
 class RecoveryStrategy(BaseModel):
@@ -294,6 +294,15 @@ class RecoveryResponse(BaseModel):
         default=None,
         description="Structured reason when needs_human_review=true. "
                     "Values: no_matching_workflows, low_confidence, signal_not_reproducible"
+    )
+
+    # ADR-045 v1.2: Alternative workflows for audit/context (Dec 5, 2025)
+    # BR-AUDIT-005 Gap #4: Required for SOC2 compliance and RR reconstruction
+    alternative_workflows: List[AlternativeWorkflow] = Field(
+        default_factory=list,
+        description="Other workflows considered but not selected. "
+                    "For operator context and audit trail only - NOT for automatic execution. "
+                    "Helps operators understand AI reasoning and decision alternatives."
     )
 
     class Config:

@@ -393,8 +393,9 @@ def parse_and_validate_investigation_result(
         result["selected_workflow"] = selected_workflow
     if human_review_reason is not None:
         result["human_review_reason"] = human_review_reason
-    if alternative_workflows:  # Only if non-empty list
-        result["alternative_workflows"] = alternative_workflows
+    # BR-AUDIT-005 Gap #4: Always include alternative_workflows for audit trail (even if empty)
+    # ADR-045 v1.2: Required for SOC2 compliance and RR reconstruction
+    result["alternative_workflows"] = alternative_workflows
     # E2E-HAPI-003: Include LLM-provided validation history (for max_retries_exhausted simulation)
     if validation_attempts_from_llm:
         result["validation_attempts_history"] = validation_attempts_from_llm
@@ -790,8 +791,9 @@ def parse_investigation_result(
         result["selected_workflow"] = selected_workflow
     if human_review_reason is not None:
         result["human_review_reason"] = human_review_reason
-    if alternative_workflows:  # Only if non-empty list
-        result["alternative_workflows"] = alternative_workflows
+    # BR-AUDIT-005 Gap #4: Always include alternative_workflows for audit trail (even if empty)
+    # ADR-045 v1.2: Required for SOC2 compliance and RR reconstruction
+    result["alternative_workflows"] = alternative_workflows
     
     return result
 

@@ -1156,6 +1156,17 @@ I've identified a suitable remediation workflow from the catalog.
 
     def _recovery_text_response(self, scenario: MockScenario) -> str:
         """Generate recovery analysis text response."""
+        # ADR-045 v1.2: Generate alternative workflows for audit/context
+        alternatives_list = []
+        if scenario.alternatives:
+            for alt in scenario.alternatives:
+                alternatives_list.append({
+                    "workflow_id": alt["workflow_id"],
+                    "title": alt.get("title", "Alternative Recovery Workflow"),
+                    "confidence": alt.get("confidence", 0.25),
+                    "rationale": alt.get("rationale", "Alternative recovery approach")
+                })
+        
         # Handle no workflow found case
         if not scenario.workflow_id:
             return f"""Based on my investigation of the recovery scenario:
@@ -1174,7 +1185,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
       "current_signal_type": "{scenario.signal_type}"
     }}
   }},
-  "selected_workflow": null
+  "selected_workflow": null,
+  "alternative_workflows": {json.dumps(alternatives_list)}
 }}
 ```
 """
@@ -1200,7 +1212,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "version": "1.0.0",
     "confidence": {scenario.confidence},
     "rationale": "Alternative approach after failed attempt"
-  }}
+  }},
+  "alternative_workflows": {json.dumps(alternatives_list)}
 }}
 ```
 """
