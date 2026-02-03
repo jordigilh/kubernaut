@@ -2470,6 +2470,90 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.AiAnalysisRef)
 			}
 		}
+	case RemediationApprovalDecisionPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("RemediationApprovalDecisionPayload")
+		{
+			s := s.RemediationApprovalDecisionPayload
+			{
+				e.FieldStart("remediation_request_name")
+				e.Str(s.RemediationRequestName)
+			}
+			{
+				e.FieldStart("ai_analysis_name")
+				e.Str(s.AiAnalysisName)
+			}
+			{
+				e.FieldStart("decision")
+				s.Decision.Encode(e)
+			}
+			{
+				e.FieldStart("decided_by")
+				e.Str(s.DecidedBy)
+			}
+			{
+				if s.DecidedAt.Set {
+					e.FieldStart("decided_at")
+					s.DecidedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.DecisionMessage.Set {
+					e.FieldStart("decision_message")
+					s.DecisionMessage.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("confidence")
+				e.Float32(s.Confidence)
+			}
+			{
+				e.FieldStart("workflow_id")
+				e.Str(s.WorkflowID)
+			}
+			{
+				if s.WorkflowVersion.Set {
+					e.FieldStart("workflow_version")
+					s.WorkflowVersion.Encode(e)
+				}
+			}
+			{
+				if s.TargetResource.Set {
+					e.FieldStart("target_resource")
+					s.TargetResource.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutDeadline.Set {
+					e.FieldStart("timeout_deadline")
+					s.TimeoutDeadline.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.DecisionDurationSeconds.Set {
+					e.FieldStart("decision_duration_seconds")
+					s.DecisionDurationSeconds.Encode(e)
+				}
+			}
+			{
+				if s.ApprovalReason.Set {
+					e.FieldStart("approval_reason")
+					s.ApprovalReason.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutReason.Set {
+					e.FieldStart("timeout_reason")
+					s.TimeoutReason.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutDurationSeconds.Set {
+					e.FieldStart("timeout_duration_seconds")
+					s.TimeoutDurationSeconds.Encode(e)
+				}
+			}
+		}
 	case WorkflowSearchAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("workflow.catalog.search_completed")
@@ -3149,6 +3233,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "webhook.approval.decided":
 					s.Type = RemediationApprovalAuditPayloadAuditEventEventData
 					found = true
+				case "RemediationApprovalDecisionPayload":
+					s.Type = RemediationApprovalDecisionPayloadAuditEventEventData
+					found = true
 				case "workflow.catalog.search_completed":
 					s.Type = WorkflowSearchAuditPayloadAuditEventEventData
 					found = true
@@ -3247,6 +3334,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationApprovalAuditPayloadAuditEventEventData:
 		if err := s.RemediationApprovalAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationApprovalDecisionPayloadAuditEventEventData:
+		if err := s.RemediationApprovalDecisionPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowSearchAuditPayloadAuditEventEventData:
@@ -4558,6 +4649,90 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.AiAnalysisRef)
 			}
 		}
+	case RemediationApprovalDecisionPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("RemediationApprovalDecisionPayload")
+		{
+			s := s.RemediationApprovalDecisionPayload
+			{
+				e.FieldStart("remediation_request_name")
+				e.Str(s.RemediationRequestName)
+			}
+			{
+				e.FieldStart("ai_analysis_name")
+				e.Str(s.AiAnalysisName)
+			}
+			{
+				e.FieldStart("decision")
+				s.Decision.Encode(e)
+			}
+			{
+				e.FieldStart("decided_by")
+				e.Str(s.DecidedBy)
+			}
+			{
+				if s.DecidedAt.Set {
+					e.FieldStart("decided_at")
+					s.DecidedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.DecisionMessage.Set {
+					e.FieldStart("decision_message")
+					s.DecisionMessage.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("confidence")
+				e.Float32(s.Confidence)
+			}
+			{
+				e.FieldStart("workflow_id")
+				e.Str(s.WorkflowID)
+			}
+			{
+				if s.WorkflowVersion.Set {
+					e.FieldStart("workflow_version")
+					s.WorkflowVersion.Encode(e)
+				}
+			}
+			{
+				if s.TargetResource.Set {
+					e.FieldStart("target_resource")
+					s.TargetResource.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutDeadline.Set {
+					e.FieldStart("timeout_deadline")
+					s.TimeoutDeadline.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.DecisionDurationSeconds.Set {
+					e.FieldStart("decision_duration_seconds")
+					s.DecisionDurationSeconds.Encode(e)
+				}
+			}
+			{
+				if s.ApprovalReason.Set {
+					e.FieldStart("approval_reason")
+					s.ApprovalReason.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutReason.Set {
+					e.FieldStart("timeout_reason")
+					s.TimeoutReason.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutDurationSeconds.Set {
+					e.FieldStart("timeout_duration_seconds")
+					s.TimeoutDurationSeconds.Encode(e)
+				}
+			}
+		}
 	case WorkflowSearchAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("workflow.catalog.search_completed")
@@ -5237,6 +5412,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "webhook.approval.decided":
 					s.Type = RemediationApprovalAuditPayloadAuditEventRequestEventData
 					found = true
+				case "RemediationApprovalDecisionPayload":
+					s.Type = RemediationApprovalDecisionPayloadAuditEventRequestEventData
+					found = true
 				case "workflow.catalog.search_completed":
 					s.Type = WorkflowSearchAuditPayloadAuditEventRequestEventData
 					found = true
@@ -5335,6 +5513,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationApprovalAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationApprovalAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationApprovalDecisionPayloadAuditEventRequestEventData:
+		if err := s.RemediationApprovalDecisionPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowSearchAuditPayloadAuditEventRequestEventData:
@@ -17743,6 +17925,438 @@ func (s RemediationApprovalAuditPayloadEventType) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationApprovalAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationApprovalDecisionPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationApprovalDecisionPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("remediation_request_name")
+		e.Str(s.RemediationRequestName)
+	}
+	{
+		e.FieldStart("ai_analysis_name")
+		e.Str(s.AiAnalysisName)
+	}
+	{
+		e.FieldStart("decision")
+		s.Decision.Encode(e)
+	}
+	{
+		e.FieldStart("decided_by")
+		e.Str(s.DecidedBy)
+	}
+	{
+		if s.DecidedAt.Set {
+			e.FieldStart("decided_at")
+			s.DecidedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.DecisionMessage.Set {
+			e.FieldStart("decision_message")
+			s.DecisionMessage.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("confidence")
+		e.Float32(s.Confidence)
+	}
+	{
+		e.FieldStart("workflow_id")
+		e.Str(s.WorkflowID)
+	}
+	{
+		if s.WorkflowVersion.Set {
+			e.FieldStart("workflow_version")
+			s.WorkflowVersion.Encode(e)
+		}
+	}
+	{
+		if s.TargetResource.Set {
+			e.FieldStart("target_resource")
+			s.TargetResource.Encode(e)
+		}
+	}
+	{
+		if s.TimeoutDeadline.Set {
+			e.FieldStart("timeout_deadline")
+			s.TimeoutDeadline.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.DecisionDurationSeconds.Set {
+			e.FieldStart("decision_duration_seconds")
+			s.DecisionDurationSeconds.Encode(e)
+		}
+	}
+	{
+		if s.ApprovalReason.Set {
+			e.FieldStart("approval_reason")
+			s.ApprovalReason.Encode(e)
+		}
+	}
+	{
+		if s.TimeoutReason.Set {
+			e.FieldStart("timeout_reason")
+			s.TimeoutReason.Encode(e)
+		}
+	}
+	{
+		if s.TimeoutDurationSeconds.Set {
+			e.FieldStart("timeout_duration_seconds")
+			s.TimeoutDurationSeconds.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationApprovalDecisionPayload = [16]string{
+	0:  "event_type",
+	1:  "remediation_request_name",
+	2:  "ai_analysis_name",
+	3:  "decision",
+	4:  "decided_by",
+	5:  "decided_at",
+	6:  "decision_message",
+	7:  "confidence",
+	8:  "workflow_id",
+	9:  "workflow_version",
+	10: "target_resource",
+	11: "timeout_deadline",
+	12: "decision_duration_seconds",
+	13: "approval_reason",
+	14: "timeout_reason",
+	15: "timeout_duration_seconds",
+}
+
+// Decode decodes RemediationApprovalDecisionPayload from json.
+func (s *RemediationApprovalDecisionPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationApprovalDecisionPayload to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "remediation_request_name":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.RemediationRequestName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediation_request_name\"")
+			}
+		case "ai_analysis_name":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.AiAnalysisName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ai_analysis_name\"")
+			}
+		case "decision":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Decision.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decision\"")
+			}
+		case "decided_by":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.DecidedBy = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decided_by\"")
+			}
+		case "decided_at":
+			if err := func() error {
+				s.DecidedAt.Reset()
+				if err := s.DecidedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decided_at\"")
+			}
+		case "decision_message":
+			if err := func() error {
+				s.DecisionMessage.Reset()
+				if err := s.DecisionMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decision_message\"")
+			}
+		case "confidence":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Float32()
+				s.Confidence = float32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"confidence\"")
+			}
+		case "workflow_id":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.WorkflowID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_id\"")
+			}
+		case "workflow_version":
+			if err := func() error {
+				s.WorkflowVersion.Reset()
+				if err := s.WorkflowVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_version\"")
+			}
+		case "target_resource":
+			if err := func() error {
+				s.TargetResource.Reset()
+				if err := s.TargetResource.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target_resource\"")
+			}
+		case "timeout_deadline":
+			if err := func() error {
+				s.TimeoutDeadline.Reset()
+				if err := s.TimeoutDeadline.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"timeout_deadline\"")
+			}
+		case "decision_duration_seconds":
+			if err := func() error {
+				s.DecisionDurationSeconds.Reset()
+				if err := s.DecisionDurationSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decision_duration_seconds\"")
+			}
+		case "approval_reason":
+			if err := func() error {
+				s.ApprovalReason.Reset()
+				if err := s.ApprovalReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"approval_reason\"")
+			}
+		case "timeout_reason":
+			if err := func() error {
+				s.TimeoutReason.Reset()
+				if err := s.TimeoutReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"timeout_reason\"")
+			}
+		case "timeout_duration_seconds":
+			if err := func() error {
+				s.TimeoutDurationSeconds.Reset()
+				if err := s.TimeoutDurationSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"timeout_duration_seconds\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationApprovalDecisionPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b10011111,
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationApprovalDecisionPayload) {
+					name = jsonFieldsNameOfRemediationApprovalDecisionPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationApprovalDecisionPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationApprovalDecisionPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationApprovalDecisionPayloadDecision as json.
+func (s RemediationApprovalDecisionPayloadDecision) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationApprovalDecisionPayloadDecision from json.
+func (s *RemediationApprovalDecisionPayloadDecision) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationApprovalDecisionPayloadDecision to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationApprovalDecisionPayloadDecision(v) {
+	case RemediationApprovalDecisionPayloadDecisionApproved:
+		*s = RemediationApprovalDecisionPayloadDecisionApproved
+	case RemediationApprovalDecisionPayloadDecisionRejected:
+		*s = RemediationApprovalDecisionPayloadDecisionRejected
+	case RemediationApprovalDecisionPayloadDecisionExpired:
+		*s = RemediationApprovalDecisionPayloadDecisionExpired
+	default:
+		*s = RemediationApprovalDecisionPayloadDecision(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationApprovalDecisionPayloadDecision) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationApprovalDecisionPayloadDecision) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationApprovalDecisionPayloadEventType as json.
+func (s RemediationApprovalDecisionPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationApprovalDecisionPayloadEventType from json.
+func (s *RemediationApprovalDecisionPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationApprovalDecisionPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationApprovalDecisionPayloadEventType(v) {
+	case RemediationApprovalDecisionPayloadEventTypeApprovalDecision:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalDecision
+	case RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated
+	case RemediationApprovalDecisionPayloadEventTypeApprovalTimeout:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalTimeout
+	default:
+		*s = RemediationApprovalDecisionPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationApprovalDecisionPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationApprovalDecisionPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
