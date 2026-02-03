@@ -217,7 +217,6 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		auditStore,
-		auditManager,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationApprovalRequestAudit")
 		os.Exit(1)

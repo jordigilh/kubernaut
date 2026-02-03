@@ -33,6 +33,7 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +41,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 )
 
@@ -57,13 +59,12 @@ func NewRARReconciler(
 	client client.Client,
 	scheme *runtime.Scheme,
 	auditStore audit.AuditStore,
-	auditManager *roaudit.Manager,
 ) *RARReconciler {
 	return &RARReconciler{
 		client:       client,
 		scheme:       scheme,
 		auditStore:   auditStore,
-		auditManager: auditManager,
+		auditManager: roaudit.NewManager(roaudit.ServiceName), // Create audit manager (per main RO reconciler pattern)
 	}
 }
 
@@ -80,16 +81,17 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// TDD GREEN: Only emit audit event if decision is made
-	// Idempotency: Decision is immutable once set (per ADR-040)
+	// Idempotency: Only emit audit if decision is made AND not yet audited
+	// Per ADR-040: Decision is immutable once set (natural idempotency for decision itself)
 	if rar.Status.Decision == "" {
 		// No decision yet - nothing to do
 		return ctrl.Result{}, nil
 	}
 
-	// Check if we already emitted audit event
-	// TDD GREEN: Use simple annotation for now (REFACTOR later with proper state tracking)
-	if rar.Annotations != nil && rar.Annotations["kubernaut.ai/audit-emitted"] == "true" {
+	// Check if we already emitted audit event (per WorkflowExecution pattern)
+	// Use AuditRecorded condition for idempotency (secure, tamper-proof)
+	auditCondition := meta.FindStatusCondition(rar.Status.Conditions, rarconditions.ConditionAuditRecorded)
+	if auditCondition != nil && auditCondition.Status == "True" {
 		// Already emitted - skip
 		return ctrl.Result{}, nil
 	}
@@ -112,16 +114,13 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		"correlationID", parentRRName)
 
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
-		parentRRName,                    // correlation_id = parent RR name
-		rar.Namespace,                   // namespace
-		parentRRName,                    // rr_name
-		rar.Name,                        // rar_name
-		decision,                        // decision (Approved/Rejected/Expired)
-		decidedBy,                       // decided_by (from AuthWebhook)
-		rar.Status.DecisionMessage,     // decision_message
-		rar.Spec.Confidence,             // confidence
-		fmt.Sprintf("%.2f", rar.Spec.Confidence), // confidence_str
-		rar.Spec.RecommendedWorkflow.WorkflowID,  // workflow_id
+		parentRRName,                // correlation_id = parent RR name
+		rar.Namespace,               // namespace
+		parentRRName,                // rr_name
+		rar.Name,                    // rar_name
+		decision,                    // decision (Approved/Rejected/Expired)
+		decidedBy,                   // decided_by (from AuthWebhook)
+		rar.Status.DecisionMessage,  // decision_message
 	)
 
 	if err != nil {
@@ -131,26 +130,32 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	// Store audit event (fire-and-forget)
-	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
-		logger.Error(err, "Failed to store approval audit event", "rar", rar.Name)
-		// Fire-and-forget: Don't fail reconciliation on audit errors
-		return ctrl.Result{}, nil
-	}
-
-	logger.Info("Successfully emitted approval audit event",
-		"rar", rar.Name,
-		"eventType", event.EventType,
-		"correlationID", parentRRName)
-
-	// Mark as audited (TDD GREEN: simple annotation, REFACTOR later)
-	if rar.Annotations == nil {
-		rar.Annotations = make(map[string]string)
-	}
-	rar.Annotations["kubernaut.ai/audit-emitted"] = "true"
+	auditErr := r.auditStore.StoreAudit(ctx, event)
 	
-	if err := r.client.Update(ctx, rar); err != nil {
-		logger.Error(err, "Failed to mark RAR as audited", "rar", rar.Name)
-		// Don't fail reconciliation - we'll retry next time
+	// Set AuditRecorded condition based on result (per WorkflowExecution pattern)
+	// This provides secure, tamper-proof idempotency tracking
+	if auditErr != nil {
+		logger.Error(auditErr, "Failed to store approval audit event", "rar", rar.Name)
+		rarconditions.SetAuditRecorded(rar, false,
+			rarconditions.ReasonAuditFailed,
+			fmt.Sprintf("Failed to record audit event: %v", auditErr),
+			nil) // TDD GREEN: nil metrics (REFACTOR later)
+	} else {
+		logger.Info("Successfully emitted approval audit event",
+			"rar", rar.Name,
+			"eventType", event.EventType,
+			"correlationID", parentRRName)
+		rarconditions.SetAuditRecorded(rar, true,
+			rarconditions.ReasonAuditSucceeded,
+			fmt.Sprintf("Approval audit event %s recorded to DataStorage", event.EventType),
+			nil) // TDD GREEN: nil metrics (REFACTOR later)
+	}
+	
+	// Update status with AuditRecorded condition
+	if err := r.client.Status().Update(ctx, rar); err != nil {
+		logger.Error(err, "Failed to update RAR status with AuditRecorded condition", "rar", rar.Name)
+		// Fire-and-forget: Don't fail reconciliation
+		// Will retry on next reconcile (idempotency via condition check above)
 		return ctrl.Result{}, nil
 	}
 
