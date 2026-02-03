@@ -76,16 +76,38 @@ func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
 }
 
 // RecordApprovalDecision records approval decision event (P0 - SOC 2 critical)
-// Captures WHO, WHEN, WHAT, WHY for compliance and forensic investigation
 //
-// TDD GREEN Phase: Minimal implementation to make tests pass
+// This method captures WHO, WHEN, WHAT, WHY for all approval decisions to satisfy
+// SOC 2 CC8.1 (User Attribution) and CC6.8 (Non-Repudiation) requirements.
+//
+// Idempotency: Only emits event when decision is non-empty (prevents duplicate events).
+//
+// Fire-and-Forget: Logs error but doesn't fail controller reconciliation on audit failure
+// (per DD-AUDIT-002 graceful degradation pattern).
+//
+// BR-AUDIT-006: Approval decision audit trail
+// DD-AUDIT-006: RAR audit implementation
 func (c *AuditClient) RecordApprovalDecision(ctx context.Context, rar *remediationapprovalrequestv1alpha1.RemediationApprovalRequest) {
-	// Only emit if decision is final (idempotency)
+	// Idempotency: Only emit if decision is final
 	if rar.Status.Decision == "" {
 		return
 	}
 
-	// Build structured payload using OpenAPI-generated type
+	// Build structured payload (BR-AUDIT-006: Complete approval context)
+	payload := c.buildApprovalDecisionPayload(rar)
+
+	// Determine outcome (approved=success, rejected/expired=failure)
+	apiOutcome := c.determineEventOutcome(rar.Status.Decision)
+
+	// Build audit event using shared library (DD-AUDIT-002)
+	event := c.buildAuditEvent(rar, apiOutcome, payload)
+
+	// Fire-and-forget: Store audit event (DD-AUDIT-002)
+	c.storeAuditEvent(ctx, event, rar.Status.Decision)
+}
+
+// buildApprovalDecisionPayload constructs the audit payload from RAR
+func (c *AuditClient) buildApprovalDecisionPayload(rar *remediationapprovalrequestv1alpha1.RemediationApprovalRequest) ogenclient.RemediationApprovalDecisionPayload {
 	payload := ogenclient.RemediationApprovalDecisionPayload{
 		EventType:              ogenclient.RemediationApprovalDecisionPayloadEventTypeApprovalDecision,
 		RemediationRequestName: rar.Spec.RemediationRequestRef.Name,
@@ -96,7 +118,7 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, rar *remediati
 		WorkflowID:             rar.Spec.RecommendedWorkflow.WorkflowID,
 	}
 
-	// Optional fields (use .SetTo() for optional fields)
+	// Set optional fields using .SetTo() pattern
 	if rar.Status.DecidedAt != nil {
 		payload.DecidedAt.SetTo(rar.Status.DecidedAt.Time)
 	}
@@ -107,42 +129,59 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, rar *remediati
 		payload.WorkflowVersion.SetTo(rar.Spec.RecommendedWorkflow.Version)
 	}
 
-	// Determine outcome
-	var apiOutcome ogenclient.AuditEventRequestEventOutcome
-	if rar.Status.Decision == remediationapprovalrequestv1alpha1.ApprovalDecisionApproved {
-		apiOutcome = audit.OutcomeSuccess
-	} else {
-		apiOutcome = audit.OutcomeFailure
-	}
+	return payload
+}
 
-	// Build audit event (DD-AUDIT-002: OpenAPI types)
+// determineEventOutcome maps approval decision to audit outcome
+func (c *AuditClient) determineEventOutcome(decision remediationapprovalrequestv1alpha1.ApprovalDecision) ogenclient.AuditEventRequestEventOutcome {
+	if decision == remediationapprovalrequestv1alpha1.ApprovalDecisionApproved {
+		return audit.OutcomeSuccess
+	}
+	return audit.OutcomeFailure
+}
+
+// buildAuditEvent constructs the complete audit event structure
+func (c *AuditClient) buildAuditEvent(
+	rar *remediationapprovalrequestv1alpha1.RemediationApprovalRequest,
+	outcome ogenclient.AuditEventRequestEventOutcome,
+	payload ogenclient.RemediationApprovalDecisionPayload,
+) *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
+
+	// Set event metadata
 	audit.SetEventType(event, EventTypeApprovalDecision)
 	audit.SetEventCategory(event, EventCategoryApproval)
 	audit.SetEventAction(event, EventActionDecisionMade)
-	audit.SetEventOutcome(event, apiOutcome)
+	audit.SetEventOutcome(event, outcome)
 
-	// Actor: authenticated user from webhook (SOC 2 CC8.1)
+	// Set actor: authenticated user from webhook (SOC 2 CC8.1)
 	audit.SetActor(event, ActorTypeUser, rar.Status.DecidedBy)
 
+	// Set resource
 	audit.SetResource(event, "RemediationApprovalRequest", rar.Name)
 
-	// Correlation ID: parent RR name (DD-AUDIT-CORRELATION-002)
+	// Set correlation ID: parent RR name (DD-AUDIT-CORRELATION-002)
+	// This enables querying all events for a remediation by single correlation_id
 	audit.SetCorrelationID(event, rar.Spec.RemediationRequestRef.Name)
+
 	audit.SetNamespace(event, rar.Namespace)
 
-	// Set structured payload using union constructor
+	// Set structured payload using ogen union constructor
 	event.EventData = ogenclient.NewRemediationApprovalDecisionPayloadAuditEventRequestEventData(payload)
 
-	// Fire-and-forget (per DD-AUDIT-002)
+	return event
+}
+
+// storeAuditEvent stores the audit event with error handling
+func (c *AuditClient) storeAuditEvent(ctx context.Context, event *ogenclient.AuditEventRequest, decision remediationapprovalrequestv1alpha1.ApprovalDecision) {
 	if err := c.store.StoreAudit(ctx, event); err != nil {
+		// Log error but don't fail reconciliation (graceful degradation per DD-AUDIT-002)
 		c.log.Error(err, "Failed to write approval decision audit event",
 			"event_type", event.EventType,
 			"correlation_id", event.CorrelationID,
-			"decision", rar.Status.Decision,
+			"decision", decision,
 		)
-		// Don't fail reconciliation on audit failure (graceful degradation)
 	}
 }
 
