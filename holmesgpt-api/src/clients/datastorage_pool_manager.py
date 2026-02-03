@@ -63,6 +63,7 @@ import logging
 import threading
 from typing import Optional
 
+import urllib3
 from datastorage_auth_session import ServiceAccountAuthPoolManager
 
 logger = logging.getLogger(__name__)
@@ -108,10 +109,12 @@ def get_shared_datastorage_pool_manager() -> ServiceAccountAuthPoolManager:
             # BR-HAPI-301: Increase pool size for parallel test execution (4 pytest workers)
             # Default num_pools=10, but also set maxsize for connections per pool
             # DD-AUTH-014: Token path defaults to /var/run/secrets/kubernetes.io/serviceaccount/token
+            # Timeout: 10s connect, 60s read (prevents "read timeout=0" errors in E2E tests)
             _shared_datastorage_pool_manager = ServiceAccountAuthPoolManager(
                 num_pools=20,   # Number of connection pools
                 maxsize=20,     # Max connections per pool (handles parallel tests)
-                block=False     # Don't block when pool exhausted, raise error instead
+                block=False,    # Don't block when pool exhausted, raise error instead
+                timeout=urllib3.Timeout(connect=10.0, read=60.0)  # Explicit timeout (prevents socket default=0)
             )
-            logger.info(f"   Pool configuration: num_pools=20, maxsize=20, block=False")
+            logger.info(f"   Pool configuration: num_pools=20, maxsize=20, block=False, timeout=(10s connect, 60s read)")
         return _shared_datastorage_pool_manager

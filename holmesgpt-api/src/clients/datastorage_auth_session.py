@@ -95,6 +95,7 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
         token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token",
         num_pools=10,
         headers=None,
+        timeout=None,
         **connection_pool_kw
     ):
         """
@@ -105,14 +106,28 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
                        (default: /var/run/secrets/kubernetes.io/serviceaccount/token)
             num_pools: Number of connection pools (default: 10)
             headers: Optional default headers
+            timeout: Default timeout for requests (default: urllib3.Timeout(connect=10.0, read=60.0))
+                    Can be:
+                    - None: Use default (10s connect, 60s read)
+                    - Single float/int: Total timeout
+                    - urllib3.Timeout object: Custom timeout configuration
             **connection_pool_kw: Additional arguments passed to urllib3.PoolManager
         """
+        # Set default timeout if not provided (prevents "read timeout=0" errors)
+        # Default: 10s connect timeout, 60s read timeout (sufficient for DataStorage operations)
+        if timeout is None:
+            self._default_timeout = urllib3.Timeout(connect=10.0, read=60.0)
+        elif isinstance(timeout, (int, float)):
+            self._default_timeout = urllib3.Timeout(total=timeout)
+        else:
+            self._default_timeout = timeout
+            
         super().__init__(num_pools=num_pools, headers=headers, **connection_pool_kw)
         self._token_path = token_path
 
     def request(self, method, url, headers=None, **kwargs):
         """
-        Override request() to inject Authorization header.
+        Override request() to inject Authorization header and default timeout.
 
         This method is called for every HTTP request. It reads the ServiceAccount
         token (with caching) and injects the Authorization header before forwarding
@@ -122,6 +137,10 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
 
         DD-AUTH-005: This method is called automatically for every DataStorage API call.
         Services using the OpenAPI-generated client don't need to know about authentication.
+        
+        Timeout Handling:
+        - If 'timeout' kwarg is not provided, uses self._default_timeout
+        - This prevents "read timeout=0" errors from urllib3 socket defaults
         """
         # Read token from filesystem (with 5-minute caching)
         token = self._get_service_account_token()
@@ -133,6 +152,10 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
                 # Clone headers to avoid mutating shared state
                 headers = headers.copy()
             headers['Authorization'] = f'Bearer {token}'
+
+        # Set default timeout if not provided (prevents "read timeout=0" errors)
+        if 'timeout' not in kwargs or kwargs['timeout'] is None:
+            kwargs['timeout'] = self._default_timeout
 
         # Note: If token file doesn't exist, request proceeds without auth
         # This allows services to start before ServiceAccount token is mounted

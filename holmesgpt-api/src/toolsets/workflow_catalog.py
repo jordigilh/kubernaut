@@ -412,7 +412,7 @@ class SearchWorkflowCatalogTool(Tool):
             "DATA_STORAGE_URL",
             "http://data-storage:8080"
         ))
-        object.__setattr__(self, '_http_timeout', int(os.getenv("DATA_STORAGE_TIMEOUT", "10")))
+        object.__setattr__(self, '_http_timeout', int(os.getenv("DATA_STORAGE_TIMEOUT", "60")))
 
         # Initialize OpenAPI client for type-safe Data Storage API calls
         # DD-STORAGE-011: OpenAPI Client Generation
@@ -420,6 +420,8 @@ class SearchWorkflowCatalogTool(Tool):
         # Performance Fix: Use singleton pool manager to reuse HTTP connections
         auth_pool = get_shared_datastorage_pool_manager()
         config = Configuration(host=self._data_storage_url)
+        # CRITICAL: Set timeout on Configuration to prevent "read timeout=0" errors
+        config.timeout = self._http_timeout  # Default: 10s from DATA_STORAGE_TIMEOUT
         api_client = ApiClient(configuration=config)
         api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         object.__setattr__(self, '_search_api', WorkflowCatalogAPIApi(api_client))
@@ -491,6 +493,8 @@ class SearchWorkflowCatalogTool(Tool):
         # Performance Fix: Use singleton pool manager to reuse HTTP connections
         auth_pool = get_shared_datastorage_pool_manager()
         config = Configuration(host=value)
+        # CRITICAL: Set timeout on Configuration to prevent "read timeout=0" errors
+        config.timeout = self._http_timeout  # Default: 10s from DATA_STORAGE_TIMEOUT
         api_client = ApiClient(configuration=config)
         api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         object.__setattr__(self, '_search_api', WorkflowCatalogAPIApi(api_client))

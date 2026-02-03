@@ -73,20 +73,36 @@ from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 @pytest.fixture
 def hapi_client_config(hapi_service_url):
     """Create HAPI OpenAPI client configuration"""
-    return Configuration(host=hapi_service_url)
+    config = Configuration(host=hapi_service_url)
+    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
+    return config
 
 
 @pytest.fixture
-def incidents_api(hapi_client_config):
-    """Create Incidents API instance"""
+def incidents_api(hapi_client_config, hapi_auth_token):
+    """
+    Create Incidents API instance with authentication.
+    
+    DD-AUTH-014: Injects ServiceAccount Bearer token for E2E tests.
+    """
     client = ApiClient(configuration=hapi_client_config)
+    # DD-AUTH-014: Inject Bearer token via set_default_header
+    if hapi_auth_token:
+        client.set_default_header('Authorization', f'Bearer {hapi_auth_token}')
     return IncidentAnalysisApi(client)
 
 
 @pytest.fixture
-def recovery_api(hapi_client_config):
-    """Create Recovery API instance"""
+def recovery_api(hapi_client_config, hapi_auth_token):
+    """
+    Create Recovery API instance with authentication.
+    
+    DD-AUTH-014: Injects ServiceAccount Bearer token for E2E tests.
+    """
     client = ApiClient(configuration=hapi_client_config)
+    # DD-AUTH-014: Inject Bearer token via set_default_header
+    if hapi_auth_token:
+        client.set_default_header('Authorization', f'Bearer {hapi_auth_token}')
     return RecoveryAnalysisApi(client)
 
 

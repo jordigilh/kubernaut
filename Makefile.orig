@@ -415,19 +415,15 @@ test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports 
 	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=12 ./test/integration/holmesgptapi/...
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverdata generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
+	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Go Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped Kind infrastructure)"
-	@echo "🐍 Test Logic: Python (native for HAPI service)"
+	@echo "🦾 Test Logic: Go with ogen OpenAPI client (type-safe)"
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
-	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
-	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1
-	@echo "✅ Client generated successfully"
-	@echo ""
-	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
+	@echo "🧪 Running E2E tests (Go infrastructure + Go tests)..."
 	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"

@@ -416,7 +416,7 @@ test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports 
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs ## Run holmesgpt-api E2E tests (Kind cluster + Python tests in container, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Containerized Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -431,7 +431,7 @@ test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs ## Run holmesgpt-api E2E tes
 	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests in UBI9 container)..."
 	@echo "   Container: registry.access.redhat.com/ubi9/python-312:latest"
 	@echo "   Network: host (access NodePort services: HAPI 30120, DS 30098)"
-	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --coverprofile=../../../coverage_e2e_holmesgpt-api.out --covermode=atomic
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --output-dir=../../.. --coverprofile=coverage_e2e_holmesgpt-api.out --covermode=atomic
 	@if [ -f coverage_e2e_holmesgpt-api.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_e2e_holmesgpt-api.out"; \

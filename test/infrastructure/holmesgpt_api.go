@@ -38,9 +38,9 @@ import (
 // Deploys: PostgreSQL + Redis + Data Storage + HAPI to Kind cluster
 // Uses sequential builds to avoid OOM with Python pip install
 //
-// Port Allocations (per DD-TEST-001 v1.8):
+// Port Allocations (per DD-TEST-001 v2.5):
 // - HAPI: NodePort 30120 → Container 8080
-// - Data Storage: NodePort 30098 → Container 8080
+// - Data Storage: NodePort 30089 → Container 8080 (Host Port 8089)
 // - PostgreSQL: NodePort 30439 → Container 5432
 // - Redis: NodePort 30387 → Container 6379
 func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
@@ -169,10 +169,27 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	_, _ = fmt.Fprintln(writer, "✅ All images loaded!")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
+	// PHASE 3.5: Deploy DataStorage RBAC (DD-AUTH-014)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 3.5: Deploying DataStorage RBAC (DD-AUTH-014)...")
+
+	// Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	// Required for SAR checks to pass when E2E SA seeds workflows
+	_, _ = fmt.Fprintf(writer, "  🔐 Deploying data-storage-client ClusterRole...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage client ClusterRole deployed\n")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4a: Deploy DataStorage infrastructure FIRST (required for workflow seeding)
+	// ═══════════════════════════════════════════════════════════════════════
+	// Pattern: Match AA E2E workflow seeding approach (aianalysis_e2e.go Phase 7)
+	// DataStorage must be ready BEFORE Mock LLM deployment so workflows can be seeded
+	// and ConfigMap created with actual UUIDs
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4a: Deploying DataStorage infrastructure...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Must complete before workflow seeding")
 
 	// Create namespace FIRST (required for all subsequent deployments)
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
@@ -184,9 +201,9 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		name string
 		err  error
 	}
-	deployResults := make(chan deployResult, 6)
+	deployResults := make(chan deployResult, 4)
 
-	// Launch ALL kubectl apply commands concurrently
+	// Deploy DataStorage dependencies in parallel
 	go func() {
 		defer GinkgoRecover()
 		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
@@ -204,52 +221,20 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}()
 	go func() {
 		defer GinkgoRecover()
-		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
-		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar
-
-		// DD-AUTH-014: Create ServiceAccount BEFORE deployment (required for pod creation)
-		// Fix for: "serviceaccount 'data-storage-sa' not found" error
-		// Same fix as Gateway/RO/Notification E2E (commit 81823ef8d)
+		// DD-AUTH-014: Create ServiceAccount BEFORE deployment
 		_, _ = fmt.Fprintf(writer, "  🔐 Creating DataStorage ServiceAccount + RBAC...\n")
 		if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to create ServiceAccount: %w", err)}
 			return
 		}
 
-		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
+		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30089, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
-	go func() {
-		defer GinkgoRecover()
-		// DD-AUTH-014: Create ServiceAccount BEFORE deployment (required for DataStorage auth)
-		// Fix for: "Missing Authorization header" 401 errors
-		// HAPI uses ServiceAccountAuthPoolManager to read token from /var/run/secrets/kubernetes.io/serviceaccount/token
-		_, _ = fmt.Fprintf(writer, "  🔐 Creating HAPI ServiceAccount + RBAC...\n")
-		if err := deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-			deployResults <- deployResult{"HolmesGPT-API", fmt.Errorf("failed to create ServiceAccount: %w", err)}
-			return
-		}
 
-		// Create E2E test ServiceAccount (mimics AIAnalysis calling HAPI)
-		_, _ = fmt.Fprintf(writer, "  🔐 Creating E2E test ServiceAccount...\n")
-		if err := createHolmesGPTAPIE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
-			deployResults <- deployResult{"HolmesGPT-API", fmt.Errorf("failed to create E2E ServiceAccount: %w", err)}
-			return
-		}
-
-		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
-		deployResults <- deployResult{"HolmesGPT-API", err}
-	}()
-	go func() {
-		defer GinkgoRecover()
-		// HAPI E2E: No workflow seeding, Mock LLM uses default UUIDs
-		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer)
-		deployResults <- deployResult{"Mock LLM", err}
-	}()
-
-	// Collect ALL results before proceeding (MANDATORY)
+	// Wait for DataStorage infrastructure
 	var deployErrors []error
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 4; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
@@ -260,12 +245,83 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}
 
 	if len(deployErrors) > 0 {
-		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
+		return fmt.Errorf("DataStorage infrastructure deployment failed: %v", deployErrors)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
 
-	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4b: Wait for DataStorage to be ready
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4b: Waiting for DataStorage to be ready...")
+	if err := waitForDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage not ready: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4c: Seed workflows and create ConfigMap (DD-TEST-011)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4c: Seeding test workflows and creating ConfigMap...")
+
+	// Create E2E ServiceAccount for workflow seeding (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating E2E ServiceAccount for workflow seeding...\n")
+	if err := createHolmesGPTAPIE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
+	}
+
+	// Get ServiceAccount token for DataStorage authentication
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating authenticated DataStorage client for workflow seeding...\n")
+	e2eSAName := "holmesgpt-api-e2e-sa"
+	saToken, err := GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+
+	// Create authenticated DataStorage client
+	dsURL := "http://localhost:8089" // DataStorage NodePort
+	seedClient, err := createAuthenticatedDataStorageClient(dsURL, saToken)
+	if err != nil {
+		return fmt.Errorf("failed to create DataStorage client: %w", err)
+	}
+
+	// Get test workflows (from shared library)
+	testWorkflows := GetHAPIE2ETestWorkflows()
+	_, _ = fmt.Fprintf(writer, "  📋 Preparing %d test workflows...\n", len(testWorkflows))
+
+	// Seed workflows and capture UUIDs
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "HAPI E2E (via infrastructure)", writer)
+	if err != nil {
+		return fmt.Errorf("failed to seed test workflows: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4d: Deploy Mock LLM with workflow UUIDs
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4d: Deploying Mock LLM with workflow UUIDs...")
+	if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, workflowUUIDs, writer); err != nil {
+		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Mock LLM deployed with ConfigMap")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4e: Deploy HAPI
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4e: Deploying HAPI...")
+
+	// Create HAPI ServiceAccount
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating HAPI ServiceAccount + RBAC...\n")
+	if err := deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create HAPI ServiceAccount: %w", err)
+	}
+
+	if err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy HAPI: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ HAPI deployed")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4f: Wait for all services to be ready
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready...")
 	if err := waitForHAPIServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
@@ -284,13 +340,13 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
   extraPortMappings:
-  # HolmesGPT API (HAPI) - Per DD-TEST-001 v1.8
+  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.5
   - containerPort: 30120
     hostPort: 30120
     protocol: TCP
-  # Data Storage - Per DD-TEST-001 v1.8
-  - containerPort: 30098
-    hostPort: 30098
+  # Data Storage - Per DD-TEST-001 v2.5
+  - containerPort: 30089
+    hostPort: 8089
     protocol: TCP
   # PostgreSQL - Per DD-TEST-001 v1.8
   - containerPort: 30439
@@ -328,9 +384,9 @@ nodes:
 }
 
 // deployDataStorageForHAPI deploys Data Storage service to Kind cluster
-// Uses HAPI-specific NodePort (30098) per DD-TEST-001 v1.8
+// Uses HAPI-specific NodePort (30089) per DD-TEST-001 v2.5
 // deployHAPIOnly deploys HAPI service to Kind cluster
-// Per DD-TEST-001 v1.8: NodePort 30120
+// Per DD-TEST-001 v2.5: NodePort 30120
 func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	// ADR-030: Create HAPI ConfigMap with minimal config
 	deployment := fmt.Sprintf(`apiVersion: v1
@@ -389,6 +445,8 @@ spec:
           value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
           value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
+        - name: LITELLM_LOG
+          value: "DEBUG"  # Enable LiteLLM debug logging
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
@@ -579,9 +637,11 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 	return nil
 }
 
-// createHolmesGPTAPIE2EServiceAccount creates the E2E test ServiceAccount with HAPI client permissions
+// createHolmesGPTAPIE2EServiceAccount creates the E2E test ServiceAccount with HAPI + DataStorage client permissions
 // Pattern matches other E2E tests: aianalysis-e2e-sa, gateway-e2e-sa, etc.
-// DD-AUTH-014: E2E SA needs permissions to call HAPI endpoints (mimics AIAnalysis)
+// DD-AUTH-014: E2E SA needs permissions to:
+//  1. Call HAPI endpoints (mimics AIAnalysis)
+//  2. Call DataStorage endpoints (for workflow seeding in BeforeSuite)
 func createHolmesGPTAPIE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	saName := "holmesgpt-api-e2e-sa"
 
@@ -590,8 +650,8 @@ func createHolmesGPTAPIE2EServiceAccount(ctx context.Context, namespace, kubecon
 		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
 	}
 
-	// Create Role + RoleBinding for HAPI client access
-	rbacYAML := fmt.Sprintf(`---
+	// RBAC Part 1: HAPI client access (Role + RoleBinding)
+	hapiRBACYAML := fmt.Sprintf(`---
 # Role: HAPI client access (for E2E test SA - mimics AIAnalysis)
 # DD-AUTH-014: E2E SA needs permission to call HAPI endpoints
 apiVersion: rbac.authorization.k8s.io/v1
@@ -631,15 +691,24 @@ subjects:
 `, namespace, namespace, saName, namespace)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
-	cmd.Stdin = strings.NewReader(rbacYAML)
+	cmd.Stdin = strings.NewReader(hapiRBACYAML)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply E2E RBAC: %w", err)
+		return fmt.Errorf("failed to apply HAPI E2E RBAC: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ HAPI client RBAC created\n")
+
+	// RBAC Part 2: DataStorage client access (RoleBinding to ClusterRole)
+	// DD-TEST-011 v2.0: E2E SA needs to seed workflows in BeforeSuite
+	// Pattern: Same as aianalysis-e2e-sa (binds to data-storage-client ClusterRole)
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating DataStorage client RoleBinding for workflow seeding...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "  ✅ %s created with HAPI client access\n", saName)
+	_, _ = fmt.Fprintf(writer, "  ✅ E2E ServiceAccount created with HAPI + DataStorage client permissions\n")
 	return nil
 }
 

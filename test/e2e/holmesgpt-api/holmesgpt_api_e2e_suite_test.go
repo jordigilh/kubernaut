@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -31,7 +30,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Test suite for HolmesGPT API (HAPI) E2E tests
@@ -40,6 +41,7 @@ import (
 // - PostgreSQL 16 (for Data Storage dependency)
 // - Redis (for Data Storage dependency)
 // - Data Storage service (HAPI dependency)
+// - Mock LLM service (for cost-effective testing)
 // - HolmesGPT API service (containerized Python FastAPI)
 //
 // ARCHITECTURE: Standalone HAPI E2E (separate from AIAnalysis)
@@ -49,12 +51,17 @@ import (
 // - All tests share infrastructure via NodePort
 //
 // E2E Test Coverage (10-15%):
-// - 18 Python pytest tests in holmesgpt-api/tests/e2e/
-// - Black-box HTTP API testing (FastAPI endpoints)
+// - 48 Go test scenarios (migrated from Python)
+// - Black-box HTTP API testing via ogen OpenAPI client
 // - Mock LLM mode for cost control
+// - Business outcome validation (behavior + correctness + business impact)
 
 func TestHolmesGPTAPIE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+	// Suite timeout: 15 minutes total (5 min infra + max 5 min pytest + 5 min buffer)
+	// pytest-timeout enforces 30s per test to prevent hangs
+	// Pattern: Balanced timeout - fast feedback without premature termination
+	SetDefaultEventuallyTimeout(15 * time.Minute)
 	RunSpecs(t, "HolmesGPT API E2E Suite")
 }
 
@@ -68,16 +75,19 @@ var (
 	kubeconfigPath string
 
 	// Shared service URLs (NodePort - no port-forwarding needed)
-	// Port allocations per DD-TEST-001 v1.8:
+	// Port allocations per DD-TEST-001 v2.5:
 	// - HAPI: 30120 (NodePort) → 8080 (container)
-	// - Data Storage: 30098 (NodePort) → 8080 (container)
+	// - Data Storage: 30089 (NodePort) → 8080 (container, Host Port 8089)
 	// - PostgreSQL: 30439 (NodePort) → 5432 (container)
 	// - Redis: 30387 (NodePort) → 6379 (container)
 	hapiURL        string // http://localhost:30120
-	dataStorageURL string // http://localhost:30098
+	dataStorageURL string // http://localhost:8089
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "holmesgpt-api-e2e"
+
+	// Shared HAPI client (authenticated with ServiceAccount)
+	hapiClient *hapiclient.Client
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -85,9 +95,8 @@ var (
 	// Track if BeforeSuite completed successfully (for setup failure detection)
 	setupSucceeded bool
 
-	// Path to Python pytest tests
+	// Path to project root (for test helpers)
 	projectRoot string
-	pytestDir   string
 )
 
 var _ = SynchronizedBeforeSuite(
@@ -107,7 +116,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NodePort exposure per DD-TEST-001 v1.8:")
 		logger.Info("    - HAPI: 30120 → 8080")
-		logger.Info("    - Data Storage: 30098 → 8080")
+		logger.Info("    - Data Storage: 30089 → 8080 (Host Port 8089)")
 		logger.Info("    - PostgreSQL: 30439 → 5432")
 		logger.Info("    - Redis: 30387 → 6379")
 		logger.Info("  • Mock LLM mode: MOCK_LLM=true")
@@ -128,7 +137,6 @@ var _ = SynchronizedBeforeSuite(
 		cwd, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())
 		projectRoot = filepath.Join(cwd, "../../..")
-		pytestDir = filepath.Join(projectRoot, "holmesgpt-api/tests/e2e")
 
 		// Create HAPI E2E infrastructure
 		// This creates: Kind cluster + PostgreSQL + Redis + Data Storage + HAPI
@@ -137,9 +145,9 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupHAPIInfrastructure(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Set service URLs
+		// Set service URLs (per DD-TEST-001 v2.5: DataStorage uses host port mapping)
 		hapiURL = "http://localhost:30120"
-		dataStorageURL = "http://localhost:30098"
+		dataStorageURL = "http://localhost:8089"
 
 		// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
 		// Pods may be ready but NodePort routing needs time to propagate with podman provider
@@ -181,6 +189,36 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("   Data Storage URL: " + dataStorageURL)
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// ========================================
+		// Initialize HAPI Client with ServiceAccount Authentication
+		// ========================================
+		// Note: Workflow seeding already handled by infrastructure.SetupHAPIInfrastructure()
+		// - Workflows seeded in DataStorage (Phase 4c)
+		// - Mock LLM ConfigMap created with actual UUIDs (Phase 4d)
+		// - No duplicate seeding needed here
+		logger.Info("🔐 Initializing HAPI client with ServiceAccount authentication...")
+
+		// DD-AUTH-014: Get ServiceAccount token for HAPI client authentication
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
+		if err != nil {
+			logger.Info("❌ Failed to get ServiceAccount token")
+			Fail(fmt.Sprintf("Failed to get ServiceAccount token: %v", err))
+		}
+
+		// Create authenticated HAPI client (same pattern as AA E2E tests)
+		hapiClient, err = hapiclient.NewClient(
+			hapiURL,
+			hapiclient.WithClient(&http.Client{
+				Transport: testauth.NewServiceAccountTransport(saToken),
+				Timeout:   60 * time.Second,
+			}),
+		)
+		if err != nil {
+			logger.Info("❌ Failed to create authenticated HAPI client")
+			Fail(fmt.Sprintf("Failed to create authenticated HAPI client: %v", err))
+		}
+		logger.Info("✅ Authenticated HAPI client initialized")
+
 		// Mark setup as successful (for setup failure detection in AfterSuite)
 		setupSucceeded = true
 
@@ -192,101 +230,38 @@ var _ = SynchronizedBeforeSuite(
 		ctx, cancel = context.WithCancel(context.Background())
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
-		// Initialize URLs for all processes
+		// Initialize URLs for all processes (per DD-TEST-001 v2.5: DataStorage uses host port mapping)
 		hapiURL = "http://localhost:30120"
-		dataStorageURL = "http://localhost:30098"
+		dataStorageURL = "http://localhost:8089"
 
-		// Get project root for pytest execution
+		// Get project root
 		cwd, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())
 		projectRoot = filepath.Join(cwd, "../../..")
-		pytestDir = filepath.Join(projectRoot, "holmesgpt-api/tests/e2e")
+
+		// Initialize HAPI client for all processes
+		// DD-AUTH-014: Get ServiceAccount token for authentication
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
+
+		// Create authenticated HAPI client
+		hapiClient, err = hapiclient.NewClient(
+			hapiURL,
+			hapiclient.WithClient(&http.Client{
+				Transport: testauth.NewServiceAccountTransport(saToken),
+				Timeout:   60 * time.Second,
+			}),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated HAPI client")
 	},
 )
 
-	// Main E2E test: Run Python pytest suite
-var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
-	It("should pass all 18 Python E2E tests", func() {
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Running Python pytest E2E tests...")
-		logger.Info("  Test directory: " + pytestDir)
-		logger.Info("  HAPI URL: " + hapiURL)
-		logger.Info("  Expected: 18 tests")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		// ========================================
-		// DD-AUTH-014: Generate ServiceAccount token for pytest authentication
-		// ========================================
-		// DD-AUTH-014: Generate E2E test ServiceAccount token (mimics AIAnalysis calling HAPI)
-		// Pattern matches other E2E tests: aianalysis-e2e-sa, gateway-e2e-sa, etc.
-		logger.Info("🔐 Generating ServiceAccount token for pytest authentication...")
-		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "holmesgpt-api-e2e-sa", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token for pytest")
-		logger.Info("✅ E2E ServiceAccount token generated for pytest")
-
-		// ========================================
-		// Run pytest in container (DO NOT run on host - Python dependency hell)
-		// Pattern: Same as unit tests (podman run with UBI Python image)
-		// ========================================
-		logger.Info("Running pytest in containerized Python environment (UBI9)...")
-		logger.Info("  Container: registry.access.redhat.com/ubi9/python-312:latest")
-		logger.Info("  Test directory: " + pytestDir)
-		logger.Info("  HAPI URL: " + hapiURL)
-		logger.Info("  DATA_STORAGE_URL: " + dataStorageURL)
-		logger.Info("  Auth: ServiceAccount token (DD-AUTH-014)")
-
-		// Build pytest command to run in container
-		// NOTE: Must install holmesgpt first to avoid httpx version conflicts
-		// Same pattern as integration tests
-		// DD-AUTH-014: Pass HAPI_AUTH_TOKEN for Bearer token authentication
-		pytestCmd := fmt.Sprintf(
-			"cd /workspace && "+
-				"pip install -q --break-system-packages dependencies/holmesgpt && "+
-				"cd holmesgpt-api && "+
-				"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
-				"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
-				"HAPI_BASE_URL=%s DATA_STORAGE_URL=%s HAPI_AUTH_TOKEN=%s "+
-				"pytest tests/e2e -v --tb=short",
-			hapiURL,
-			dataStorageURL,
-			saToken,
-		)
-
-		// Run pytest in container (same pattern as unit tests)
-		// 
-		// Storage Optimization (BR-TEST-008):
-		// - Mount pip cache to avoid "No space left on device" errors
-		// - Use tmpfs for /tmp (2GB limit) for CI/CD compatibility
-		// - Cache directory empty in CI but reusable across local runs
-		//
-		// Performance: Pip installs write ~500MB to cache + temp files
-		pipCacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "pip")
-		_ = os.MkdirAll(pipCacheDir, 0755) // Create if doesn't exist (safe no-op if exists)
-		
-		cmd := exec.CommandContext(ctx, "podman", "run", "--rm",
-			"-v", fmt.Sprintf("%s:/workspace:z", projectRoot),
-			"-v", fmt.Sprintf("%s:/root/.cache/pip:z", pipCacheDir), // Pip cache (empty in CI, reusable locally)
-			"--tmpfs", "/tmp:size=2G,mode=1777",                     // 2GB tmpfs for pip temp files
-			"-w", "/workspace/holmesgpt-api",
-			"--network", "host", // Required to access NodePort services (30120, 30098)
-			"registry.access.redhat.com/ubi9/python-312:latest",
-			"sh", "-c", pytestCmd,
-		)
-		cmd.Stdout = GinkgoWriter
-		cmd.Stderr = GinkgoWriter
-
-		logger.Info("Executing: podman run (containerized pytest)")
-		err = cmd.Run()
-		if err != nil {
-			anyTestFailed = true
-			logger.Info("❌ pytest execution failed")
-		} else {
-			logger.Info("✅ All pytest tests passed")
-		}
-
-		Expect(err).ToNot(HaveOccurred(), "Python E2E tests should pass")
-	})
-})
+// Main E2E test suite - individual test files will be imported here
+// Test files:
+// - incident_analysis_test.go (E2E-HAPI-001 to 008)
+// - recovery_analysis_test.go (E2E-HAPI-013 to 029)
+// - workflow_catalog_test.go (E2E-HAPI-030 to 044)
+// - audit_pipeline_test.go (E2E-HAPI-045 to 048)
 
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {

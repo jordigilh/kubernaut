@@ -68,11 +68,11 @@ Name | Type | Description | Notes
 **approval_required** | **bool** | Whether manual approval is required | 
 **approval_reason** | **str** | Reason for approval requirement | 
 **warnings_count** | **int** | Number of warnings encountered | 
-**confidence** | **float** | Workflow confidence level (optional) | [optional] 
+**confidence** | **float** | Workflow confidence level (optional) | 
 **target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
-**workflow_version** | **str** | Version of the workflow being executed | 
-**target_resource** | **str** | Kubernetes resource being acted upon (format depends on scope) | 
+**workflow_version** | **str** | Workflow version | 
+**target_resource** | **str** | Target resource being remediated | 
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 
 **started_at** | **datetime** | When the PipelineRun started execution | [optional] 
@@ -96,9 +96,16 @@ Name | Type | Description | Notes
 **previous_state** | **str** | State before unblocking (always \&quot;Blocked\&quot;) | 
 **new_state** | **str** | State after unblocking (always \&quot;Running\&quot;) | 
 **request_name** | **str** | Name of the RemediationApprovalRequest | 
-**decided_at** | **datetime** | When the decision was made | 
-**decision_message** | **str** | Reason for the decision | 
+**decided_at** | **datetime** | When decision was made | 
+**decision_message** | **str** | Optional rationale from operator | 
 **ai_analysis_ref** | **str** | Name of the referenced AIAnalysis | 
+**remediation_request_name** | **str** | Parent RemediationRequest name (correlation ID) | 
+**ai_analysis_name** | **str** | AIAnalysis CRD that required approval | 
+**decided_by** | **str** | Authenticated username from webhook (SOC 2 CC8.1) | 
+**timeout_deadline** | **datetime** | Approval deadline | [optional] 
+**decision_duration_seconds** | **int** | Time to decision (seconds) | [optional] 
+**timeout_reason** | **str** | Reason for timeout (for timeout event) | [optional] 
+**timeout_duration_seconds** | **int** | Timeout duration in seconds (for timeout event) | [optional] 
 **query** | [**QueryMetadata**](QueryMetadata.md) |  | 
 **results** | [**ResultsMetadata**](ResultsMetadata.md) |  | 
 **search_metadata** | [**SearchExecutionMetadata**](SearchExecutionMetadata.md) |  | 

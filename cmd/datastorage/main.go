@@ -168,6 +168,17 @@ func main() {
 		}
 	}
 
+	// CRITICAL: Configure K8s client for high concurrency (DD-AUTH-014)
+	// Default rest.Config has:
+	//   - No timeout (causing indefinite hangs)
+	//   - QPS=5, Burst=10 (causing rate limiter queue saturation under load)
+	// E2E tests run 11 parallel pytest workers, each calling TokenReview/SAR
+	// Pattern learned from Gateway integration tests (test/integration/gateway/suite_test.go:230-231)
+	// Without these settings, "client rate limiter Wait returned an error: context canceled" occurs
+	k8sConfig.Timeout = 30 * time.Second // 30s timeout for K8s API operations
+	k8sConfig.QPS = 1000.0               // 1000 queries per second (matches Gateway tests)
+	k8sConfig.Burst = 2000               // 2000 burst capacity (matches Gateway tests)
+	
 	k8sClient, err := kubernetes.NewForConfig(k8sConfig)
 	if err != nil {
 		logger.Error(err, "Failed to create Kubernetes client (DD-AUTH-014)")

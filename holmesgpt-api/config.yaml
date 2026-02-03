@@ -16,6 +16,7 @@ llm:
 # Data Storage service (critical business dependency)
 data_storage:
   url: "http://localhost:18098"  # Integration test (Go-started container)
+  timeout: 60  # HTTP timeout in seconds (default: 60s for reliable operations)
 
 # Audit configuration (BR-AUDIT-005, ADR-038)
 audit:

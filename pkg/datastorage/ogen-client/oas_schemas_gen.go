@@ -587,7 +587,7 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.6).
+	// Service-level event category (ADR-034 v1.7).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
@@ -597,6 +597,7 @@ type AuditEvent struct {
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 	// - orchestration: Remediation Orchestrator Service
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 	EventCategory AuditEventEventCategory `json:"event_category"`
@@ -815,7 +816,7 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Service-level event category (ADR-034 v1.6).
+// Service-level event category (ADR-034 v1.7).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
@@ -825,6 +826,7 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 // - orchestration: Remediation Orchestrator Service
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 type AuditEventEventCategory string
@@ -839,6 +841,7 @@ const (
 	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
 	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
+	AuditEventEventCategoryApproval          AuditEventEventCategory = "approval"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -853,6 +856,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryWorkflowexecution,
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
+		AuditEventEventCategoryApproval,
 	}
 }
 
@@ -876,6 +880,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventEventCategoryWebhook:
+		return []byte(s), nil
+	case AuditEventEventCategoryApproval:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -911,6 +917,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryWebhook:
 		*s = AuditEventEventCategoryWebhook
+		return nil
+	case AuditEventEventCategoryApproval:
+		*s = AuditEventEventCategoryApproval
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -1968,7 +1977,7 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.6).
+	// Service-level event category (ADR-034 v1.7).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
@@ -1978,6 +1987,7 @@ type AuditEventRequest struct {
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 	// - orchestration: Remediation Orchestrator Service
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
@@ -2173,7 +2183,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Service-level event category (ADR-034 v1.6).
+// Service-level event category (ADR-034 v1.7).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
@@ -2183,6 +2193,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 // - orchestration: Remediation Orchestrator Service
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 type AuditEventRequestEventCategory string
@@ -2197,6 +2208,7 @@ const (
 	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
+	AuditEventRequestEventCategoryApproval          AuditEventRequestEventCategory = "approval"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -2211,6 +2223,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryWorkflowexecution,
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
+		AuditEventRequestEventCategoryApproval,
 	}
 }
 
@@ -2234,6 +2247,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryWebhook:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryApproval:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2269,6 +2284,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryWebhook:
 		*s = AuditEventRequestEventCategoryWebhook
+		return nil
+	case AuditEventRequestEventCategoryApproval:
+		*s = AuditEventRequestEventCategoryApproval
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

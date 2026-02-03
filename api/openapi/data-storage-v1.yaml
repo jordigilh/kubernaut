@@ -1568,9 +1568,9 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, approval]
           description: |
-            Service-level event category (ADR-034 v1.6).
+            Service-level event category (ADR-034 v1.7).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
@@ -1580,6 +1580,7 @@ components:
             - signalprocessing: Signal Processing Service
             - workflow: Workflow Catalog Service
             - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+            - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
           example: gateway

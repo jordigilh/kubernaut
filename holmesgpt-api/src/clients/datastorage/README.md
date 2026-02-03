@@ -217,6 +217,7 @@ Class | Method | HTTP request | Description
  - [ReleaseLegalHold200Response](docs/ReleaseLegalHold200Response.md)
  - [ReleaseLegalHoldRequest](docs/ReleaseLegalHoldRequest.md)
  - [RemediationApprovalAuditPayload](docs/RemediationApprovalAuditPayload.md)
+ - [RemediationApprovalDecisionPayload](docs/RemediationApprovalDecisionPayload.md)
  - [RemediationOrchestratorAuditPayload](docs/RemediationOrchestratorAuditPayload.md)
  - [RemediationRequestWebhookAuditPayload](docs/RemediationRequestWebhookAuditPayload.md)
  - [RemediationWorkflow](docs/RemediationWorkflow.md)
