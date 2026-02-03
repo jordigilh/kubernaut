@@ -189,6 +189,21 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="recovered-pod",
         parameters={}
     ),
+    # E2E-HAPI-003: Max retries exhausted - LLM parsing failed
+    "max_retries_exhausted": MockScenario(
+        name="max_retries_exhausted",
+        workflow_name="",  # No workflow - parsing failed
+        signal_type="MOCK_MAX_RETRIES_EXHAUSTED",
+        severity="high",
+        workflow_id="",  # Empty workflow_id - couldn't parse/select workflow
+        workflow_title="",
+        confidence=0.0,  # Zero confidence indicates parsing failure
+        root_cause="LLM analysis completed but failed validation after maximum retry attempts. Response format was unparseable or contained invalid data.",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="failed-analysis-pod",
+        parameters={}
+    ),
     "rca_incomplete": MockScenario(
         name="rca_incomplete",
         workflow_name="generic-restart-v1",
@@ -617,6 +632,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)  # Same scenario: issue self-resolved
         if "mock_rca_incomplete" in content or "mock rca incomplete" in content:
             return MOCK_SCENARIOS.get("rca_incomplete", DEFAULT_SCENARIO)
+        # E2E-HAPI-003: Max retries exhausted - LLM parsing failed
+        if "mock_max_retries_exhausted" in content or "mock max retries exhausted" in content:
+            return MOCK_SCENARIOS.get("max_retries_exhausted", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
@@ -837,7 +855,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "severity": scenario.severity,
                 "signal_type": scenario.signal_type,
                 "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
-            }
+            },
+            # E2E-HAPI-002: Always include confidence field in response
+            "confidence": scenario.confidence
         }
 
         # BR-AI-081: Add recovery_analysis for recovery scenarios
@@ -883,7 +903,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if scenario.name == "problem_resolved":
             analysis_json["selected_workflow"] = None
             analysis_json["investigation_outcome"] = "resolved"  # BR-HAPI-200: Signal problem self-resolved
-            analysis_json["confidence"] = scenario.confidence  # BR-HAPI-200: High confidence (>=0.7) that problem is resolved
+            # Note: confidence already set at line 841
+            analysis_json["can_recover"] = False  # E2E-HAPI-023: No recovery needed when problem self-resolved
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
@@ -898,10 +919,56 @@ The problem has self-resolved. No remediation workflow is needed.
 {json.dumps(analysis_json, indent=2)}
 ```
 """
+        # E2E-HAPI-002: Handle low confidence case with alternative workflows
+        elif scenario.name == "low_confidence":
+            # Primary workflow with low confidence
+            analysis_json["selected_workflow"] = {
+                "workflow_id": scenario.workflow_id,
+                "title": scenario.workflow_title,
+                "version": "1.0.0",
+                "confidence": scenario.confidence,  # 0.35 - triggers human review
+                "rationale": "Multiple possible causes identified, confidence is low",
+                "parameters": scenario.parameters
+            }
+            # E2E-HAPI-002: Add alternative workflows for human review
+            analysis_json["alternative_workflows"] = [
+                {
+                    "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",  # Mock alternative 1
+                    "title": "Alternative Diagnostic Workflow",
+                    "confidence": 0.28,
+                    "rationale": "Alternative approach for ambiguous root cause"
+                },
+                {
+                    "workflow_id": "e4d06fb2-77dc-7cg3-d60f-8ee38g2gfd7e",  # Mock alternative 2
+                    "title": "Manual Investigation Required",
+                    "confidence": 0.22,
+                    "rationale": "Requires human expertise to determine correct remediation"
+                }
+            ]
+            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+## Recommended Workflow (Low Confidence)
+
+I've identified a possible workflow, but confidence is low. Human review is recommended.
+
+**Primary Recommendation**: {scenario.workflow_title} (confidence: {scenario.confidence})
+
+**Alternative Workflows**:
+1. Alternative Diagnostic Workflow (confidence: 0.28)
+2. Manual Investigation Required (confidence: 0.22)
+
+```json
+{json.dumps(analysis_json, indent=2)}
+```
+"""
         # Handle no workflow found case
         elif not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
-            analysis_json["confidence"] = scenario.confidence  # Low confidence (0.0) triggers human review
+            # Note: confidence already set at line 841
             # Use recovery format if this is a recovery attempt
             if is_recovery:
                 content = f"""Based on my investigation of the recovery scenario:
