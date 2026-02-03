@@ -611,7 +611,9 @@ async def analyze_incident(
             })
 
         # Add validation history to response (BR-HAPI-197)
-        result["validation_attempts_history"] = validation_attempts_history
+        # E2E-HAPI-003: Only override if LLM didn't provide a history (for max_retries_exhausted simulation)
+        if "validation_attempts_history" not in result or not result["validation_attempts_history"]:
+            result["validation_attempts_history"] = validation_attempts_history
 
         logger.info({
             "event": "incident_analysis_completed",

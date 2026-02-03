@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,10 +41,12 @@ import (
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -59,6 +62,7 @@ type sharedInfraData struct {
 var (
 	cfg        *rest.Config
 	k8sClient  client.Client
+	k8sManager ctrl.Manager // Manager for webhook server lifecycle (follows production pattern)
 	testEnv    *envtest.Environment
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -102,14 +106,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Fail(fmt.Sprintf("Failed to start envtest: %v", err))
 	}
 	GinkgoWriter.Printf("✅ envtest started: %s\n", sharedK8sConfig.Host)
-	
+
 	// Write kubeconfig to temporary file for DataStorage container
 	kubeconfigPath, err := testinfra.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "authwebhook-integration")
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to write envtest kubeconfig: %v", err))
 	}
 	GinkgoWriter.Printf("✅ envtest kubeconfig written: %s\n", kubeconfigPath)
-	
+
 	// DD-AUTH-014: Create ServiceAccount with DataStorage access
 	GinkgoWriter.Println("🔐 Creating ServiceAccount for DataStorage authentication...")
 	authConfig, err := testinfra.CreateIntegrationServiceAccountWithDataStorageAccess(
@@ -239,61 +243,94 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = notificationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Creating K8s client for CRD operations")
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
+	By("Creating controller-runtime Manager (follows production pattern)")
+	// Pattern: cmd/authwebhook/main.go (same Manager setup as production)
+	// DD-TEST-002: Manager provides built-in webhook server readiness handling
+	// This eliminates the race condition where tests start before webhook server is ready
+	webhookInstallOptions := &testEnv.WebhookInstallOptions
+
+	// Load TLS certificate once at startup (bypass certwatcher for test stability)
+	// In parallel execution, certwatcher can fail when other processes delete cert files
+	// Production uses Kubernetes cert-manager with rotation; tests use static certs
+	certPath := filepath.Join(webhookInstallOptions.LocalServingCertDir, "tls.crt")
+	keyPath := filepath.Join(webhookInstallOptions.LocalServingCertDir, "tls.key")
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	Expect(err).ToNot(HaveOccurred(), "Failed to load webhook TLS certificate")
+	GinkgoWriter.Printf("[Process %d] ✅ Loaded TLS certificate (bypassing certwatcher)\n", GinkgoParallelProcess())
+
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: "0", // Disable metrics for tests
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Host:    webhookInstallOptions.LocalServingHost,
+			Port:    webhookInstallOptions.LocalServingPort,
+			CertDir: webhookInstallOptions.LocalServingCertDir,
+			TLSOpts: []func(*tls.Config){
+				// Provide certificate directly (bypasses certwatcher file monitoring)
+				// This prevents "no such file or directory" errors in parallel execution
+				func(config *tls.Config) {
+					config.GetCertificate = func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+						return &cert, nil
+					}
+				},
+			},
+		}),
+	})
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Printf("[Process %d] ✅ Manager created with webhook server (certwatcher disabled)\n", GinkgoParallelProcess())
+
+	By("Getting K8s client from Manager")
+	// Pattern: All other integration tests (RO, SP, AA, WE, NT)
+	// DD-TEST-009: Use Manager's client to ensure field indexes work correctly
+	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("Setting up webhook server with envtest")
-	webhookInstallOptions := &testEnv.WebhookInstallOptions
-	webhookServer := webhook.NewServer(webhook.Options{
-		Host:    webhookInstallOptions.LocalServingHost,
-		Port:    webhookInstallOptions.LocalServingPort,
-		CertDir: webhookInstallOptions.LocalServingCertDir,
-	})
-
-	By("Registering webhook handlers (GREEN phase)")
-	// Create decoder for webhook handlers
+	By("Registering webhook handlers (follows production pattern)")
+	// Pattern: cmd/authwebhook/main.go (identical handler registration)
+	webhookServer := k8sManager.GetWebhookServer()
 	decoder := admission.NewDecoder(scheme.Scheme)
 
 	// Register WorkflowExecution mutating webhook (DD-WEBHOOK-003: Complete audit events)
 	wfeHandler := authwebhook.NewWorkflowExecutionAuthHandler(auditStore)
-	_ = wfeHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
+	err = wfeHandler.InjectDecoder(decoder)
+	Expect(err).ToNot(HaveOccurred())
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
+	GinkgoWriter.Println("   ✅ Registered WorkflowExecution webhook handler")
 
 	// Register RemediationApprovalRequest mutating webhook (DD-WEBHOOK-003: Complete audit events)
 	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore)
-	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
+	err = rarHandler.InjectDecoder(decoder)
+	Expect(err).ToNot(HaveOccurred())
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
+	GinkgoWriter.Println("   ✅ Registered RemediationApprovalRequest webhook handler")
 
 	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
-	// Uses Kubebuilder CustomValidator interface for envtest compatibility
-	// Reference: https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation
 	nrValidator := authwebhook.NewNotificationRequestValidator(auditStore)
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{
 		Handler: admission.WithCustomValidator(scheme.Scheme, &notificationv1.NotificationRequest{}, nrValidator),
 	})
+	GinkgoWriter.Println("   ✅ Registered NotificationRequest DELETE webhook handler")
 
-	By("Starting webhook server")
+	By("Starting Manager (webhook server lifecycle managed automatically)")
+	// Pattern: All other integration tests (RO, SP, AA, WE, NT)
+	// Manager.Start() blocks until webhook server is ready, then starts accepting requests
+	// This ELIMINATES the race condition where tests started before webhook was ready
 	go func() {
 		defer GinkgoRecover()
-		err := webhookServer.Start(ctx)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Webhook server error: %v\n", err)
-		}
+		err = k8sManager.Start(ctx)
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
-
-	By("Webhook server ready")
-	// envtest automatically installs webhook configurations from WebhookInstallOptions.Paths
-	// and ensures webhook server is ready before proceeding
-	GinkgoWriter.Printf("[Process %d] ✅ Webhook server ready (envtest handles configuration automatically)\n", GinkgoParallelProcess())
+	GinkgoWriter.Printf("[Process %d] ✅ Manager started (webhook server ready for requests)\n", GinkgoParallelProcess())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("✅ envtest environment ready")
-	GinkgoWriter.Printf("   • Webhook server: %s:%d\n", webhookInstallOptions.LocalServingHost, webhookInstallOptions.LocalServingPort)
+	GinkgoWriter.Println("✅ AuthWebhook integration test environment ready")
+	GinkgoWriter.Printf("   • Webhook server: %s:%d (via Manager)\n", webhookInstallOptions.LocalServingHost, webhookInstallOptions.LocalServingPort)
 	GinkgoWriter.Printf("   • CertDir: %s\n", webhookInstallOptions.LocalServingCertDir)
-	GinkgoWriter.Println("   • K8s client configured for CRD operations")
+	GinkgoWriter.Println("   • Manager client configured (field indexes supported)")
 	GinkgoWriter.Println("   • Webhook configurations applied (Mutating + Validating)")
+	GinkgoWriter.Println("   • Pattern: Matches production (cmd/authwebhook/main.go)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 var _ = SynchronizedAfterSuite(func() {
@@ -360,7 +397,7 @@ var _ = SynchronizedAfterSuite(func() {
 	if infra != nil {
 		_ = infra.Teardown(GinkgoWriter) // Ignore errors during cleanup
 		GinkgoWriter.Println("✅ Shared infrastructure torn down (PostgreSQL + Redis + Data Storage)")
-		
+
 		// DD-AUTH-014: Stop shared envtest
 		if infra.SharedTestEnv != nil {
 			if sharedEnv, ok := infra.SharedTestEnv.(*envtest.Environment); ok {

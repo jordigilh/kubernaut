@@ -317,18 +317,17 @@ build-holmesgpt-api-image: ## Build holmesgpt-api Docker image (PRODUCTION - ful
 .PHONY: build-holmesgpt-api-image-e2e
 build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minimal dependencies)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🐳 Building HolmesGPT API Docker Image (E2E)"
+	@echo "🐳 Building HolmesGPT API Docker Image (E2E - Local Architecture)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile.e2e"
 	@echo "📋 Requirements: requirements-e2e.txt (minimal dependencies)"
 	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
 	@echo "🎯 Use Case: E2E testing, CI/CD"
 	@echo ""
-	@cd holmesgpt-api && podman build \
-		--platform linux/amd64,linux/arm64 \
+	@podman build \
 		-t localhost/kubernaut-holmesgpt-api:e2e \
 		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
-		-f Dockerfile.e2e \
+		-f holmesgpt-api/Dockerfile.e2e \
 		.
 	@echo ""
 	@echo "✅ E2E image built successfully!"

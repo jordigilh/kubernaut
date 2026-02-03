@@ -64,7 +64,12 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
     if isinstance(exc, ValidationError):
         # Pure Pydantic validation error (caught before Starlette wrapping)
         status_code = status.HTTP_400_BAD_REQUEST
-        detail = f"Pydantic validation error: {str(exc.errors()[0]['msg'])}"
+        # Extract field name and message from first error
+        # exc.errors() returns: [{'loc': ('body', 'field_name'), 'msg': '...', 'type': '...'}]
+        first_error = exc.errors()[0]
+        field_name = first_error['loc'][-1] if first_error.get('loc') else 'unknown'
+        error_msg = first_error['msg']
+        detail = f"Pydantic validation error: Field '{field_name}': {error_msg}"
         logger.error({
             "event": "pydantic_validation_error_raw",
             "request_id": request_id,
@@ -75,7 +80,12 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
     elif isinstance(exc, RequestValidationError):
         # FastAPI RequestValidationError (wraps Pydantic ValidationError)
         status_code = status.HTTP_400_BAD_REQUEST
-        detail = f"Validation error: {str(exc.errors()[0]['msg'])}"
+        # Extract field name and message from first error
+        # exc.errors() returns: [{'loc': ('body', 'field_name'), 'msg': '...', 'type': '...'}]
+        first_error = exc.errors()[0]
+        field_name = first_error['loc'][-1] if first_error.get('loc') else 'unknown'
+        error_msg = first_error['msg']
+        detail = f"Validation error: Field '{field_name}': {error_msg}"
         logger.warning({
             "event": "validation_error",
             "request_id": request_id,

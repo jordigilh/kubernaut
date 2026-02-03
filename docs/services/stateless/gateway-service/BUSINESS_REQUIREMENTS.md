@@ -763,9 +763,7 @@ This document provides a comprehensive list of all business requirements for the
 
 **Authority**: [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) v1.1, Week 3
 
----
-
-## 🔐 **Authentication & Authorization** (BR-GATEWAY-182 to BR-GATEWAY-183)
+---## 🔐 **Authentication & Authorization** (BR-GATEWAY-182 to BR-GATEWAY-183)
 
 ### **BR-GATEWAY-182: ServiceAccount Authentication (TokenReview)**
 **Description**: Gateway MUST authenticate incoming webhook requests using Kubernetes TokenReview API to validate ServiceAccount tokens
@@ -806,9 +804,7 @@ This document provides a comprehensive list of all business requirements for the
 
 **Supersedes**: [DD-GATEWAY-006](../../../architecture/decisions/DD-GATEWAY-006-authentication-strategy.md) (Network Policies only - now obsolete)
 
----
-
-### **BR-GATEWAY-183: SubjectAccessReview Authorization**
+---### **BR-GATEWAY-183: SubjectAccessReview Authorization**
 **Description**: Gateway MUST authorize incoming webhook requests using Kubernetes SubjectAccessReview (SAR) to validate RBAC permissions
 **Priority**: P0 (Critical)
 **Status**: 🚧 In Progress (January 2026)

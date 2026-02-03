@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 )
 
 // Recovery Analysis E2E Tests
@@ -372,7 +373,8 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 			// ========================================
 			// ACT
 			// ========================================
-			_, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
 
 			// ========================================
 			// ASSERT

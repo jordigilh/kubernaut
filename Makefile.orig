@@ -330,11 +330,11 @@ build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minima
 	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
 	@echo "🎯 Use Case: E2E testing, CI/CD"
 	@echo ""
-	@cd holmesgpt-api && podman build \
-		--platform linux/amd64,linux/arm64 \
+	@podman build \
+		--no-cache \
 		-t localhost/kubernaut-holmesgpt-api:e2e \
 		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
-		-f Dockerfile.e2e \
+		-f holmesgpt-api/Dockerfile.e2e \
 		.
 	@echo ""
 	@echo "✅ E2E image built successfully!"

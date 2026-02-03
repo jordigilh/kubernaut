@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -335,52 +334,23 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 // createHAPIKindCluster creates a Kind cluster with HAPI-specific port mappings
 // Per DD-TEST-001 v1.8
 func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	kindConfig := `kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  extraPortMappings:
-  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.5
-  - containerPort: 30120
-    hostPort: 30120
-    protocol: TCP
-  # Data Storage - Per DD-TEST-001 v2.5
-  - containerPort: 30089
-    hostPort: 8089
-    protocol: TCP
-  # PostgreSQL - Per DD-TEST-001 v1.8
-  - containerPort: 30439
-    hostPort: 30439
-    protocol: TCP
-  # Redis - Per DD-TEST-001 v1.8
-  - containerPort: 30387
-    hostPort: 30387
-    protocol: TCP
-`
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+	// Authority: Aligns with RO, Gateway, and other E2E tests that successfully use Podman
+	// Fixes: Kind + Podman compatibility issues (exit status 126, /dev/mapper mount failures)
 
-	// Write kind config to temp file
-	tmpfile, err := os.CreateTemp("", "kind-hapi-e2e-*.yaml")
-	if err != nil {
-		return err
+	// Use shared helper with Podman support (fixes Kind compatibility issues)
+	opts := KindClusterOptions{
+		ClusterName:               clusterName,
+		KubeconfigPath:            kubeconfigPath,
+		ConfigPath:                "test/infrastructure/kind-holmesgpt-api-config.yaml", // Static config (like RO, Gateway, etc.)
+		WaitTimeout:               "5m",
+		DeleteExisting:            true,  // Original behavior
+		ReuseExisting:             false, // Original behavior
+		CleanupOrphanedContainers: true,  // Podman cleanup on macOS
+		UsePodman:                 true,  // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
+		ProjectRootAsWorkingDir:   false, // Not needed for HAPI (no coverage)
 	}
-	defer func() { _ = os.Remove(tmpfile.Name()) }()
-
-	if _, err := tmpfile.Write([]byte(kindConfig)); err != nil {
-		return err
-	}
-	if err := tmpfile.Close(); err != nil {
-		return err
-	}
-
-	// Create Kind cluster
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", tmpfile.Name(),
-		"--kubeconfig", kubeconfigPath)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	return cmd.Run()
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 // deployDataStorageForHAPI deploys Data Storage service to Kind cluster

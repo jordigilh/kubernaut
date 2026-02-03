@@ -485,61 +485,42 @@ The following characteristics were automatically detected for the target resourc
 - **Constraint**: Do NOT select the previously failed workflow
 
 ### Phase 4: Return Recovery Recommendation
-Provide structured JSON with alternative workflow and updated parameters.
+
+**CRITICAL**: Use section header format (NOT a single JSON block) to ensure all fields are preserved.
 
 **If MCP search succeeds**:
-```json
-{{
-  "recovery_analysis": {{
-    "previous_attempt_assessment": {{
-      "failure_understood": true,
-      "failure_reason_analysis": "Explanation of why previous attempt failed",
-      "state_changed": true,
-      "current_signal_type": "Current signal type after failure"
-    }},
-    "current_rca": {{
-      "summary": "Updated RCA based on current state",
-      "severity": "current severity",
-      "signal_type": "current signal type",
-      "contributing_factors": ["factor1", "factor2"]
-    }}
-  }},
-  "selected_workflow": {{
-    "workflow_id": "alternative-workflow-id",
-    "version": "1.0.0",
-    "confidence": 0.85,
-    "rationale": "Why this alternative was selected and how it differs from failed attempt",
-    "parameters": {{
-      "PARAM_NAME": "value"
-    }}
-  }},
-  "recovery_strategy": {{
-    "approach": "description of recovery approach",
-    "differs_from_previous": true,
-    "why_different": "Explanation of why this approach is different"
-  }}
-}}
-```
 
-**If MCP search fails or returns no workflows**:
-```json
-{{
-  "recovery_analysis": {{
-    "previous_attempt_assessment": {{
-      "failure_understood": true,
-      "failure_reason_analysis": "Explanation of why previous attempt failed"
-    }},
-    "current_rca": {{
-      "summary": "Root cause from investigation",
-      "severity": "critical|high|medium|low",
-      "signal_type": "current signal type",
-      "contributing_factors": ["factor1", "factor2"]
-    }}
-  }},
-  "selected_workflow": null,
-  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
-}}
-```
+# recovery_analysis
+{{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation of why previous attempt failed", "state_changed": true, "current_signal_type": "Current signal type"}}, "current_rca": {{"summary": "Updated RCA", "severity": "current severity", "signal_type": "current signal type", "contributing_factors": ["factor1"]}}}}
+
+# confidence
+0.85
+
+# selected_workflow
+{{"workflow_id": "alternative-workflow-id", "version": "1.0.0", "confidence": 0.85, "rationale": "Why this alternative was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+
+# can_recover
+True
+
+**If MCP search fails or no workflows found**:
+
+# recovery_analysis
+{{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation"}}, "current_rca": {{"summary": "Root cause", "severity": "high", "contributing_factors": ["factor1"]}}}}
+
+# confidence
+0.3
+
+# selected_workflow
+None
+
+# can_recover
+False
+
+# needs_human_review
+True
+
+# human_review_reason
+no_matching_workflows
 """
 
     return prompt
@@ -876,39 +857,32 @@ For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/clus
 
 ## Expected Response Format
 
-Provide your analysis in two parts:
+**CRITICAL**: Use section header format (NOT a single JSON block) to ensure all fields are preserved:
 
 ### Part 1: Natural Language Analysis
 
 Explain your investigation findings, root cause analysis, and reasoning for workflow selection.
 
-### Part 2: Structured JSON
+### Part 2: Structured Data (Section Header Format)
 
-```json
-{{
-  "root_cause_analysis": {{
-    "summary": "Brief summary of root cause",
-    "severity": "critical|high|medium|low",
-    "contributing_factors": ["factor1", "factor2"]
-  }},
-  "selected_workflow": {{
-    "workflow_id": "workflow-id-from-mcp-search-results",
-    "version": "1.0.0",
-    "confidence": 0.95,
-    "rationale": "Why your search parameters led to this workflow selection (based on RCA findings)",
-    "parameters": {{
-      "PARAM_NAME": "value",
-      "ANOTHER_PARAM": "value"
-    }}
-  }}
-}}
-```
+**REQUIRED FORMAT** - Each field must be on its own line with section header:
+
+# root_cause_analysis
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low", "contributing_factors": ["factor1", "factor2"]}}
+
+# confidence
+0.95
+
+# selected_workflow
+{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
 
 **IMPORTANT**:
+- **DO NOT** use a single ```json block - use section headers as shown above
 - Select ONE workflow per incident
+- Each field must have its own `# field_name` header
+- If a field is not applicable, use `None` or `[]` as the value
 - Populate ALL required parameters from the workflow schema
 - Use your RCA findings to determine parameter values
-- Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
 """
 
     return prompt

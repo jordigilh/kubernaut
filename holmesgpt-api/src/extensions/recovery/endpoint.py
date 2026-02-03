@@ -40,7 +40,7 @@ router = APIRouter()
     "/recovery/analyze",
     status_code=status.HTTP_200_OK,
     response_model=RecoveryResponse,
-    response_model_exclude_unset=False,  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    response_model_exclude_none=True,  # E2E-HAPI-023/024: Exclude None values (selected_workflow, alternative_workflows)
     responses={
         200: {"description": "Successful Response - Recovery analyzed with workflow selection"},
         400: {"description": "Bad Request - Invalid input format or missing required fields"},

@@ -931,7 +931,7 @@ The problem has self-resolved. No remediation workflow is needed.
                 "parameters": scenario.parameters
             }
             # E2E-HAPI-002: Add alternative workflows for human review
-            analysis_json["alternative_workflows"] = [
+            alternatives_list = [
                 {
                     "workflow_id": "d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d",  # Mock alternative 1
                     "title": "Alternative Diagnostic Workflow",
@@ -945,30 +945,43 @@ The problem has self-resolved. No remediation workflow is needed.
                     "rationale": "Requires human expertise to determine correct remediation"
                 }
             ]
+            analysis_json["alternative_workflows"] = alternatives_list
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
-## Root Cause Analysis
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
 
-{scenario.root_cause}
+# confidence
+{scenario.confidence}
 
-## Recommended Workflow (Low Confidence)
+# selected_workflow
+{json.dumps(analysis_json["selected_workflow"])}
 
-I've identified a possible workflow, but confidence is low. Human review is recommended.
-
-**Primary Recommendation**: {scenario.workflow_title} (confidence: {scenario.confidence})
-
-**Alternative Workflows**:
-1. Alternative Diagnostic Workflow (confidence: 0.28)
-2. Manual Investigation Required (confidence: 0.22)
-
-```json
-{json.dumps(analysis_json, indent=2)}
-```
+# alternative_workflows
+{json.dumps(alternatives_list)}
 """
         # Handle no workflow found case
         elif not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
             # Note: confidence already set at line 841
+            
+            # E2E-HAPI-024: Set can_recover and needs_human_review for no workflow found
+            if is_recovery:
+                analysis_json["can_recover"] = True  # Manual recovery possible
+                analysis_json["needs_human_review"] = True
+                analysis_json["human_review_reason"] = "no_matching_workflows"
+            
+            # E2E-HAPI-003: Set human_review fields for max retries exhausted (incident)
+            if scenario.name == "max_retries_exhausted":
+                analysis_json["needs_human_review"] = True
+                analysis_json["human_review_reason"] = "llm_parsing_error"
+                if "validation_attempts_history" not in analysis_json:
+                    analysis_json["validation_attempts_history"] = [
+                        {"attempt": 1, "error": "Invalid JSON structure"},
+                        {"attempt": 2, "error": "Missing required field"},
+                        {"attempt": 3, "error": "Schema validation failed"}
+                    ]
+            
             # Use recovery format if this is a recovery attempt
             if is_recovery:
                 content = f"""Based on my investigation of the recovery scenario:
@@ -990,19 +1003,26 @@ No suitable alternative workflow found. Human review required.
 ```
 """
             else:
+                # E2E-HAPI-003: Use section header format for SDK compatibility
                 content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
-## Root Cause Analysis
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
 
-{scenario.root_cause}
+# confidence
+{analysis_json.get("confidence", 0.0)}
 
-## Workflow Search Result
+# selected_workflow
+None
 
-No suitable workflow found in the catalog for this scenario. Human review required.
+# needs_human_review
+{str(analysis_json.get("needs_human_review", False))}
 
-```json
-{json.dumps(analysis_json, indent=2)}
-```
+# human_review_reason
+{json.dumps(analysis_json.get("human_review_reason", ""))}
+
+# validation_attempts_history
+{json.dumps(analysis_json.get("validation_attempts_history", []))}
 """
         else:
             analysis_json["selected_workflow"] = {
