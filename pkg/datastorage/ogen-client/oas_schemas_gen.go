@@ -932,6 +932,7 @@ type AuditEventEventData struct {
 	NotificationAuditPayload               NotificationAuditPayload
 	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
 	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
 	WorkflowSearchAuditPayload             WorkflowSearchAuditPayload
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
@@ -986,6 +987,7 @@ const (
 	AuditEventEventDataWebhookNotificationCancelledAuditEventEventData           AuditEventEventDataType = "webhook.notification.cancelled"
 	WorkflowExecutionWebhookAuditPayloadAuditEventEventData                      AuditEventEventDataType = "webhook.workflow.unblocked"
 	RemediationApprovalAuditPayloadAuditEventEventData                           AuditEventEventDataType = "webhook.approval.decided"
+	RemediationApprovalDecisionPayloadAuditEventEventData                        AuditEventEventDataType = "RemediationApprovalDecisionPayload"
 	WorkflowSearchAuditPayloadAuditEventEventData                                AuditEventEventDataType = "workflow.catalog.search_completed"
 	WorkflowCatalogCreatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.updated"
@@ -1074,6 +1076,11 @@ func (s AuditEventEventData) IsWorkflowExecutionWebhookAuditPayload() bool {
 // IsRemediationApprovalAuditPayload reports whether AuditEventEventData is RemediationApprovalAuditPayload.
 func (s AuditEventEventData) IsRemediationApprovalAuditPayload() bool {
 	return s.Type == RemediationApprovalAuditPayloadAuditEventEventData
+}
+
+// IsRemediationApprovalDecisionPayload reports whether AuditEventEventData is RemediationApprovalDecisionPayload.
+func (s AuditEventEventData) IsRemediationApprovalDecisionPayload() bool {
+	return s.Type == RemediationApprovalDecisionPayloadAuditEventEventData
 }
 
 // IsWorkflowSearchAuditPayload reports whether AuditEventEventData is WorkflowSearchAuditPayload.
@@ -1502,6 +1509,27 @@ func (s AuditEventEventData) GetRemediationApprovalAuditPayload() (v Remediation
 func NewRemediationApprovalAuditPayloadAuditEventEventData(v RemediationApprovalAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetRemediationApprovalAuditPayload(v)
+	return s
+}
+
+// SetRemediationApprovalDecisionPayload sets AuditEventEventData to RemediationApprovalDecisionPayload.
+func (s *AuditEventEventData) SetRemediationApprovalDecisionPayload(v RemediationApprovalDecisionPayload) {
+	s.Type = RemediationApprovalDecisionPayloadAuditEventEventData
+	s.RemediationApprovalDecisionPayload = v
+}
+
+// GetRemediationApprovalDecisionPayload returns RemediationApprovalDecisionPayload and true boolean if AuditEventEventData is RemediationApprovalDecisionPayload.
+func (s AuditEventEventData) GetRemediationApprovalDecisionPayload() (v RemediationApprovalDecisionPayload, ok bool) {
+	if !s.IsRemediationApprovalDecisionPayload() {
+		return v, false
+	}
+	return s.RemediationApprovalDecisionPayload, true
+}
+
+// NewRemediationApprovalDecisionPayloadAuditEventEventData returns new AuditEventEventData from RemediationApprovalDecisionPayload.
+func NewRemediationApprovalDecisionPayloadAuditEventEventData(v RemediationApprovalDecisionPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationApprovalDecisionPayload(v)
 	return s
 }
 
@@ -2262,6 +2290,7 @@ type AuditEventRequestEventData struct {
 	NotificationAuditPayload               NotificationAuditPayload
 	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
 	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
 	WorkflowSearchAuditPayload             WorkflowSearchAuditPayload
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
@@ -2316,6 +2345,7 @@ const (
 	AuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData           AuditEventRequestEventDataType = "webhook.notification.cancelled"
 	WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData                             AuditEventRequestEventDataType = "webhook.workflow.unblocked"
 	RemediationApprovalAuditPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "webhook.approval.decided"
+	RemediationApprovalDecisionPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "RemediationApprovalDecisionPayload"
 	WorkflowSearchAuditPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "workflow.catalog.search_completed"
 	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.updated"
@@ -2404,6 +2434,11 @@ func (s AuditEventRequestEventData) IsWorkflowExecutionWebhookAuditPayload() boo
 // IsRemediationApprovalAuditPayload reports whether AuditEventRequestEventData is RemediationApprovalAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationApprovalAuditPayload() bool {
 	return s.Type == RemediationApprovalAuditPayloadAuditEventRequestEventData
+}
+
+// IsRemediationApprovalDecisionPayload reports whether AuditEventRequestEventData is RemediationApprovalDecisionPayload.
+func (s AuditEventRequestEventData) IsRemediationApprovalDecisionPayload() bool {
+	return s.Type == RemediationApprovalDecisionPayloadAuditEventRequestEventData
 }
 
 // IsWorkflowSearchAuditPayload reports whether AuditEventRequestEventData is WorkflowSearchAuditPayload.
@@ -2832,6 +2867,27 @@ func (s AuditEventRequestEventData) GetRemediationApprovalAuditPayload() (v Reme
 func NewRemediationApprovalAuditPayloadAuditEventRequestEventData(v RemediationApprovalAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationApprovalAuditPayload(v)
+	return s
+}
+
+// SetRemediationApprovalDecisionPayload sets AuditEventRequestEventData to RemediationApprovalDecisionPayload.
+func (s *AuditEventRequestEventData) SetRemediationApprovalDecisionPayload(v RemediationApprovalDecisionPayload) {
+	s.Type = RemediationApprovalDecisionPayloadAuditEventRequestEventData
+	s.RemediationApprovalDecisionPayload = v
+}
+
+// GetRemediationApprovalDecisionPayload returns RemediationApprovalDecisionPayload and true boolean if AuditEventRequestEventData is RemediationApprovalDecisionPayload.
+func (s AuditEventRequestEventData) GetRemediationApprovalDecisionPayload() (v RemediationApprovalDecisionPayload, ok bool) {
+	if !s.IsRemediationApprovalDecisionPayload() {
+		return v, false
+	}
+	return s.RemediationApprovalDecisionPayload, true
+}
+
+// NewRemediationApprovalDecisionPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationApprovalDecisionPayload.
+func NewRemediationApprovalDecisionPayloadAuditEventRequestEventData(v RemediationApprovalDecisionPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationApprovalDecisionPayload(v)
 	return s
 }
 
@@ -11346,6 +11402,303 @@ func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) er
 	switch RemediationApprovalAuditPayloadEventType(data) {
 	case RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided:
 		*s = RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Audit payload for approval decision event (approval.decision).
+// Captures WHO, WHEN, WHAT, WHY for SOC 2 CC8.1 (User Attribution) compliance.
+// Emitted by RemediationApprovalRequest controller when decision is made.
+// Ref: #/components/schemas/RemediationApprovalDecisionPayload
+type RemediationApprovalDecisionPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationApprovalDecisionPayloadEventType `json:"event_type"`
+	// Parent RemediationRequest name (correlation ID).
+	RemediationRequestName string `json:"remediation_request_name"`
+	// AIAnalysis CRD that required approval.
+	AiAnalysisName string `json:"ai_analysis_name"`
+	// Final approval decision.
+	Decision RemediationApprovalDecisionPayloadDecision `json:"decision"`
+	// Authenticated username from webhook (SOC 2 CC8.1).
+	DecidedBy string `json:"decided_by"`
+	// When decision was made.
+	DecidedAt OptDateTime `json:"decided_at"`
+	// Optional rationale from operator.
+	DecisionMessage OptString `json:"decision_message"`
+	// AI confidence score that triggered approval.
+	Confidence float32 `json:"confidence"`
+	// Workflow being approved.
+	WorkflowID string `json:"workflow_id"`
+	// Workflow version.
+	WorkflowVersion OptString `json:"workflow_version"`
+	// Target resource being remediated.
+	TargetResource OptString `json:"target_resource"`
+	// Approval deadline.
+	TimeoutDeadline OptDateTime `json:"timeout_deadline"`
+	// Time to decision (seconds).
+	DecisionDurationSeconds OptInt `json:"decision_duration_seconds"`
+	// Reason for requiring approval (for request.created event).
+	ApprovalReason OptString `json:"approval_reason"`
+	// Reason for timeout (for timeout event).
+	TimeoutReason OptString `json:"timeout_reason"`
+	// Timeout duration in seconds (for timeout event).
+	TimeoutDurationSeconds OptInt `json:"timeout_duration_seconds"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationApprovalDecisionPayload) GetEventType() RemediationApprovalDecisionPayloadEventType {
+	return s.EventType
+}
+
+// GetRemediationRequestName returns the value of RemediationRequestName.
+func (s *RemediationApprovalDecisionPayload) GetRemediationRequestName() string {
+	return s.RemediationRequestName
+}
+
+// GetAiAnalysisName returns the value of AiAnalysisName.
+func (s *RemediationApprovalDecisionPayload) GetAiAnalysisName() string {
+	return s.AiAnalysisName
+}
+
+// GetDecision returns the value of Decision.
+func (s *RemediationApprovalDecisionPayload) GetDecision() RemediationApprovalDecisionPayloadDecision {
+	return s.Decision
+}
+
+// GetDecidedBy returns the value of DecidedBy.
+func (s *RemediationApprovalDecisionPayload) GetDecidedBy() string {
+	return s.DecidedBy
+}
+
+// GetDecidedAt returns the value of DecidedAt.
+func (s *RemediationApprovalDecisionPayload) GetDecidedAt() OptDateTime {
+	return s.DecidedAt
+}
+
+// GetDecisionMessage returns the value of DecisionMessage.
+func (s *RemediationApprovalDecisionPayload) GetDecisionMessage() OptString {
+	return s.DecisionMessage
+}
+
+// GetConfidence returns the value of Confidence.
+func (s *RemediationApprovalDecisionPayload) GetConfidence() float32 {
+	return s.Confidence
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationApprovalDecisionPayload) GetWorkflowID() string {
+	return s.WorkflowID
+}
+
+// GetWorkflowVersion returns the value of WorkflowVersion.
+func (s *RemediationApprovalDecisionPayload) GetWorkflowVersion() OptString {
+	return s.WorkflowVersion
+}
+
+// GetTargetResource returns the value of TargetResource.
+func (s *RemediationApprovalDecisionPayload) GetTargetResource() OptString {
+	return s.TargetResource
+}
+
+// GetTimeoutDeadline returns the value of TimeoutDeadline.
+func (s *RemediationApprovalDecisionPayload) GetTimeoutDeadline() OptDateTime {
+	return s.TimeoutDeadline
+}
+
+// GetDecisionDurationSeconds returns the value of DecisionDurationSeconds.
+func (s *RemediationApprovalDecisionPayload) GetDecisionDurationSeconds() OptInt {
+	return s.DecisionDurationSeconds
+}
+
+// GetApprovalReason returns the value of ApprovalReason.
+func (s *RemediationApprovalDecisionPayload) GetApprovalReason() OptString {
+	return s.ApprovalReason
+}
+
+// GetTimeoutReason returns the value of TimeoutReason.
+func (s *RemediationApprovalDecisionPayload) GetTimeoutReason() OptString {
+	return s.TimeoutReason
+}
+
+// GetTimeoutDurationSeconds returns the value of TimeoutDurationSeconds.
+func (s *RemediationApprovalDecisionPayload) GetTimeoutDurationSeconds() OptInt {
+	return s.TimeoutDurationSeconds
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationApprovalDecisionPayload) SetEventType(val RemediationApprovalDecisionPayloadEventType) {
+	s.EventType = val
+}
+
+// SetRemediationRequestName sets the value of RemediationRequestName.
+func (s *RemediationApprovalDecisionPayload) SetRemediationRequestName(val string) {
+	s.RemediationRequestName = val
+}
+
+// SetAiAnalysisName sets the value of AiAnalysisName.
+func (s *RemediationApprovalDecisionPayload) SetAiAnalysisName(val string) {
+	s.AiAnalysisName = val
+}
+
+// SetDecision sets the value of Decision.
+func (s *RemediationApprovalDecisionPayload) SetDecision(val RemediationApprovalDecisionPayloadDecision) {
+	s.Decision = val
+}
+
+// SetDecidedBy sets the value of DecidedBy.
+func (s *RemediationApprovalDecisionPayload) SetDecidedBy(val string) {
+	s.DecidedBy = val
+}
+
+// SetDecidedAt sets the value of DecidedAt.
+func (s *RemediationApprovalDecisionPayload) SetDecidedAt(val OptDateTime) {
+	s.DecidedAt = val
+}
+
+// SetDecisionMessage sets the value of DecisionMessage.
+func (s *RemediationApprovalDecisionPayload) SetDecisionMessage(val OptString) {
+	s.DecisionMessage = val
+}
+
+// SetConfidence sets the value of Confidence.
+func (s *RemediationApprovalDecisionPayload) SetConfidence(val float32) {
+	s.Confidence = val
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationApprovalDecisionPayload) SetWorkflowID(val string) {
+	s.WorkflowID = val
+}
+
+// SetWorkflowVersion sets the value of WorkflowVersion.
+func (s *RemediationApprovalDecisionPayload) SetWorkflowVersion(val OptString) {
+	s.WorkflowVersion = val
+}
+
+// SetTargetResource sets the value of TargetResource.
+func (s *RemediationApprovalDecisionPayload) SetTargetResource(val OptString) {
+	s.TargetResource = val
+}
+
+// SetTimeoutDeadline sets the value of TimeoutDeadline.
+func (s *RemediationApprovalDecisionPayload) SetTimeoutDeadline(val OptDateTime) {
+	s.TimeoutDeadline = val
+}
+
+// SetDecisionDurationSeconds sets the value of DecisionDurationSeconds.
+func (s *RemediationApprovalDecisionPayload) SetDecisionDurationSeconds(val OptInt) {
+	s.DecisionDurationSeconds = val
+}
+
+// SetApprovalReason sets the value of ApprovalReason.
+func (s *RemediationApprovalDecisionPayload) SetApprovalReason(val OptString) {
+	s.ApprovalReason = val
+}
+
+// SetTimeoutReason sets the value of TimeoutReason.
+func (s *RemediationApprovalDecisionPayload) SetTimeoutReason(val OptString) {
+	s.TimeoutReason = val
+}
+
+// SetTimeoutDurationSeconds sets the value of TimeoutDurationSeconds.
+func (s *RemediationApprovalDecisionPayload) SetTimeoutDurationSeconds(val OptInt) {
+	s.TimeoutDurationSeconds = val
+}
+
+// Final approval decision.
+type RemediationApprovalDecisionPayloadDecision string
+
+const (
+	RemediationApprovalDecisionPayloadDecisionApproved RemediationApprovalDecisionPayloadDecision = "approved"
+	RemediationApprovalDecisionPayloadDecisionRejected RemediationApprovalDecisionPayloadDecision = "rejected"
+	RemediationApprovalDecisionPayloadDecisionExpired  RemediationApprovalDecisionPayloadDecision = "expired"
+)
+
+// AllValues returns all RemediationApprovalDecisionPayloadDecision values.
+func (RemediationApprovalDecisionPayloadDecision) AllValues() []RemediationApprovalDecisionPayloadDecision {
+	return []RemediationApprovalDecisionPayloadDecision{
+		RemediationApprovalDecisionPayloadDecisionApproved,
+		RemediationApprovalDecisionPayloadDecisionRejected,
+		RemediationApprovalDecisionPayloadDecisionExpired,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationApprovalDecisionPayloadDecision) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationApprovalDecisionPayloadDecisionApproved:
+		return []byte(s), nil
+	case RemediationApprovalDecisionPayloadDecisionRejected:
+		return []byte(s), nil
+	case RemediationApprovalDecisionPayloadDecisionExpired:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationApprovalDecisionPayloadDecision) UnmarshalText(data []byte) error {
+	switch RemediationApprovalDecisionPayloadDecision(data) {
+	case RemediationApprovalDecisionPayloadDecisionApproved:
+		*s = RemediationApprovalDecisionPayloadDecisionApproved
+		return nil
+	case RemediationApprovalDecisionPayloadDecisionRejected:
+		*s = RemediationApprovalDecisionPayloadDecisionRejected
+		return nil
+	case RemediationApprovalDecisionPayloadDecisionExpired:
+		*s = RemediationApprovalDecisionPayloadDecisionExpired
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationApprovalDecisionPayloadEventType string
+
+const (
+	RemediationApprovalDecisionPayloadEventTypeApprovalDecision       RemediationApprovalDecisionPayloadEventType = "approval.decision"
+	RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated RemediationApprovalDecisionPayloadEventType = "approval.request.created"
+	RemediationApprovalDecisionPayloadEventTypeApprovalTimeout        RemediationApprovalDecisionPayloadEventType = "approval.timeout"
+)
+
+// AllValues returns all RemediationApprovalDecisionPayloadEventType values.
+func (RemediationApprovalDecisionPayloadEventType) AllValues() []RemediationApprovalDecisionPayloadEventType {
+	return []RemediationApprovalDecisionPayloadEventType{
+		RemediationApprovalDecisionPayloadEventTypeApprovalDecision,
+		RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated,
+		RemediationApprovalDecisionPayloadEventTypeApprovalTimeout,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationApprovalDecisionPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationApprovalDecisionPayloadEventTypeApprovalDecision:
+		return []byte(s), nil
+	case RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated:
+		return []byte(s), nil
+	case RemediationApprovalDecisionPayloadEventTypeApprovalTimeout:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationApprovalDecisionPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationApprovalDecisionPayloadEventType(data) {
+	case RemediationApprovalDecisionPayloadEventTypeApprovalDecision:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalDecision
+		return nil
+	case RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalRequestCreated
+		return nil
+	case RemediationApprovalDecisionPayloadEventTypeApprovalTimeout:
+		*s = RemediationApprovalDecisionPayloadEventTypeApprovalTimeout
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

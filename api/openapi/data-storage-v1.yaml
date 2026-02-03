@@ -1643,6 +1643,7 @@ components:
             - $ref: '#/components/schemas/NotificationAuditPayload'
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
+            - $ref: '#/components/schemas/RemediationApprovalDecisionPayload'
             - $ref: '#/components/schemas/WorkflowSearchAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -2995,6 +2996,89 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+
+    # ========================================
+    # RemediationApprovalRequest Controller Audit Payloads
+    # From: pkg/remediationapprovalrequest/audit/
+    # BR-AUDIT-006: Approval decision audit trail (SOC 2 CC8.1)
+    # ========================================
+
+    RemediationApprovalDecisionPayload:
+      type: object
+      required: [event_type, remediation_request_name, ai_analysis_name, decision, decided_by, confidence, workflow_id]
+      description: |
+        Audit payload for approval decision event (approval.decision).
+        Captures WHO, WHEN, WHAT, WHY for SOC 2 CC8.1 (User Attribution) compliance.
+        Emitted by RemediationApprovalRequest controller when decision is made.
+      properties:
+        event_type:
+          type: string
+          enum: [approval.decision, approval.request.created, approval.timeout]
+          description: Event type for discriminator (matches parent event_type)
+        remediation_request_name:
+          type: string
+          description: Parent RemediationRequest name (correlation ID)
+          example: "rr-oomkilled-abc123"
+        ai_analysis_name:
+          type: string
+          description: AIAnalysis CRD that required approval
+          example: "ai-rr-oomkilled-abc123"
+        decision:
+          type: string
+          enum: [approved, rejected, expired]
+          description: Final approval decision
+          example: "approved"
+        decided_by:
+          type: string
+          description: Authenticated username from webhook (SOC 2 CC8.1)
+          example: "alice@example.com"
+        decided_at:
+          type: string
+          format: date-time
+          description: When decision was made
+          example: "2026-01-15T10:30:00Z"
+        decision_message:
+          type: string
+          description: Optional rationale from operator
+          example: "Root cause accurate. Safe to proceed with memory increase."
+        confidence:
+          type: number
+          format: float
+          description: AI confidence score that triggered approval
+          example: 0.75
+        workflow_id:
+          type: string
+          description: Workflow being approved
+          example: "oomkill-increase-memory-limits"
+        workflow_version:
+          type: string
+          description: Workflow version
+          example: "v1.2.0"
+        target_resource:
+          type: string
+          description: Target resource being remediated
+          example: "payment/deployment/payment-api"
+        timeout_deadline:
+          type: string
+          format: date-time
+          description: Approval deadline
+          example: "2026-01-15T10:45:00Z"
+        decision_duration_seconds:
+          type: integer
+          description: Time to decision (seconds)
+          example: 180
+        approval_reason:
+          type: string
+          description: Reason for requiring approval (for request.created event)
+          example: "Confidence below 80% auto-approve threshold"
+        timeout_reason:
+          type: string
+          description: Reason for timeout (for timeout event)
+          example: "No operator response within deadline"
+        timeout_duration_seconds:
+          type: integer
+          description: Timeout duration in seconds (for timeout event)
+          example: 900
 
     RemediationRequestWebhookAuditPayload:
       type: object
