@@ -1568,7 +1568,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, approval]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
           description: |
             Service-level event category (ADR-034 v1.7).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
