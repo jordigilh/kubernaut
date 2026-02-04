@@ -970,6 +970,10 @@ The problem has self-resolved. No remediation workflow is needed.
                 analysis_json["can_recover"] = True  # Manual recovery possible
                 analysis_json["needs_human_review"] = True
                 analysis_json["human_review_reason"] = "no_matching_workflows"
+            # E2E-HAPI-001: Set needs_human_review for incident with no workflow
+            else:  # incident scenario
+                analysis_json["needs_human_review"] = True
+                analysis_json["human_review_reason"] = "no_matching_workflows"
             
             # E2E-HAPI-003: Set human_review fields for max retries exhausted (incident)
             if scenario.name == "max_retries_exhausted":
