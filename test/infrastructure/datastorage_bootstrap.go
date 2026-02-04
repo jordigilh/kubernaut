@@ -222,6 +222,11 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
 	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
+	// DEBUG: Show environment variable status
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
+
 	// CI/CD Optimization: Try to pull from registry if configured
 	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", imageName, writer); pulled {
 		if err != nil {

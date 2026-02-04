@@ -101,6 +101,11 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	baseImageName := "localhost/mock-llm:latest"
 	uniqueImageName := GenerateInfraImageName("mock-llm", serviceName)
 
+	// DEBUG: Show environment variable status
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
+
 	// CI/CD Optimization: Try to pull from registry if configured
 	// Note: We try to pull with the unique image name, then tag as base for consistency
 	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", uniqueImageName, writer); pulled {
