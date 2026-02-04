@@ -207,7 +207,9 @@ Based on my analysis:
 
         assert result["root_cause_analysis"]["summary"] == "Container OOM"
         assert result["root_cause_analysis"]["severity"] == "critical"
-        assert result["selected_workflow"] is None
+        # ADR-045 v1.2: selected_workflow field is only included when not None
+        # Parser no longer includes null fields (parse_and_validate_investigation_result)
+        assert "selected_workflow" not in result or result.get("selected_workflow") is None
 
     def test_sets_needs_human_review_when_no_workflow(self):
         """BR-HAPI-197: No workflow triggers needs_human_review."""
@@ -261,9 +263,12 @@ Based on my analysis:
             data_storage_client=None  # No validation
         )
 
+        # BR-HAPI-212: Workflow selected but affectedResource missing → rca_incomplete
+        # Parser sets human_review_reason = "rca_incomplete" (not "low_confidence")
+        # BR-HAPI-197: Low confidence detection is AIAnalysis's responsibility
         assert result["needs_human_review"] is True
-        assert result["human_review_reason"] == "low_confidence"
-        assert "Low confidence" in result["warnings"][0]
+        assert result["human_review_reason"] == "rca_incomplete"  # Changed from "low_confidence"
+        assert "affectedResource missing" in result["warnings"][0]
 
     def test_extracts_alternative_workflows(self):
         """ADR-045 v1.2: Alternative workflows extracted for audit."""
