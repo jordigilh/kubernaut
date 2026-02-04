@@ -239,8 +239,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             request.state.user = user
 
         except Exception as e:
-            # Handle ONLY authentication/authorization exceptions
-            # NOTE: Downstream endpoint exceptions (400, 422, 500) should NOT be caught here
+            # Handle authentication/authorization exceptions
             logger.error({
                 "event": "auth_middleware_error",
                 "error": str(e),
@@ -261,10 +260,26 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 detail=detail,
             )
 
-        # Step 6: Pass request to next handler (OUTSIDE try-except)
-        # This ensures endpoint exceptions (400, 422, 500) are handled by their own handlers
-        # Note: Auth success metrics removed (no BR backing)
-        return await call_next(request)
+        # Step 6: Pass request to next handler
+        # Wrap in try-except to catch ANY unhandled exceptions from downstream handlers
+        # This ensures consistent RFC 7807 error responses for ALL failures
+        try:
+            return await call_next(request)
+        except Exception as e:
+            # Catch unhandled exceptions from middleware/endpoint chain
+            logger.error({
+                "event": "unhandled_exception_in_handler",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "path": request.url.path
+            })
+            
+            # Return RFC 7807 Problem Details for unexpected errors
+            return self._create_rfc7807_response(
+                status_code=500,
+                title="Internal Server Error",
+                detail="An unexpected error occurred",
+            )
 
     def _get_verb_for_request(self, request: Request) -> str:
         """

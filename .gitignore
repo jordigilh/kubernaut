@@ -224,12 +224,18 @@ unit-coverage*
 integration-coverage*
 coverage.html
 coverage.txt
+coverage_*.txt
+coverage_*.out
 
 # Coverage directories (all tiers)
 coverage-unit/
 coverage-integration/
 coverage-e2e/
 **/coverdata/
+
+# Integration test auth tokens (generated during test setup)
+.hapi-integration-sa-token
+.*-integration-sa-token
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/
