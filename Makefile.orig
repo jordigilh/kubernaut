@@ -139,17 +139,17 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: generate ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "🧪 $* - Integration Tests (parallel via go test -p)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
 	@echo "📊 Coverage: All business code (pkg/, internal/, cmd/) - excludes test/"
 	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" \
-	$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) \
-		--coverprofile=coverage_integration_$*.out --covermode=atomic \
+	go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) -p=$(TEST_PROCS) \
+		-coverprofile=coverage_integration_$*.out -covermode=atomic \
 		-coverpkg=github.com/jordigilh/kubernaut/pkg/...,github.com/jordigilh/kubernaut/internal/...,github.com/jordigilh/kubernaut/cmd/... \
-		--keep-going ./test/integration/$*/...
+		./test/integration/$*/...
 	@echo ""
 	@echo "📊 Coverage report generated: coverage_integration_$*.out"
 	@go tool cover -func=coverage_integration_$*.out | tail -1
