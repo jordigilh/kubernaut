@@ -74,6 +74,7 @@ var (
 	kubeconfigPath string
 	cfg            *rest.Config
 	k8sClient      client.Client
+	apiReader      client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// Controller namespace
 	controllerNamespace string = infrastructure.WorkflowExecutionNamespace
@@ -221,6 +222,11 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create direct API reader for Eventually() blocks to bypass client cache
+		// This ensures fresh reads from API server for status polling
+		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
 		logger.Info("✅ Connected to WorkflowExecution E2E cluster",
@@ -467,6 +473,14 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 func getWFE(name, namespace string) (*workflowexecutionv1alpha1.WorkflowExecution, error) {
 	wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
 	err := k8sClient.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, wfe)
+	return wfe, err
+}
+
+// getWFEDirect reads WorkflowExecution directly from API server, bypassing client cache.
+// Use this in Eventually() blocks for status polling to avoid cache consistency issues.
+func getWFEDirect(name, namespace string) (*workflowexecutionv1alpha1.WorkflowExecution, error) {
+	wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
+	err := apiReader.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, wfe)
 	return wfe, err
 }
 
