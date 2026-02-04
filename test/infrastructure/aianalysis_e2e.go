@@ -141,9 +141,19 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 2-3: Export images to .tar and aggressive Podman cleanup
 	// ═══════════════════════════════════════════════════════════════════════
 	// This frees ~5-9 GB of disk space by removing Podman cache and intermediate layers
-	tarFiles, err := ExportImagesAndPrune(builtImages, "/tmp", writer)
-	if err != nil {
-		return fmt.Errorf("failed to export images and prune: %w", err)
+	// FIX: Skip export/prune in CI/CD mode (images pushed to registry, not stored locally)
+	var tarFiles map[string]string
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 2-3: Skipping image export/prune (CI/CD registry mode)")
+		_, _ = fmt.Fprintln(writer, "   Images already pushed to GHCR and will be pulled directly by Kind")
+		LogDiskSpace("EXPORT_SKIPPED", writer)
+	} else {
+		// Local mode: export and prune to save disk space
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2-3: Exporting images to .tar and pruning Podman cache...")
+		tarFiles, err = ExportImagesAndPrune(builtImages, "/tmp", writer)
+		if err != nil {
+			return fmt.Errorf("failed to export images and prune: %w", err)
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -175,8 +185,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 5-6: Load images from .tar into Kind and cleanup .tar files
 	// ═══════════════════════════════════════════════════════════════════════
 	// Uses shared helpers for efficient loading and cleanup
-	if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
-		return fmt.Errorf("failed to load images and cleanup: %w", err)
+	// FIX: Skip image loading in CI/CD mode (images will be pulled from registry)
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 5-6: Skipping .tar image loading (CI/CD registry mode)")
+		_, _ = fmt.Fprintln(writer, "   Kind will pull images directly from GHCR as needed")
+	} else {
+		// Local mode: load images from .tar files
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 5-6: Loading images from .tar into Kind...")
+		if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
+			return fmt.Errorf("failed to load images and cleanup: %w", err)
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════

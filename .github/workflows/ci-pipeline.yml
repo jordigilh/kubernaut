@@ -699,7 +699,6 @@ jobs:
         run: |
           echo "📋 Collecting must-gather logs for triage..."
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          CLUSTER_NAME="kubernaut-e2e"
           
           if [ -d "/tmp/kubernaut-must-gather" ]; then
             echo "✅ Found must-gather directory (AfterSuite executed)"
@@ -710,8 +709,11 @@ jobs:
             echo "⚠️  No must-gather directory found (BeforeSuite failure)"
             echo "📋 Manually exporting Kind cluster logs..."
             
-            # Check if Kind cluster exists
-            if kind get clusters 2>&1 | grep -q "$CLUSTER_NAME"; then
+            # FIX: Dynamically detect cluster name (each E2E test uses custom names)
+            # Examples: gateway-e2e, authwebhook-e2e, notification-e2e, ro-e2e, etc.
+            CLUSTER_NAME=$(kind get clusters 2>/dev/null | grep -E "e2e|${{ matrix.service }}" | head -1)
+            
+            if [ -n "$CLUSTER_NAME" ]; then
               echo "✅ Found Kind cluster: $CLUSTER_NAME"
               
               # Export Kind logs to temporary directory
@@ -729,6 +731,8 @@ jobs:
               fi
             else
               echo "❌ No Kind cluster found - tests failed before cluster creation"
+              echo "Available clusters:"
+              kind get clusters 2>&1 || echo "  (none)"
             fi
           fi
       - name: Upload must-gather logs as artifacts
@@ -741,7 +745,12 @@ jobs:
           if-no-files-found: warn
       - name: Cleanup Kind cluster
         if: always()
-        run: kind delete cluster --name kubernaut-e2e || true
+        run: |
+          # FIX: Dynamically detect and cleanup E2E clusters (custom names per service)
+          for cluster in $(kind get clusters 2>/dev/null | grep -E "e2e"); do
+            echo "🗑️  Deleting Kind cluster: $cluster"
+            kind delete cluster --name "$cluster" || true
+          done
       - name: Cleanup containers
         if: always()
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
