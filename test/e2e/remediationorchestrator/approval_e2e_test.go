@@ -270,20 +270,22 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			var rejectionEvent *dsgen.AuditEvent
 			Eventually(func() bool {
+				// Query with all 3 required filters (correlationID, EventCategory, EventType)
+				// Prevents pagination overhead - ensures efficient query (BR-AUDIT-006)
 				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("orchestration"),
+					EventType:     dsgen.NewOptString("orchestrator.approval.rejected"),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
 					return false
 				}
 
-				for _, event := range resp.Data {
-					if event.EventType == "orchestrator.approval.rejected" {
-						rejectionEvent = &event
-						return true
-					}
+				// No client-side filtering needed - EventType filter ensures only rejection events returned
+				if len(resp.Data) > 0 {
+					rejectionEvent = &resp.Data[0]
+					return true
 				}
 				return false
 			}, e2eTimeout, e2eInterval).Should(BeTrue(),
@@ -407,35 +409,32 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// Wait for BOTH webhook and orchestration approval audit events to be persisted
 			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
 			Eventually(func() (int, int) {
-				// Query webhook events
+				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
+				// Prevents pagination overhead - all 3 filters ensure efficient query (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("webhook"),
+					EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
 					return 0, 0
 				}
 
-				// Query orchestration approval events
+				// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
+				// Note: We query for "approved" events only; test logic validates approval decision
 				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("orchestration"),
+					EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
 					return len(webhookResp.Data), 0
 				}
 
-				// Count approval events only
-				approvalCount := 0
-				for _, event := range orchestrationResp.Data {
-					if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
-						approvalCount++
-					}
-				}
-
-				return len(webhookResp.Data), approvalCount
+				// No client-side filtering needed - EventType filter ensures only approval events returned
+				return len(webhookResp.Data), len(orchestrationResp.Data)
 			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
 				"Both webhook and orchestration approval events must be persisted before CRD deletion")
 
@@ -479,33 +478,31 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			}
 
 			// BUSINESS VALIDATION: Audit events still exist after CRD deletion
-			// Query webhook events (category="webhook", emitted by AuthWebhook)
+			// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
+			// Prevents pagination overhead - ensures efficient query (BR-AUDIT-006)
 			webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				EventCategory: dsgen.NewOptString("webhook"),
+				EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "DataStorage query for webhook events must succeed")
 			webhookEvents := webhookResp.Data
 			GinkgoWriter.Printf("🔍 DEBUG: Found %d webhook events\n", len(webhookEvents))
 
-			// Query orchestration approval events (category="orchestration", type="orchestrator.approval.*")
+			// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
+			// Note: We query for "approved" events only; test created an approval decision
 			orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				EventCategory: dsgen.NewOptString("orchestration"),
+				EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "DataStorage query for orchestration events must succeed")
 
-			// Filter for approval events only (orchestrator.approval.*)
-			var approvalEvents []dsgen.AuditEvent
-			for _, event := range orchestrationResp.Data {
-				if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
-					approvalEvents = append(approvalEvents, event)
-				}
-			}
-			GinkgoWriter.Printf("🔍 DEBUG: Found %d approval events (filtered from %d orchestration events)\n",
-				len(approvalEvents), len(orchestrationResp.Data))
+			// No client-side filtering needed - EventType filter ensures only approval events returned
+			approvalEvents := orchestrationResp.Data
+			GinkgoWriter.Printf("🔍 DEBUG: Found %d approval events\n", len(approvalEvents))
 
 			// BUSINESS OUTCOME 1: Audit trail persists after CRD deletion (SOC 2 CC7.2)
 			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
