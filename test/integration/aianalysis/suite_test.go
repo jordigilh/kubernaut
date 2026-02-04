@@ -51,7 +51,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,7 +85,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -131,12 +129,12 @@ var (
 	dsInfra *infrastructure.DSBootstrapInfra
 
 	// Shared infrastructure for cleanup (SynchronizedAfterSuite second function)
-	sharedTestEnv      *envtest.Environment
-	sharedCfg          *rest.Config
-	hapiContainer      *infrastructure.ContainerInstance
-	mockLLMConfig      infrastructure.MockLLMConfig
-	mockLLMConfigPath  string
-	hapiSATokenDir     string
+	sharedTestEnv     *envtest.Environment
+	sharedCfg         *rest.Config
+	hapiContainer     *infrastructure.ContainerInstance
+	mockLLMConfig     infrastructure.MockLLMConfig
+	mockLLMConfigPath string
+	hapiSATokenDir    string
 
 	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
 	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
@@ -186,10 +184,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-AUTH-014: Start shared envtest FIRST (before building images)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
-	
+
 	// Force envtest to bind to IPv4 (critical for macOS!)
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
-	
+
 	sharedTestEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -207,7 +205,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	sharedCfg, err = sharedTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(sharedCfg).NotTo(BeNil())
-	
+
 	GinkgoWriter.Printf("✅ Shared envtest started\n")
 	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
 
@@ -226,24 +224,24 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	)
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for AIAnalysis → DataStorage")
-	
+
 	// DD-AUTH-014: Grant AIAnalysis controller SA permission to call HAPI
 	// In production: holmesgpt-api-client ClusterRole grants `get` verb on holmesgpt-api resource
 	// In integration: Create similar RBAC for envtest
 	By("Granting AIAnalysis controller SA permission to call HAPI")
 	k8sClient, err := client.New(sharedCfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	
+
 	hapiClientRole := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "holmesgpt-api-client",
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{""},
-				Resources: []string{"services"},
+				APIGroups:     []string{""},
+				Resources:     []string{"services"},
 				ResourceNames: []string{"holmesgpt-api"}, // Must match HAPI middleware config (main.py)
-				Verbs: []string{"create"}, // HAPI checks "create" verb (default in main.py)
+				Verbs:         []string{"create"},        // HAPI checks "create" verb (default in main.py)
 			},
 		},
 	}
@@ -251,7 +249,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	if !apierrors.IsAlreadyExists(err) {
 		Expect(err).ToNot(HaveOccurred())
 	}
-	
+
 	hapiClientBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "aianalysis-holmesgpt-api-client",
@@ -274,7 +272,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Expect(err).ToNot(HaveOccurred())
 	}
 	GinkgoWriter.Println("✅ AIAnalysis controller granted HAPI access permissions")
-	
+
 	// DD-AUTH-014: Create ServiceAccount for HAPI service (for TokenReview/SAR validation)
 	// HAPI is an HTTP server (like DataStorage) that validates incoming Bearer tokens
 	// Platform-specific: Linux uses host network, macOS uses bridge network
@@ -289,7 +287,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	)
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for HAPI → envtest (TokenReview/SAR)")
-	
+
 	// DD-AUTH-014: Grant HAPI ServiceAccount permission to write audit events to DataStorage
 	// HAPI needs BOTH:
 	//   1. TokenReview/SAR permissions (to validate incoming requests) - ✅ Already has
@@ -382,24 +380,22 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	// DD-AUTH-014: Create authenticated DataStorage client for workflow seeding
+	// Pattern: Use same helper as HAPI integration tests (matches working pattern)
 	By("Creating authenticated DataStorage client for workflow seeding")
 	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	seedClient, err := ogenclient.NewClient(
+	seedClient := integration.NewAuthenticatedDataStorageClients(
 		dataStorageURL,
-		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransport(authConfig.Token),
-			Timeout:   30 * time.Second,
-		}),
+		authConfig.Token,
+		30*time.Second,
 	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage client")
 	GinkgoWriter.Println("✅ Authenticated DataStorage client created for workflow seeding")
 
 	// Seed test workflows into DataStorage BEFORE starting Mock LLM
 	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
 	// Must seed workflows first so Mock LLM can load UUIDs at startup
-	// DD-AUTH-014: Now uses authenticated client
+	// DD-AUTH-014: Now uses authenticated client (matches HAPI pattern)
 	By("Seeding test workflows into DataStorage (with authentication)")
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient, GinkgoWriter)
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient.OpenAPIClient, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
 	// Write Mock LLM config file with workflow UUIDs
@@ -418,8 +414,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig = infrastructure.GetMockLLMConfigForAIAnalysis()
-	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
-	mockLLMConfig.ConfigFilePath = mockLLMConfigPath  // DD-TEST-011 v2.0: Mount config file
+	mockLLMConfig.ImageTag = mockLLMImageName        // Use the built image tag
+	mockLLMConfig.ConfigFilePath = mockLLMConfigPath // DD-TEST-011 v2.0: Mount config file
 	// DD-AUTH-014: Platform-specific network (must match HAPI's network mode)
 	if runtime.GOOS == "linux" {
 		mockLLMConfig.Network = "host" // Linux CI: Host network (HAPI will reach via 127.0.0.1)
@@ -439,7 +435,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// OPTIMIZATION: Use pre-built image from parallel build (no BuildContext/BuildDockerfile)
 	hapiConfigDir, err := filepath.Abs("hapi-config")
 	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
-	
+
 	// DD-AUTH-014: Create ServiceAccount secrets directory structure for HAPI container
 	// HAPI's ServiceAccountAuthPoolManager expects token at /var/run/secrets/kubernetes.io/serviceaccount/token
 	// CRITICAL: Use HAPI's own ServiceAccount token (hapiServiceAuthConfig.Token), NOT the client token!
@@ -451,14 +447,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = os.WriteFile(hapiSATokenFilePath, []byte(hapiServiceAuthConfig.Token), 0644)
 	Expect(err).ToNot(HaveOccurred(), "Failed to write HAPI ServiceAccount token to file")
 	GinkgoWriter.Printf("✅ HAPI ServiceAccount token written to: %s (for DataStorage auth)\n", hapiSATokenFilePath)
-	
+
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
-	
+
 	// DD-AUTH-014: Platform-specific network configuration for HAPI
 	// Linux CI: Use host network (can reach envtest on 127.0.0.1 directly)
 	// macOS Dev: Use bridge network with host.containers.internal rewriting
 	useHostNetwork := runtime.GOOS == "linux"
-	
+
 	hapiConfig := infrastructure.GenericContainerConfig{
 		Name:  "aianalysis_hapi_test",
 		Image: hapiImageName, // Use pre-built image from parallel build
@@ -466,10 +462,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			"LLM_MODEL":      "mock-model",
 			"LLM_PROVIDER":   "openai",                             // Required by litellm
 			"OPENAI_API_KEY": "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
-			"API_PORT":       "18120",                                   // HAPI uses API_PORT, not PORT (see entrypoint.sh)
+			"API_PORT":       "18120",                              // HAPI uses API_PORT, not PORT (see entrypoint.sh)
 			"LOG_LEVEL":      "DEBUG",
-			"KUBECONFIG":     "/tmp/kubeconfig",                         // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
-			"POD_NAMESPACE":  "default",                                 // Required for K8s client
+			"KUBECONFIG":     "/tmp/kubeconfig", // DD-AUTH-014: Real K8s auth with envtest (file-based kubeconfig)
+			"POD_NAMESPACE":  "default",         // Required for K8s client
 		},
 		Volumes: map[string]string{
 			hapiConfigDir:                        "/etc/holmesgpt:ro",                                // Mount HAPI config directory
@@ -482,7 +478,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
 		},
 	}
-	
+
 	if useHostNetwork {
 		// Linux CI: Host network mode (can reach localhost directly)
 		hapiConfig.Network = "host"
@@ -492,7 +488,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	} else {
 		// macOS Dev: Bridge network with host.containers.internal
 		hapiConfig.Network = "aianalysis_test_network"
-		hapiConfig.Ports = map[int]int{18120: 18120} // container:host (both use 18120 now)
+		hapiConfig.Ports = map[int]int{18120: 18120}                                               // container:host (both use 18120 now)
 		hapiConfig.Env["LLM_ENDPOINT"] = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig) // http://mock-llm-aianalysis:8080 (container-to-container)
 		hapiConfig.Env["DATA_STORAGE_URL"] = "http://host.containers.internal:18095"
 		hapiConfig.ExtraHosts = []string{
@@ -539,11 +535,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	var phase1Data Phase1Data
 	deserializeErr := json.Unmarshal(data, &phase1Data)
 	Expect(deserializeErr).ToNot(HaveOccurred(), "Phase 1 data must deserialize successfully")
-	
+
 	// Extract values
 	token := phase1Data.Token
 	workflowUUIDs = phase1Data.WorkflowUUIDs
-	
+
 	if token == "" {
 		Fail("ServiceAccount token from Phase 1 is empty")
 	}
