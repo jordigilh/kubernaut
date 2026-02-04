@@ -311,19 +311,19 @@ approval = result if {
 
 	Context("Performance: Cached Policy Compilation", func() {
 		It("should use cached compiled policy (no file I/O on Evaluate)", func() {
-			// Create temporary copy of policy to avoid deleting test fixture
-			originalPath := getTestdataPath("policies/approval.rego")
-			tempPolicy, err := os.CreateTemp("", "approval-cache-test-*.rego")
+			// Create temporary directory for policy (file watcher needs stable directory)
+			tempDir, err := os.MkdirTemp("", "rego-hotreload-test-")
 			Expect(err).NotTo(HaveOccurred())
-			tempPolicyPath := tempPolicy.Name()
-			defer func() { _ = os.Remove(tempPolicyPath) }()
+			defer func() { _ = os.RemoveAll(tempDir) }()
 
-			// Copy policy content to temp file
+			// Create temporary policy file in directory
+			tempPolicyPath := filepath.Join(tempDir, "approval.rego")
+			originalPath := getTestdataPath("policies/approval.rego")
 			originalContent, err := os.ReadFile(originalPath)
 			Expect(err).NotTo(HaveOccurred())
-			_, err = tempPolicy.Write(originalContent)
+			
+			err = os.WriteFile(tempPolicyPath, originalContent, 0644)
 			Expect(err).NotTo(HaveOccurred())
-			_ = tempPolicy.Close()
 
 			// Use temp policy for this test
 			evaluator := rego.NewEvaluator(rego.Config{
