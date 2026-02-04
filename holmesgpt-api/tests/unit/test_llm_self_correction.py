@@ -268,7 +268,8 @@ Based on my analysis:
         # BR-HAPI-197: Low confidence detection is AIAnalysis's responsibility
         assert result["needs_human_review"] is True
         assert result["human_review_reason"] == "rca_incomplete"  # Changed from "low_confidence"
-        assert "affectedResource missing" in result["warnings"][0]
+        # Check for the actual warning message from the parser
+        assert "RCA is missing affectedResource field" in result["warnings"][0]
 
     def test_extracts_alternative_workflows(self):
         """ADR-045 v1.2: Alternative workflows extracted for audit."""
