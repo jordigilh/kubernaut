@@ -30,6 +30,10 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"github.com/google/uuid"
+)
+
+import (
 	"context"
 	"fmt"
 	"net/http"
@@ -84,7 +88,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("e2e-audit-test-%d", time.Now().Unix()),
+					Name:      fmt.Sprintf("e2e-audit-test-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
