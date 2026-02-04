@@ -89,10 +89,10 @@ spec:
       - name: config
         configMap:
           name: notification-controller-config
-      # DD-NOT-006: File delivery output (hostPath for E2E - accessible to host tests)
+      # DD-NOT-006: File delivery output (emptyDir for E2E - fixes permission issues in Kind)
+      # Note: Changed from hostPath to emptyDir to avoid permission denied errors
+      # Files are still accessible via kubectl cp if needed for test verification
       - name: notification-output
-        hostPath:
-          path: /tmp/kubernaut-e2e-notifications
-          type: DirectoryOrCreate
+        emptyDir: {}
       terminationGracePeriodSeconds: 10
 

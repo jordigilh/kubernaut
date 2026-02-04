@@ -42,13 +42,29 @@ type E2EImageConfig struct {
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
 }
 
+// IsRunningInCICD returns true if running in CI/CD environment (GitHub Actions).
+// Detection: IMAGE_REGISTRY environment variable is set (indicates GHCR push/pull workflow).
+//
+// Authority: CI/CD optimization - enables registry-based image distribution
+func IsRunningInCICD() bool {
+	return os.Getenv("IMAGE_REGISTRY") != ""
+}
+
+// ShouldSkipImageExportAndPrune returns true if image export and Podman prune should be skipped.
+// In CI/CD mode, images are pushed to GHCR and pulled directly by Kind, so local export is unnecessary.
+//
+// Authority: CI/CD optimization - saves ~2-3 minutes and ~5-9 GB disk space per test suite
+func ShouldSkipImageExportAndPrune() bool {
+	return IsRunningInCICD()
+}
+
 // GetImagePullPolicy returns the appropriate imagePullPolicy based on environment.
 // - Registry mode (IMAGE_REGISTRY set): Returns "IfNotPresent" (Kind pulls from registry)
 // - Local mode: Returns "Never" (uses images loaded into Kind)
 //
 // Authority: CI/CD optimization - avoid unnecessary image pulls/loads
 func GetImagePullPolicy() string {
-	if os.Getenv("IMAGE_REGISTRY") != "" {
+	if IsRunningInCICD() {
 		return "IfNotPresent" // Let Kind pull from registry on-demand
 	}
 	return "Never" // Use images loaded into Kind cluster
