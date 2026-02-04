@@ -99,9 +99,9 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	go func() {
 		cfg := E2EImageConfig{
 			ServiceName:      "authwebhook",
-			ImageName:        "authwebhook",  // No repo prefix, just service name
+			ImageName:        "authwebhook", // No repo prefix, just service name
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
-			BuildContextPath: "", // Empty = project root
+			BuildContextPath: "",    // Empty = project root
 			EnableCoverage:   false, // AuthWebhook doesn't support coverage yet
 		}
 		awImageName, err := BuildImageForKind(cfg, writer)
@@ -311,6 +311,7 @@ func buildAuthWebhookImageOnly(writer io.Writer) (string, error) {
 func loadAuthWebhookImageOnly(imageName, clusterName string, writer io.Writer) error {
 	return LoadImageToKind(imageName, "authwebhook", clusterName, writer)
 }
+
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster
 func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	// Get workspace root for config paths

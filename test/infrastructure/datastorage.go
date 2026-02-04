@@ -92,9 +92,33 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	// ═══════════════════════════════════════════════════════════════════════
+	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
+	// ═══════════════════════════════════════════════════════════════════════
+	// In CI/CD (IMAGE_REGISTRY set), GitHub Actions workflow collects must-gather
+	// artifacts. Tests must NOT delete cluster on failure so workflow can inspect
+	// pod status, events, and logs.
+	//
+	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
+	// then delete cluster to free resources.
+	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
+	
 	if testsFailed {
+		if inCICD {
+			// ═══════════════════════════════════════════════════════════════════════
+			// CI/CD MODE: Preserve cluster for GitHub Actions must-gather
+			// ═══════════════════════════════════════════════════════════════════════
+			_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected in CI/CD environment\n")
+			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for must-gather collection\n")
+			_, _ = fmt.Fprintf(writer, "   • Cluster: %s\n", clusterName)
+			_, _ = fmt.Fprintf(writer, "   • GitHub Actions will collect pod logs, events, and status\n")
+			_, _ = fmt.Fprintf(writer, "   • Workflow will delete cluster after artifact collection\n")
+			_, _ = fmt.Fprintf(writer, "✅ Cluster preserved for diagnostics\n")
+			return nil // Don't delete - let GitHub Actions handle it
+		}
+		
 		// ═══════════════════════════════════════════════════════════════════════
-		// EXPORT LOGS (Must-Gather Style)
+		// LOCAL MODE: Export logs immediately (Must-Gather Style)
 		// ═══════════════════════════════════════════════════════════════════════
 		_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
 		_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
@@ -118,7 +142,7 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// ALWAYS DELETE CLUSTER (even after log export)
+	// DELETE CLUSTER (normal cleanup or after local log export)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(writer, "🗑️  Deleting Kind cluster...\n")
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
@@ -462,6 +486,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 //
 //	// Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
 //	DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
+//
 // DeployDataStorageTestServicesWithNodePort deploys DataStorage with OAuth2-Proxy using a specific NodePort.
 // TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
@@ -1084,7 +1109,7 @@ password: test_password`,
 	// 2.5. Create ServiceAccount + RBAC for middleware-based auth (DD-AUTH-014)
 	// Required for TokenReview and SubjectAccessReview API calls
 	_, _ = fmt.Fprintf(writer, "   🔐 Creating DataStorage ServiceAccount + RBAC...\n")
-	
+
 	// ServiceAccount
 	serviceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1174,9 +1199,9 @@ password: test_password`,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "http",
-					Port:       8080,                   // DD-AUTH-014: Direct to DataStorage (no proxy)
+					Port:       8080,                 // DD-AUTH-014: Direct to DataStorage (no proxy)
 					TargetPort: intstr.FromInt(8080), // Maps to DataStorage container port
-					NodePort:   nodePort,              // Configurable per service (default: 30081)
+					NodePort:   nodePort,             // Configurable per service (default: 30081)
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
@@ -1249,55 +1274,55 @@ password: test_password`,
 						}
 						return nil
 					}(),
-				Containers: []corev1.Container{
-					// DD-AUTH-014: DataStorage with middleware-based auth (no oauth-proxy sidecar)
-					// Authenticates using Kubernetes TokenReview API + authorizes using SAR API
-					{
-						Name:            "datastorage",
-						Image:           dataStorageImage, // DD-TEST-001: service-specific tag
-						ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "http",      // DD-AUTH-014: Direct access (no proxy)
-								ContainerPort: 8080,        // Internal port (matches config.yaml)
-							},
-							{
-								Name:          "metrics",
-								ContainerPort: 9181,
-							},
-						},
-						Env: func() []corev1.EnvVar {
-							envVars := []corev1.EnvVar{
+					Containers: []corev1.Container{
+						// DD-AUTH-014: DataStorage with middleware-based auth (no oauth-proxy sidecar)
+						// Authenticates using Kubernetes TokenReview API + authorizes using SAR API
+						{
+							Name:            "datastorage",
+							Image:           dataStorageImage,       // DD-TEST-001: service-specific tag
+							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
+							Ports: []corev1.ContainerPort{
 								{
-									Name:  "CONFIG_PATH",
-									Value: "/etc/datastorage/config.yaml",
+									Name:          "http", // DD-AUTH-014: Direct access (no proxy)
+									ContainerPort: 8080,   // Internal port (matches config.yaml)
 								},
-								// DD-AUTH-014: POD_NAMESPACE required for SAR namespace context
 								{
-									Name:  "POD_NAMESPACE",
-									Value: namespace,
+									Name:          "metrics",
+									ContainerPort: 9181,
 								},
-								// DD-AUTH-014: Use in-cluster config (ServiceAccount mounted automatically)
-								// KUBECONFIG env var removed - was causing crashes in E2E (host path doesn't exist in container)
-								// With proper data-storage-sa ServiceAccount + RBAC, in-cluster config works correctly
-							}
-							// DD-TEST-007: E2E Coverage Capture Standard
-							// Only add GOCOVERDIR if E2E_COVERAGE=true
-							// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-							coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-							_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
-							if coverageEnabled {
-								_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
-								envVars = append(envVars, corev1.EnvVar{
-									Name:  "GOCOVERDIR",
-									Value: "/coverdata",
-								})
-							} else {
-								_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
-							}
-							_, _ = fmt.Fprintf(writer, "   ✅ DD-AUTH-014: Using in-cluster config with ServiceAccount, POD_NAMESPACE=%s\n", namespace)
-							return envVars
-						}(),
+							},
+							Env: func() []corev1.EnvVar {
+								envVars := []corev1.EnvVar{
+									{
+										Name:  "CONFIG_PATH",
+										Value: "/etc/datastorage/config.yaml",
+									},
+									// DD-AUTH-014: POD_NAMESPACE required for SAR namespace context
+									{
+										Name:  "POD_NAMESPACE",
+										Value: namespace,
+									},
+									// DD-AUTH-014: Use in-cluster config (ServiceAccount mounted automatically)
+									// KUBECONFIG env var removed - was causing crashes in E2E (host path doesn't exist in container)
+									// With proper data-storage-sa ServiceAccount + RBAC, in-cluster config works correctly
+								}
+								// DD-TEST-007: E2E Coverage Capture Standard
+								// Only add GOCOVERDIR if E2E_COVERAGE=true
+								// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
+								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
+								_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
+								if coverageEnabled {
+									_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
+									envVars = append(envVars, corev1.EnvVar{
+										Name:  "GOCOVERDIR",
+										Value: "/coverdata",
+									})
+								} else {
+									_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
+								}
+								_, _ = fmt.Fprintf(writer, "   ✅ DD-AUTH-014: Using in-cluster config with ServiceAccount, POD_NAMESPACE=%s\n", namespace)
+								return envVars
+							}(),
 							VolumeMounts: func() []corev1.VolumeMount {
 								mounts := []corev1.VolumeMount{
 									{
@@ -1332,18 +1357,18 @@ password: test_password`,
 									corev1.ResourceCPU:    resource.MustParse("500m"),
 								},
 							},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/health",
-									Port: intstr.FromInt(8080), // DataStorage listens on 8080
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(8080), // DataStorage listens on 8080
+									},
 								},
+								InitialDelaySeconds: 30, // Allow PostgreSQL/Redis startup (was 5s - too short)
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+								FailureThreshold:    3,
 							},
-							InitialDelaySeconds: 30, // Allow PostgreSQL/Redis startup (was 5s - too short)
-							PeriodSeconds:       5,
-							TimeoutSeconds:      3,
-							FailureThreshold:    3,
-						},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
@@ -2379,4 +2404,3 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
-

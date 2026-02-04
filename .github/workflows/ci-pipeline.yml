@@ -805,11 +805,13 @@ jobs:
             ls -la coverage-reports/ || echo "No coverage-reports directory"
             echo ""
             echo "📋 Coverage file contents:"
-            for f in coverage-reports/*.txt 2>/dev/null; do
+            shopt -s nullglob  # Handle case when no files match (prevents literal *.txt)
+            for f in coverage-reports/*.txt; do
               if [ -f "$f" ]; then
                 echo "  File: $(basename $f) -> Content: $(cat $f)"
               fi
             done
+            shopt -u nullglob
             echo ""
           else
             echo "⚠️  No coverage-reports directory found"
