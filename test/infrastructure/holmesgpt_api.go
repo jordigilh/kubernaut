@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -136,36 +137,49 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
-	type imageLoadResult struct {
-		name string
-		err  error
-	}
-	loadResults := make(chan imageLoadResult, 3)
-
-	go func() {
-		defer GinkgoRecover()
-		err := loadImageToKind(clusterName, dataStorageImage, writer)
-		loadResults <- imageLoadResult{"DataStorage", err}
-	}()
-	go func() {
-		defer GinkgoRecover()
-		err := loadImageToKind(clusterName, hapiImage, writer)
-		loadResults <- imageLoadResult{"HolmesGPT-API", err}
-	}()
-	go func() {
-		defer GinkgoRecover()
-		err := loadImageToKind(clusterName, mockLLMImage, writer)
-		loadResults <- imageLoadResult{"Mock LLM", err}
-	}()
-	for i := 0; i < 3; i++ {
-		result := <-loadResults
-		if result.err != nil {
-			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
+	// FIXED: Skip image loading when using registry images (IMAGE_REGISTRY + IMAGE_TAG set)
+	// Pattern matches buildImageWithArgs() and BuildImageForKind() in shared_integration_utils.go
+	// Local dev: Load images into Kind from local podman registry
+	// CI/CD: Images already in GHCR, Kubernetes nodes pull directly via imagePullPolicy
+	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Skipping image load (registry mode - Kubernetes pulls from registry)")
+		_, _ = fmt.Fprintf(writer, "  ℹ️  IMAGE_REGISTRY=%s, IMAGE_TAG=%s\n", os.Getenv("IMAGE_REGISTRY"), os.Getenv("IMAGE_TAG"))
+		_, _ = fmt.Fprintf(writer, "  📦 Images will be pulled directly by Kubernetes nodes:\n")
+		_, _ = fmt.Fprintf(writer, "     - DataStorage: %s\n", dataStorageImage)
+		_, _ = fmt.Fprintf(writer, "     - HolmesGPT-API: %s\n", hapiImage)
+		_, _ = fmt.Fprintf(writer, "     - Mock LLM: %s\n", mockLLMImage)
+	} else {
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
+		type imageLoadResult struct {
+			name string
+			err  error
 		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
+		loadResults := make(chan imageLoadResult, 3)
+
+		go func() {
+			defer GinkgoRecover()
+			err := loadImageToKind(clusterName, dataStorageImage, writer)
+			loadResults <- imageLoadResult{"DataStorage", err}
+		}()
+		go func() {
+			defer GinkgoRecover()
+			err := loadImageToKind(clusterName, hapiImage, writer)
+			loadResults <- imageLoadResult{"HolmesGPT-API", err}
+		}()
+		go func() {
+			defer GinkgoRecover()
+			err := loadImageToKind(clusterName, mockLLMImage, writer)
+			loadResults <- imageLoadResult{"Mock LLM", err}
+		}()
+		for i := 0; i < 3; i++ {
+			result := <-loadResults
+			if result.err != nil {
+				return fmt.Errorf("failed to load %s: %w", result.name, result.err)
+			}
+			_, _ = fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
+		}
+		_, _ = fmt.Fprintln(writer, "✅ All images loaded!")
 	}
-	_, _ = fmt.Fprintln(writer, "✅ All images loaded!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3.5: Deploy DataStorage RBAC (DD-AUTH-014)

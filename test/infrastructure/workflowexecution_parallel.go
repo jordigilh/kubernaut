@@ -318,10 +318,17 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 		}
 	}
 
-	// Load into Kind
-	_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
-	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
-		return fmt.Errorf("failed to load image: %w", err)
+	// Load into Kind (skip when using registry images - IMAGE_REGISTRY + IMAGE_TAG set)
+	// Pattern matches buildImageWithArgs() in shared_integration_utils.go
+	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
+		_, _ = fmt.Fprintln(output, "    Skipping image load (registry mode - Kubernetes pulls from registry)")
+		_, _ = fmt.Fprintf(output, "    ℹ️  IMAGE_REGISTRY=%s, IMAGE_TAG=%s\n", os.Getenv("IMAGE_REGISTRY"), os.Getenv("IMAGE_TAG"))
+		_, _ = fmt.Fprintf(output, "    📦 Image will be pulled directly by Kubernetes: kubernaut-datastorage:latest\n")
+	} else {
+		_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
+		if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
+			return fmt.Errorf("failed to load image: %w", err)
+		}
 	}
 
 	// Deploy ConfigMap with ADR-030 configuration
