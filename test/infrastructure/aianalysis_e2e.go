@@ -144,7 +144,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// FIX: Skip export/prune in CI/CD mode (images pushed to registry, not stored locally)
 	var tarFiles map[string]string
 	var err error
-	if os.Getenv("IMAGE_REGISTRY") != "" {
+	if ShouldSkipImageExportAndPrune() {
 		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 2-3: Skipping image export/prune (CI/CD registry mode)")
 		_, _ = fmt.Fprintln(writer, "   Images already pushed to GHCR and will be pulled directly by Kind")
 		LogDiskSpace("EXPORT_SKIPPED", writer)
