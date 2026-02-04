@@ -291,9 +291,11 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 
 			By("Querying DataStorage for webhook audit event")
 			// Wait for webhook audit event to appear in DataStorage
-			// Correlation ID is RAR name (per remediationapprovalrequest_handler.go:107)
+			// Correlation ID is PARENT RR name (per DD-AUDIT-CORRELATION-002)
+			// This ensures webhook + orchestration events share the same correlation_id
+			parentRRName := rar.Spec.RemediationRequestRef.Name
 			Eventually(func() int {
-				events, err := queryAuditEvents(dsClient, rar.Name, nil)
+				events, err := queryAuditEvents(dsClient, parentRRName, nil)
 				if err != nil {
 					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
 					return 0
@@ -303,7 +305,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				"COMPLIANCE FAILURE: No webhook audit event (DD-WEBHOOK-003)")
 
 			// BUSINESS VALIDATION: Query for webhook category events
-			events, err := queryAuditEvents(dsClient, rar.Name, nil)
+			events, err := queryAuditEvents(dsClient, parentRRName, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Filter for webhook events

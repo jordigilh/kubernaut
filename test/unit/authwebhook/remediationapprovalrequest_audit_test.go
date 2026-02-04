@@ -161,9 +161,10 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 
 				event := mockStore.StoredEvents[0]
 
-				// Validate audit event structure (ADR-034 v1.7)
-				Expect(event.EventType).To(ContainSubstring("remediation.approval."),
-					"Event type identifies approval decision")
+				// Validate audit event structure (ADR-034 v1.7 Section 1.1.1)
+				// Two-Event Pattern: webhook.remediationapprovalrequest.decided (this event)
+				Expect(event.EventType).To(Equal("webhook.remediationapprovalrequest.decided"),
+					"Event type per ADR-034 v1.7 webhook namespace")
 				Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryWebhook),
 					"CRITICAL: event_category = 'webhook' (per ADR-034 v1.7 two-event pattern)")
 				Expect(event.EventAction).To(Equal("approval_decided"),
@@ -183,9 +184,9 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 				Expect(resourceID).To(Equal("rar-uid-123"),
 					"Audit event captures WHAT (RAR UID)")
 
-				// Validate correlation ID (PARENT RR)
-				Expect(event.CorrelationID).To(Equal("rar-test-001"),
-					"Audit event links to RAR name for traceability")
+				// Validate correlation ID (PARENT RR per DD-AUDIT-CORRELATION-002)
+				Expect(event.CorrelationID).To(Equal("rr-parent-456"),
+					"Audit event uses parent RR name for correlation (DD-AUDIT-CORRELATION-002)")
 
 				// Validate namespace (WHERE)
 				namespace, hasNamespace := event.Namespace.Get()
