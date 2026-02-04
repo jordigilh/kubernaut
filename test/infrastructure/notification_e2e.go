@@ -545,6 +545,13 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
 		"localhost/kubernaut-notification:e2e-test",
 		notificationImageName)
+	
+	// Replace hardcoded imagePullPolicy with dynamic value
+	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
+	// Local mode: Use Never (uses images loaded into Kind)
+	updatedContent = strings.ReplaceAll(updatedContent,
+		"imagePullPolicy: Never",
+		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Create temporary modified deployment file
 	tmpDeployment := filepath.Join(os.TempDir(), "notification-deployment-e2e.yaml")
