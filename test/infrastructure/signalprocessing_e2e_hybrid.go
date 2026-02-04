@@ -860,7 +860,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	return nil
 }
 
-func signalProcessingControllerCoverageManifest(imageName string) string {
+func signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy string) string {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// No longer generates own tag - uses pre-built image
@@ -942,7 +942,7 @@ spec:
       containers:
       - name: controller
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         env:
         - name: NAMESPACE
           valueFrom:
@@ -1024,14 +1024,22 @@ spec:
     name: metrics
   selector:
     app: signalprocessing-controller
-`, imageName)
+`, imageName, imagePullPolicy)
+}
+
+// signalProcessingControllerCoverageManifest wraps the new function for backward compatibility
+func signalProcessingControllerCoverageManifest(imageName string) string {
+	return signalProcessingControllerCoverageManifestWithPolicy(imageName, "Never")
 }
 
 func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
-	manifest := signalProcessingControllerCoverageManifest(imageName)
+	
+	// Use dynamic imagePullPolicy based on environment (CI/CD registry vs local)
+	imagePullPolicy := GetImagePullPolicy()
+	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

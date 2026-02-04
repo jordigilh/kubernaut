@@ -40,6 +40,18 @@ type E2EImageConfig struct {
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
 }
 
+// GetImagePullPolicy returns the appropriate imagePullPolicy based on environment.
+// - Registry mode (IMAGE_REGISTRY set): Returns "IfNotPresent" (Kind pulls from registry)
+// - Local mode: Returns "Never" (uses images loaded into Kind)
+//
+// Authority: CI/CD optimization - avoid unnecessary image pulls/loads
+func GetImagePullPolicy() string {
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		return "IfNotPresent" // Let Kind pull from registry on-demand
+	}
+	return "Never" // Use images loaded into Kind cluster
+}
+
 // PullImageFromRegistry pulls a container image from a registry (ghcr.io for CI/CD).
 // This is used in GitHub Actions CI/CD to avoid building images locally (saves ~60% disk space).
 //
@@ -110,24 +122,23 @@ func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error)
 //	imageName, err := BuildImageForKind(cfg, writer)
 //	// Builds locally as before
 func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
-	// CI/CD Optimization: Pull from registry if configured
-	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
-		_, _ = fmt.Fprintf(writer, "🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-		_, _ = fmt.Fprintf(writer, "   Skipping local build, will pull from registry\n")
-
+	// CI/CD Optimization: Use registry reference directly if configured
+	// Skip pull + load - let Kind pull from registry on-demand
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	
+	if registry != "" && tag != "" {
 		// Extract service name from ImageName (remove repo prefix if present)
 		// e.g., "kubernaut/datastorage" → "datastorage"
 		parts := strings.Split(cfg.ImageName, "/")
 		serviceName := parts[len(parts)-1]
-
-		imageName, err := PullImageFromRegistry(serviceName, writer)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-			// Continue with local build below
-		} else {
-			return imageName, nil
-		}
+		
+		registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+		_, _ = fmt.Fprintf(writer, "🔄 Registry mode: Using %s\n", registryImage)
+		_, _ = fmt.Fprintf(writer, "   ⏭️  Skipping pull + load (Kind will pull on-demand)\n")
+		
+		// Return registry image reference (no local pull/build needed)
+		return registryImage, nil
 	}
 	projectRoot := getProjectRoot()
 
@@ -215,6 +226,14 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 //	imageName, _ := BuildImageForKind(cfg, writer)
 //	err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
 func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
+	// Skip loading if using registry image (Kind will pull on-demand)
+	registry := os.Getenv("IMAGE_REGISTRY")
+	if registry != "" && strings.Contains(imageName, registry) {
+		_, _ = fmt.Fprintf(writer, "⏭️  Skipping load for registry image: %s\n", imageName)
+		_, _ = fmt.Fprintf(writer, "   Kind will pull from registry on-demand (imagePullPolicy: IfNotPresent)\n")
+		return nil
+	}
+
 	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster: %s\n", clusterName)
 
 	// Extract tag from image name for tar filename
