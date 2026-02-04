@@ -31,7 +31,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,7 +41,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
-	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	raraudit "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
@@ -51,11 +50,10 @@ import (
 //
 // REFACTOR Phase: Enhanced with metrics integration and structured logging.
 type RARReconciler struct {
-	client       client.Client
-	scheme       *runtime.Scheme
-	auditStore   audit.AuditStore
-	auditManager *roaudit.Manager
-	metrics      *rometrics.Metrics // DD-METRICS-001: Metrics for observability
+	client      client.Client
+	scheme      *runtime.Scheme
+	auditClient *raraudit.AuditClient
+	metrics     *rometrics.Metrics // DD-METRICS-001: Metrics for observability
 }
 
 // NewRARReconciler creates a new RAR reconciler for audit event emission.
@@ -73,12 +71,12 @@ func NewRARReconciler(
 	auditStore audit.AuditStore,
 	metrics *rometrics.Metrics,
 ) *RARReconciler {
+	logger := ctrl.Log.WithName("rar-audit")
 	return &RARReconciler{
-		client:       client,
-		scheme:       scheme,
-		auditStore:   auditStore,
-		auditManager: roaudit.NewManager(roaudit.ServiceName), // Create audit manager (per main RO reconciler pattern)
-		metrics:      metrics,                                 // REFACTOR: Metrics integration
+		client:      client,
+		scheme:      scheme,
+		auditClient: raraudit.NewAuditClient(auditStore, logger), // Use RAR-specific audit client (category="approval")
+		metrics:     metrics,                                     // REFACTOR: Metrics integration
 	}
 }
 
@@ -134,65 +132,33 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		"correlationID", parentRRName,
 		"namespace", rar.Namespace)
 
-	event, err := r.auditManager.BuildApprovalDecisionEvent(
-		parentRRName,               // correlation_id = parent RR name
-		rar.Namespace,              // namespace
-		parentRRName,               // rr_name
-		rar.Name,                   // rar_name
-		decision,                   // decision (Approved/Rejected/Expired)
-		decidedBy,                  // decided_by (from AuthWebhook)
-		rar.Status.DecisionMessage, // decision_message
-	)
+	// Emit approval audit event (category="approval", event_type="approval.decision.approved/rejected")
+	// This uses the RAR-specific audit client which correctly sets category="approval"
+	// Fire-and-forget: Errors are logged but don't block reconciliation
+	r.auditClient.RecordApprovalDecision(ctx, rar)
 
-	if err != nil {
-		logger.Error(err, "Failed to build approval audit event", "rar", rar.Name)
-		// Fire-and-forget: Don't fail reconciliation on audit errors
-		return ctrl.Result{}, nil
+	// Set AuditRecorded condition (RecordApprovalDecision is fire-and-forget, doesn't update RAR)
+	// We assume success since RecordApprovalDecision uses fire-and-forget pattern
+	rarconditions.SetAuditRecorded(rar, true,
+		rarconditions.ReasonAuditSucceeded,
+		"Approval decision audit event emitted",
+		r.metrics)
+
+	logger.Info("Successfully emitted approval audit event",
+		"rar", rar.Name,
+		"category", "approval",
+		"decision", decision,
+		"decidedBy", decidedBy,
+		"correlationID", parentRRName,
+		"namespace", rar.Namespace)
+
+	// REFACTOR: Record audit success for compliance monitoring
+	// Business Value: Track audit trail completeness (SOC 2 CC7.2)
+	if r.metrics != nil {
+		r.metrics.RecordAuditEventSuccess("RAR", "approval_decision", rar.Namespace)
 	}
 
-	// Store audit event (fire-and-forget)
-	auditErr := r.auditStore.StoreAudit(ctx, event)
-
-	// Set AuditRecorded condition based on result (per WorkflowExecution pattern)
-	// This provides secure, tamper-proof idempotency tracking
-	if auditErr != nil {
-		logger.Error(auditErr, "Failed to store approval audit event",
-			"rar", rar.Name,
-			"decision", decision,
-			"namespace", rar.Namespace)
-
-		// REFACTOR: Record audit failure for compliance alerting
-		// Business Value: Track audit trail completeness (SOC 2 CC7.2)
-		if r.metrics != nil {
-			r.metrics.RecordAuditEventFailure("RAR", "approval_decision", rar.Namespace)
-		}
-
-		rarconditions.SetAuditRecorded(rar, false,
-			rarconditions.ReasonAuditFailed,
-			fmt.Sprintf("Failed to record audit event: %v", auditErr),
-			r.metrics) // REFACTOR: Pass metrics for condition tracking
-	} else {
-		logger.Info("Successfully emitted approval audit event",
-			"rar", rar.Name,
-			"eventType", event.EventType,
-			"decision", decision,
-			"decidedBy", decidedBy,
-			"correlationID", parentRRName,
-			"namespace", rar.Namespace)
-
-		// REFACTOR: Record audit success for compliance monitoring
-		// Business Value: Track audit trail completeness (SOC 2 CC7.2)
-		if r.metrics != nil {
-			r.metrics.RecordAuditEventSuccess("RAR", "approval_decision", rar.Namespace)
-		}
-
-		rarconditions.SetAuditRecorded(rar, true,
-			rarconditions.ReasonAuditSucceeded,
-			fmt.Sprintf("Approval audit event %s recorded to DataStorage", event.EventType),
-			r.metrics) // REFACTOR: Pass metrics for condition tracking
-	}
-
-	// Update status with AuditRecorded condition
+	// Update RAR status with AuditRecorded condition
 	if err := r.client.Status().Update(ctx, rar); err != nil {
 		logger.Error(err, "Failed to update RAR status with AuditRecorded condition", "rar", rar.Name)
 		// Fire-and-forget: Don't fail reconciliation
