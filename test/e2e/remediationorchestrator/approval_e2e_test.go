@@ -96,12 +96,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Name:      fmt.Sprintf("e2e-rar-audit-%d", time.Now().Unix()),
 					Namespace: testNamespace,
 				},
-			Spec: remediationv1.RemediationRequestSpec{
-				SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000001",
-				SignalName:        "E2ERARAuditTest",
-				Severity:          "critical",
-				SignalType:        "prometheus",
-				TargetType:        "kubernetes",
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000001",
+					SignalName:        "E2ERARAuditTest",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "test-app",
@@ -163,17 +163,17 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 		It("should emit complete audit trail for approval decision", func() {
 			// BUSINESS ACTION: Operator approves remediation via AuthWebhook
 			By("Simulating operator approval (webhook sets DecidedBy)")
-			
+
 			// Get latest RAR
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
-			
+
 			// Update RAR status to approved (simulates webhook mutation)
 			testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
 			testRAR.Status.DecidedBy = "e2e-test-user@example.com" // Simulates webhook auth
 			now := metav1.Now()
 			testRAR.Status.DecidedAt = &now
 			testRAR.Status.DecisionMessage = "E2E test approval - root cause confirmed"
-			
+
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
 
@@ -197,26 +197,26 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"COMPLIANCE FAILURE: Need at least 2 audit events (webhook + approval)")
 
 			// BUSINESS VALIDATION: Separate events by category
-			var webhookEvents, orchestrationEvents []dsgen.AuditEvent
+			var webhookEvents, orchestrationApprovalEvents []dsgen.AuditEvent
 			for _, event := range allEvents {
 				switch string(event.EventCategory) {
 				case "webhook":
 					webhookEvents = append(webhookEvents, event)
 				case "orchestration":
-					// Filter for approval events only
-					if event.EventType == "orchestrator.approval.approved" {
-						orchestrationEvents = append(orchestrationEvents, event)
+					// RO approval controller emits category="orchestration" with type="orchestrator.approval.*"
+					if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
+						orchestrationApprovalEvents = append(orchestrationApprovalEvents, event)
 					}
 				}
 			}
 
-			GinkgoWriter.Printf("📊 E2E: Found %d total events (%d webhook, %d orchestration)\n",
-				len(allEvents), len(webhookEvents), len(orchestrationEvents))
+			GinkgoWriter.Printf("📊 E2E: Found %d total events (%d webhook, %d orchestration approval)\n",
+				len(allEvents), len(webhookEvents), len(orchestrationApprovalEvents))
 
 			// BUSINESS OUTCOME 1: Webhook audit event exists (AuthWebhook)
 			Expect(webhookEvents).To(HaveLen(1),
 				"COMPLIANCE: AuthWebhook must emit audit event (DD-WEBHOOK-003)")
-			
+
 			webhookEvent := webhookEvents[0]
 			actorID, _ := webhookEvent.ActorID.Get()
 			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
@@ -227,12 +227,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"BUSINESS OUTCOME: Webhook action is clear")
 
 			// BUSINESS OUTCOME 2: RO approval audit event exists (RO Controller)
-			Expect(orchestrationEvents).To(HaveLen(1),
+			Expect(orchestrationApprovalEvents).To(HaveLen(1),
 				"COMPLIANCE: RO controller must emit approval audit event (BR-AUDIT-006)")
-			
-			approvalEvent := orchestrationEvents[0]
+
+			approvalEvent := orchestrationApprovalEvents[0]
 			Expect(approvalEvent.EventType).To(Equal("orchestrator.approval.approved"),
-				"BUSINESS OUTCOME: Event type indicates approval")
+				"BUSINESS OUTCOME: Event type indicates approval (ADR-034 v1.7)")
 			Expect(string(approvalEvent.EventOutcome)).To(Equal("success"),
 				"BUSINESS OUTCOME: Approved path is success outcome")
 
@@ -252,15 +252,15 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 		It("should emit audit event for rejection decision", func() {
 			// BUSINESS ACTION: Operator rejects remediation
 			By("Simulating operator rejection")
-			
+
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
-			
+
 			testRAR.Status.Decision = remediationv1.ApprovalDecisionRejected
 			testRAR.Status.DecidedBy = "e2e-test-user@example.com"
 			now := metav1.Now()
 			testRAR.Status.DecidedAt = &now
 			testRAR.Status.DecisionMessage = "Risk too high - potential cascading failures"
-			
+
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 
 			// BUSINESS VALIDATION: Query for orchestration events
@@ -277,7 +277,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				if err != nil {
 					return false
 				}
-				
+
 				for _, event := range resp.Data {
 					if event.EventType == "orchestrator.approval.rejected" {
 						rejectionEvent = &event
@@ -403,18 +403,40 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			testRAR.Status.DecisionMessage = "Approved for persistence test"
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 
-			// Wait for audit events to be persisted
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+			// Wait for BOTH webhook and orchestration approval audit events to be persisted
+			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
+			Eventually(func() (int, int) {
+				// Query webhook events
+				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
+					EventCategory: dsgen.NewOptString("webhook"),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					return 0
+					return 0, 0
 				}
-				return len(resp.Data)
-			}, e2eTimeout, e2eInterval).Should(BeNumerically(">=", 2),
-				"Audit events must be persisted before CRD deletion")
+
+				// Query orchestration approval events
+				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					EventCategory: dsgen.NewOptString("orchestration"),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				if err != nil {
+					return len(webhookResp.Data), 0
+				}
+
+				// Count approval events only
+				approvalCount := 0
+				for _, event := range orchestrationResp.Data {
+					if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
+						approvalCount++
+					}
+				}
+
+				return len(webhookResp.Data), approvalCount
+			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
+				"Both webhook and orchestration approval events must be persisted before CRD deletion")
 
 			GinkgoWriter.Printf("🚀 E2E-RO-AUD006-003: Created RAR %s and persisted audit events\n", testRAR.Name)
 		})
@@ -442,50 +464,58 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			GinkgoWriter.Printf("🗑️  E2E: Deleted RAR CRD %s\n", testRAR.Name)
 
-		By("Querying DataStorage for audit events (CRD deleted, audit trail persists)")
-		
-		// DEBUG: Query ALL events for correlation_id to see what exists
-		debugResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-			Limit:         dsgen.NewOptInt(100),
-		})
-		Expect(err).ToNot(HaveOccurred(), "DataStorage debug query must succeed")
-		GinkgoWriter.Printf("🔍 DEBUG: Found %d total events for correlation_id=%s\n", len(debugResp.Data), correlationID)
-		for i, evt := range debugResp.Data {
-			GinkgoWriter.Printf("   [%d] category=%s, type=%s\n", i, evt.EventCategory, evt.EventType)
-		}
-		
-		// BUSINESS VALIDATION: Audit events still exist after CRD deletion
-		// Query webhook events (category="webhook", emitted by AuthWebhook)
-		webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-			EventCategory: dsgen.NewOptString("webhook"),
-			Limit:         dsgen.NewOptInt(100),
-		})
-		Expect(err).ToNot(HaveOccurred(), "DataStorage query for webhook events must succeed")
-		webhookEvents := webhookResp.Data
-		GinkgoWriter.Printf("🔍 DEBUG: Found %d webhook events\n", len(webhookEvents))
+			By("Querying DataStorage for audit events (CRD deleted, audit trail persists)")
 
-		// Query approval events (category="approval", emitted by RO approval controller)
-		approvalResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-			EventCategory: dsgen.NewOptString("approval"),
-			Limit:         dsgen.NewOptInt(100),
-		})
-		Expect(err).ToNot(HaveOccurred(), "DataStorage query for approval events must succeed")
-		approvalEvents := approvalResp.Data
-		GinkgoWriter.Printf("🔍 DEBUG: Found %d approval events\n", len(approvalEvents))
+			// DEBUG: Query ALL events for correlation_id to see what exists
+			debugResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "DataStorage debug query must succeed")
+			GinkgoWriter.Printf("🔍 DEBUG: Found %d total events for correlation_id=%s\n", len(debugResp.Data), correlationID)
+			for i, evt := range debugResp.Data {
+				GinkgoWriter.Printf("   [%d] category=%s, type=%s\n", i, evt.EventCategory, evt.EventType)
+			}
 
-		// BUSINESS OUTCOME 1: Audit trail persists after CRD deletion (SOC 2 CC7.2)
-		// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
-		Expect(webhookEvents).To(HaveLen(1),
-			"COMPLIANCE FAILURE: Webhook audit event must persist after CRD cleanup (SOC 2 CC7.2)")
-		Expect(approvalEvents).To(HaveLen(1),
-			"COMPLIANCE FAILURE: Approval audit event must persist after CRD cleanup (SOC 2 CC7.2)")
+			// BUSINESS VALIDATION: Audit events still exist after CRD deletion
+			// Query webhook events (category="webhook", emitted by AuthWebhook)
+			webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString("webhook"),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "DataStorage query for webhook events must succeed")
+			webhookEvents := webhookResp.Data
+			GinkgoWriter.Printf("🔍 DEBUG: Found %d webhook events\n", len(webhookEvents))
 
-		// BUSINESS OUTCOME 2: Complete audit data is retrievable
-		webhookEvent := webhookEvents[0]
-		approvalEvent := approvalEvents[0]
+			// Query orchestration approval events (category="orchestration", type="orchestrator.approval.*")
+			orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString("orchestration"),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "DataStorage query for orchestration events must succeed")
+
+			// Filter for approval events only (orchestrator.approval.*)
+			var approvalEvents []dsgen.AuditEvent
+			for _, event := range orchestrationResp.Data {
+				if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
+					approvalEvents = append(approvalEvents, event)
+				}
+			}
+			GinkgoWriter.Printf("🔍 DEBUG: Found %d approval events (filtered from %d orchestration events)\n",
+				len(approvalEvents), len(orchestrationResp.Data))
+
+			// BUSINESS OUTCOME 1: Audit trail persists after CRD deletion (SOC 2 CC7.2)
+			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
+			Expect(webhookEvents).To(HaveLen(1),
+				"COMPLIANCE FAILURE: Webhook audit event must persist after CRD cleanup (SOC 2 CC7.2)")
+			Expect(approvalEvents).To(HaveLen(1),
+				"COMPLIANCE FAILURE: Orchestration approval audit event must persist after CRD cleanup (SOC 2 CC7.2)")
+
+			// BUSINESS OUTCOME 2: Complete audit data is retrievable
+			webhookEvent := webhookEvents[0]
+			approvalEvent := approvalEvents[0]
 
 			actorID, _ := webhookEvent.ActorID.Get()
 			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
@@ -500,52 +530,52 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(approvalEvent.EventTimestamp).ToNot(BeZero(),
 				"BUSINESS OUTCOME: Auditor can identify WHEN decision was made (SOC 2 CC7.2)")
 
-		// BUSINESS OUTCOME 3: Query by timestamp range (simulates compliance audit)
-		By("Querying audit events by timestamp range (compliance audit scenario)")
-		
-		// Query for events in the last hour (simulates auditor querying historical data)
-		// DataStorage API uses "since" (relative time like "1h") and "until" (absolute RFC3339)
-		respByTime, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-			Since:         dsgen.NewOptString("1h"), // Last 1 hour
-			Limit:         dsgen.NewOptInt(100),
-		})
-		Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
-		// Note: May include lifecycle events in addition to approval events (webhook + approval)
-		Expect(respByTime.Data).To(HaveLen(4),
-			"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
+			// BUSINESS OUTCOME 3: Query by timestamp range (simulates compliance audit)
+			By("Querying audit events by timestamp range (compliance audit scenario)")
 
-		// BUSINESS OUTCOME 4: Verify actor is present in audit data (forensic investigation)
-		By("Verifying actor identity is retrievable (forensic investigation scenario)")
-		
-		// DataStorage API doesn't support actor_id filtering in query params
-		// Instead, verify actor_id is present in the returned audit events
-		// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
-		var actorFound bool
-		allEvents := append(webhookEvents, approvalEvents...)
-		for _, event := range allEvents {
-			if eventActorID, hasActor := event.ActorID.Get(); hasActor {
-				if eventActorID == "kubernetes-admin" {
-					actorFound = true
-					break
+			// Query for events in the last hour (simulates auditor querying historical data)
+			// DataStorage API uses "since" (relative time like "1h") and "until" (absolute RFC3339)
+			respByTime, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Since:         dsgen.NewOptString("1h"), // Last 1 hour
+				Limit:         dsgen.NewOptInt(100),
+			})
+			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
+			// Note: Includes lifecycle events + approval events (1 webhook + 1 orchestration approval + 3 lifecycle)
+			Expect(respByTime.Data).To(HaveLen(5),
+				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
+
+			// BUSINESS OUTCOME 4: Verify actor is present in audit data (forensic investigation)
+			By("Verifying actor identity is retrievable (forensic investigation scenario)")
+
+			// DataStorage API doesn't support actor_id filtering in query params
+			// Instead, verify actor_id is present in the returned audit events
+			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
+			var actorFound bool
+			allEvents := append(webhookEvents, approvalEvents...)
+			for _, event := range allEvents {
+				if eventActorID, hasActor := event.ActorID.Get(); hasActor {
+					if eventActorID == "kubernetes-admin" {
+						actorFound = true
+						break
+					}
 				}
 			}
-		}
-		Expect(actorFound).To(BeTrue(),
-			"COMPLIANCE: Actor identity must be retrievable from audit events (forensic investigation)")
+			Expect(actorFound).To(BeTrue(),
+				"COMPLIANCE: Actor identity must be retrievable from audit events (forensic investigation)")
 
-		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		GinkgoWriter.Printf("✅ E2E-RO-AUD006-003: Audit Trail Persistence Validated\n")
-		GinkgoWriter.Printf("   BUSINESS OUTCOMES:\n")
-		GinkgoWriter.Printf("   • Audit trail persists after CRD deletion ✅\n")
-		GinkgoWriter.Printf("   • WHO: kubernetes-admin (retrievable) ✅\n")
-		GinkgoWriter.Printf("   • WHEN: %s (retrievable) ✅\n", approvalEvent.EventTimestamp)
-		GinkgoWriter.Printf("   • Queryable by correlation_id + event_category filters ✅\n")
-		GinkgoWriter.Printf("   • Queryable by timestamp range (since) ✅\n")
-		GinkgoWriter.Printf("   • Actor identity retrievable (forensics) ✅\n")
-		GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.2 (90-365 day retention) satisfied ✅\n")
-		GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.4 (Audit completeness) satisfied ✅\n")
-		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("✅ E2E-RO-AUD006-003: Audit Trail Persistence Validated\n")
+			GinkgoWriter.Printf("   BUSINESS OUTCOMES:\n")
+			GinkgoWriter.Printf("   • Audit trail persists after CRD deletion ✅\n")
+			GinkgoWriter.Printf("   • WHO: kubernetes-admin (retrievable) ✅\n")
+			GinkgoWriter.Printf("   • WHEN: %s (retrievable) ✅\n", approvalEvent.EventTimestamp)
+			GinkgoWriter.Printf("   • Queryable by correlation_id + event_category filters ✅\n")
+			GinkgoWriter.Printf("   • Queryable by timestamp range (since) ✅\n")
+			GinkgoWriter.Printf("   • Actor identity retrievable (forensics) ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.2 (90-365 day retention) satisfied ✅\n")
+			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC7.4 (Audit completeness) satisfied ✅\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 })
