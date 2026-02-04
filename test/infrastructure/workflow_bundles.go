@@ -50,10 +50,23 @@ const (
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"
-
-	// LocalBundleRegistry is the fallback local registry for offline/CI builds
-	LocalBundleRegistry = "localhost/kubernaut-test-workflows"
 )
+
+// getLocalBundleRegistry returns the registry to use for local bundle builds.
+// In CI/CD: Uses IMAGE_REGISTRY env var (e.g., ghcr.io/jordigilh/kubernaut)
+// Local dev: Uses ghcr.io as fallback (tkn bundle push rejects "localhost/")
+//
+// Pattern: CI/CD-aware registry selection for Tekton bundles
+func getLocalBundleRegistry() string {
+	// Check if IMAGE_REGISTRY is set (CI/CD mode)
+	if registry := os.Getenv("IMAGE_REGISTRY"); registry != "" {
+		return registry + "/test-workflows"
+	}
+
+	// Local dev fallback: Use ghcr.io (requires authentication)
+	// Note: Developers must run `podman login ghcr.io` before building bundles locally
+	return "ghcr.io/jordigilh/kubernaut/test-workflows"
+}
 
 // BuildAndRegisterTestWorkflows registers test workflows in DataStorage
 // This creates the workflow catalog needed for E2E tests:
@@ -80,12 +93,31 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 	failingExists := checkBundleExists(failingRef, output)
 
 	if helloWorldExists && failingExists {
-		_, _ = fmt.Fprintf(output, "  ✅ Using existing bundles from quay.io (no build needed)\n")
+		// Option A: Bundles exist on quay.io (production registry)
+		// Pattern: Load from remote registry into Kind for offline test execution
+		_, _ = fmt.Fprintf(output, "  ✅ Using existing bundles from quay.io\n")
+		_, _ = fmt.Fprintf(output, "  📥 Loading into Kind for offline execution...\n")
+		
+		// Load existing bundles into Kind (ensures imagePullPolicy: Never works)
+		if err := pullAndLoadBundleToKind(clusterName, helloWorldRef, output); err != nil {
+			return nil, fmt.Errorf("failed to load hello-world bundle from quay.io: %w", err)
+		}
+		if err := pullAndLoadBundleToKind(clusterName, failingRef, output); err != nil {
+			return nil, fmt.Errorf("failed to load failing bundle from quay.io: %w", err)
+		}
+		
+		// Use quay.io references (now cached in Kind)
 		bundles["test-hello-world"] = helloWorldRef
 		bundles["test-intentional-failure"] = failingRef
+		
+		_, _ = fmt.Fprintf(output, "  ✅ Bundles loaded into Kind (quay.io refs cached)\n")
 	} else {
-		// Fallback: Build locally and load into Kind
-		_, _ = fmt.Fprintf(output, "  ⚠️  Bundles not found on quay.io, building locally...\n")
+		// Option B: Bundles don't exist - build and push to CI registry
+		_, _ = fmt.Fprintf(output, "  ⚠️  Bundles not found on quay.io, building and pushing...\n")
+		
+		// Get registry for bundle builds (IMAGE_REGISTRY env var or ghcr.io fallback)
+		bundleRegistry := getLocalBundleRegistry()
+		_, _ = fmt.Fprintf(output, "  📦 Target registry: %s\n", bundleRegistry)
 		_, _ = fmt.Fprintf(output, "  💡 TIP: Pre-build and push bundles to skip this step:\n")
 		_, _ = fmt.Fprintf(output, "      tkn bundle push %s/hello-world:%s -f test/fixtures/tekton/hello-world-pipeline.yaml\n",
 			TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
@@ -98,10 +130,12 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 
 		fixturesDir := filepath.Join(projectRoot, "test", "fixtures", "tekton")
 
-		// Build with local registry prefix for Kind
-		localHelloRef := fmt.Sprintf("%s/hello-world:%s", LocalBundleRegistry, TestWorkflowBundleVersion)
-		localFailingRef := fmt.Sprintf("%s/failing:%s", LocalBundleRegistry, TestWorkflowBundleVersion)
+		// Build with IMAGE_REGISTRY (CI) or ghcr.io (local dev)
+		// Pattern: Push to remote registry, then load into Kind for offline execution
+		localHelloRef := fmt.Sprintf("%s/hello-world:%s", bundleRegistry, TestWorkflowBundleVersion)
+		localFailingRef := fmt.Sprintf("%s/failing:%s", bundleRegistry, TestWorkflowBundleVersion)
 
+		// Build, push, and load hello-world bundle
 		if err := buildAndLoadWorkflowBundle(
 			clusterName,
 			"test-hello-world",
@@ -113,6 +147,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		}
 		bundles["test-hello-world"] = localHelloRef
 
+		// Build, push, and load failing bundle
 		if err := buildAndLoadWorkflowBundle(
 			clusterName,
 			"test-intentional-failure",
@@ -123,6 +158,8 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 			return nil, fmt.Errorf("failed to build failing bundle: %w", err)
 		}
 		bundles["test-intentional-failure"] = localFailingRef
+		
+		_, _ = fmt.Fprintf(output, "  ✅ Bundles built, pushed to %s, and loaded into Kind\n", bundleRegistry)
 	}
 
 	// Register workflows in DataStorage using OpenAPI client (DD-API-001)
@@ -153,6 +190,49 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 	return bundles, nil
+}
+
+// pullAndLoadBundleToKind pulls a bundle from a remote registry and loads it into Kind.
+// This enables offline test execution by caching remote bundles in the Kind cluster.
+//
+// Pattern: Same as service image loading (podman pull → podman save → kind load)
+func pullAndLoadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "    Pulling %s...\n", bundleRef)
+	
+	// Pull bundle from remote registry
+	pullCmd := exec.Command("podman", "pull", bundleRef)
+	pullCmd.Stdout = output
+	pullCmd.Stderr = output
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("failed to pull bundle %s: %w", bundleRef, err)
+	}
+	
+	// Create temp file for bundle archive
+	tmpFile, err := os.CreateTemp("", "bundle-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
+	
+	// Save bundle to tar archive
+	saveCmd := exec.Command("podman", "save", "-o", tmpFile.Name(), bundleRef)
+	saveCmd.Stdout = output
+	saveCmd.Stderr = output
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save bundle %s: %w", bundleRef, err)
+	}
+	
+	// Load bundle archive into Kind cluster
+	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
+	loadCmd.Stdout = output
+	loadCmd.Stderr = output
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to load bundle %s into Kind: %w", bundleRef, err)
+	}
+	
+	_, _ = fmt.Fprintf(output, "    ✅ Loaded: %s\n", bundleRef)
+	return nil
 }
 
 // checkBundleExists checks if an OCI bundle exists in the registry

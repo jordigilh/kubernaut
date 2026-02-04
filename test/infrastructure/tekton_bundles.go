@@ -41,13 +41,24 @@ import (
 // - Bundles persist in Kind cluster for all test runs
 
 const (
-	// TestBundleRegistry is the local registry prefix for test bundles
-	// Using localhost/ ensures Kind uses locally loaded images
-	TestBundleRegistry = "localhost/kubernaut-test-workflows"
-
 	// TestBundleVersion is the version tag for test bundles
 	TestBundleVersion = "e2e-test"
 )
+
+// getTestBundleRegistry returns the registry to use for test bundle builds.
+// In CI/CD: Uses IMAGE_REGISTRY env var (e.g., ghcr.io/jordigilh/kubernaut)
+// Local dev: Uses ghcr.io as fallback (tkn bundle push rejects "localhost/")
+//
+// Pattern: Consistent with workflow_bundles.go registry selection
+func getTestBundleRegistry() string {
+	// Check if IMAGE_REGISTRY is set (CI/CD mode)
+	if registry := os.Getenv("IMAGE_REGISTRY"); registry != "" {
+		return registry + "/test-workflows"
+	}
+
+	// Local dev fallback: Use ghcr.io (requires authentication)
+	return "ghcr.io/jordigilh/kubernaut/test-workflows"
+}
 
 // BuildAndLoadTestBundles builds Tekton Pipeline bundles and loads them into Kind cluster
 // This creates OCI bundle images for:
@@ -66,8 +77,12 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 
 	fixturesDir := filepath.Join(projectRoot, "test", "fixtures", "tekton")
 
-	// Build hello-world bundle
-	helloWorldBundle := fmt.Sprintf("%s/hello-world:%s", TestBundleRegistry, TestBundleVersion)
+	// Get registry for bundle builds (CI/CD aware)
+	bundleRegistry := getTestBundleRegistry()
+	_, _ = fmt.Fprintf(output, "  📦 Target registry: %s\n", bundleRegistry)
+
+	// Build and push hello-world bundle
+	helloWorldBundle := fmt.Sprintf("%s/hello-world:%s", bundleRegistry, TestBundleVersion)
 	if err := buildTektonBundle(
 		helloWorldBundle,
 		filepath.Join(fixturesDir, "hello-world-pipeline.yaml"),
@@ -76,8 +91,8 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 		return fmt.Errorf("failed to build hello-world bundle: %w", err)
 	}
 
-	// Build failing pipeline bundle
-	failingBundle := fmt.Sprintf("%s/failing:%s", TestBundleRegistry, TestBundleVersion)
+	// Build and push failing pipeline bundle
+	failingBundle := fmt.Sprintf("%s/failing:%s", bundleRegistry, TestBundleVersion)
 	if err := buildTektonBundle(
 		failingBundle,
 		filepath.Join(fixturesDir, "failing-pipeline.yaml"),
@@ -86,7 +101,7 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 		return fmt.Errorf("failed to build failing bundle: %w", err)
 	}
 
-	// Load bundles into Kind cluster
+	// Load bundles into Kind cluster (enables offline execution with imagePullPolicy: Never)
 	_, _ = fmt.Fprintf(output, "\n📥 Loading bundles into Kind cluster...\n")
 	if err := loadBundleToKind(clusterName, helloWorldBundle, output); err != nil {
 		return fmt.Errorf("failed to load hello-world bundle: %w", err)
@@ -95,9 +110,9 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 		return fmt.Errorf("failed to load failing bundle: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(output, "✅ Tekton bundles built and loaded successfully\n")
-	_, _ = fmt.Fprintf(output, "   • %s\n", helloWorldBundle)
-	_, _ = fmt.Fprintf(output, "   • %s\n", failingBundle)
+	_, _ = fmt.Fprintf(output, "✅ Tekton bundles built, pushed, and loaded into Kind\n")
+	_, _ = fmt.Fprintf(output, "   • %s (cached in Kind)\n", helloWorldBundle)
+	_, _ = fmt.Fprintf(output, "   • %s (cached in Kind)\n", failingBundle)
 	return nil
 }
 
@@ -167,6 +182,10 @@ func loadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
 
 // GetTestBundleRef returns the OCI bundle reference for a test workflow
 // This is used by E2E tests to reference the correct bundle image
+//
+// Pattern: Returns registry-qualified reference (not localhost/)
+// Bundles are loaded into Kind, so imagePullPolicy: Never works
 func GetTestBundleRef(workflowName string) string {
-	return fmt.Sprintf("%s/%s:%s", TestBundleRegistry, workflowName, TestBundleVersion)
+	bundleRegistry := getTestBundleRegistry()
+	return fmt.Sprintf("%s/%s:%s", bundleRegistry, workflowName, TestBundleVersion)
 }
