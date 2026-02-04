@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 // ============================================================================
@@ -50,6 +52,19 @@ func GetImagePullPolicy() string {
 		return "IfNotPresent" // Let Kind pull from registry on-demand
 	}
 	return "Never" // Use images loaded into Kind cluster
+}
+
+// GetImagePullPolicyV1 returns the appropriate corev1.PullPolicy based on environment.
+// - Registry mode (IMAGE_REGISTRY set): Returns corev1.PullIfNotPresent
+// - Local mode: Returns corev1.PullNever
+//
+// Use this for Go API-based deployments (v1.Deployment, v1.Pod)
+// Use GetImagePullPolicy() for YAML manifest-based deployments
+func GetImagePullPolicyV1() corev1.PullPolicy {
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		return corev1.PullIfNotPresent
+	}
+	return corev1.PullNever
 }
 
 // PullImageFromRegistry pulls a container image from a registry (ghcr.io for CI/CD).

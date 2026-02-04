@@ -930,7 +930,7 @@ password: test_password`,
 						{
 							Name:            "datastorage",
 							Image:           imageTag,
-							ImagePullPolicy: corev1.PullNever,
+							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 							Ports: []corev1.ContainerPort{
 								{Name: "http", ContainerPort: 8080},
 								{Name: "metrics", ContainerPort: 9181},

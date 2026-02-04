@@ -1098,7 +1098,7 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 						{
 							Name:            "controller",
 							Image:           imageName,        // Per Consolidated API Migration (January 2026)
-							ImagePullPolicy: corev1.PullNever, // DD-REGISTRY-001: Use local image loaded into Kind
+							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 							Args: []string{
 								"--metrics-bind-address=:9090",
 								"--health-probe-bind-address=:8081",
