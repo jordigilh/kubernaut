@@ -280,20 +280,23 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
-		// Remove service image built for this test run
-		imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
-		if imageTag != "" {
-			imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
+	By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
+	// Remove service image built for this test run
+	// Skip in CI/CD mode - image is in GHCR registry, not stored locally
+	imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
+	if imageTag != "" && !infrastructure.IsRunningInCICD() {
+		imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
 
-			pruneCmd := exec.Command("podman", "rmi", imageName)
-			pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-			if pruneErr != nil {
-				GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
-			} else {
-				GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
-			}
+		pruneCmd := exec.Command("podman", "rmi", imageName)
+		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+		if pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
+		} else {
+			GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
 		}
+	} else if infrastructure.IsRunningInCICD() {
+		GinkgoWriter.Println("⏭️  Skipping service image cleanup (CI/CD registry mode)")
+	}
 
 		By("Pruning dangling images from Kind builds (DD-TEST-001 v1.1)")
 		// Prune any dangling images left from failed builds
