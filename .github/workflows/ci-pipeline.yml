@@ -769,9 +769,26 @@ jobs:
       
       - name: Generate Coverage Table
         if: always()
+        shell: bash
         run: |
+          # Require bash 4+ for associative arrays (macOS ships bash 3.x)
+          if (( BASH_VERSINFO[0] < 4 )); then
+            echo "❌ ERROR: Bash 4+ required for associative arrays"
+            echo "   Found: bash ${BASH_VERSION}"
+            echo "   GitHub Actions Ubuntu runners have bash 5.x by default"
+            exit 1
+          fi
+          
           echo "📊 Aggregating Coverage Data..."
+          echo "🐚 Using bash ${BASH_VERSION}"
           echo ""
+          
+          # Ensure GITHUB_STEP_SUMMARY is set (GitHub Actions should set this, but check)
+          if [ -z "$GITHUB_STEP_SUMMARY" ]; then
+            echo "⚠️  GITHUB_STEP_SUMMARY not set, using fallback"
+            export GITHUB_STEP_SUMMARY="${RUNNER_TEMP:-/tmp}/step_summary.md"
+            touch "$GITHUB_STEP_SUMMARY"
+          fi
           
           # Debug: List all downloaded files
           echo "🔍 Debug: Listing downloaded coverage files..."
