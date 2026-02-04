@@ -841,7 +841,6 @@ const (
 	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
 	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
-	AuditEventEventCategoryApproval          AuditEventEventCategory = "approval"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -856,7 +855,6 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryWorkflowexecution,
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
-		AuditEventEventCategoryApproval,
 	}
 }
 
@@ -880,8 +878,6 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventEventCategoryWebhook:
-		return []byte(s), nil
-	case AuditEventEventCategoryApproval:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -917,9 +913,6 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryWebhook:
 		*s = AuditEventEventCategoryWebhook
-		return nil
-	case AuditEventEventCategoryApproval:
-		*s = AuditEventEventCategoryApproval
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -2208,7 +2201,6 @@ const (
 	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
-	AuditEventRequestEventCategoryApproval          AuditEventRequestEventCategory = "approval"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -2223,7 +2215,6 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryWorkflowexecution,
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
-		AuditEventRequestEventCategoryApproval,
 	}
 }
 
@@ -2247,8 +2238,6 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryWebhook:
-		return []byte(s), nil
-	case AuditEventRequestEventCategoryApproval:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2284,9 +2273,6 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryWebhook:
 		*s = AuditEventRequestEventCategoryWebhook
-		return nil
-	case AuditEventRequestEventCategoryApproval:
-		*s = AuditEventRequestEventCategoryApproval
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

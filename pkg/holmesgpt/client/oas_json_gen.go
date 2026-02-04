@@ -4299,9 +4299,19 @@ func (s *RecoveryResponse) encodeFields(e *jx.Encoder) {
 			s.HumanReviewReason.Encode(e)
 		}
 	}
+	{
+		if s.AlternativeWorkflows != nil {
+			e.FieldStart("alternative_workflows")
+			e.ArrStart()
+			for _, elem := range s.AlternativeWorkflows {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfRecoveryResponse = [11]string{
+var jsonFieldsNameOfRecoveryResponse = [12]string{
 	0:  "incident_id",
 	1:  "can_recover",
 	2:  "strategies",
@@ -4313,6 +4323,7 @@ var jsonFieldsNameOfRecoveryResponse = [11]string{
 	8:  "recovery_analysis",
 	9:  "needs_human_review",
 	10: "human_review_reason",
+	11: "alternative_workflows",
 }
 
 // Decode decodes RecoveryResponse from json.
@@ -4456,6 +4467,23 @@ func (s *RecoveryResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"human_review_reason\"")
+			}
+		case "alternative_workflows":
+			if err := func() error {
+				s.AlternativeWorkflows = make([]AlternativeWorkflow, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem AlternativeWorkflow
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.AlternativeWorkflows = append(s.AlternativeWorkflows, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alternative_workflows\"")
 			}
 		default:
 			return d.Skip()

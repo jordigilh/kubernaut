@@ -54,8 +54,8 @@ class AuditEventRequest(BaseModel):
     @field_validator('event_category')
     def event_category_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook', 'approval'):
-            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook', 'approval')")
+        if value not in ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook'):
+            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'aiagent', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook')")
         return value
 
     @field_validator('event_outcome')

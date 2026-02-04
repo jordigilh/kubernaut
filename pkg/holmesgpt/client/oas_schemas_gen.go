@@ -2769,6 +2769,9 @@ type RecoveryResponse struct {
 	NeedsHumanReview OptBool `json:"needs_human_review"`
 	// Reason why human review is needed (BR-HAPI-197).
 	HumanReviewReason OptNilString `json:"human_review_reason"`
+	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
+	// automatic execution. Helps operators understand AI reasoning and decision alternatives.
+	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -2826,6 +2829,11 @@ func (s *RecoveryResponse) GetHumanReviewReason() OptNilString {
 	return s.HumanReviewReason
 }
 
+// GetAlternativeWorkflows returns the value of AlternativeWorkflows.
+func (s *RecoveryResponse) GetAlternativeWorkflows() []AlternativeWorkflow {
+	return s.AlternativeWorkflows
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *RecoveryResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -2879,6 +2887,11 @@ func (s *RecoveryResponse) SetNeedsHumanReview(val OptBool) {
 // SetHumanReviewReason sets the value of HumanReviewReason.
 func (s *RecoveryResponse) SetHumanReviewReason(val OptNilString) {
 	s.HumanReviewReason = val
+}
+
+// SetAlternativeWorkflows sets the value of AlternativeWorkflows.
+func (s *RecoveryResponse) SetAlternativeWorkflows(val []AlternativeWorkflow) {
+	s.AlternativeWorkflows = val
 }
 
 func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
