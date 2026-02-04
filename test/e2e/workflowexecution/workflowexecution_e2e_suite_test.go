@@ -450,10 +450,10 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-hello-world",
 				Version:    "v1.0.0",
-				// Use production bundle from quay.io (Option B: builds locally only if not found)
+				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
 				// Per ADR-043: Bundle contains pipeline.yaml + workflow-schema.yaml
 				// Per test/infrastructure/workflow_bundles.go: BuildAndRegisterTestWorkflows
-				ContainerImage: "quay.io/jordigilh/test-workflows/hello-world:v1.0.0",
+				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

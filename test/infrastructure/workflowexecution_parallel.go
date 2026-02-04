@@ -404,7 +404,7 @@ stringData:
 
 	// Deploy Data Storage with proper volumes and CONFIG_PATH
 	// Note: Image name is localhost/kubernaut-datastorage:latest when loaded via kind load
-	deploymentManifest := `
+	deploymentManifest := fmt.Sprintf(`
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -423,7 +423,7 @@ spec:
       containers:
       - name: datastorage
         image: localhost/kubernaut-datastorage:latest
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
           name: http
@@ -490,7 +490,7 @@ spec:
   - port: 8080
     targetPort: 8080
     name: http
-`
+`, GetImagePullPolicy())
 	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(deploymentManifest)
 	cmd.Stdout = output
