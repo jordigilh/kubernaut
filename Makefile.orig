@@ -144,12 +144,20 @@ test-integration-%: generate ginkgo ## Run integration tests for specified servi
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "💡 For coverage: make test-integration-$*-coverage"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
+	@echo "📊 Coverage: All business code (pkg/, internal/, cmd/) - excludes test/"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" \
+	$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) \
+		--coverprofile=coverage_integration_$*.out --covermode=atomic \
+		-coverpkg=github.com/jordigilh/kubernaut/pkg/...,github.com/jordigilh/kubernaut/internal/...,github.com/jordigilh/kubernaut/cmd/... \
+		--keep-going ./test/integration/$*/...
+	@echo ""
+	@echo "📊 Coverage report generated: coverage_integration_$*.out"
+	@go tool cover -func=coverage_integration_$*.out | tail -1
 
-# Integration Tests with Coverage (WorkflowExecution pattern)
+# Integration Tests with Coverage (DEPRECATED - use test-integration-% instead)
+# This target is kept for backwards compatibility but is no longer needed
 .PHONY: test-integration-%-coverage
-test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
+test-integration-%-coverage: test-integration-% ## DEPRECATED: Use test-integration-% instead (now includes business logic coverage)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📊 $* - Integration Tests with Production Code Coverage"
 	@echo "════════════════════════════════════════════════════════════════════════"
