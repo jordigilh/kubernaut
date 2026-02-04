@@ -43,6 +43,11 @@ func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (
 	imageTag := generateInfrastructureImageTag("holmesgpt-api", serviceName)
 	localImageName := fmt.Sprintf("localhost/holmesgpt-api:%s", imageTag) // Podman auto-prefixes with localhost/
 
+	// DEBUG: Show environment variable status
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
+
 	// CI/CD Optimization: Try to pull from registry if IMAGE_REGISTRY + IMAGE_TAG are set
 	registryImage, pulled, err := tryPullFromRegistry(ctx, "holmesgpt-api", localImageName, writer)
 	if err != nil {
