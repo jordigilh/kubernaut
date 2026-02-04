@@ -198,10 +198,10 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			Expect(len(incidentResp.ValidationAttemptsHistory)).To(Equal(3),
 				"MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
 
-			// Verify each attempt has required fields
-			for i, attempt := range incidentResp.ValidationAttemptsHistory {
-				Expect(attempt.Attempt).To(Equal(int64(i+1)),
-					"attempt number must be sequential")
+		// Verify each attempt has required fields
+		for i, attempt := range incidentResp.ValidationAttemptsHistory {
+			Expect(attempt.Attempt).To(Equal(i+1),
+				"attempt number must be sequential")
 				Expect(attempt.IsValid).To(BeFalse(),
 					"is_valid must be false for failed validation")
 				Expect(attempt.Errors).ToNot(BeEmpty(),
