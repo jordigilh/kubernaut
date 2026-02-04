@@ -70,7 +70,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// Create unique namespace for E2E test isolation
 			testNamespace = GenerateUniqueNamespace()
 			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
+					},
+				},
 			}
 			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
@@ -309,7 +314,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// Create unique namespace for E2E test isolation
 			testNamespace = GenerateUniqueNamespace()
 			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
+					},
+				},
 			}
 			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
