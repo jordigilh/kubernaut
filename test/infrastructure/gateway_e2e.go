@@ -583,6 +583,13 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
 		"localhost/kubernaut-gateway:e2e-test",
 		gatewayImageName)
+	
+	// Replace hardcoded imagePullPolicy with dynamic value
+	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
+	// Local mode: Use Never (uses images loaded into Kind)
+	updatedContent = strings.ReplaceAll(updatedContent,
+		"imagePullPolicy: Never",
+		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Create temporary modified deployment file
 	tmpDeployment := filepath.Join(os.TempDir(), "gateway-deployment-e2e.yaml")

@@ -146,6 +146,14 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
 	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
 	_, _ = fmt.Fprintf(writer, "   🔧 Substituted namespace: ${WEBHOOK_NAMESPACE} → %s\n", namespace)
+	
+	// Replace hardcoded imagePullPolicy with dynamic value
+	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
+	// Local mode: Use Never (uses images loaded into Kind)
+	substitutedManifest = strings.ReplaceAll(substitutedManifest,
+		"imagePullPolicy: Never",
+		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
+	_, _ = fmt.Fprintf(writer, "   🔧 Substituted imagePullPolicy: Never → %s\n", GetImagePullPolicy())
 
 	// Apply substituted manifest via kubectl
 	cmd = exec.Command("kubectl", "apply",
