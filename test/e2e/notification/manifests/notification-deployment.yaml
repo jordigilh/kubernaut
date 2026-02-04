@@ -89,8 +89,10 @@ spec:
       - name: config
         configMap:
           name: notification-controller-config
-      # DD-NOT-006: File delivery output (emptyDir for E2E - ephemeral test data)
+      # DD-NOT-006: File delivery output (hostPath for E2E - accessible to host tests)
       - name: notification-output
-        emptyDir: {}  # Ephemeral volume for test notifications (security: no hostPath)
+        hostPath:
+          path: /tmp/kubernaut-e2e-notifications
+          type: DirectoryOrCreate
       terminationGracePeriodSeconds: 10
 
