@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -93,7 +94,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("e2e-rar-audit-%d", time.Now().Unix()),
+					Name:      fmt.Sprintf("e2e-rar-audit-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
@@ -337,7 +338,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("e2e-rar-persist-%d", time.Now().Unix()),
+					Name:      fmt.Sprintf("e2e-rar-persist-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
