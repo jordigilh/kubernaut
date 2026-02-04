@@ -93,6 +93,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			Eventually(func() bool {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
 				if updated == nil {
+					GinkgoWriter.Printf("🔍 DEBUG: WFE not found yet\n")
 					return false
 				}
 
@@ -104,6 +105,17 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
 				// AuditRecorded may be True or False depending on audit store availability
 				hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
+
+				// DEBUG: Show current status of all conditions
+				GinkgoWriter.Printf("🔍 DEBUG: Condition status - PipelineCreated=%v, PipelineRunning=%v, PipelineComplete=%v, AuditRecorded=%v\n",
+					hasPipelineCreated, hasPipelineRunning, hasPipelineComplete, hasAuditRecorded)
+				if !hasAuditRecorded {
+					// Show all current conditions to understand what's missing
+					GinkgoWriter.Printf("🔍 DEBUG: Current conditions:\n")
+					for _, cond := range updated.Status.Conditions {
+						GinkgoWriter.Printf("  - %s: %s (reason: %s, message: %s)\n", cond.Type, cond.Status, cond.Reason, cond.Message)
+					}
+				}
 
 				return hasPipelineCreated && hasPipelineRunning && hasPipelineComplete && hasAuditRecorded
 			}, 30*time.Second, 5*time.Second).Should(BeTrue(),
