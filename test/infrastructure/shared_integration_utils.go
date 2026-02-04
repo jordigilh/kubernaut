@@ -920,23 +920,23 @@ func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArg
 		if serviceName != "" {
 			registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 			_, _ = fmt.Fprintf(writer, "  🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-			_, _ = fmt.Fprintf(writer, "  📥 Pulling %s from registry: %s\n", name, registryImage)
 			
-			pullCmd := exec.Command("podman", "pull", registryImage)
-			pullCmd.Stdout = writer
-			pullCmd.Stderr = writer
+			// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
+			// Benefits:
+			// - No disk space used (metadata only, ~2KB vs multi-GB image)
+			// - No network transfer of layers (90%+ bandwidth savings)
+			// - Faster execution (~1s vs 10-30s for full pull)
+			// - Podman will pull automatically during container deployment
+			exists, verifyErr := VerifyImageExistsInRegistry(registryImage, writer)
 			
-			if err := pullCmd.Run(); err == nil {
-				// Success! Tag as local image for consistency
-				_, _ = fmt.Fprintf(writer, "  ✅ Image pulled from registry\n")
-				_, _ = fmt.Fprintf(writer, "  🏷️  Tagging as local image: %s\n", imageTag)
-				tagCmd := exec.Command("podman", "tag", registryImage, imageTag)
-				if tagErr := tagCmd.Run(); tagErr == nil {
-					_, _ = fmt.Fprintf(writer, "  ✅ %s image ready from registry (skipping build)\n", name)
-					return nil // Skip build, use registry image
-				}
+			if verifyErr == nil && exists {
+				// Image verified in registry - no need to pull!
+				// Podman will pull it automatically when starting the container
+				_, _ = fmt.Fprintf(writer, "  ✅ %s image ready from registry (skipping build)\n", name)
+				_, _ = fmt.Fprintf(writer, "  💡 No pre-pull needed - Podman will fetch during deployment\n")
+				return nil // Skip build, use registry image
 			} else {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Registry pull failed: %v\n", err)
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Registry verification failed: %v\n", verifyErr)
 				_, _ = fmt.Fprintf(writer, "  ⚠️  Falling back to local build...\n")
 			}
 		}

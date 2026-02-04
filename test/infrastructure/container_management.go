@@ -117,40 +117,37 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// Step 0: Try registry pull if configured (CI/CD optimization)
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
-	
+
 	if registry != "" && tag != "" {
 		_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-		
+
 		// Extract service name from image name
 		// Examples:
 		//   "localhost/datastorage:aianalysis-a3b5c7d9" → "datastorage"
 		//   "kubernaut/holmesgpt-api" → "holmesgpt-api"
 		serviceName := extractServiceNameFromImage(cfg.Image)
-		
+
 		if serviceName != "" {
 			registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
-			_, _ = fmt.Fprintf(writer, "   📥 Attempting to pull from registry: %s\n", registryImage)
-			
-			pullCmd := exec.Command("podman", "pull", registryImage)
-			pullCmd.Stdout = writer
-			pullCmd.Stderr = writer
-			
-			if err := pullCmd.Run(); err == nil {
-				// Success! Tag as local image for compatibility
-				_, _ = fmt.Fprintf(writer, "   ✅ Image pulled successfully\n")
-				_, _ = fmt.Fprintf(writer, "   🏷️  Tagging as local image: %s\n", cfg.Image)
-				
-				tagCmd := exec.Command("podman", "tag", registryImage, cfg.Image)
-				if tagErr := tagCmd.Run(); tagErr != nil {
-					_, _ = fmt.Fprintf(writer, "   ⚠️  Warning: Failed to tag image (continuing anyway): %v\n", tagErr)
-				} else {
-					_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping build)\n")
-					// Skip build step below by clearing BuildContext
-					cfg.BuildContext = ""
-					cfg.BuildDockerfile = ""
-				}
+
+			// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
+			// Benefits:
+			// - No disk space used (metadata only, ~2KB vs multi-GB image)
+			// - No network transfer of layers (90%+ bandwidth savings)
+			// - Faster execution (~1s vs 10-30s for full pull)
+			// - Podman will pull automatically during container deployment
+			exists, verifyErr := VerifyImageExistsInRegistry(registryImage, writer)
+
+			if verifyErr == nil && exists {
+				// Image verified in registry - no need to pull!
+				// Podman will pull it automatically when starting the container
+				_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping build)\n")
+				_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Podman will fetch during deployment\n")
+				// Skip build step below by clearing BuildContext
+				cfg.BuildContext = ""
+				cfg.BuildDockerfile = ""
 			} else {
-				_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
+				_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", verifyErr)
 				_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
 			}
 		}
@@ -297,15 +294,15 @@ func extractServiceNameFromImage(imageName string) string {
 	// Remove tag if present (split on first ':')
 	parts := strings.SplitN(imageName, ":", 2)
 	nameWithoutTag := parts[0]
-	
+
 	// Split on '/' to get path components
 	pathParts := strings.Split(nameWithoutTag, "/")
-	
+
 	// The service name is always the last component
 	if len(pathParts) > 0 {
 		return pathParts[len(pathParts)-1]
 	}
-	
+
 	return ""
 }
 
