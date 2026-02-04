@@ -27,7 +27,8 @@ package client
 // The OpenAPI spec is located at: holmesgpt-api/api/openapi.json
 //
 // Note: Makefile sets PATH to include $(LOCALBIN) before running go generate
-//go:generate sh -c "$$GOPATH/bin/ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json || ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json"
+// This directive tries bin/ogen (from Makefile), then $GOPATH/bin/ogen, then system ogen
+//go:generate sh -c "ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json 2>/dev/null || $(go env GOPATH)/bin/ogen --target . --package client --clean ../../../holmesgpt-api/api/openapi.json"
 
 
 
