@@ -56,27 +56,27 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Should transition to Running
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 30*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+		// Should transition to Running
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 30*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
 			GinkgoWriter.Println("✅ WFE transitioned to Running")
 
-			// Should complete (success or failure - depends on pipeline)
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue(), "WFE should complete within SLA")
+		// Should complete (success or failure - depends on pipeline)
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue(), "WFE should complete within SLA")
 
 			// Verify completion
 			completed, err := getWFE(wfe.Name, wfe.Namespace)
@@ -89,37 +89,37 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			// Per WE_BR_WE_006_TESTING_TRIAGE.md: Validate conditions in existing E2E tests
 			By("Verifying Kubernetes Conditions are set (BR-WE-006)")
 
-			// ✅ REQUIRED: Use Eventually() pattern (NO time.Sleep())
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated == nil {
-					GinkgoWriter.Printf("🔍 DEBUG: WFE not found yet\n")
-					return false
+		// ✅ REQUIRED: Use Eventually() pattern (NO time.Sleep())
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated == nil {
+				GinkgoWriter.Printf("🔍 DEBUG: WFE not found yet\n")
+				return false
+			}
+
+			// Verify all lifecycle conditions are present
+			hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
+			hasPipelineRunning := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
+			// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
+			// Test accepts both success and failure (line 73-74), so only check existence
+			hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
+			// AuditRecorded may be True or False depending on audit store availability
+			hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
+
+			// DEBUG: Show current status of all conditions
+			GinkgoWriter.Printf("🔍 DEBUG: Condition status - PipelineCreated=%v, PipelineRunning=%v, PipelineComplete=%v, AuditRecorded=%v\n",
+				hasPipelineCreated, hasPipelineRunning, hasPipelineComplete, hasAuditRecorded)
+			if !hasAuditRecorded {
+				// Show all current conditions to understand what's missing
+				GinkgoWriter.Printf("🔍 DEBUG: Current conditions:\n")
+				for _, cond := range updated.Status.Conditions {
+					GinkgoWriter.Printf("  - %s: %s (reason: %s, message: %s)\n", cond.Type, cond.Status, cond.Reason, cond.Message)
 				}
+			}
 
-				// Verify all lifecycle conditions are present
-				hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
-				hasPipelineRunning := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
-				// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
-				// Test accepts both success and failure (line 73-74), so only check existence
-				hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
-				// AuditRecorded may be True or False depending on audit store availability
-				hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
-
-				// DEBUG: Show current status of all conditions
-				GinkgoWriter.Printf("🔍 DEBUG: Condition status - PipelineCreated=%v, PipelineRunning=%v, PipelineComplete=%v, AuditRecorded=%v\n",
-					hasPipelineCreated, hasPipelineRunning, hasPipelineComplete, hasAuditRecorded)
-				if !hasAuditRecorded {
-					// Show all current conditions to understand what's missing
-					GinkgoWriter.Printf("🔍 DEBUG: Current conditions:\n")
-					for _, cond := range updated.Status.Conditions {
-						GinkgoWriter.Printf("  - %s: %s (reason: %s, message: %s)\n", cond.Type, cond.Status, cond.Reason, cond.Message)
-					}
-				}
-
-				return hasPipelineCreated && hasPipelineRunning && hasPipelineComplete && hasAuditRecorded
-			}, 30*time.Second, 5*time.Second).Should(BeTrue(),
-				"All lifecycle conditions (TektonPipelineCreated, TektonPipelineRunning, TektonPipelineComplete, AuditRecorded) should be set")
+			return hasPipelineCreated && hasPipelineRunning && hasPipelineComplete && hasAuditRecorded
+		}, 30*time.Second, 5*time.Second).Should(BeTrue(),
+			"All lifecycle conditions (TektonPipelineCreated, TektonPipelineRunning, TektonPipelineComplete, AuditRecorded) should be set")
 
 			// Verify condition details
 			final, _ := getWFE(wfe.Name, wfe.Namespace)
@@ -172,14 +172,14 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Should transition to Failed
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 120*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		// Should transition to Failed
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 120*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Verify failure details are populated
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
@@ -217,14 +217,14 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-				// Wait for workflow to start
-				Eventually(func() bool {
-					updated, _ := getWFE(wfe.Name, wfe.Namespace)
-					if updated != nil {
-						return updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning
-					}
-					return false
-				}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should start")
+			// Wait for workflow to start
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning
+				}
+				return false
+			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should start")
 
 				GinkgoWriter.Println("✅ Workflow started, simulating failure without CompletionTime")
 
@@ -249,19 +249,19 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 				GinkgoWriter.Println("✅ Marked as Failed without CompletionTime")
 
-				// Business Behavior: Controller should handle this gracefully
-				// - No panic or crash
-				// - Cooldown check is skipped (logged but not enforced)
-				// - Workflow remains in Failed state
-				Eventually(func() bool {
-					updated, _ := getWFE(wfe.Name, wfe.Namespace)
-					if updated != nil {
-						// Verify phase is still Failed (controller didn't crash)
-						return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
-					}
-					return false
-				}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-					"Controller should handle missing CompletionTime without crashing")
+			// Business Behavior: Controller should handle this gracefully
+			// - No panic or crash
+			// - Cooldown check is skipped (logged but not enforced)
+			// - Workflow remains in Failed state
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					// Verify phase is still Failed (controller didn't crash)
+					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+				"Controller should handle missing CompletionTime without crashing")
 
 				// Verify controller logs show cooldown was skipped (can't check logs in E2E, but verify no crash)
 				finalWFE, err := getWFE(wfe.Name, wfe.Namespace)

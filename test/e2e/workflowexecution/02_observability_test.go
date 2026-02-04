@@ -75,16 +75,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion (success or failure)
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion (success or failure)
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Verify events were emitted for this WFE
 			// Business Behavior: Events should be visible via kubectl get events
@@ -134,14 +134,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for Running phase (PipelineRun created)
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+		// Wait for Running phase (PipelineRun created)
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
 			GinkgoWriter.Println("✅ WFE is Running, PipelineRun exists")
 
@@ -166,14 +166,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("🗑️  Deleting PipelineRun %s externally...\n", targetPR.Name)
 			Expect(k8sClient.Delete(ctx, targetPR)).To(Succeed())
 
-			// Business Behavior: WFE should detect deletion and mark as Failed
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		// Business Behavior: WFE should detect deletion and mark as Failed
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Verify failure details explain the external deletion
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
@@ -210,16 +210,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion to generate metrics
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion to generate metrics
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			GinkgoWriter.Println("✅ WFE completed, checking metrics...")
 
@@ -307,14 +307,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
-				}
-				return false
-			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
+		// Wait for completion
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
+			}
+			return false
+		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
 
 			GinkgoWriter.Println("✅ Workflow completed, checking metrics...")
 
@@ -378,14 +378,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for failure
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
+		// Wait for failure
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
 
 			GinkgoWriter.Println("✅ Workflow failed as expected, checking metrics...")
 
@@ -450,16 +450,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for workflow to complete")
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		By("Waiting for workflow to complete")
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -570,14 +570,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for Failed phase")
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		By("Waiting for Failed phase")
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -687,17 +687,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for workflow to complete")
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 120*time.Second).Should(Or(
-				Equal(workflowexecutionv1alpha1.PhaseCompleted),
-				Equal(workflowexecutionv1alpha1.PhaseFailed),
-			))
+		By("Waiting for workflow to complete")
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 120*time.Second).Should(Or(
+			Equal(workflowexecutionv1alpha1.PhaseCompleted),
+			Equal(workflowexecutionv1alpha1.PhaseFailed),
+		))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -842,30 +842,30 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Business Behavior: WFE should have PipelineRunRef after Running
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
-					return updated.Status.PipelineRunRef != nil
-				}
-				return false
-			}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
+		// Business Behavior: WFE should have PipelineRunRef after Running
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
+				return updated.Status.PipelineRunRef != nil
+			}
+			return false
+		}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
 			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
 			GinkgoWriter.Printf("✅ WFE tracks PipelineRun: %s\n",
 				runningWFE.Status.PipelineRunRef.Name)
 
-			// Wait for completion
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Business Behavior: Completion should include timing information
 			completedWFE, err := getWFE(wfe.Name, wfe.Namespace)
