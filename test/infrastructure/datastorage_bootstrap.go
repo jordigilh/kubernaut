@@ -139,7 +139,7 @@ type DSBootstrapInfra struct {
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
 	Config DSBootstrapConfig // Original configuration (for reference)
-	
+
 	// SharedTestEnv holds envtest environment for cleanup (DD-AUTH-014)
 	// Only set if envtest was created in Phase 1 (for services needing DataStorage auth)
 	SharedTestEnv interface{} // *envtest.Environment (interface{} to avoid import cycle)
@@ -169,36 +169,33 @@ type DSBootstrapInfra struct {
 func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string, writer io.Writer) (string, bool, error) {
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
-	
+
 	if registry == "" || tag == "" {
 		return "", false, nil // Not configured, caller should build locally
 	}
-	
+
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-	_, _ = fmt.Fprintf(writer, "   📥 Pulling from registry: %s\n", registryImage)
-	
-	pullCmd := exec.CommandContext(ctx, "podman", "pull", registryImage)
-	pullCmd.Stdout = writer
-	pullCmd.Stderr = writer
-	
-	if err := pullCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry pull failed: %v\n", err)
+
+	// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
+	// Benefits:
+	// - No disk space used (metadata only, ~2KB vs multi-GB image)
+	// - No network transfer of layers (90%+ bandwidth savings)
+	// - Faster execution (~1s vs 10-30s for full pull)
+	// - Kubernetes will pull automatically during pod deployment
+	exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+
+	if err != nil || !exists {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-		return "", false, nil // Pull failed, caller should build locally
+		return "", false, nil // Verification failed, caller should build locally
 	}
-	
-	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry successfully\n")
-	
-	// Tag as local image for consistency with local build workflow
-	_, _ = fmt.Fprintf(writer, "   🏷️  Tagging as local image: %s\n", localImageName)
-	tagCmd := exec.CommandContext(ctx, "podman", "tag", registryImage, localImageName)
-	if err := tagCmd.Run(); err != nil {
-		return "", false, fmt.Errorf("failed to tag registry image: %w", err)
-	}
-	
+
 	_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping local build)\n")
-	return localImageName, true, nil
+	_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Kubernetes will fetch during pod deployment\n")
+
+	// Return registry image path - Kubernetes will pull it automatically
+	return registryImage, true, nil
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
@@ -579,6 +576,7 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 // DD-AUTH-014: Platform-specific network configuration (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
 //   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
 //   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
+//
 // Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
@@ -619,24 +617,24 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 	var postgresPort int
 	var redisAddr string
 	var listenPort int
-	
+
 	if useHostNetwork {
 		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
 		// PostgreSQL exposes internal 5432 → external cfg.PostgresPort
 		// Redis exposes internal 6379 → external cfg.RedisPort
 		postgresHost = "localhost"
-		postgresPort = cfg.PostgresPort  // Use exposed port (e.g., 15437)
+		postgresPort = cfg.PostgresPort // Use exposed port (e.g., 15437)
 		redisAddr = fmt.Sprintf("localhost:%d", cfg.RedisPort)
-		
+
 		// CRITICAL: Host network - no port mapping, so listen on external port
 		// Test infrastructure expects DataStorage on cfg.DataStoragePort
 		listenPort = cfg.DataStoragePort
 	} else {
 		// Bridge network: Access via container names at internal ports
 		postgresHost = infra.PostgresContainer
-		postgresPort = 5432  // Internal PostgreSQL port
+		postgresPort = 5432 // Internal PostgreSQL port
 		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
-		
+
 		// Bridge network: Always listen on 8080, port mapping handles external
 		// BACKWARDS COMPATIBLE: This is the original behavior for macOS
 		// Example: -p 18096:8080 maps external 18096 → internal 8080

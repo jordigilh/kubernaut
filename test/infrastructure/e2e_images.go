@@ -386,3 +386,55 @@ func CleanupE2EImages(imageNames []string, writer io.Writer) error {
 	}
 	return nil
 }
+
+// ============================================================================
+// Registry Image Verification (Lightweight Check - No Pull)
+// ============================================================================
+
+// VerifyImageExistsInRegistry verifies an image exists in a registry using skopeo inspect.
+// This is much more efficient than pulling the entire image - it only fetches metadata.
+//
+// Benefits vs podman pull:
+// - No disk space used (metadata only, ~2KB vs multi-GB image)
+// - No network transfer of layers (90%+ bandwidth savings)
+// - Faster execution (~1s vs 10-30s for full pull)
+//
+// Authority: ADR-028 (Container Registry Policy) - Use skopeo inspect for verification
+//
+// Example:
+//
+//	exists, err := VerifyImageExistsInRegistry(
+//	    "ghcr.io/jordigilh/kubernaut/datastorage:pr-24",
+//	    GinkgoWriter,
+//	)
+//	if !exists {
+//	    return fmt.Errorf("image not found in registry")
+//	}
+//
+// Returns:
+// - bool: true if image exists and is accessible
+// - error: Any errors during verification (authentication, network, etc.)
+func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, error) {
+	_, _ = fmt.Fprintf(writer, "   🔍 Verifying image exists in registry (skopeo inspect): %s\n", registryImage)
+
+	// Use skopeo inspect to check image existence without pulling
+	// Format: docker://registry.url/image:tag
+	inspectURL := registryImage
+	if !strings.HasPrefix(registryImage, "docker://") {
+		inspectURL = "docker://" + registryImage
+	}
+
+	cmd := exec.Command("skopeo", "inspect", inspectURL)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		// Image doesn't exist or is not accessible
+		_, _ = fmt.Fprintf(writer, "   ❌ Image verification failed: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "   📋 Output: %s\n", string(output))
+		return false, fmt.Errorf("image not found or not accessible: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Image exists in registry (verified without pull)\n")
+	_, _ = fmt.Fprintf(writer, "   💡 Kubernetes/Podman will pull when needed during deployment\n")
+	return true, nil
+}
