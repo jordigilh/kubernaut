@@ -25,6 +25,12 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+      # Security context for volume permissions (works in both macOS and Linux)
+      # fsGroup ensures the mounted volume is writable by the container user
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
       # emptyDir volumes have correct permissions automatically (no init container needed)
       containers:
       - name: manager
