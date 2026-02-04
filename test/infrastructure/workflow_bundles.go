@@ -72,7 +72,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 
 	bundles["test-hello-world"] = helloWorldRef
 	bundles["test-intentional-failure"] = failingRef
-	
+
 	_, _ = fmt.Fprintf(output, "  ✅ Using bundles from %s\n", TestWorkflowBundleRegistry)
 
 	// Register workflows in DataStorage using OpenAPI client (DD-API-001)

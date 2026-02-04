@@ -1255,7 +1255,7 @@ password: test_password`,
 					{
 						Name:            "datastorage",
 						Image:           dataStorageImage, // DD-TEST-001: service-specific tag
-						ImagePullPolicy: corev1.PullNever, // DD-TEST-001: Use local Kind image (scheduled on control-plane where images are loaded)
+						ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "http",      // DD-AUTH-014: Direct access (no proxy)
