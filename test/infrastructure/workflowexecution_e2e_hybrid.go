@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -124,9 +125,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		// Disable coverage on ARM64 (Go runtime crash workaround)
 		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
 		cfg := E2EImageConfig{
-			ServiceName:      "workflowexecution",  // Operator SDK convention: no -controller suffix in image name
+			ServiceName:      "workflowexecution", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/workflowexecution",
-			DockerfilePath:   "docker/workflowexecution-controller.Dockerfile",  // Dockerfile can have suffix
+			DockerfilePath:   "docker/workflowexecution-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   enableCoverage,
 		}
@@ -150,9 +151,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Build AuthWebhook in parallel
 	go func() {
 		cfg := E2EImageConfig{
-		ServiceName:      "authwebhook",
-		ImageName:        "authwebhook",
-		DockerfilePath:   "docker/authwebhook.Dockerfile",
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
@@ -214,20 +215,26 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to install WorkflowExecution CRD: %w", err)
 	}
 
-	// Create namespaces
+	// Create namespaces (idempotent - ignore AlreadyExists errors)
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
 	nsCmd := exec.Command("kubectl", "create", "namespace", WorkflowExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
-	nsCmd.Stdout = writer
-	nsCmd.Stderr = writer
-	_ = nsCmd.Run() // May already exist
+	nsOutput, nsErr := nsCmd.CombinedOutput()
+	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", WorkflowExecutionNamespace, string(nsOutput))
+		return fmt.Errorf("failed to create namespace %s: %w", WorkflowExecutionNamespace, nsErr)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", WorkflowExecutionNamespace)
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
 	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
-	execNsCmd.Stdout = writer
-	execNsCmd.Stderr = writer
-	_ = execNsCmd.Run() // May already exist
+	execNsOutput, execNsErr := execNsCmd.CombinedOutput()
+	if execNsErr != nil && !strings.Contains(string(execNsOutput), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to create namespace %s: %s\n", ExecutionNamespace, string(execNsOutput))
+		return fmt.Errorf("failed to create namespace %s: %w", ExecutionNamespace, execNsErr)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", ExecutionNamespace)
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
 
@@ -711,12 +718,15 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	// Create controller namespace
+	// Create controller namespace (idempotent - ignore AlreadyExists errors)
 	nsCmd := exec.Command("kubectl", "create", "namespace", namespace,
 		"--kubeconfig", kubeconfigPath)
-	nsCmd.Stdout = output
-	nsCmd.Stderr = output
-	_ = nsCmd.Run() // May already exist
+	nsOutput, nsErr := nsCmd.CombinedOutput()
+	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
+		_, _ = fmt.Fprintf(output, "❌ Failed to create namespace %s: %s\n", namespace, string(nsOutput))
+		return fmt.Errorf("failed to create namespace %s: %w", namespace, nsErr)
+	}
+	_, _ = fmt.Fprintf(output, "   ✅ Namespace %s ready\n", namespace)
 
 	// Deploy CRDs (use absolute path)
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
@@ -1097,7 +1107,7 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 					Containers: []corev1.Container{
 						{
 							Name:            "controller",
-							Image:           imageName,        // Per Consolidated API Migration (January 2026)
+							Image:           imageName,              // Per Consolidated API Migration (January 2026)
 							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 							Args: []string{
 								"--metrics-bind-address=:9090",
