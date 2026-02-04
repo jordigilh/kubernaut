@@ -181,10 +181,15 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 				"Status update for completion should succeed")
 
 			By("Verifying CRD updated successfully")
-			fetchedNR := &notificationv1.NotificationRequest{}
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)).To(Succeed())
-			Expect(fetchedNR.Status.Phase).To(Equal(notificationv1.NotificationPhaseSent),
-				"Phase should be updated to Sent")
+			// FIXED: Use Eventually() to handle envtest eventual consistency
+			// DD-TEST-001: Status updates may take up to 2 seconds to propagate in envtest
+			var fetchedNR *notificationv1.NotificationRequest
+			Eventually(func(g Gomega) {
+				fetchedNR = &notificationv1.NotificationRequest{}
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)).To(Succeed())
+				g.Expect(fetchedNR.Status.Phase).To(Equal(notificationv1.NotificationPhaseSent),
+					"Phase should be updated to Sent")
+			}, "2s", "100ms").Should(Succeed())
 
 			By("Verifying no audit events generated for status updates (webhook only triggers on DELETE)")
 			// Webhook only intercepts DELETE operations for NotificationRequest
