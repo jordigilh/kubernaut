@@ -182,6 +182,10 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// CRITICAL: Use parent RR name for correlation (DD-AUDIT-CORRELATION-002)
 	// This ensures all RAR audit events (webhook + orchestration) share the same correlation_id
 	parentRRName := rar.Spec.RemediationRequestRef.Name
+	logger.Info("Setting correlation_id for audit event",
+		"parentRRName", parentRRName,
+		"rarName", rar.Name,
+		"remediationRequestRef", rar.Spec.RemediationRequestRef)
 	audit.SetCorrelationID(auditEvent, parentRRName)
 	audit.SetNamespace(auditEvent, rar.Namespace)
 
