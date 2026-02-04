@@ -940,47 +940,70 @@ jobs:
           fi
 
           # Check for unit tests failure (critical)
-          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+          if [ "${{ needs.unit-tests.result }}" == "failure" ]; then
             echo ""
             echo "❌ Unit tests failed - subsequent stages skipped"
+            exit 1
+          elif [ "${{ needs.unit-tests.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Unit tests cancelled"
             exit 1
           fi
 
           # Check for image build & push failure (critical for integration + E2E)
-          if [ "${{ needs.build-and-push-images.result }}" != "success" ]; then
+          if [ "${{ needs.build-and-push-images.result }}" == "failure" ]; then
             echo ""
             echo "❌ Image builds failed - check individual service builds in the matrix"
             echo "   Services: datastorage, gateway, aianalysis, authwebhook, notification,"
             echo "             remediationorchestrator, signalprocessing, workflowexecution,"
             echo "             holmesgpt-api, mock-llm"
-            echo "   Impact: Integration tests will fall back to local builds (slower)"
+            exit 1
+          elif [ "${{ needs.build-and-push-images.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Image builds cancelled"
             exit 1
           fi
 
-          # Check for integration tests failure (matrix job)
-          # Note: integration-tests is a single matrix job that runs 9 services
-          # GitHub Actions reports the matrix job result as a whole (fail-fast: false)
-          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
+          # Check for integration tests (handle skipped if dependencies failed)
+          if [ "${{ needs.integration-tests.result }}" == "failure" ]; then
             echo ""
             echo "❌ Integration tests failed - check individual service logs in the matrix"
             echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
             echo "                    remediationorchestrator, gateway, datastorage,"
-            echo "                    notification, holmesgpt-api"
+            echo "                    notification, holmesgpt-api, authwebhook"
+            exit 1
+          elif [ "${{ needs.integration-tests.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  Integration tests skipped (dependencies failed)"
+          elif [ "${{ needs.integration-tests.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Integration tests cancelled"
             exit 1
           fi
 
-          # Check for E2E tests failure (matrix job)
-          # Note: e2e-tests is a single matrix job that runs 9 services
-          # GitHub Actions reports the matrix job result as a whole (fail-fast: false)
-          if [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          # Check for E2E tests (handle skipped if dependencies failed)
+          if [ "${{ needs.e2e-tests.result }}" == "failure" ]; then
             echo ""
             echo "❌ E2E tests failed - check individual service logs in the matrix"
             echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
             echo "                    remediationorchestrator, gateway, datastorage,"
             echo "                    notification, authwebhook, holmesgpt-api"
             exit 1
+          elif [ "${{ needs.e2e-tests.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  E2E tests skipped (dependencies failed)"
+          elif [ "${{ needs.e2e-tests.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  E2E tests cancelled"
+            exit 1
           fi
 
+          # Final result
           echo ""
-          echo "✅ All tests passed!"
-          exit 0
+          if [ "${{ needs.integration-tests.result }}" == "success" ] && [ "${{ needs.e2e-tests.result }}" == "success" ]; then
+            echo "✅ All tests passed!"
+            exit 0
+          else
+            echo "⚠️  Some tests were skipped or had issues (see above)"
+            exit 1
+          fi
