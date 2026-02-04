@@ -737,6 +737,48 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
+	// STEP 4.25: Create Dummy Service for SAR Validation
+	// ════════════════════════════════════════════════════════════════════════
+	// DD-AUTH-014: SAR check requires Service "data-storage-service" to exist
+	// In E2E tests: Real Service exists in Kind cluster
+	// In Integration tests: Podman container (no K8s Service), must create dummy
+	_, _ = fmt.Fprintf(writer, "🔧 Creating dummy Service for SAR validation: data-storage-service\n")
+	dummyService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "data-storage-service",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":       "datastorage",
+				"component": "test-dummy",
+				"test":      "integration",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "http",
+					Port:     8080,
+					Protocol: corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				"app": "datastorage-dummy", // No actual pods (dummy for SAR only)
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Services(namespace).Create(ctx, dummyService, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("failed to create dummy Service: %w", err)
+	}
+	if apierrors.IsAlreadyExists(err) {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  Service already exists (for SAR validation)\n")
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Dummy Service created (enables SAR checks)\n")
+	}
+
+	// ════════════════════════════════════════════════════════════════════════
 	// STEP 4.5: Create DataStorage Service ServiceAccount + RBAC (for TokenReview)
 	// ════════════════════════════════════════════════════════════════════════
 	// DD-AUTH-014: DataStorage needs its own ServiceAccount to call TokenReview API
