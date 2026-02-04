@@ -279,14 +279,23 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
+					GinkgoWriter.Printf("🔍 DEBUG: Rejection query ERROR: %v\n", err)
 					return false
+				}
+
+				GinkgoWriter.Printf("🔍 DEBUG: Rejection query returned %d events\n", len(resp.Data))
+				for i, evt := range resp.Data {
+					GinkgoWriter.Printf("  [%d] CorrelationID=%s, EventType=%s, EventCategory=%s\n",
+						i, evt.CorrelationID, evt.EventType, evt.EventCategory)
 				}
 
 				// No client-side filtering needed - EventType filter ensures only rejection events returned
 				if len(resp.Data) > 0 {
 					rejectionEvent = &resp.Data[0]
+					GinkgoWriter.Printf("🔍 DEBUG: Found rejection event, returning true\n")
 					return true
 				}
+				GinkgoWriter.Printf("🔍 DEBUG: No rejection events found yet, waiting...\n")
 				return false
 			}, e2eTimeout, e2eInterval).Should(BeTrue(),
 				"COMPLIANCE FAILURE: No rejection audit event (BR-AUDIT-006)")
@@ -418,7 +427,13 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
+					GinkgoWriter.Printf("🔍 DEBUG: Webhook query ERROR: %v\n", err)
 					return 0, 0
+				}
+				GinkgoWriter.Printf("🔍 DEBUG: Webhook query returned %d events\n", len(webhookResp.Data))
+				for i, evt := range webhookResp.Data {
+					GinkgoWriter.Printf("  [%d] CorrelationID=%s, EventType=%s, EventCategory=%s\n",
+						i, evt.CorrelationID, evt.EventType, evt.EventCategory)
 				}
 
 				// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
@@ -430,11 +445,21 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
+					GinkgoWriter.Printf("🔍 DEBUG: Orchestration query ERROR: %v\n", err)
 					return len(webhookResp.Data), 0
+				}
+				GinkgoWriter.Printf("🔍 DEBUG: Orchestration query returned %d events\n", len(orchestrationResp.Data))
+				for i, evt := range orchestrationResp.Data {
+					GinkgoWriter.Printf("  [%d] CorrelationID=%s, EventType=%s, EventCategory=%s\n",
+						i, evt.CorrelationID, evt.EventType, evt.EventCategory)
 				}
 
 				// No client-side filtering needed - EventType filter ensures only approval events returned
-				return len(webhookResp.Data), len(orchestrationResp.Data)
+				webhookCount := len(webhookResp.Data)
+				orchestrationCount := len(orchestrationResp.Data)
+				GinkgoWriter.Printf("🔍 DEBUG: Returning counts: webhook=%d, orchestration=%d (expecting [1, 1])\n",
+					webhookCount, orchestrationCount)
+				return webhookCount, orchestrationCount
 			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
 				"Both webhook and orchestration approval events must be persisted before CRD deletion")
 
