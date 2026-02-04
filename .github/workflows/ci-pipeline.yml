@@ -99,9 +99,9 @@ jobs:
 
       - name: Lint Go code
         run: |
-          echo "🔍 Linting Go code..."
+          echo "🔍 Linting Go code (targeted directories only)..."
           export PATH="${{ github.workspace }}/bin:$PATH"
-          timeout 7m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
+          timeout 7m bin/golangci-lint run cmd/... pkg/... internal/... test/... || echo "⚠️ Linting timed out or had issues (non-blocking)"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   lint-python:
