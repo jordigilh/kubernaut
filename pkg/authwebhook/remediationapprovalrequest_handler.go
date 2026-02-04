@@ -172,9 +172,12 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	rar.Status.DecidedAt = &now
 
 	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
+	// Per ADR-034 v1.7 Section 1.1.1: Two-Event Pattern for RAR approvals
+	// - Event 1 (Webhook): webhook.remediationapprovalrequest.decided (WHO - authenticated user)
+	// - Event 2 (Orchestration): orchestrator.approval.{approved|rejected} (WHAT/WHY - business context)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, fmt.Sprintf("remediation.approval.%s", string(rar.Status.Decision)))
-	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
+	audit.SetEventType(auditEvent, "webhook.remediationapprovalrequest.decided") // Per ADR-034 v1.7
+	audit.SetEventCategory(auditEvent, "webhook")                                // Per ADR-034 v1.7: event_category = emitter service
 	audit.SetEventAction(auditEvent, "approval_decided")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
