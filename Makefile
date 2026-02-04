@@ -453,11 +453,12 @@ test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (c
 		-v /tmp:/tmp:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /tmp/coverage_unit_holmesgpt-api.txt && cp /tmp/coverage_unit_holmesgpt-api.txt /workspace/coverage_unit_holmesgpt-api.txt"
-	@if [ -f coverage_unit_holmesgpt-api.txt ]; then \
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /tmp/coverage_unit_holmesgpt-api.txt"
+	@if [ -f /tmp/coverage_unit_holmesgpt-api.txt ]; then \
+		cp /tmp/coverage_unit_holmesgpt-api.txt $(CURDIR)/coverage_unit_holmesgpt-api.txt; \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
-		grep "TOTAL" coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+		grep "TOTAL" /tmp/coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
 	fi
 
 .PHONY: clean-holmesgpt-test-ports
