@@ -440,123 +440,119 @@ jobs:
   # - Smart path detection reserved for E2E tests (slower, 30 min each)
   # ========================================
 
-  # TEMPORARILY DISABLED: Focus on E2E test fixes
-  # Re-enable after E2E tests are passing
-  # NOTE: When re-enabled, add coverage collection similar to unit-tests above
   integration-tests:
-    name: integration (SKIPPED)
-    needs: [build-and-push-images]
+    name: Integration (${{ matrix.service }})
+    needs: [build-and-push-images]  # Pull dependency images from registry
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: ${{ matrix.timeout }}
+    env:
+      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
+      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        include:
+          - service: signalprocessing
+            service_name: "Signal Processing"
+            timeout: 10
+          - service: aianalysis
+            service_name: "AI Analysis"
+            timeout: 15
+          - service: authwebhook
+            service_name: "Auth Webhook"
+            timeout: 10
+          - service: workflowexecution
+            service_name: "Workflow Execution"
+            timeout: 15
+          - service: remediationorchestrator
+            service_name: "Remediation Orchestrator"
+            timeout: 15
+          - service: notification
+            service_name: "Notification"
+            timeout: 10
+          - service: gateway
+            service_name: "Gateway"
+            timeout: 20
+          - service: datastorage
+            service_name: "Data Storage"
+            timeout: 10
+          - service: holmesgpt-api
+            service_name: "HolmesGPT API"
+            timeout: 10
     steps:
-      - name: Skip integration tests
-        run: echo "⏭️  Integration tests temporarily skipped to speed up E2E test iteration"
+      - uses: actions/checkout@v4
+        with:
+          submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+      - name: Setup envtest (K8s test binaries)
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
+      - name: Run ${{ matrix.service }} integration tests
+        run: make test-integration-${{ matrix.service }}
       
-      - name: Create placeholder coverage reports
+      - name: Calculate and save integration coverage
         if: always()
         run: |
+          # Create coverage summary file for this service
           mkdir -p coverage-reports
-          # Create N/A placeholders for all services
-          for service in aianalysis authwebhook datastorage gateway holmesgpt-api notification remediationorchestrator signalprocessing workflowexecution; do
-            echo "${service},N/A" > coverage-reports/integration-${service}.txt
-          done
+          
+          # Check for Go coverage file
+          if [ -f coverage_integration_${{ matrix.service }}.out ]; then
+            COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
+            echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
+            echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
+          else
+            echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+            echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
+          fi
       
-      - name: Upload placeholder coverage reports
+      - name: Upload integration coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-integration-placeholder
-          path: coverage-reports/integration-*.txt
+          name: coverage-integration-${{ matrix.service }}
+          path: coverage-reports/integration-${{ matrix.service }}.txt
           retention-days: 1
-
-  # integration-tests-disabled:
-  #   name: integration (${{ matrix.service }})
-  #   needs: [build-and-push-images]  # Pull dependency images from registry
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: ${{ matrix.timeout }}
-  #   env:
-  #     IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
-  #     IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
-  #       include:
-  #         - service: signalprocessing
-  #           service_name: "Signal Processing"
-  #           timeout: 10
-  #         - service: aianalysis
-  #           service_name: "AI Analysis"
-  #           timeout: 15
-  #         - service: authwebhook
-  #           service_name: "Auth Webhook"
-  #           timeout: 10
-  #         - service: workflowexecution
-  #           service_name: "Workflow Execution"
-  #           timeout: 15
-  #         - service: remediationorchestrator
-  #           service_name: "Remediation Orchestrator"
-  #           timeout: 15
-  #         - service: notification
-  #           service_name: "Notification"
-  #           timeout: 10
-  #         - service: gateway
-  #           service_name: "Gateway"
-  #           timeout: 20
-  #         - service: datastorage
-  #           service_name: "Data Storage"
-  #           timeout: 10
-  #         - service: holmesgpt-api
-  #           service_name: "HolmesGPT API"
-  #           timeout: 10
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
-  #     - uses: actions/setup-go@v5
-  #       with:
-  #         go-version: '1.25'
-  #     - name: Generate OpenAPI specs
-  #       run: make generate
-  #     - name: Install Podman
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y podman
-  #     - name: Setup envtest (K8s test binaries)
-  #       run: |
-  #         go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-  #         echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
-  #     - name: Run ${{ matrix.service }} integration tests
-  #       run: make test-integration-${{ matrix.service }}
-  #     - name: Validate Data Storage OpenAPI spec (ADR-031)
-  #       if: matrix.service == 'datastorage'
-  #       run: make validate-openapi-datastorage
-  #     - name: Collect must-gather logs on failure
-  #       if: failure()
-  #       run: |
-  #         echo "📋 Collecting must-gather logs for triage..."
-  #         if [ -d "/tmp/kubernaut-must-gather" ]; then
-  #           echo "✅ Found must-gather directory"
-  #           ls -la /tmp/kubernaut-must-gather/
-  #           # Create timestamped archive for this service
-  #           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-  #           tar -czf must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
-  #           echo "✅ Created must-gather archive: must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
-  #         else
-  #           echo "⚠️  No must-gather directory found at /tmp/kubernaut-must-gather"
-  #           echo "    This may be expected if tests failed before must-gather was triggered"
-  #         fi
-  #     - name: Upload must-gather logs as artifacts
-  #       if: failure()
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: must-gather-logs-${{ matrix.service }}-${{ github.run_id }}
-  #         path: must-gather-*.tar.gz
-  #         retention-days: 14
-  #         if-no-files-found: warn
-  #     - name: Cleanup
-  #       if: always()
-  #       run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
+      
+      - name: Validate Data Storage OpenAPI spec (ADR-031)
+        if: matrix.service == 'datastorage'
+        run: make validate-openapi-datastorage
+      - name: Collect must-gather logs on failure
+        if: failure()
+        run: |
+          echo "📋 Collecting must-gather logs for triage..."
+          if [ -d "/tmp/kubernaut-must-gather" ]; then
+            echo "✅ Found must-gather directory"
+            ls -la /tmp/kubernaut-must-gather/
+            # Create timestamped archive for this service
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            tar -czf must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
+            echo "✅ Created must-gather archive: must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
+          else
+            echo "⚠️  No must-gather directory found at /tmp/kubernaut-must-gather"
+            echo "    This may be expected if tests failed before must-gather was triggered"
+          fi
+      - name: Upload must-gather logs as artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
+          path: must-gather-*.tar.gz
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Cleanup
+        if: always()
+        run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
   # ========================================
   # STAGE 4: E2E TESTS (PARALLEL)
   # Matrix job, 9 services in parallel (~30 min each)
