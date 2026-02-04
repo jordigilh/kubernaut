@@ -701,8 +701,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				if shouldBeResolved {
 					mockClient.WithProblemResolved(confidence, []string{"Resolved"}, "Problem resolved")
 				} else {
-					// Low confidence without workflow = should NOT trigger resolved
-					// This goes to normal flow (Analyzing) since no human review needed
+					// BR-AI-050: Low confidence (<0.7) with workflow → terminal failure (Failed phase)
+					// These scenarios test that low confidence is correctly treated as a failure
 					mockClient.WithFullResponse(
 						"Low confidence analysis",
 						confidence,
@@ -726,7 +726,10 @@ var _ = Describe("InvestigatingHandler", func() {
 					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should be Completed (resolved)")
 					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
 				} else {
-					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should proceed to Analyzing (has workflow)")
+					// BR-AI-050: Confidence <0.7 is terminal failure (reconciliation-phases.md v2.1)
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail for confidence <0.7 (BR-AI-050)")
+					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Umbrella category per structured taxonomy")
+					Expect(analysis.Status.SubReason).To(Equal("LowConfidence"), "Specific cause per reconciliation-phases.md v2.1:334")
 				}
 			},
 			// At threshold: problem is confidently resolved
@@ -734,9 +737,10 @@ var _ = Describe("InvestigatingHandler", func() {
 			Entry("confidence = 0.71 (above threshold) → resolved", 0.71, true),
 			Entry("confidence = 0.85 (well above) → resolved", 0.85, true),
 			Entry("confidence = 0.99 (near certainty) → resolved", 0.99, true),
-			// Below threshold with workflow → proceeds to Analyzing (not resolved)
-			Entry("confidence = 0.69 (below threshold) with workflow → Analyzing", 0.69, false),
-			Entry("confidence = 0.50 (low) with workflow → Analyzing", 0.50, false),
+			// BR-AI-050: Below threshold (<0.7) is terminal failure, even with workflow
+			// These tests verify correct transition to Failed for low confidence scenarios
+			Entry("confidence = 0.69 (below threshold) → Failed (BR-AI-050)", 0.69, false),
+			Entry("confidence = 0.50 (low confidence) → Failed (BR-AI-050)", 0.50, false),
 		)
 
 		// BR-HAPI-200: Fallback message when analysis is empty

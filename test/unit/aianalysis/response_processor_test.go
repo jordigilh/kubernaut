@@ -155,11 +155,12 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"Phase must transition to Failed when no workflow available")
 
-			// AND: Reason should indicate recovery not possible
-			Expect(analysis.Status.Reason).To(Equal("RecoveryNotPossible"),
-				"Reason must indicate recovery impossibility")
-			Expect(analysis.Status.SubReason).To(Equal("NoRecoveryStrategy"),
-				"SubReason must specify no strategy available")
+			// AND: Per reconciliation-phases.md v2.1 structured taxonomy
+			// Reason is umbrella category, SubReason is specific cause
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				"Reason must be umbrella category per structured taxonomy")
+			Expect(analysis.Status.SubReason).To(Equal("NoMatchingWorkflows"),
+				"SubReason must specify no workflow available (reconciliation-phases.md v2.1:726)")
 
 			// AND: Warning should be captured
 			Expect(analysis.Status.Warnings).To(ContainElement(ContainSubstring("No matching")),
