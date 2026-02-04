@@ -137,6 +137,7 @@ jobs:
   # TEMPORARILY DISABLED: Focus on INT/E2E test fixes
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
+    # No dependencies - runs immediately in parallel with lint-go, lint-python, build-and-push-images
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -319,7 +320,7 @@ jobs:
 
   build-and-push-images:
     name: Build & Push (${{ matrix.service }})
-    needs: [unit-tests]
+    # No dependencies - runs immediately in parallel with lint-go, lint-python, unit-tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -422,6 +423,7 @@ jobs:
 
   # ========================================
   # STAGE 3: INTEGRATION TESTS
+  # Waits for BOTH unit-tests AND build-and-push-images to complete
   # Matrix strategy: 9 services (all use same pattern: envtest + Podman)
   #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
   #     remediationorchestrator, notification, gateway, datastorage
@@ -442,7 +444,7 @@ jobs:
 
   integration-tests:
     name: Integration (${{ matrix.service }})
-    needs: [build-and-push-images]  # Pull dependency images from registry
+    needs: [unit-tests, build-and-push-images]  # Wait for both unit tests AND images
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
@@ -575,7 +577,7 @@ jobs:
 
   e2e-tests:
     name: E2E (${{ matrix.service }})
-    needs: [build-and-push-images]  # Runs in parallel with integration tests
+    needs: [unit-tests, build-and-push-images]  # Wait for both unit tests AND images
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
