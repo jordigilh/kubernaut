@@ -34,8 +34,8 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
 // ResponseProcessor handles processing of HolmesGPT-API responses
@@ -89,13 +89,28 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
-	// BR-HAPI-197: Check if workflow resolution failed
-	// This handles cases where HAPI needs human review for reasons other than "problem resolved"
+	// BR-HAPI-197: Check if workflow resolution failed (validation failures)
+	// This handles cases where HAPI flagged validation failures explicitly
 	if needsHumanReview {
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
 	}
 
-	// Store HAPI response metadata
+	// BR-AI-050 + Issue #29: No workflow found (terminal failure)
+	// When confidence < 0.7 and no workflow, this is a terminal failure (not "problem resolved")
+	// Note: The "problem resolved" case (confidence >= 0.7, no workflow) was already handled above
+	if !hasSelectedWorkflow {
+		return p.handleNoWorkflowTerminalFailure(ctx, analysis, resp)
+	}
+
+	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
+	// HAPI returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
+	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
+
+	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
+		return p.handleLowConfidenceFailure(ctx, analysis, resp)
+	}
+
+	// All checks passed - store HAPI response metadata and continue processing
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -207,8 +222,8 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.AnalysisConfidence)
 
-	// BR-HAPI-197: Check if recovery requires human review
-	// This takes precedence over other checks as HAPI has determined it cannot provide reliable recommendations
+	// BR-HAPI-197: Check if recovery requires human review (validation failures)
+	// This handles cases where HAPI flagged validation failures explicitly
 	if needsHumanReview {
 		return p.handleWorkflowResolutionFailureFromRecovery(ctx, analysis, resp)
 	}
@@ -218,12 +233,21 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 		return p.handleRecoveryNotPossible(ctx, analysis, resp)
 	}
 
-	// Check if no workflow was selected (might need human review)
+	// BR-AI-050 + Issue #29: No workflow found (terminal failure)
+	// When confidence < 0.7 and no workflow, this is a terminal failure
 	if !hasSelectedWorkflow {
-		return p.handleRecoveryNotPossible(ctx, analysis, resp)
+		return p.handleNoWorkflowTerminalFailureFromRecovery(ctx, analysis, resp)
 	}
 
-	// Store HAPI response metadata
+	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
+	// HAPI returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
+	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
+
+	if hasSelectedWorkflow && resp.AnalysisConfidence < confidenceThreshold {
+		return p.handleLowConfidenceFailureFromRecovery(ctx, analysis, resp)
+	}
+
+	// All checks passed - store HAPI response metadata and continue processing
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -465,6 +489,154 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	return ctrl.Result{}, nil
 }
 
+// handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
+// Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
+func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+	p.log.Info("No workflow selected, terminal failure",
+		"confidence", resp.Confidence,
+		"warnings", resp.Warnings,
+	)
+
+	// Set structured failure with timestamp
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
+	analysis.Status.SubReason = "NoMatchingWorkflows" // Maps to CRD SubReason enum
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
+	analysis.Status.NeedsHumanReview = true
+	analysis.Status.HumanReviewReason = "no_matching_workflows"
+
+	// Build operator-friendly message
+	analysis.Status.Message = "No workflow selected for remediation"
+	if len(resp.Warnings) > 0 {
+		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
+	}
+	analysis.Status.Warnings = resp.Warnings
+
+	// Store RCA if available (for human review context)
+	if len(resp.RootCauseAnalysis) > 0 {
+		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
+		if rcaMap != nil {
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:             GetStringFromMap(rcaMap, "summary"),
+				Severity:            GetStringFromMap(rcaMap, "severity"),
+				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
+			}
+		}
+	}
+
+	// BR-AI-050: Emit audit event for terminal failure
+	failureErr := fmt.Errorf("no workflow selected: no matching workflows found")
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Track failure metrics
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
+
+	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// handleLowConfidenceFailure handles workflow selection with confidence below threshold
+// Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not HAPI)
+func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+	const confidenceThreshold = 0.7 // V1.0: global 70% default
+
+	p.log.Info("Low confidence workflow, requires human review",
+		"confidence", resp.Confidence,
+		"threshold", confidenceThreshold,
+		"warnings", resp.Warnings,
+	)
+
+	// Set structured failure with timestamp
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
+	analysis.Status.SubReason = "LowConfidence" // Maps to CRD SubReason enum
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for low confidence
+	analysis.Status.NeedsHumanReview = true
+	analysis.Status.HumanReviewReason = "low_confidence"
+
+	// Build operator-friendly message
+	analysis.Status.Message = fmt.Sprintf("Workflow confidence %.2f below threshold %.2f (low_confidence)", resp.Confidence, confidenceThreshold)
+	if len(resp.Warnings) > 0 {
+		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
+	}
+	analysis.Status.Warnings = resp.Warnings
+
+	// Store workflow info for human review (partial information for operator context)
+	if resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null {
+		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+		if swMap != nil {
+			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+				Version:         GetStringFromMap(swMap, "version"),
+				ContainerImage:  GetStringFromMap(swMap, "container_image"),
+				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				Confidence:      GetFloat64FromMap(swMap, "confidence"),
+				Rationale:       GetStringFromMap(swMap, "rationale"),
+			}
+			// Map parameters if present
+			if paramsRaw, ok := swMap["parameters"]; ok {
+				if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
+					analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+				}
+			}
+		}
+	}
+
+	// Store RCA if available (for human review context)
+	if len(resp.RootCauseAnalysis) > 0 {
+		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
+		if rcaMap != nil {
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:             GetStringFromMap(rcaMap, "summary"),
+				Severity:            GetStringFromMap(rcaMap, "severity"),
+				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
+			}
+		}
+	}
+
+	// Store alternative workflows if available (for human review context)
+	if len(resp.AlternativeWorkflows) > 0 {
+		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
+		for _, alt := range resp.AlternativeWorkflows {
+			containerImage := ""
+			if alt.ContainerImage.Set && !alt.ContainerImage.Null {
+				containerImage = alt.ContainerImage.Value
+			}
+			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
+				WorkflowID:     alt.WorkflowID,
+				ContainerImage: containerImage,
+				Confidence:     alt.Confidence,
+				Rationale:      alt.Rationale,
+			})
+		}
+		analysis.Status.AlternativeWorkflows = alternatives
+	}
+
+	// BR-AI-050: Emit audit event for low confidence failure
+	failureErr := fmt.Errorf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Track failure metrics
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
+
+	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
 // handleWorkflowResolutionFailureFromRecovery handles workflow resolution failure from RecoveryResponse
 // BR-HAPI-197: Recovery workflow resolution failed, human must intervene
 func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) (ctrl.Result, error) {
@@ -535,6 +707,112 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	analysis.Status.Warnings = resp.Warnings
 
 	return ctrl.Result{}, nil
+}
+
+// handleNoWorkflowTerminalFailureFromRecovery handles terminal failure when no workflow selected with low confidence (recovery flow)
+// Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
+func (p *ResponseProcessor) handleNoWorkflowTerminalFailureFromRecovery(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) (ctrl.Result, error) {
+	p.log.Info("No workflow selected, terminal failure (recovery flow)",
+		"confidence", resp.AnalysisConfidence,
+		"warnings", resp.Warnings,
+	)
+
+	// Set structured failure with timestamp
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
+	analysis.Status.SubReason = "NoMatchingWorkflows" // Maps to CRD SubReason enum
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
+	analysis.Status.NeedsHumanReview = true
+	analysis.Status.HumanReviewReason = "no_matching_workflows"
+
+	// Build operator-friendly message
+	analysis.Status.Message = "No recovery workflow selected for remediation"
+	if len(resp.Warnings) > 0 {
+		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
+	}
+	analysis.Status.Warnings = resp.Warnings
+
+	// BR-AI-050: Emit audit event for terminal failure
+	failureErr := fmt.Errorf("no recovery workflow selected: no matching workflows found")
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Track failure metrics
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
+
+	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// handleLowConfidenceFailureFromRecovery handles workflow selection with confidence below threshold (recovery flow)
+// Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not HAPI)
+func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) (ctrl.Result, error) {
+	const confidenceThreshold = 0.7 // V1.0: global 70% default
+
+	p.log.Info("Low confidence recovery workflow, requires human review",
+		"confidence", resp.AnalysisConfidence,
+		"threshold", confidenceThreshold,
+		"warnings", resp.Warnings,
+	)
+
+	// Set structured failure with timestamp
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
+	analysis.Status.SubReason = "LowConfidence" // Maps to CRD SubReason enum
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for low confidence
+	analysis.Status.NeedsHumanReview = true
+	analysis.Status.HumanReviewReason = "low_confidence"
+
+	// Build operator-friendly message
+	analysis.Status.Message = fmt.Sprintf("Recovery workflow confidence %.2f below threshold %.2f (low_confidence)", resp.AnalysisConfidence, confidenceThreshold)
+	if len(resp.Warnings) > 0 {
+		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
+	}
+	analysis.Status.Warnings = resp.Warnings
+
+	// Store workflow info for human review (partial information for operator context)
+	if resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null {
+		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+		if swMap != nil {
+			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+				Version:         GetStringFromMap(swMap, "version"),
+				ContainerImage:  GetStringFromMap(swMap, "container_image"),
+				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				Confidence:      GetFloat64FromMap(swMap, "confidence"),
+				Rationale:       GetStringFromMap(swMap, "rationale"),
+			}
+			// Map parameters if present
+			if paramsRaw, ok := swMap["parameters"]; ok {
+				if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
+					analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+				}
+			}
+		}
+	}
+
+	// BR-AI-050: Emit audit event for low confidence failure
+	failureErr := fmt.Errorf("low confidence recovery: %.2f below threshold %.2f", resp.AnalysisConfidence, confidenceThreshold)
+	if auditErr := p.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		p.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Track failure metrics
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
+
+	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
 // handleRecoveryNotPossible handles when recovery is not possible
@@ -618,4 +896,3 @@ func mapWarningsToSubReason(warnings []string) string {
 		return "WorkflowNotFound" // Default to most common case
 	}
 }
-
