@@ -105,7 +105,7 @@ generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from sp
 .PHONY: generate-holmesgpt-client
 generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
-	@go generate ./pkg/holmesgpt/client/...
+	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ HolmesGPT-API client generated successfully"
 
 .PHONY: fmt
