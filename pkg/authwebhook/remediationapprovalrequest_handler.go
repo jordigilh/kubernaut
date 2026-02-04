@@ -24,7 +24,6 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -109,17 +108,13 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		return admission.Allowed("no decision made")
 	}
 
-	// Validate decision is one of the allowed enum values
-	validDecisions := map[remediationv1.ApprovalDecision]bool{
-		remediationv1.ApprovalDecisionApproved: true,
-		remediationv1.ApprovalDecisionRejected: true,
-		remediationv1.ApprovalDecisionExpired:  true,
-	}
-	if !validDecisions[rar.Status.Decision] {
+	// REFACTOR-AW-001: Validate decision using extracted helper
+	if err := ValidateApprovalDecision(rar.Status.Decision); err != nil {
 		logger.Info("Rejecting RAR (invalid decision)",
 			"decision", rar.Status.Decision,
+			"error", err,
 		)
-		return admission.Denied(fmt.Sprintf("invalid decision: %s (must be Approved, Rejected, or Expired)", rar.Status.Decision))
+		return admission.Denied(err.Error())
 	}
 
 	// SECURITY: TRUE Idempotency Check - Compare OLD object with NEW object
@@ -152,14 +147,8 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		"uid", authCtx.UID,
 	)
 
-	// SECURITY: Detect and log identity forgery attempts
-	// Per BR-AUTH-001, SOC 2 CC8.1: User attribution MUST be tamper-proof
-	if rar.Status.DecidedBy != "" {
-		logger.Info("SECURITY: Overwriting user-provided DecidedBy (forgery prevention)",
-			"userProvidedValue", rar.Status.DecidedBy,
-			"authenticatedUser", authCtx.Username,
-		)
-	}
+	// REFACTOR-AW-002: Detect and log identity forgery attempts using extracted helper
+	DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
 
 	// SECURITY: Populate DecidedBy with authenticated user (OVERWRITE any user-provided value)
 	// Per BR-AUTH-001, SOC 2 CC8.1: User attribution is tamper-proof (webhook-enforced)
@@ -192,32 +181,26 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	audit.SetCorrelationID(auditEvent, parentRRName)
 	audit.SetNamespace(auditEvent, rar.Namespace)
 
-	// Set event data payload
-	// Per DD-WEBHOOK-003 lines 314-318: Business context ONLY (attribution in structured columns)
-	// Use structured audit payload (eliminates map[string]interface{})
+	// REFACTOR-AW-003: Build audit payload using extracted helper
+	// Per DD-WEBHOOK-003: Business context ONLY (attribution in structured columns)
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := api.RemediationApprovalAuditPayload{
-		EventType:       "webhook.approval.decided",
-		RequestName:     rar.Name,
-		Decision:        toRemediationApprovalAuditPayloadDecision(string(rar.Status.Decision)),
-		DecidedAt:       rar.Status.DecidedAt.Time,
-		DecisionMessage: rar.Status.DecisionMessage,  // Per DD-WEBHOOK-003 line 316
-		AiAnalysisRef:   rar.Spec.AIAnalysisRef.Name, // Per DD-WEBHOOK-003 line 317 (note: lowercase 'i' in ogen)
-	}
+	payload := BuildRARApprovalAuditPayload(rar)
+	auditEvent.EventData = WrapRARApprovalPayloadWithDiscriminator(payload)
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: rar.Name (via audit.SetResource)
 	// - namespace: rar.Namespace (via audit.SetNamespace)
 	// - event_action: "approval_decided" (via audit.SetEventAction)
-	auditEvent.EventData = api.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
 	// Explicitly ignore errors - audit should not block webhook operations
 	// The audit store has retry + DLQ mechanisms for reliability
 	_ = h.auditStore.StoreAudit(ctx, auditEvent)
 
+	// BUGFIX: Log correct correlationID (parent RR name, not RAR name)
 	logger.Info("Webhook audit event emitted",
-		"correlationID", rar.Name,
+		"correlationID", parentRRName,
+		"rarName", rar.Name,
 		"eventAction", "approval_decided",
 	)
 
