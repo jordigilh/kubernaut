@@ -550,7 +550,7 @@ spec:
       containers:
       - name: holmesgpt-api
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
         args:
@@ -591,7 +591,7 @@ spec:
   - port: 8080
     targetPort: 8080
     nodePort: 30088
-`, imageName)
+`, imageName, GetImagePullPolicy())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
@@ -728,7 +728,7 @@ spec:
       containers:
       - name: aianalysis
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
         - containerPort: 9090
@@ -787,7 +787,7 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: 30284
-`, imageName)
+`, imageName, GetImagePullPolicy())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer

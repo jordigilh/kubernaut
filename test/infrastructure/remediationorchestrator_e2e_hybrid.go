@@ -522,7 +522,7 @@ spec:
       containers:
       - name: controller
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         args:
         - --config=/etc/config/remediationorchestrator.yaml
         ports:
@@ -635,7 +635,7 @@ subjects:
 - kind: ServiceAccount
   name: remediationorchestrator-controller
   namespace: kubernaut-system
-`, imageName, coverdataPath)
+`, imageName, GetImagePullPolicy(), coverdataPath)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewReader([]byte(manifest))

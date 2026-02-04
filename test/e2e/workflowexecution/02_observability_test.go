@@ -549,12 +549,12 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Name:       "test-rr-" + testName,
 						Namespace:  "default",
 					},
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: "test-intentional-failure",
-						Version:    "v1.0.0",
-						// Use test registry per test/infrastructure/workflow_bundles.go
-						ContainerImage: "quay.io/jordigilh/test-workflows/failing:v1.0.0",
-					},
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID: "test-intentional-failure",
+					Version:    "v1.0.0",
+					// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
+					ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+				},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
 						// Per test/fixtures/tekton/failing-pipeline.yaml

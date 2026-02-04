@@ -819,7 +819,7 @@ spec:
       containers:
         - name: gateway
           image: %s
-          imagePullPolicy: Never  # Use local image loaded into Kind
+          imagePullPolicy: %s
           args:
             - "--config=/etc/gateway/config.yaml"
           env:
@@ -954,7 +954,7 @@ subjects:
   - kind: ServiceAccount
     name: gateway
     namespace: kubernaut-system
-`, imageName)
+`, imageName, GetImagePullPolicy())
 }
 
 func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) error {

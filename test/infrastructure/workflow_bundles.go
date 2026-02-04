@@ -45,8 +45,8 @@ import (
 
 const (
 	// TestWorkflowBundleRegistry is the OCI registry for test workflow bundles
-	// Uses quay.io for production-like testing (bundles pre-built and pushed once)
-	TestWorkflowBundleRegistry = "quay.io/jordigilh/test-workflows"
+	// Uses quay.io/kubernaut-cicd namespace (multi-arch support: amd64 + arm64)
+	TestWorkflowBundleRegistry = "quay.io/kubernaut-cicd/test-workflows"
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"

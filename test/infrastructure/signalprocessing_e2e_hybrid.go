@@ -85,9 +85,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Build SignalProcessing with coverage in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "signalprocessing",  // Operator SDK convention: no -controller suffix in image name
+			ServiceName:      "signalprocessing", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/signalprocessing",
-			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile",  // Dockerfile can have suffix
+			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
@@ -1036,7 +1036,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
-	
+
 	// Use dynamic imagePullPolicy based on environment (CI/CD registry vs local)
 	imagePullPolicy := GetImagePullPolicy()
 	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)

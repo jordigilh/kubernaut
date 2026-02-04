@@ -126,17 +126,17 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// Skip pull + load - let Kind pull from registry on-demand
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
-	
+
 	if registry != "" && tag != "" {
 		// Extract service name from ImageName (remove repo prefix if present)
 		// e.g., "kubernaut/datastorage" → "datastorage"
 		parts := strings.Split(cfg.ImageName, "/")
 		serviceName := parts[len(parts)-1]
-		
+
 		registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 		_, _ = fmt.Fprintf(writer, "🔄 Registry mode: Using %s\n", registryImage)
 		_, _ = fmt.Fprintf(writer, "   ⏭️  Skipping pull + load (Kind will pull on-demand)\n")
-		
+
 		// Return registry image reference (no local pull/build needed)
 		return registryImage, nil
 	}

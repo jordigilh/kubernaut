@@ -412,7 +412,7 @@ spec:
       containers:
       - name: holmesgpt-api
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
         args:
@@ -453,7 +453,7 @@ spec:
     nodePort: 30120
   selector:
     app: holmesgpt-api
-`, namespace, namespace, imageTag, namespace)
+`, namespace, namespace, imageTag, GetImagePullPolicy(), namespace)
 
 	// Apply manifest
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -763,7 +763,7 @@ spec:
       containers:
       - name: mock-llm
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
           name: http
@@ -840,7 +840,7 @@ spec:
     name: http
   selector:
     app: mock-llm
-`, namespace, imageTag, namespace)
+`, namespace, imageTag, GetImagePullPolicy(), namespace)
 
 	cmd = exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
 	cmd.Stdin = strings.NewReader(deployment)
