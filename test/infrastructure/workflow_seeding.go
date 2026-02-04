@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -143,6 +144,19 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		containerImage = fmt.Sprintf("quay.io/jordigilh/test-workflows/%s:%s", wf.WorkflowID, version)
 	}
 
+	// Extract container_digest from container_image if present
+	// Pattern: Matches Python workflow_fixtures.py logic (line 91-94)
+	// BR-AI-075: Container digest field for audit trail
+	// Example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..." → "sha256:abc123..."
+	var containerDigest ogenclient.OptString
+	if strings.Contains(containerImage, "@sha256:") {
+		parts := strings.Split(containerImage, "@")
+		if len(parts) == 2 {
+			// Found digest: image@sha256:abc123...
+			containerDigest = ogenclient.NewOptString(parts[1]) // "sha256:abc123..."
+		}
+	}
+
 	// Build workflow request using OpenAPI generated types (compile-time validation)
 	workflowReq := &ogenclient.RemediationWorkflow{
 		// Note: WorkflowID is NOT set - DataStorage auto-generates it
@@ -154,6 +168,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		ContentHash:     contentHash,
 		ExecutionEngine: "tekton",
 		ContainerImage:  ogenclient.NewOptString(containerImage),
+		ContainerDigest: containerDigest, // BR-AI-075: Extract from ContainerImage
 		Labels: ogenclient.MandatoryLabels{
 			SignalType:  wf.SignalType,
 			Severity:    severity,
