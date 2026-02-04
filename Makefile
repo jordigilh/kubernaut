@@ -119,7 +119,7 @@ vet: ## Run go vet against code
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint
-	$(GOLANGCI_LINT) run ./...
+	$(GOLANGCI_LINT) run cmd/... pkg/... internal/... test/...
 
 .PHONY: clean
 clean: ## Clean build artifacts
