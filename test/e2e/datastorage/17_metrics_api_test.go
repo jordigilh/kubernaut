@@ -44,6 +44,8 @@ import (
 // ========================================
 
 var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func() {
+	// Local HTTP client for /metrics endpoint (Prometheus text format, not JSON/OpenAPI)
+	var HTTPClient = &http.Client{Timeout: 10 * time.Second}
 	// Use shared dataStorageURL and testDB from suite_test.go
 
 	BeforeEach(func() {
