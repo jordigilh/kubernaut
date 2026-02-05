@@ -103,30 +103,30 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 			baselineMetrics := baselineBody.String()
 
-		// Create audit event using ogen client (ADR-034)
-		// FIX: Use correct helper function for discriminated union (DD-AUDIT-004)
-		eventData := ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
-			EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-			AlertName:   "MetricsTest",
-			Namespace:   "default",
-			Fingerprint: "test-fingerprint",
-		})
+			// Create audit event using ogen client (ADR-034)
+			// FIX: Use correct helper function for discriminated union (DD-AUDIT-004)
+			eventData := ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "MetricsTest",
+				Namespace:   "default",
+				Fingerprint: "test-fingerprint",
+			})
 
-		eventRequest := ogenclient.AuditEventRequest{
-			Version:        "1.0",
-			EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
-			EventType:      "gateway.signal.received",
-			EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
-			CorrelationID:  fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
-			EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
-			EventAction:    "metrics_test",
-			ActorType:      ogenclient.NewOptString("service"),
-			ActorID:        ogenclient.NewOptString("gateway-service"),
-			ResourceType:   ogenclient.NewOptString("signal"),
-			ResourceID:     ogenclient.NewOptString("metrics-test-001"),
-			EventData:      eventData,
-		}
+			eventRequest := ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				CorrelationID:  fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventAction:    "metrics_test",
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("signal"),
+				ResourceID:     ogenclient.NewOptString("metrics-test-001"),
+				EventData:      eventData,
+			}
 
 			// Use ogen client to post event (handles optional fields properly)
 			ctx := context.Background()

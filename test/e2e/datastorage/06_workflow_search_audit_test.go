@@ -176,11 +176,11 @@ execution:
 				// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
 				// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  uniqueSignalType,                      // mandatory - unique per process
-					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},                          // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Component:   "deployment",                          // mandatory
+					SignalType:  uniqueSignalType,                                                                           // mandatory - unique per process
+					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
+					Component:   "deployment",                                                                               // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -358,10 +358,10 @@ execution:
 			// Verify search metadata (BR-AUDIT-028)
 			searchMetadata, ok := eventDataMap["search_metadata"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should contain 'search_metadata' object")
-		// Note: duration_ms may be 0 for sub-millisecond searches (Milliseconds() truncates)
-		// Performance upper bound removed - E2E tests validate functionality, not performance
-		Expect(searchMetadata["duration_ms"]).To(BeNumerically(">=", 0),
-			"Search duration should be non-negative")
+			// Note: duration_ms may be 0 for sub-millisecond searches (Milliseconds() truncates)
+			// Performance upper bound removed - E2E tests validate functionality, not performance
+			Expect(searchMetadata["duration_ms"]).To(BeNumerically(">=", 0),
+				"Search duration should be non-negative")
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Workflow Search Audit Trail Validation Complete")
@@ -381,56 +381,56 @@ execution:
 			testLogger.Info("Test: Async Audit Non-Blocking Behavior")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// ACT: Perform multiple rapid searches to test async behavior
-		testLogger.Info("🔍 Performing rapid workflow searches...")
+			// ACT: Perform multiple rapid searches to test async behavior
+			testLogger.Info("🔍 Performing rapid workflow searches...")
 
-		// FIX: Warm-up search to exclude cold-start overhead from average (E2E environment constraint)
-		warmupRequest := dsgen.WorkflowSearchRequest{
-			RemediationID: dsgen.NewOptString(fmt.Sprintf("rem-async-warmup-%s", testID)),
-			Filters: dsgen.WorkflowSearchFilters{
-				SignalType:  "OOMKilled",
-				Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
-				Component:   "deployment",
-				Environment: "production",
-				Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
-			},
-			TopK: dsgen.NewOptInt(3),
-		}
-		_, err := DSClient.SearchWorkflows(context.Background(), &warmupRequest)
-		Expect(err).ToNot(HaveOccurred())
-		testLogger.Info("  Warm-up search completed (excluded from average)")
-
-		var totalDuration time.Duration
-		numSearches := 5
-
-		for i := 0; i < numSearches; i++ {
-			remediationID := fmt.Sprintf("rem-async-%s-%d", testID, i)
-			topK := 3
-			// DD-API-001: Use typed OpenAPI struct
-			searchRequest := dsgen.WorkflowSearchRequest{
-				RemediationID: dsgen.NewOptString(remediationID),
+			// FIX: Warm-up search to exclude cold-start overhead from average (E2E environment constraint)
+			warmupRequest := dsgen.WorkflowSearchRequest{
+				RemediationID: dsgen.NewOptString(fmt.Sprintf("rem-async-warmup-%s", testID)),
 				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
-					Component:   "deployment",                                // mandatory
-					Environment: "production",                                // mandatory
-					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
+					SignalType:  "OOMKilled",
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Component:   "deployment",
+					Environment: "production",
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
 				},
-				TopK: dsgen.NewOptInt(topK),
+				TopK: dsgen.NewOptInt(3),
+			}
+			_, err := DSClient.SearchWorkflows(context.Background(), &warmupRequest)
+			Expect(err).ToNot(HaveOccurred())
+			testLogger.Info("  Warm-up search completed (excluded from average)")
+
+			var totalDuration time.Duration
+			numSearches := 5
+
+			for i := 0; i < numSearches; i++ {
+				remediationID := fmt.Sprintf("rem-async-%s-%d", testID, i)
+				topK := 3
+				// DD-API-001: Use typed OpenAPI struct
+				searchRequest := dsgen.WorkflowSearchRequest{
+					RemediationID: dsgen.NewOptString(remediationID),
+					Filters: dsgen.WorkflowSearchFilters{
+						SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
+						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+						Component:   "deployment",                                // mandatory
+						Environment: "production",                                // mandatory
+						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
+					},
+					TopK: dsgen.NewOptInt(topK),
+				}
+
+				start := time.Now()
+				_, err := DSClient.SearchWorkflows(context.Background(), &searchRequest)
+				duration := time.Since(start)
+				totalDuration += duration
+
+				Expect(err).ToNot(HaveOccurred())
+
+				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
+					"duration", duration)
 			}
 
-			start := time.Now()
-			_, err := DSClient.SearchWorkflows(context.Background(), &searchRequest)
-			duration := time.Since(start)
-			totalDuration += duration
-
-			Expect(err).ToNot(HaveOccurred())
-
-			testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
-				"duration", duration)
-		}
-
-		avgDuration := totalDuration / time.Duration(numSearches)
+			avgDuration := totalDuration / time.Duration(numSearches)
 
 			// NOTE: Performance assertions removed from E2E tests (DD-AUTH-014)
 			// BR-AUDIT-024 validates audit write IMPACT (<50ms overhead), not absolute search latency

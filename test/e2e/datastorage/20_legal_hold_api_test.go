@@ -17,6 +17,9 @@ import (
 )
 
 var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func() {
+	// Local HTTP client for legal hold API (detailed response inspection needed)
+	var HTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 	var (
 		correlationID string
 		ctx           context.Context

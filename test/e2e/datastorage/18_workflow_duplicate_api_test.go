@@ -42,10 +42,12 @@ const (
 )
 
 var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
-	// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
+	// Local HTTP client for bug verification test (409 Conflict not in ogen client yet)
+	// NOTE: This test verifies DS-BUG-001 fix - 409 response not yet in OpenAPI spec
+	var HTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 	BeforeAll(func() {
-		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
+		// Using local HTTPClient to verify bug fix (raw HTTP needed for 409 validation)
 	})
 
 	Context("DS-BUG-001: Duplicate workflow creation", func() {
@@ -109,10 +111,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
 			GinkgoWriter.Printf("   - Error detail: '%s'\n", detail)
 
-		// Step 4: Verify only one workflow exists in database using ListWorkflows API
-		// DD-AUTH-014: Use shared authenticated DSClient from suite setup
-		listResp, err := DSClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
-		Expect(err).ToNot(HaveOccurred())
+			// Step 4: Verify only one workflow exists in database using ListWorkflows API
+			// DD-AUTH-014: Use shared authenticated DSClient from suite setup
+			listResp, err := DSClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+			Expect(err).ToNot(HaveOccurred())
 
 			// Type assert the response
 			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)

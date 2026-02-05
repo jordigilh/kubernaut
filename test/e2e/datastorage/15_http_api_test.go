@@ -23,8 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // HTTP API Integration Tests - POST /api/v1/audit/notifications
@@ -152,22 +152,26 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 func postAudit(audit *models.NotificationAudit) (int, string, error) {
 	// Convert models.NotificationAudit to ogen NotificationAudit
 	ogenAudit := convertToOgenNotificationAudit(audit)
-	
+
 	// Use typed DSClient
 	resp, err := DSClient.CreateNotificationAudit(ctx, ogenAudit)
 	if err != nil {
 		GinkgoWriter.Printf("\n❌ CreateNotificationAudit failed with error: %v\n", err)
 		return 0, "", err
 	}
-	
+
 	// Handle response types
 	switch r := resp.(type) {
-	case *ogenclient.CreateNotificationAuditCreated:
+	case *ogenclient.NotificationAuditResponse:
 		return 201, "", nil
+	case *ogenclient.CreateNotificationAuditAccepted:
+		return 202, "", nil
 	case *ogenclient.CreateNotificationAuditBadRequest:
-		return 400, r.Detail, nil
+		return 400, r.Detail.Value, nil
+	case *ogenclient.CreateNotificationAuditConflict:
+		return 409, r.Detail.Value, nil
 	case *ogenclient.CreateNotificationAuditInternalServerError:
-		return 500, r.Detail, nil
+		return 500, r.Detail.Value, nil
 	default:
 		return 0, "", fmt.Errorf("unexpected response type: %T", resp)
 	}

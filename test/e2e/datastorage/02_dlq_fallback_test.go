@@ -20,7 +20,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -66,8 +65,8 @@ import (
 
 var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outage", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
+		testCancel context.CancelFunc
+		testLogger logr.Logger
 		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
@@ -90,15 +89,15 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-	// Wait for Data Storage Service to be responsive using typed OpenAPI client
-	testLogger.Info("⏳ Waiting for Data Storage Service...")
-	Eventually(func() error {
-		_, err := DSClient.HealthCheck(ctx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
+		// Wait for Data Storage Service to be responsive using typed OpenAPI client
+		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		Eventually(func() error {
+			_, err := DSClient.HealthCheck(ctx)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
 		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)

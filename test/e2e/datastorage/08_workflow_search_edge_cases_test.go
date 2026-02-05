@@ -60,8 +60,8 @@ import (
 
 var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflow-search-edge-cases", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
+		testCancel context.CancelFunc
+		testLogger logr.Logger
 		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
@@ -86,11 +86,11 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-	// Wait for service to be ready using typed OpenAPI client
-	testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
-	Eventually(func() error {
-		_, err := DSClient.ReadinessCheck(ctx)
-		return err
+		// Wait for service to be ready using typed OpenAPI client
+		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
+		Eventually(func() error {
+			_, err := DSClient.ReadinessCheck(ctx)
+			return err
 		}, "2m", "5s").Should(Succeed())
 
 		testLogger.Info("✅ Data Storage Service is ready")

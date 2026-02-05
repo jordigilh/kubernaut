@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -132,8 +133,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "pod-oom-recovery", "v1.0", true, false, false)
 				}
 
-			// Execute HTTP request (using local client - endpoint not in OpenAPI spec)
-			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				// Execute HTTP request (using local client - endpoint not in OpenAPI spec)
+				resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()

@@ -19,7 +19,6 @@ package datastorage
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sort"
 	"time"
 
@@ -61,8 +60,8 @@ import (
 
 var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s Response)", Label("e2e", "query-api", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
+		testCancel context.CancelFunc
+		testLogger logr.Logger
 		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
@@ -85,15 +84,15 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-	// Wait for Data Storage Service to be responsive using typed OpenAPI client
-	testLogger.Info("⏳ Waiting for Data Storage Service...")
-	Eventually(func() error {
-		_, err := DSClient.HealthCheck(ctx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
+		// Wait for Data Storage Service to be responsive using typed OpenAPI client
+		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		Eventually(func() error {
+			_, err := DSClient.HealthCheck(ctx)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
 		// Generate unique correlation ID for this test

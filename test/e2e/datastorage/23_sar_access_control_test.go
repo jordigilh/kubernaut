@@ -62,12 +62,12 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 	var (
 		testCtx    context.Context
 		testCancel context.CancelFunc
-		
+
 		// ServiceAccount tokens for different permission levels
-		authorizedToken   string  // Has "create" permission (data-storage-client)
-		unauthorizedToken string  // No permissions
-		readOnlyToken     string  // Only has "get" permission (insufficient)
-		
+		authorizedToken   string // Has "create" permission (data-storage-client)
+		unauthorizedToken string // No permissions
+		readOnlyToken     string // Only has "get" permission (insufficient)
+
 		// HTTP clients with different authentication levels
 		authorizedClient   *dsgen.Client
 		unauthorizedClient *dsgen.Client
@@ -202,26 +202,26 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 				},
 			}
 
-		// Attempt to write audit event with authorized client
-		resp, err := authorizedClient.CreateAuditEvent(testCtx, &auditReq)
-		
-		// Verify request succeeded
-		Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to write audit events")
-		Expect(resp).ToNot(BeNil())
-		
-		// Verify response is either 201 Created (synchronous) or 202 Accepted (async)
-		// Per DD-009: DataStorage may queue events to DLQ if database is unavailable
-		// 201 = AuditEventResponse (event_id + event_timestamp)
-		// 202 = AsyncAcceptanceResponse (status + message)
-		_, isCreated := resp.(*dsgen.AuditEventResponse)
-		_, isAccepted := resp.(*dsgen.AsyncAcceptanceResponse)
-		Expect(isCreated || isAccepted).To(BeTrue(), "Response should be AuditEventResponse (201) or AsyncAcceptanceResponse (202)")
-		
-		if isAccepted {
-			logger.Info("✅ Authorized ServiceAccount successfully queued audit event (async)", "status", "202 Accepted")
-		} else {
-			logger.Info("✅ Authorized ServiceAccount successfully wrote audit event", "status", "201 Created")
-		}
+			// Attempt to write audit event with authorized client
+			resp, err := authorizedClient.CreateAuditEvent(testCtx, &auditReq)
+
+			// Verify request succeeded
+			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to write audit events")
+			Expect(resp).ToNot(BeNil())
+
+			// Verify response is either 201 Created (synchronous) or 202 Accepted (async)
+			// Per DD-009: DataStorage may queue events to DLQ if database is unavailable
+			// 201 = AuditEventResponse (event_id + event_timestamp)
+			// 202 = AsyncAcceptanceResponse (status + message)
+			_, isCreated := resp.(*dsgen.AuditEventResponse)
+			_, isAccepted := resp.(*dsgen.AsyncAcceptanceResponse)
+			Expect(isCreated || isAccepted).To(BeTrue(), "Response should be AuditEventResponse (201) or AsyncAcceptanceResponse (202)")
+
+			if isAccepted {
+				logger.Info("✅ Authorized ServiceAccount successfully queued audit event (async)", "status", "202 Accepted")
+			} else {
+				logger.Info("✅ Authorized ServiceAccount successfully wrote audit event", "status", "201 Created")
+			}
 		})
 
 		It("should reject unauthorized ServiceAccount with 403 Forbidden", func() {
@@ -251,16 +251,16 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// Attempt to write audit event with unauthorized client
 			resp, err := unauthorizedClient.CreateAuditEvent(testCtx, &auditReq)
-			
+
 			// Verify request was rejected with 403
 			// Note: OAuth2-proxy returns 403 before reaching DataStorage
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (may be 403)")
-			
+
 			// Check if response is 403 Forbidden
 			forbidden, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
 			Expect(forbidden).ToNot(BeNil())
-			
+
 			logger.Info("✅ Unauthorized ServiceAccount correctly rejected with 403 Forbidden")
 		})
 
@@ -291,16 +291,16 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// Attempt to write audit event with read-only client
 			resp, err := readOnlyClient.CreateAuditEvent(testCtx, &auditReq)
-			
+
 			// Verify request returned 403 Forbidden response
 			// Note: OAuth2-proxy checks SAR with verb:"create", read-only SA only has verb:"get"
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (not error)")
-			
+
 			// Check if response is 403 Forbidden
 			forbidden, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
 			Expect(forbidden).ToNot(BeNil())
-			
+
 			logger.Info("✅ Read-only ServiceAccount correctly rejected with 403 Forbidden (insufficient permissions)")
 		})
 	})
@@ -333,7 +333,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			resp, err := authorizedClient.CreateWorkflow(testCtx, &workflowReq)
 			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to create workflows")
 			Expect(resp).ToNot(BeNil())
-			
+
 			// Type assert to get the actual workflow response
 			workflow, ok := resp.(*dsgen.RemediationWorkflow)
 			if !ok {
@@ -345,14 +345,14 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			Expect(ok).To(BeTrue(), fmt.Sprintf("Response should be RemediationWorkflow, got: %T", resp))
 			Expect(workflow.WorkflowID.IsSet()).To(BeTrue(), "WorkflowID should be set by DataStorage")
 			Expect(workflow.WorkflowName).To(Equal("sar-test-workflow"))
-			
+
 			// DataStorage generates workflow_id (PostgreSQL UUID), not client-provided
 			generatedWorkflowID := workflow.WorkflowID.Value
 			logger.Info("✅ Workflow created successfully", "workflowID", generatedWorkflowID)
 
 			// Verify audit event was created with user attribution
 			logger.Info("📋 Verifying audit event captured user attribution...")
-			
+
 			// Query audit events for workflow creation (use all 3 filters for precision)
 			// CorrelationID = workflow_id (per pkg/datastorage/audit/workflow_catalog_event.go:56)
 			Eventually(func() bool {
@@ -410,15 +410,15 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// Attempt to create workflow (should fail with 403)
 			resp, err := unauthorizedClient.CreateWorkflow(testCtx, &workflowReq)
-			
+
 			// Verify request returned 403 Forbidden response
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (not error)")
-			
+
 			// Check if response is 403 Forbidden
 			forbidden, isForbidden := resp.(*dsgen.CreateWorkflowForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
 			Expect(forbidden).ToNot(BeNil())
-			
+
 			logger.Info("✅ Workflow creation correctly rejected with 403 Forbidden")
 		})
 	})
