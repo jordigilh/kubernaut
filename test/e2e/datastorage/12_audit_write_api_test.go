@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,13 +62,16 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 		// Use shared DataStorage deployment
 		serviceURL = dataStorageURL
 
-		// Ensure service is ready before each test
-		Eventually(func() bool {
-			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_, err := DSClient.HealthCheck(healthCtx)
-			return err == nil
-		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
+		// Ensure service is ready before each test (health endpoint returns text/plain, use raw HTTP)
+		httpClient := &http.Client{Timeout: 2 * time.Second}
+		Eventually(func() int {
+			resp, err := httpClient.Get(serviceURL + "/health")
+			if err != nil || resp == nil {
+				return 0
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
 
 		// Connect to PostgreSQL for verification
 		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable")

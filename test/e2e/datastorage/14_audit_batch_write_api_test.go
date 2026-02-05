@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -56,13 +57,16 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 		// CRITICAL: Use public schema for audit_events table queries
 		// HTTP API writes to public schema, test queries must target same schema
 
-		// Ensure service is ready before each test
-		Eventually(func() bool {
-			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_, err := DSClient.HealthCheck(healthCtx)
-			return err == nil
-		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
+		// Ensure service is ready before each test (health endpoint returns text/plain, use raw HTTP)
+		httpClient := &http.Client{Timeout: 2 * time.Second}
+		Eventually(func() int {
+			resp, err := httpClient.Get(dataStorageURL + "/health")
+			if err != nil || resp == nil {
+				return 0
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
 
 		// Generate unique correlation ID for test isolation
 		testCorrelationID = generateTestID()
