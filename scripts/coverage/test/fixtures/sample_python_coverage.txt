@@ -1,0 +1,10 @@
+Name                                      Stmts   Miss  Cover
+-------------------------------------------------------------
+src/models/user.py                           20      5  75.00%
+src/models/config.py                         15      0 100.00%
+src/validation/validator.py                 30      3  90.00%
+src/extensions/endpoint.py                  40     20  50.00%
+src/middleware/auth.py                       25     15  40.00%
+src/errors.py                                10      2  80.00%
+-------------------------------------------------------------
+TOTAL                                       140     45  67.86%
