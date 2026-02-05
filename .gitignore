@@ -218,14 +218,9 @@ pkg/audit/openapi_spec_data.yaml
 covcounters.*
 covmeta.*
 
-# Coverage report files (all formats and tiers)
-e2e-coverage*
-unit-coverage*
-integration-coverage*
-coverage.html
-coverage.txt
-coverage_*.txt
-coverage_*.out
+# Coverage files and directories (ANY file/directory starting with "coverage")
+coverage*
+**/coverage*
 
 # Coverage directories (all tiers)
 coverage-unit/
