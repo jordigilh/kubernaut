@@ -381,7 +381,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 			for _, event := range queryResp.Data {
 				// ADR-034: Response uses event_category, not service
-				Expect(event.EventCategory).To(Equal(targetService))
+				Expect(string(event.EventCategory)).To(Equal(targetService))
 			}
 		})
 	})
@@ -502,8 +502,8 @@ var _ = Describe("Audit Events Query API", func() {
 
 			for _, event := range queryResp.Data {
 				// ADR-034: Response uses event_category and event_outcome
-				Expect(event.EventCategory).To(Equal("gateway"))
-				Expect(event.EventOutcome).To(Equal("failure"))
+				Expect(string(event.EventCategory)).To(Equal("gateway"))
+				Expect(string(event.EventOutcome)).To(Equal("failure"))
 			}
 		})
 	})

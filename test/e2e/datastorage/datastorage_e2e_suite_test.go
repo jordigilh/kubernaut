@@ -93,6 +93,12 @@ var (
 	// Authority: DD-AUTH-014 (Middleware-based Authentication)
 	DSClient *dsgen.Client
 
+	// AuthHTTPClient is an authenticated HTTP client for tests requiring raw HTTP calls
+	// (e.g., 409 Conflict responses not yet in OpenAPI spec, or detailed response inspection)
+	//
+	// Authority: DD-AUTH-014 (Middleware-based Authentication)
+	AuthHTTPClient *http.Client
+
 	// Shared PostgreSQL connection for E2E test verification
 	// NOTE: E2E tests should prefer API verification over direct DB access
 	// This is provided for tests migrated from integration that require DB verification
@@ -211,7 +217,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
 		logger.Info("✅ E2E ServiceAccount created with DataStorage access", "name", e2eSAName)
 
-		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated OpenAPI client for E2E tests...")
+		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated clients for E2E tests...")
 		saTransport := testauth.NewServiceAccountTransport(e2eToken)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware (API server tuned, see kind-datastorage-config.yaml)
@@ -222,9 +228,15 @@ var _ = SynchronizedBeforeSuite(
 			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",
+
+		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
+		AuthHTTPClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: saTransport,
+		}
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
 			"baseURL", "http://localhost:28090",
-			"pattern", "Use DSClient for functional tests, custom clients for authz tests")
+			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")
 
 		// Note: Certificate warm-up is SKIPPED in suite setup
 		// Rationale: cert-manager is installed per-test-suite (e.g., SOC2 tests),
@@ -378,10 +390,17 @@ var _ = SynchronizedBeforeSuite(
 			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",
+
+		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
+		AuthHTTPClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: saTransport,
+		}
+
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
 			"process", processID,
 			"baseURL", dataStorageURL,
-			"pattern", "Use DSClient for functional tests")
+			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly

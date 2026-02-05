@@ -190,6 +190,16 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        '409':
+          description: |
+            Conflict - Duplicate workflow.
+            Workflow with same workflow_name and version already exists.
+            
+            **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
           content:

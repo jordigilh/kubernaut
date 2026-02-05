@@ -4058,6 +4058,10 @@ type CreateWorkflowBadRequest RFC7807Problem
 
 func (*CreateWorkflowBadRequest) createWorkflowRes() {}
 
+type CreateWorkflowConflict RFC7807Problem
+
+func (*CreateWorkflowConflict) createWorkflowRes() {}
+
 type CreateWorkflowForbidden RFC7807Problem
 
 func (*CreateWorkflowForbidden) createWorkflowRes() {}
