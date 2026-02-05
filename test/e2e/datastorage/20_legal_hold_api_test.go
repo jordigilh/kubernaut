@@ -17,9 +17,6 @@ import (
 )
 
 var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func() {
-	// Local HTTP client for legal hold API (detailed response inspection needed)
-	var HTTPClient = &http.Client{Timeout: 10 * time.Second}
-
 	var (
 		correlationID string
 		ctx           context.Context
@@ -185,7 +182,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 				// (no manual header setting needed - middleware extracts from authenticated ServiceAccount)
 
-				resp, err := HTTPClient.Do(req)
+				resp, err := AuthHTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -241,7 +238,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req.Header.Set("Content-Type", "application/json")
 				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := HTTPClient.Do(req)
+				resp, err := AuthHTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -285,7 +282,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req.Header.Set("Content-Type", "application/json")
 				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := HTTPClient.Do(req)
+				resp, err := AuthHTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -340,7 +337,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req.Header.Set("Content-Type", "application/json")
 				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := HTTPClient.Do(req)
+				resp, err := AuthHTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -404,7 +401,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				Expect(err).ToNot(HaveOccurred())
 				// DD-AUTH-014: X-Auth-Request-User is now injected by auth middleware
 
-				resp, err := HTTPClient.Do(req)
+				resp, err := AuthHTTPClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 

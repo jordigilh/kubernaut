@@ -62,8 +62,8 @@ import (
 // - No shared resources that would require Serial execution
 
 var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Ordered, func() {
-	// Local HTTP client for connection pool stress testing (raw HTTP needed)
-	var HTTPClient = &http.Client{Timeout: 30 * time.Second}
+	// NOTE: Using suite-level AuthHTTPClient for connection pool stress testing
+	// DD-AUTH-014: Authenticated HTTP client required for all API calls
 
 	Describe("Burst Traffic Handling", func() {
 		Context("when 100 concurrent writes exceed maxOpenConns (50)", func() {
@@ -146,7 +146,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 
 						req.Header.Set("Content-Type", "application/json")
 
-						resp, err := HTTPClient.Do(req)
+						resp, err := AuthHTTPClient.Do(req)
 
 						results[index].duration = time.Since(requestStart)
 						results[index].err = err
@@ -269,7 +269,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 
 					req.Header.Set("Content-Type", "application/json")
 
-					resp, err := HTTPClient.Do(req)
+					resp, err := AuthHTTPClient.Do(req)
 					if err == nil {
 						_ = resp.Body.Close()
 					}
@@ -313,8 +313,8 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 
 				req.Header.Set("Content-Type", "application/json")
 
-				httpClient := &http.Client{Timeout: 30 * time.Second}
-				resp, err := httpClient.Do(req)
+				// Use authenticated HTTP client for baseline test (DD-AUTH-014)
+				resp, err := AuthHTTPClient.Do(req)
 				normalDuration = time.Since(normalStart)
 
 				if err != nil || resp == nil {
