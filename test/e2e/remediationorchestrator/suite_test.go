@@ -88,6 +88,7 @@ var (
 	kubeconfigPath string
 
 	k8sClient client.Client
+	apiReader client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// DataStorage audit client for Gap #8 webhook audit event queries
 	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
@@ -195,14 +196,19 @@ var _ = SynchronizedBeforeSuite(
 		err = notificationv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Creating Kubernetes client from isolated kubeconfig")
-		cfg, err := config.GetConfig()
-		Expect(err).ToNot(HaveOccurred())
+	By("Creating Kubernetes client from isolated kubeconfig")
+	cfg, err := config.GetConfig()
+	Expect(err).ToNot(HaveOccurred())
 
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-		Expect(err).ToNot(HaveOccurred())
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
+	// Create direct API reader for Eventually() blocks to bypass client cache
+	// This ensures fresh reads from API server for status polling
+	apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
+
+	By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
 		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 		// Per DD-AUTH-014: Use ServiceAccount token for authentication
 		dataStorageURL := "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port

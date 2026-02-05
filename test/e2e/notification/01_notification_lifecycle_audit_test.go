@@ -168,22 +168,22 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get created NotificationRequest")
 		Expect(createdNotification.Name).To(Equal(notificationName))
 
-		// ===== STEP 2: Wait for controller to process notification =====
-		// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
-		// Per TESTING_GUIDELINES.md lines 1688-1948
-		By("Waiting for controller to process notification and update phase")
-		Eventually(func() notificationv1alpha1.NotificationPhase {
-			var updated notificationv1alpha1.NotificationRequest
-			err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: notificationNS,
-			}, &updated)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-			"Controller should process notification and update phase to Sent")
+	// ===== STEP 2: Wait for controller to process notification =====
+	// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
+	// Per TESTING_GUIDELINES.md lines 1688-1948
+	By("Waiting for controller to process notification and update phase")
+	Eventually(func() notificationv1alpha1.NotificationPhase {
+		var updated notificationv1alpha1.NotificationRequest
+		err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, &updated)
+		if err != nil {
+			return ""
+		}
+		return updated.Status.Phase
+	}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+		"Controller should process notification and update phase to Sent")
 
 		// ===== STEP 3: Verify controller emitted audit events (side effect) =====
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation

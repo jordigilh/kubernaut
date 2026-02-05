@@ -63,6 +63,7 @@ var (
 	kubeconfigPath string
 	cfg            *rest.Config
 	k8sClient      client.Client
+	apiReader      client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// Shared Notification Controller configuration (deployed ONCE for all tests)
 	controllerNamespace string = "notification-e2e"
@@ -228,15 +229,20 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		cfg = config
 
-		// Create Kubernetes client
-		err = notificationv1alpha1.AddToScheme(scheme.Scheme)
-		Expect(err).ToNot(HaveOccurred())
+	// Create Kubernetes client
+	err = notificationv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).ToNot(HaveOccurred())
 
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(k8sClient).ToNot(BeNil())
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(k8sClient).ToNot(BeNil())
 
-		// Set up E2E file output directory for FileService validation
+	// Create direct API reader for Eventually() blocks to bypass client cache
+	// This ensures fresh reads from API server for status polling
+	apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
+
+	// Set up E2E file output directory for FileService validation
 		// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
 		e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
 		Expect(err).ToNot(HaveOccurred())
