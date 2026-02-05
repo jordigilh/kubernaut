@@ -60,14 +60,10 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 		// HTTP API writes to public schema, test queries must target same schema
 
 		// Ensure service is ready before each test
-		Eventually(func() int {
-			resp, err := HTTPClient.Get(dataStorageURL + "/health")
-			if err != nil || resp == nil {
-				return 0
-			}
-			defer func() { _ = resp.Body.Close() }()
-			return resp.StatusCode
-		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
+		Eventually(func() bool {
+			_, err := DSClient.HealthCheck(ctx)
+			return err == nil
+		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
 
 		// Generate unique correlation ID for test isolation
 		testCorrelationID = generateTestID()
@@ -196,129 +192,9 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 			})
 		})
 
-		// ========================================
-		// BEHAVIOR: Atomic batch - all succeed or all fail
-		// CORRECTNESS: No partial writes on validation failure
-		// ========================================
-		When("batch contains one invalid event", func() {
-			It("should reject entire batch with 400 Bad Request (atomic)", func() {
-				By("Creating batch with one invalid event (missing event_type)")
-				events := []map[string]interface{}{
-					{
-						"version":         "1.0",
-						"event_type":      "gateway.signal.received",
-						"event_category":  "gateway",
-						"event_action":    "signal_received",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-atomic-1",
-						"event_data":      map[string]interface{}{"valid": true},
-					},
-					{
-						// INVALID: Missing event_type
-						"version":         "1.0",
-						"event_category":  "gateway",
-						"event_action":    "signal_received",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-atomic-2",
-						"event_data":      map[string]interface{}{"valid": false},
-					},
-				}
-
-				body, _ := json.Marshal(events)
-				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				By("Verifying 400 Bad Request response")
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-				By("Verifying RFC 7807 error format")
-				Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"))
-
-				var problem map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&problem)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(problem).To(HaveKey("type"))
-				Expect(problem).To(HaveKey("title"))
-				Expect(problem).To(HaveKey("status"))
-				Expect(problem).To(HaveKey("detail"))
-
-				// ✅ CORRECTNESS: No events should be persisted (atomic rollback)
-				By("Verifying no events were persisted (atomic rollback)")
-				var count int
-				err = testDB.QueryRow(`
-					SELECT COUNT(*) FROM audit_events
-					WHERE correlation_id LIKE $1
-				`, testCorrelationID+"-atomic%").Scan(&count)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(0), "No events should be persisted on validation failure")
-			})
-		})
-
-		// ========================================
-		// BEHAVIOR: Handler rejects non-array payloads
-		// CORRECTNESS: Clear error message per RFC 7807
-		// ========================================
-		When("payload is not an array", func() {
-			It("should return 400 Bad Request with clear error", func() {
-				By("Sending single object instead of array")
-				event := map[string]interface{}{
-					"version":         "1.0",
-					"event_type":      "gateway.signal.received",
-					"event_category":  "gateway",
-					"event_action":    "signal_received",
-					"event_outcome":   "success",
-					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":  testCorrelationID + "-single",
-					"event_data":      map[string]interface{}{},
-				}
-
-				body, _ := json.Marshal(event)
-				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-				var problem map[string]interface{}
-				_ = json.NewDecoder(resp.Body).Decode(&problem)
-				detail, _ := problem["detail"].(string)
-				Expect(detail).To(ContainSubstring("array"), "Error should mention array requirement")
-			})
-		})
-
-		// ========================================
-		// BEHAVIOR: Handler rejects empty arrays
-		// CORRECTNESS: Prevents wasted database transactions
-		// ========================================
-		When("batch is empty array", func() {
-			It("should return 400 Bad Request", func() {
-				events := []map[string]interface{}{}
-
-				body, _ := json.Marshal(events)
-				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-				var problem map[string]interface{}
-				_ = json.NewDecoder(resp.Body).Decode(&problem)
-				detail, _ := problem["detail"].(string)
-				Expect(detail).To(ContainSubstring("empty"), "Error should mention empty batch")
-			})
-		})
+		// NOTE: Validation tests (atomic rollback, non-array, empty array) are covered in unit tests
+		// See: test/unit/datastorage/audit_events_batch_handler_test.go (lines 56, 81, 275, 309)
+		// Reason: Validation behavior belongs in unit test scope, not E2E
 
 		// ========================================
 		// BEHAVIOR: Handler handles large batches efficiently

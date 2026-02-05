@@ -85,23 +85,15 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for Data Storage Service HTTP endpoint to be responsive
-		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
-		Eventually(func() error {
-			resp, err := HTTPClient.Get(serviceURL + "/health")
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					testLogger.Error(err, "failed to close response body")
-				}
-			}()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
+	// Wait for Data Storage Service to be responsive using typed OpenAPI client
+	testLogger.Info("⏳ Waiting for Data Storage Service...")
+	Eventually(func() error {
+		_, err := DSClient.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
 		// Generate unique correlation ID for this test

@@ -81,7 +81,7 @@ var (
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
 
 	// DSClient is the shared authenticated OpenAPI client for E2E tests (DD-AUTH-014)
-	// 
+	//
 	// USAGE PATTERN (DD-AUTH-014 - Zero Trust):
 	//   - Use DSClient for functional tests (audit, workflow, metrics)
 	//   - Create custom clients for authorization tests (SAR scenarios)
@@ -92,12 +92,6 @@ var (
 	// Authority: DD-API-001 (OpenAPI Client Mandate)
 	// Authority: DD-AUTH-014 (Middleware-based Authentication)
 	DSClient *dsgen.Client
-
-	// HTTPClient is the shared authenticated HTTP client (DD-AUTH-014)
-	//
-	// Use this as a base for tests that need custom HTTP behavior
-	// but still require authentication. Has ServiceAccount Bearer token.
-	HTTPClient *http.Client
 
 	// Shared PostgreSQL connection for E2E test verification
 	// NOTE: E2E tests should prefer API verification over direct DB access
@@ -228,7 +222,7 @@ var _ = SynchronizedBeforeSuite(
 			dsgen.WithClient(HTTPClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)", 
+		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",
 			"baseURL", "http://localhost:28090",
 			"pattern", "Use DSClient for functional tests, custom clients for authz tests")
 
@@ -384,8 +378,8 @@ var _ = SynchronizedBeforeSuite(
 			dsgen.WithClient(HTTPClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)", 
-			"process", processID, 
+		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",
+			"process", processID,
 			"baseURL", dataStorageURL,
 			"pattern", "Use DSClient for functional tests")
 
@@ -469,24 +463,24 @@ var _ = SynchronizedAfterSuite(
 				logger.Info("   Step 2: Waiting for graceful shutdown to complete...")
 				time.Sleep(10 * time.Second)
 
-			// DD-TEST-007: Extract coverage files from Kind node container
-			// Coverage files are written INSIDE the Kind node container at /coverdata/
-			// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-			// We must use podman cp to extract them to the host
-			logger.Info("   Step 3: Extracting coverage files from Kind node container...")
-			kindNodeContainer := clusterName + "-worker"
+				// DD-TEST-007: Extract coverage files from Kind node container
+				// Coverage files are written INSIDE the Kind node container at /coverdata/
+				// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
+				// We must use podman cp to extract them to the host
+				logger.Info("   Step 3: Extracting coverage files from Kind node container...")
+				kindNodeContainer := clusterName + "-worker"
 
-			// Ensure coverdata directory exists before extraction
-			if err := os.MkdirAll(coverDir, 0755); err != nil {
-				logger.Info("⚠️  Failed to create coverage directory",
-					"error", err,
-					"path", coverDir)
-			}
+				// Ensure coverdata directory exists before extraction
+				if err := os.MkdirAll(coverDir, 0755); err != nil {
+					logger.Info("⚠️  Failed to create coverage directory",
+						"error", err,
+						"path", coverDir)
+				}
 
-			// Use podman cp to copy coverage files from Kind node to host
-			cpCmd := exec.Command("podman", "cp",
-				kindNodeContainer+":/coverdata/.",
-				coverDir)
+				// Use podman cp to copy coverage files from Kind node to host
+				cpCmd := exec.Command("podman", "cp",
+					kindNodeContainer+":/coverdata/.",
+					coverDir)
 				if cpOutput, cpErr := cpCmd.CombinedOutput(); cpErr != nil {
 					logger.Info("⚠️  Failed to extract coverage from Kind node",
 						"error", cpErr,
@@ -558,10 +552,10 @@ var _ = SynchronizedAfterSuite(
 					tailCmd := exec.Command("tail", "-100", logPathStr)
 					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
 						logger.Info("═══════════════════════════════════════════════════════════")
-					logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
-					logger.Info("═══════════════════════════════════════════════════════════")
-					logger.Info(string(tailOutput))
-					logger.Info("═══════════════════════════════════════════════════════════")
+						logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
+						logger.Info("═══════════════════════════════════════════════════════════")
+						logger.Info(string(tailOutput))
+						logger.Info("═══════════════════════════════════════════════════════════")
 					}
 				}
 			}
@@ -590,7 +584,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		// In registry mode, images are pulled (not built locally), so local removal fails
 		if imageRegistry != "" && imageTag != "" {

@@ -64,14 +64,10 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 		serviceURL = dataStorageURL
 
 		// Ensure service is ready before each test
-		Eventually(func() int {
-			resp, err := HTTPClient.Get(serviceURL + "/health")
-			if err != nil || resp == nil {
-				return 0
-			}
-			defer func() { _ = resp.Body.Close() }()
-			return resp.StatusCode
-		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
+		Eventually(func() bool {
+			_, err := DSClient.HealthCheck(ctx)
+			return err == nil
+		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
 
 		// Connect to PostgreSQL for verification
 		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable")
@@ -346,94 +342,9 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 			})
 		})
 
-		When("request is missing required field event_type", func() {
-			It("should return 400 Bad Request with RFC 7807 error", func() {
-				// TDD GREEN: Validation now checks JSON body fields
-
-				eventPayload := map[string]interface{}{
-					"version":        "1.0",
-					"event_category": "gateway",
-					// Missing "event_type" field
-					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":  testCorrelationID,
-					"event_outcome":   "success",
-					"event_action":    "test",
-					"event_data":      map[string]interface{}{},
-				}
-
-				body, _ := json.Marshal(eventPayload)
-				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				By("Verifying 400 Bad Request response")
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-				By("Verifying RFC 7807 problem details")
-				Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"))
-
-				var problem map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&problem)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(problem).To(HaveKey("type"))
-				Expect(problem).To(HaveKey("title"))
-				Expect(problem).To(HaveKey("status"))
-				Expect(problem).To(HaveKey("detail"))
-				Expect(problem["status"]).To(BeNumerically("==", 400))
-				Expect(problem["detail"]).To(ContainSubstring("event_type"))
-			})
-		})
-
-		When("request body has invalid JSON", func() {
-			It("should return 400 Bad Request with RFC 7807 error", func() {
-				// TDD GREEN: Validation checks JSON parsing
-
-				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBufferString("{invalid json"))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-				Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"))
-			})
-		})
-
-		When("request body is missing required 'version' field", func() {
-			It("should return 400 Bad Request with RFC 7807 error", func() {
-				// TDD GREEN: Validation checks required fields
-
-				eventPayload := map[string]interface{}{
-					// Missing "version" field
-					"event_category":  "gateway",
-					"event_type":      "gateway.signal.received",
-					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":  testCorrelationID,
-					"event_outcome":   "success",
-					"event_action":    "test",
-					"event_data":      map[string]interface{}{},
-				}
-
-				body, _ := json.Marshal(eventPayload)
-				req, _ := http.NewRequest("POST", serviceURL+"/api/v1/audit/events", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := HTTPClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-				var problem map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&problem)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(problem["detail"]).To(ContainSubstring("version"))
-			})
-		})
+		// NOTE: Validation tests (missing fields, invalid JSON) are covered in unit tests
+		// See: test/unit/datastorage/server/middleware/openapi_test.go (lines 152+, 267+)
+		// Reason: Field-level validation belongs in unit test scope, not E2E
 
 		// NOTE: Database failure scenarios moved to unit tests
 		// See: test/unit/datastorage/audit_events_handler_test.go
