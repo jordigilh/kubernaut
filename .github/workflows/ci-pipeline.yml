@@ -762,10 +762,9 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [
-      lint-go, lint-python, unit-tests,
-      build-and-push-images, integration-tests, e2e-tests
-    ]
+    needs: [lint-go, lint-python, integration-tests, e2e-tests]
+    # Note: unit-tests and build-and-push-images are transitive dependencies
+    # (INT and E2E already depend on them, no need to duplicate)
     if: always()
     runs-on: ubuntu-latest
     steps:
