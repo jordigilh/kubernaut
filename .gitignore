@@ -74,6 +74,7 @@ build_failures.*
 # IDE configuration directories
 .cursor/*
 !.cursor/rules/
+!.cursor/skills/
 .claude/
 
 # Ephemeral documentation files
