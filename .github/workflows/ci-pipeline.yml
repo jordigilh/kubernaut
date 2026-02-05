@@ -793,6 +793,9 @@ jobs:
     # (INT and E2E already depend on them, no need to duplicate)
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
       - name: Download all coverage reports
         if: always()
