@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"sort"
 	"time"
 
@@ -83,15 +84,18 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for Data Storage Service to be responsive using typed OpenAPI client
+		// Wait for Data Storage Service to be responsive using raw HTTP (health endpoint returns text/plain)
 		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() error {
-			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_, err := DSClient.HealthCheck(healthCtx)
+			resp, err := httpClient.Get(serviceURL + "/health")
 			if err != nil {
 				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
 				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
 			return nil
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
