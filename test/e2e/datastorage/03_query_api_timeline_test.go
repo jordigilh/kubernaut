@@ -87,7 +87,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// Wait for Data Storage Service to be responsive using typed OpenAPI client
 		testLogger.Info("⏳ Waiting for Data Storage Service...")
 		Eventually(func() error {
-			_, err := DSClient.HealthCheck(ctx)
+			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, err := DSClient.HealthCheck(healthCtx)
 			if err != nil {
 				return err
 			}

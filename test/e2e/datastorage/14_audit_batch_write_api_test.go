@@ -58,7 +58,9 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 
 		// Ensure service is ready before each test
 		Eventually(func() bool {
-			_, err := DSClient.HealthCheck(ctx)
+			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, err := DSClient.HealthCheck(healthCtx)
 			return err == nil
 		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
 

@@ -86,7 +86,9 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		// Wait for Data Storage Service to be responsive using typed OpenAPI client
 		testLogger.Info("⏳ Waiting for Data Storage Service...")
 		Eventually(func() error {
-			_, err := DSClient.HealthCheck(ctx)
+			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, err := DSClient.HealthCheck(healthCtx)
 			if err != nil {
 				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
 				return err
