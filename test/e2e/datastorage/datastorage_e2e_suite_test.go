@@ -19,6 +19,7 @@ package datastorage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -79,9 +80,24 @@ var (
 	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
 
-	// Shared OpenAPI client (DD-API-001: OpenAPI Client Mandate)
-	// Replaces raw HTTP client for type-safe API interaction
-	dsClient *dsgen.Client
+	// DSClient is the shared authenticated OpenAPI client for E2E tests (DD-AUTH-014)
+	//
+	// USAGE PATTERN (DD-AUTH-014 - Zero Trust):
+	//   - Use DSClient for functional tests (audit, workflow, metrics)
+	//   - Create custom clients for authorization tests (SAR scenarios)
+	//
+	// This client is authenticated with the shared E2E ServiceAccount
+	// (datastorage-e2e-client) which has full CRUD RBAC permissions.
+	//
+	// Authority: DD-API-001 (OpenAPI Client Mandate)
+	// Authority: DD-AUTH-014 (Middleware-based Authentication)
+	DSClient *dsgen.Client
+
+	// AuthHTTPClient is an authenticated HTTP client for tests requiring raw HTTP calls
+	// (e.g., 409 Conflict responses not yet in OpenAPI spec, or detailed response inspection)
+	//
+	// Authority: DD-AUTH-014 (Middleware-based Authentication)
+	AuthHTTPClient *http.Client
 
 	// Shared PostgreSQL connection for E2E test verification
 	// NOTE: E2E tests should prefer API verification over direct DB access
@@ -163,9 +179,9 @@ var _ = SynchronizedBeforeSuite(
 
 		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")
-		httpClient := &http.Client{Timeout: 10 * time.Second}
+		tempClient := &http.Client{Timeout: 10 * time.Second}
 		Eventually(func() error {
-			resp, err := httpClient.Get("http://localhost:28090/health/ready") // Per DD-TEST-001
+			resp, err := tempClient.Get("http://localhost:28090/health") // Per DD-TEST-001 (NodePort 30081 → host 28090)
 			if err != nil {
 				return err
 			}
@@ -175,23 +191,60 @@ var _ = SynchronizedBeforeSuite(
 			}
 			return nil
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
-		logger.Info("✅ Data Storage is ready via NodePort (localhost:8081)")
+		logger.Info("✅ Data Storage is ready via NodePort (localhost:28090)")
 
-		// DD-API-001: Initialize OpenAPI client for E2E tests
-		// E2E tests run externally against Kind cluster, so we use mock user transport
-		// (no oauth-proxy in E2E environment)
-		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for E2E tests...")
-		mockTransport := testauth.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
-		httpClient = &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: mockTransport,
+		// DD-API-001 + DD-AUTH-014: Initialize OpenAPI client with ServiceAccount authentication
+		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating ServiceAccount for E2E tests...")
+		e2eSAName := "datastorage-e2e-client"
+		testNamespace := "datastorage-e2e"
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
+			ctx,
+			testNamespace,
+			kubeconfigPath,
+			e2eSAName,
+			GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get token for E2E ServiceAccount
+		var e2eToken string
+		e2eToken, err = infrastructure.GetServiceAccountToken(
+			ctx,
+			testNamespace,
+			e2eSAName,
+			kubeconfigPath,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount created with DataStorage access", "name", e2eSAName)
+
+		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated clients for E2E tests...")
+		saTransport := testauth.NewServiceAccountTransport(e2eToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware (API server tuned, see kind-datastorage-config.yaml)
+			Transport: saTransport,
 		}
-		dsClient, err = dsgen.NewClient(
+		DSClient, err = dsgen.NewClient(
 			"http://localhost:28090",
 			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ DataStorage OpenAPI client created", "baseURL", "http://localhost:28090")
+
+		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
+		AuthHTTPClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: saTransport,
+		}
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
+			"baseURL", "http://localhost:28090",
+			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")
+
+		// Note: Certificate warm-up is SKIPPED in suite setup
+		// Rationale: cert-manager is installed per-test-suite (e.g., SOC2 tests),
+		// not in global infrastructure. Each test suite that needs cert-manager
+		// will install and warm it up in its BeforeAll block.
+		// This keeps suite setup fast and avoids unnecessary cert-manager dependency
+		// for tests that don't need digital signatures.
+		logger.Info("📋 Certificate generation: Delegated to test suites (SOC2 tests install cert-manager)")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
@@ -200,8 +253,14 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28090", "postgresql", "localhost:25433")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Return kubeconfig path to all processes
-		return []byte(kubeconfigPath)
+		// Return kubeconfig path and ServiceAccount token to all processes
+		setupData := map[string]string{
+			"kubeconfig": kubeconfigPath,
+			"token":      e2eToken,
+		}
+		setupJSON, err := json.Marshal(setupData)
+		Expect(err).ToNot(HaveOccurred(), "Failed to marshal setup data")
+		return setupJSON
 	},
 	// This function runs on ALL processes (including process 1)
 	func(data []byte) {
@@ -214,8 +273,12 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize failure tracking
 		anyTestFailed = false
 
-		// Receive kubeconfig path from process 1
-		kubeconfigPath = string(data)
+		// Receive kubeconfig path and ServiceAccount token from process 1
+		var setupData map[string]string
+		err := json.Unmarshal(data, &setupData)
+		Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal setup data")
+		kubeconfigPath = setupData["kubeconfig"]
+		e2eToken := setupData["token"]
 		clusterName = "datastorage-e2e"
 
 		// Set shared URLs - NodePort or port-forward depending on Kind provider
@@ -229,7 +292,6 @@ var _ = SynchronizedBeforeSuite(
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
 		// Test if NodePort is accessible (check PostgreSQL connection)
-		var err error
 		testDB, err = sql.Open("pgx", postgresURL)
 		nodePortWorks := false
 		if err == nil {
@@ -316,20 +378,29 @@ var _ = SynchronizedBeforeSuite(
 			"postgresURL", postgresURL,
 			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
 
-		// DD-API-001: Initialize OpenAPI client for this process
-		// E2E tests run externally against Kind cluster, so we use mock user transport
-		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
-		mockTransport := testauth.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
+		// DD-API-001 + DD-AUTH-014: Initialize shared authenticated OpenAPI client for this process
+		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated OpenAPI client for process", "process", processID)
+		saTransport := testauth.NewServiceAccountTransport(e2eToken)
 		httpClient := &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: mockTransport,
+			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware
+			Transport: saTransport,
 		}
-		dsClient, err = dsgen.NewClient(
+		DSClient, err = dsgen.NewClient(
 			dataStorageURL,
 			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-		logger.Info("✅ DataStorage OpenAPI client created", "process", processID, "baseURL", dataStorageURL)
+
+		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
+		AuthHTTPClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: saTransport,
+		}
+
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
+			"process", processID,
+			"baseURL", dataStorageURL,
+			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly
@@ -374,10 +445,10 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Data Storage E2E Test Suite - Cleanup (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Detect setup failure: if dsClient is nil, BeforeSuite failed
-		setupFailed := dsClient == nil
+		// Detect setup failure: if DSClient is nil, BeforeSuite failed
+		setupFailed := DSClient == nil
 		if setupFailed {
-			logger.Info("⚠️  Setup failure detected (dsClient is nil)")
+			logger.Info("⚠️  Setup failure detected (DSClient is nil)")
 		}
 
 		// Check if we should keep the cluster for debugging
@@ -417,6 +488,13 @@ var _ = SynchronizedAfterSuite(
 				// We must use podman cp to extract them to the host
 				logger.Info("   Step 3: Extracting coverage files from Kind node container...")
 				kindNodeContainer := clusterName + "-worker"
+
+				// Ensure coverdata directory exists before extraction
+				if err := os.MkdirAll(coverDir, 0755); err != nil {
+					logger.Info("⚠️  Failed to create coverage directory",
+						"error", err,
+						"path", coverDir)
+				}
 
 				// Use podman cp to copy coverage files from Kind node to host
 				cpCmd := exec.Command("podman", "cp",
@@ -493,10 +571,10 @@ var _ = SynchronizedAfterSuite(
 					tailCmd := exec.Command("tail", "-100", logPathStr)
 					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
 						logger.Info("═══════════════════════════════════════════════════════════")
-					logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
-					logger.Info("═══════════════════════════════════════════════════════════")
-					logger.Info(string(tailOutput))
-					logger.Info("═══════════════════════════════════════════════════════════")
+						logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
+						logger.Info("═══════════════════════════════════════════════════════════")
+						logger.Info(string(tailOutput))
+						logger.Info("═══════════════════════════════════════════════════════════")
 					}
 				}
 			}
@@ -523,8 +601,16 @@ var _ = SynchronizedAfterSuite(
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
 		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		if imageTag != "" {
+
+		// Skip cleanup when using registry images (CI/CD mode)
+		// In registry mode, images are pulled (not built locally), so local removal fails
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else if imageTag != "" {
+			// Local build mode: Remove locally built images
 			serviceName := "datastorage"
 			imageName := fmt.Sprintf("%s:%s", serviceName, imageTag)
 

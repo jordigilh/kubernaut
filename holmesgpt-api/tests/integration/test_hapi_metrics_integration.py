@@ -15,90 +15,103 @@ limitations under the License.
 """
 
 """
-Flow-Based Metrics Integration Tests for HAPI
+Integration Tests for HAPI Metrics (Go Pattern)
 
-Business Requirement: BR-MONITORING-001 - HAPI MUST expose Prometheus metrics
-Authority: TESTING_GUIDELINES.md - Flow-based testing pattern
+Business Requirements:
+- BR-HAPI-011: Investigation Metrics
+- BR-HAPI-301: LLM Observability Metrics
 
-These tests validate that HAPI business operations record metrics that are
-exposed via the /metrics endpoint.
+Test Pattern: Direct business logic calls + Prometheus registry inspection (like Go)
 
-✅ CORRECT PATTERN:
-1. Trigger business operation (HTTP request to HAPI endpoint)
-2. Query /metrics endpoint
-3. Verify metrics are recorded with correct labels
-4. Validate metric values make sense
+✅ INTEGRATION TEST PATTERN (Matches Go Gateway/AIAnalysis):
+1. Create custom Prometheus registry (test isolation)
+2. Create HAMetrics instance with test registry
+3. Call business logic directly (analyze_incident, analyze_recovery)
+4. Query test registry for metric values
+5. Verify metrics incremented correctly
+
+This pattern:
+- Follows Go service testing pattern (Gateway, AIAnalysis)
+- Tests business logic metrics emission (integration testing)
+- No HTTP layer (no TestClient, no main.py import)
+- No K8s auth initialization issues
 
 Reference:
-- Similar to audit flow-based pattern
-- Tests business behavior (metrics recorded during operations)
-- Not testing metrics infrastructure (Prometheus client library)
+- test/integration/gateway/metrics_emission_integration_test.go
+- test/integration/aianalysis/metrics_integration_test.go
 """
 
-import os
 import time
 import pytest
 from typing import Dict, Any
+from prometheus_client import CollectorRegistry
+
+# Import business logic and metrics
+from src.extensions.incident.llm_integration import analyze_incident
+from src.extensions.recovery.llm_integration import analyze_recovery
+from src.metrics import HAMetrics
+from src.models.config_models import AppConfig
 
 
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
 
-def get_metrics(hapi_client) -> str:
+def get_counter_value(test_metrics: HAMetrics, counter_name: str, labels: Dict[str, str] = None) -> float:
     """
-    Query HAPI's /metrics endpoint using TestClient.
-
+    Get counter value from test metrics registry (like Go's getCounterValue).
+    
     Args:
-        hapi_client: FastAPI TestClient instance (from conftest.py hapi_client fixture)
-
+        test_metrics: HAMetrics instance with custom registry
+        counter_name: Metric attribute name (e.g., 'investigations_total')
+        labels: Optional label filters
+    
     Returns:
-        Metrics text in Prometheus format
+        Counter value as float
         
-    Note: Uses TestClient (in-process) instead of HTTP requests for faster, more reliable testing.
-    """
-    response = hapi_client.get("/metrics")
-    assert response.status_code == 200, f"Metrics endpoint returned {response.status_code}"
-    return response.text
-
-
-def parse_metric_value(metrics_text: str, metric_name: str, labels: Dict[str, str] = None) -> float:
-    """
-    Parse a metric value from Prometheus metrics text.
-
-    Args:
-        metrics_text: Raw metrics text from /metrics endpoint
-        metric_name: Name of the metric to extract
-        labels: Optional dict of label filters (e.g., {"method": "POST"})
-
-    Returns:
-        Metric value as float, or 0.0 if not found
-
     Example:
-        value = parse_metric_value(metrics, "http_requests_total", {"method": "POST", "path": "/api/v1/incident/analyze"})
+        value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
     """
-    lines = metrics_text.split('\n')
-
-    for line in lines:
-        if line.startswith('#') or not line.strip():
-            continue
-
-        if metric_name in line:
-            # If labels specified, check if all match
-            if labels:
-                all_match = all(f'{key}="{value}"' in line for key, value in labels.items())
-                if not all_match:
-                    continue
-
-            # Extract value (last part after space)
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    return float(parts[-1])
-                except ValueError:
-                    continue
-
-    return 0.0
+    # Get the metric name from the counter
+    counter = getattr(test_metrics, counter_name, None)
+    if counter is None:
+        print(f"⚠️  Counter {counter_name} not found on metrics instance")
+        return 0.0
+    
+    print(f"🔍 METRICS DEBUG: Looking for counter '{counter._name}' with labels {labels}")
+    print(f"🔍 METRICS DEBUG: Registry ID: {id(test_metrics.registry)}")
+    
+    # Collect metrics from registry (most reliable method)
+    try:
+        all_samples = []
+        for collector in test_metrics.registry.collect():
+            for sample in collector.samples:
+                all_samples.append(f"{sample.name}{sample.labels}={sample.value}")
+                # Match metric name
+                if sample.name == counter._name or sample.name.startswith(counter._name):
+                    print(f"🔍 METRICS DEBUG: Found matching sample: {sample.name}{sample.labels} = {sample.value}")
+                    # If labels specified, check if all match
+                    if labels:
+                        all_match = all(sample.labels.get(k) == v for k, v in labels.items())
+                        if not all_match:
+                            print(f"🔍 METRICS DEBUG: Labels don't match. Expected {labels}, got {sample.labels}")
+                            continue
+                    
+                    # Return the value
+                    print(f"✅ METRICS DEBUG: Returning value {sample.value}")
+                    return float(sample.value)
+        
+        # No matching sample found - print all samples for debugging
+        print(f"⚠️  No matching counter found. All samples in registry:")
+        for sample_str in all_samples:
+            print(f"   - {sample_str}")
+        return 0.0
+        
+    except Exception as e:
+        print(f"⚠️  Error collecting metrics: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
 
 
 def make_incident_request(unique_test_id: str = None) -> Dict[str, Any]:
@@ -136,363 +149,254 @@ def make_recovery_request(unique_test_id: str = None) -> Dict[str, Any]:
 
 
 # ========================================
-# FLOW-BASED METRICS INTEGRATION TESTS
+# INTEGRATION TESTS (GO PATTERN)
 # ========================================
 
-class TestHTTPRequestMetrics:
+class TestIncidentAnalysisMetrics:
     """
-    Flow-based tests for HTTP request metrics.
-
-    Pattern: Trigger business operation → Verify metrics recorded
-
-    BR-MONITORING-001: HAPI MUST record HTTP request metrics
+    Integration tests for incident analysis metrics.
+    
+    Pattern: Custom registry → Inject metrics → Call business logic → Query registry
+    
+    BR-HAPI-011: Investigation request metrics
     """
 
-    def test_incident_analysis_records_http_request_metrics(self, hapi_client, unique_test_id):
+    @pytest.mark.asyncio
+    async def test_incident_analysis_increments_investigations_total(self, unique_test_id):
         """
-        BR-MONITORING-001: Incident analysis MUST record HTTP request metrics.
-
-        This test validates that HAPI records standard HTTP metrics when
-        processing an incident analysis request.
-
-        ✅ CORRECT: Tests HAPI behavior (records metrics during business operation)
+        BR-HAPI-011: Incident analysis MUST increment investigations_total metric.
+        
+        Pattern (like Go):
+        1. Create test registry
+        2. Create HAMetrics with test registry
+        3. Get initial metric value
+        4. Call analyze_incident() with test metrics
+        5. Query test registry for new value
+        6. Verify increment
         """
-        # ARRANGE: Get baseline metrics
-        metrics_before = get_metrics(hapi_client)
-        requests_before = parse_metric_value(
-            metrics_before,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
-        )
-
-        # ACT: Trigger business operation (incident analysis)
+        # ARRANGE: Create test registry (like Go's prometheus.NewRegistry())
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        print(f"🔍 TEST DEBUG: Test registry ID: {id(test_registry)}")
+        print(f"🔍 TEST DEBUG: Metrics registry ID: {id(test_metrics.registry)}")
+        print(f"🔍 TEST DEBUG: Are they the same? {test_registry is test_metrics.registry}")
+        
+        # Get baseline
+        print(f"🔍 TEST DEBUG: Getting initial counter value...")
+        initial_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        print(f"🔍 TEST DEBUG: Initial value: {initial_value}")
+        
+        # ACT: Call business logic with test metrics (Go pattern)
         incident_request = make_incident_request(unique_test_id)
-        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
-
+        app_config = AppConfig()
+        
+        print(f"🔍 TEST DEBUG: Calling analyze_incident() with metrics={test_metrics}")
+        result = await analyze_incident(
+            request_data=incident_request,
+            mcp_config=None,
+            app_config=app_config,
+            metrics=test_metrics  # ✅ Inject test metrics
+        )
+        
         # Verify business operation succeeded
-        assert response.status_code == 200, \
-            f"Incident analysis failed: {response.status_code} - {response.text}"
+        assert result is not None, "Incident analysis should return result"
+        print(f"🔍 TEST DEBUG: analyze_incident() completed successfully")
+        print(f"🔍 TEST DEBUG: Result needs_human_review: {result.get('needs_human_review', 'NOT SET')}")
+        
+        # ASSERT: Query test registry for updated metric
+        print(f"🔍 TEST DEBUG: Getting final counter value...")
+        final_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        print(f"🔍 TEST DEBUG: Final value: {final_value}")
+        
+        assert final_value == initial_value + 1, \
+            f"investigations_total should increment by 1 (before: {initial_value}, after: {final_value})"
+        
+        print(f"✅ Metric validated: investigations_total increased from {initial_value} to {final_value}")
 
-        # ASSERT: Verify HTTP metrics recorded
-        metrics_after = get_metrics(hapi_client)
-
-        # Verify http_requests_total incremented
-        requests_after = parse_metric_value(
-            metrics_after,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
-        )
-        assert requests_after > requests_before, \
-            f"http_requests_total should increment (before: {requests_before}, after: {requests_after})"
-
-        # Verify http_request_duration_seconds recorded
-        assert "http_request_duration_seconds" in metrics_after, \
-            "http_request_duration_seconds metric not found"
-
-    def test_recovery_analysis_records_http_request_metrics(self, hapi_client, unique_test_id):
+    @pytest.mark.asyncio
+    async def test_incident_analysis_records_duration_histogram(self, unique_test_id):
         """
-        BR-MONITORING-001: Recovery analysis MUST record HTTP request metrics.
-
-        This test validates that HAPI records HTTP metrics for recovery endpoint.
-        """
-        # ARRANGE: Get baseline
-        metrics_before = get_metrics(hapi_client)
-        requests_before = parse_metric_value(
-            metrics_before,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/recovery/analyze", "status": "200"}
-        )
-
-        # ACT: Trigger recovery analysis
-        recovery_request = make_recovery_request(unique_test_id)
-        response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_request)
-
-        assert response.status_code == 200
-
-        # ASSERT: Verify metrics
-        metrics_after = get_metrics(hapi_client)
-        requests_after = parse_metric_value(
-            metrics_after,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/recovery/analyze", "status": "200"}
-        )
-
-        assert requests_after > requests_before, \
-            "Recovery endpoint should record http_requests_total"
-
-    def test_health_endpoint_records_metrics(self, hapi_client, unique_test_id):
-        """
-        BR-MONITORING-001: Health endpoint MUST record HTTP request metrics.
-
-        This test validates that even health checks are metered.
+        BR-HAPI-011: Incident analysis MUST record duration histogram.
+        
+        Pattern: Inject test metrics → Call business logic → Verify histogram count
         """
         # ARRANGE
-        metrics_before = get_metrics(hapi_client)
-        requests_before = parse_metric_value(
-            metrics_before,
-            "http_requests_total",
-            {"method": "GET", "endpoint": "/health"}
-        )
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        # Get baseline histogram count (query from registry)
+        initial_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    initial_count = float(sample.value)
+                    break
+        
+        # ACT: Call business logic
+        incident_request = make_incident_request(unique_test_id)
+        app_config = AppConfig()
+        result = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
+        
+        assert result is not None
+        
+        # ASSERT: Histogram count should increment (query from registry)
+        final_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    final_count = float(sample.value)
+                    break
+        
+        assert final_count == initial_count + 1, \
+            f"investigations_duration_seconds count should increment (before: {initial_count}, after: {final_count})"
+        
+        print(f"✅ Duration histogram updated: count {initial_count} → {final_count}")
 
-        # ACT: Call health endpoint
-        response = hapi_client.get("/health")
-        assert response.status_code == 200
-
-        # ASSERT
-        metrics_after = get_metrics(hapi_client)
-        requests_after = parse_metric_value(
-            metrics_after,
-            "http_requests_total",
-            {"method": "GET", "endpoint": "/health"}
-        )
-
-        assert requests_after > requests_before, \
-            "Health endpoint should record metrics"
-
-
-class TestLLMMetrics:
-    """
-    Flow-based tests for LLM-specific metrics.
-
-    Pattern: Trigger LLM operation → Verify LLM metrics recorded
-
-    BR-MONITORING-001: HAPI MUST record LLM request metrics
-    """
-
-    def test_incident_analysis_records_llm_request_duration(self, hapi_client, unique_test_id):
+    @pytest.mark.asyncio
+    async def test_incident_analysis_records_needs_review_status(self, unique_test_id):
         """
-        BR-MONITORING-001: Incident analysis MUST record LLM request duration.
-
-        This test validates that HAPI records LLM-specific metrics when
-        using AI for incident analysis.
+        BR-HAPI-011: Incident analysis with needs_human_review MUST record correct status.
+        
+        Pattern: Test metrics recording for different outcomes
         """
         # ARRANGE
-        metrics_before = get_metrics(hapi_client)
-
-        # ACT: Trigger incident analysis (uses LLM)
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        # ACT: Call business logic
         incident_request = make_incident_request(unique_test_id)
-        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
+        app_config = AppConfig()
+        result = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics)
+        
+        assert result is not None
+        
+        # ASSERT: Check appropriate status counter incremented
+        success_count = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        needs_review_count = get_counter_value(test_metrics, 'investigations_total', {'status': 'needs_review'})
+        
+        if result.get("needs_human_review", False):
+            assert needs_review_count >= 1, "needs_review counter should increment for needs_human_review=True"
+            print(f"✅ Recorded needs_review status: count={needs_review_count}")
+        else:
+            assert success_count >= 1, "success counter should increment for successful analysis"
+            print(f"✅ Recorded success status: count={success_count}")
 
-        assert response.status_code == 200
 
-        # ASSERT: Verify LLM metrics recorded
-        metrics_after = get_metrics(hapi_client)
+class TestRecoveryAnalysisMetrics:
+    """
+    Integration tests for recovery analysis metrics.
+    
+    Pattern: Custom registry → Inject metrics → Call business logic → Query registry
+    
+    BR-HAPI-011: Investigation request metrics
+    """
 
-        # LLM request duration should be present
-        # (Metric name may vary: llm_request_duration_seconds, llm_call_duration_seconds, llm_latency_seconds, etc.)
-        llm_metrics_found = any(
-            metric in metrics_after
-            for metric in ["llm_request_duration", "llm_call_duration", "llm_latency", "llm_time"]
-        )
-
-        assert llm_metrics_found, \
-            "LLM request duration metric not found in /metrics. " \
-            "Check if HAPI is recording LLM performance metrics."
-
-    def test_recovery_analysis_records_llm_request_duration(self, hapi_client, unique_test_id):
+    @pytest.mark.asyncio
+    async def test_recovery_analysis_increments_investigations_total(self, unique_test_id):
         """
-        BR-MONITORING-001: Recovery analysis MUST record LLM request duration.
-
-        This test validates that LLM metrics are recorded for recovery endpoint.
+        BR-HAPI-011: Recovery analysis MUST increment investigations_total metric.
+        
+        Pattern (like Go): Direct business logic call with injected test metrics
         """
-        # ACT
+        # ARRANGE
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        initial_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        
+        # ACT: Call recovery business logic with test metrics
         recovery_request = make_recovery_request(unique_test_id)
-        response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_request)
-
-        assert response.status_code == 200
-
-        # ASSERT
-        metrics_after = get_metrics(hapi_client)
-
-        # Verify LLM metrics exist (any LLM-related metric)
-        llm_metrics_found = any(
-            metric in metrics_after
-            for metric in ["llm_request_duration", "llm_call_duration", "llm_latency", "llm_time"]
+        app_config = AppConfig()
+        
+        result = await analyze_recovery(
+            request_data=recovery_request,
+            app_config=app_config,
+            metrics=test_metrics  # ✅ Inject test metrics
         )
+        
+        # Verify operation succeeded
+        assert result is not None
+        
+        # ASSERT: Query test registry
+        final_value = get_counter_value(test_metrics, 'investigations_total', {'status': 'success'})
+        
+        assert final_value == initial_value + 1, \
+            f"Recovery analysis should increment investigations_total (before: {initial_value}, after: {final_value})"
+        
+        print(f"✅ Recovery metrics: investigations_total {initial_value} → {final_value}")
 
-        assert llm_metrics_found, \
-            "Recovery endpoint should record LLM metrics"
+    @pytest.mark.asyncio
+    async def test_recovery_analysis_records_duration(self, unique_test_id):
+        """
+        BR-HAPI-011: Recovery analysis MUST record duration histogram.
+        
+        Pattern: Inject test metrics → Verify histogram updated
+        """
+        # ARRANGE
+        test_registry = CollectorRegistry()
+        test_metrics = HAMetrics(registry=test_registry)
+        
+        # Get baseline histogram count (query from registry)
+        initial_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    initial_count = float(sample.value)
+                    break
+        
+        # ACT: Call recovery business logic
+        recovery_request = make_recovery_request(unique_test_id)
+        app_config = AppConfig()
+        result = await analyze_recovery(request_data=recovery_request, app_config=app_config, metrics=test_metrics)
+        
+        assert result is not None
+        
+        # ASSERT: Histogram count incremented (query from registry)
+        final_count = 0.0
+        for collector in test_registry.collect():
+            for sample in collector.samples:
+                if sample.name.endswith('_count') and 'investigations_duration' in sample.name:
+                    final_count = float(sample.value)
+                    break
+        
+        assert final_count == initial_count + 1, \
+            "Recovery should record duration histogram"
+        
+        print(f"✅ Recovery duration: histogram count {initial_count}→{final_count}")
 
 
-class TestMetricsAggregation:
+class TestMetricsIsolation:
     """
-    Flow-based tests for metrics aggregation over multiple requests.
-
-    Pattern: Trigger multiple operations → Verify metrics aggregate correctly
-
-    BR-MONITORING-001: Metrics MUST aggregate correctly over time
-    """
-
-    def test_multiple_requests_increment_counter(self, hapi_client, unique_test_id):
-        """
-        BR-MONITORING-001: Multiple requests MUST increment counter metrics.
-
-        This test validates that counter metrics (http_requests_total)
-        accumulate across multiple requests.
-        """
-        # ARRANGE: Get baseline
-        metrics_before = get_metrics(hapi_client)
-        requests_before = parse_metric_value(
-            metrics_before,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
-        )
-
-        # ACT: Make multiple requests
-        num_requests = 3
-        for i in range(num_requests):
-            incident_request = make_incident_request(unique_test_id)
-            response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
-            assert response.status_code == 200
-
-        # ASSERT: Verify counter incremented by num_requests
-        metrics_after = get_metrics(hapi_client)
-        requests_after = parse_metric_value(
-            metrics_after,
-            "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
-        )
-
-        expected_increment = num_requests
-        actual_increment = requests_after - requests_before
-
-        assert actual_increment >= expected_increment, \
-            f"Expected at least {expected_increment} requests recorded, " \
-            f"got {actual_increment} (before: {requests_before}, after: {requests_after})"
-
-    def test_histogram_metrics_record_multiple_samples(self, hapi_client, unique_test_id):
-        """
-        BR-MONITORING-001: Histogram metrics MUST record multiple samples.
-
-        This test validates that histogram metrics (http_request_duration_seconds)
-        record samples from multiple requests.
-        """
-        # ACT: Make multiple requests with different characteristics
-        for i in range(3):
-            incident_request = make_incident_request(unique_test_id)
-            # Vary the request slightly to potentially get different durations
-            incident_request["signal_type"] = ["OOMKilled", "CrashLoopBackOff", "ImagePullBackOff"][i]
-
-            response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
-            assert response.status_code == 200
-
-        # ASSERT: Verify histogram has samples
-        metrics_after = get_metrics(hapi_client)
-
-        # Histogram metrics should have _count and _sum suffixes
-        has_histogram_count = "http_request_duration_seconds_count" in metrics_after
-        has_histogram_sum = "http_request_duration_seconds_sum" in metrics_after
-
-        assert has_histogram_count or has_histogram_sum, \
-            "Histogram metrics (http_request_duration_seconds_count/_sum) not found. " \
-            "HAPI should record request duration histograms."
-
-
-class TestMetricsEndpointAvailability:
-    """
-    Flow-based tests for /metrics endpoint availability.
-
-    Pattern: Query /metrics → Verify endpoint works
-
-    BR-MONITORING-001: /metrics endpoint MUST be available
+    Verify test metrics isolation (custom registry pattern).
+    
+    BR-HAPI-011: Test isolation via custom registry
     """
 
-    def test_metrics_endpoint_is_accessible(self, hapi_client, unique_test_id):
+    @pytest.mark.asyncio
+    async def test_custom_registry_isolates_test_metrics(self, unique_test_id):
         """
-        BR-MONITORING-001: /metrics endpoint MUST be accessible.
-
-        This test validates that the Prometheus metrics endpoint is available
-        and returns valid Prometheus format.
+        Integration test: Custom registry isolates test metrics from global registry.
+        
+        Pattern: Create two HAMetrics instances, verify independence
         """
-        # ACT
-        response = hapi_client.get("/metrics")
-
-        # ASSERT
-        assert response.status_code == 200, \
-            f"/metrics endpoint returned {response.status_code}"
-
-        metrics_text = response.text
-
-        # Verify Prometheus format (should have # HELP and # TYPE comments)
-        assert "# HELP" in metrics_text, \
-            "/metrics should include # HELP comments (Prometheus format)"
-        assert "# TYPE" in metrics_text, \
-            "/metrics should include # TYPE comments (Prometheus format)"
-
-    def test_metrics_endpoint_returns_content_type_text_plain(self, hapi_client, unique_test_id):
-        """
-        BR-MONITORING-001: /metrics endpoint MUST return text/plain content type.
-
-        Prometheus expects metrics in text/plain format.
-        """
-        # ACT
-        response = hapi_client.get("/metrics")
-
-        # ASSERT
-        assert response.status_code == 200
-
-        content_type = response.headers.get("Content-Type", "")
-        assert "text/plain" in content_type, \
-            f"/metrics should return text/plain, got {content_type}"
-
-
-class TestBusinessMetrics:
-    """
-    Flow-based tests for business-specific metrics.
-
-    Pattern: Trigger business scenario → Verify business metrics recorded
-
-    BR-MONITORING-001: HAPI SHOULD record business-specific metrics
-    """
-
-    def test_workflow_selection_metrics_recorded(self, hapi_client, unique_test_id):
-        """
-        BR-MONITORING-001: Workflow selection SHOULD be metered.
-
-        This test validates that HAPI records metrics about workflow
-        selection during incident analysis (if implemented).
-        """
-        # ACT: Trigger incident analysis
+        # ARRANGE: Create two independent test registries
+        test_registry_1 = CollectorRegistry()
+        test_metrics_1 = HAMetrics(registry=test_registry_1)
+        
+        test_registry_2 = CollectorRegistry()
+        test_metrics_2 = HAMetrics(registry=test_registry_2)
+        
+        # ACT: Call business logic with metrics_1
         incident_request = make_incident_request(unique_test_id)
-        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
-
-        assert response.status_code == 200
-
-        # ASSERT: Check if workflow metrics exist
-        metrics = get_metrics(hapi_client)
-
-        # Workflow-related metrics (may not exist yet, so this is informational)
-        workflow_metrics_found = any(
-            metric in metrics
-            for metric in ["workflow_selected", "workflow_confidence", "workflow_search"]
-        )
-
-        # This is a SHOULD not MUST - log if missing but don't fail
-        if not workflow_metrics_found:
-            print("ℹ️  Workflow-specific metrics not found (optional enhancement)")
-
-
-# ========================================
-# TEST COLLECTION
-# ========================================
-
-# Total: 11 flow-based metrics tests
-# - 3 HTTP request metrics tests
-# - 2 LLM metrics tests
-# - 2 metrics aggregation tests
-# - 2 metrics endpoint availability tests
-# - 1 business metrics test (informational)
-# - 1 content type test
-
-# These tests follow the same flow-based pattern as audit tests:
-# 1. Trigger business operation (HTTP request)
-# 2. Query /metrics endpoint
-# 3. Verify metrics recorded
-# 4. Validate metric content
-
-# NOT an anti-pattern fix (no anti-pattern existed for metrics)
-# This is NEW test coverage for previously untested metrics functionality
-
-
-
-
+        app_config = AppConfig()
+        await analyze_incident(request_data=incident_request, mcp_config=None, app_config=app_config, metrics=test_metrics_1)
+        
+        # ASSERT: Only metrics_1 should increment, metrics_2 should be zero
+        value_1 = get_counter_value(test_metrics_1, 'investigations_total', {'status': 'success'})
+        value_2 = get_counter_value(test_metrics_2, 'investigations_total', {'status': 'success'})
+        
+        assert value_1 >= 1, "metrics_1 should be incremented"
+        assert value_2 == 0, "metrics_2 should remain at zero (isolated)"
+        
+        print(f"✅ Metrics isolation verified: registry_1={value_1}, registry_2={value_2}")

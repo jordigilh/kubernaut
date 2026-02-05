@@ -8,14 +8,19 @@ logging:
 
 # LLM provider (critical business dependency)
 llm:
-  provider: "ollama"              # Options: ollama, openai, google, mock
-  model: "llama2"
-  endpoint: "http://localhost:11434"
+  provider: "mock"                # E2E: Mock LLM service
+  model: "mock-model"
+  endpoint: "http://mock-llm:8080"  # E2E: Mock LLM ClusterIP service in Kind
   secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
+
+# HAPI service (for E2E tests calling HAPI)
+hapi:
+  url: "http://localhost:30120"  # E2E test (Kind NodePort per DD-TEST-001)
 
 # Data Storage service (critical business dependency)
 data_storage:
-  url: "http://localhost:18098"  # Integration test (Go-started container)
+  url: "http://localhost:8089"  # E2E test (NodePort 30089 per DD-TEST-001 v2.5)
+  timeout: 60  # HTTP timeout in seconds (default: 60s for reliable operations)
 
 # Audit configuration (BR-AUDIT-005, ADR-038)
 audit:

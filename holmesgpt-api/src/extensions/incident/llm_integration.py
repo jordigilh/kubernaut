@@ -155,8 +155,13 @@ def create_data_storage_client(app_config: Optional[AppConfig]):
         if not ds_url:
             ds_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
 
+        # DD-AUTH-014: Use ServiceAccount authentication
+        # Performance Fix: Use singleton pool manager to reuse HTTP connections
+        from datastorage_pool_manager import get_shared_datastorage_pool_manager
+        auth_pool = get_shared_datastorage_pool_manager()
         configuration = Configuration(host=ds_url)
         api_client = ApiClient(configuration)
+        api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         return WorkflowCatalogAPIApi(api_client)
     except Exception as e:
         logger.warning({
@@ -170,17 +175,20 @@ def create_data_storage_client(app_config: Optional[AppConfig]):
 async def analyze_incident(
     request_data: Dict[str, Any],
     mcp_config: Optional[Dict[str, Any]] = None,
-    app_config: Optional[AppConfig] = None
+    app_config: Optional[AppConfig] = None,
+    metrics=None  # Injectable HAMetrics instance (Go pattern)
 ) -> Dict[str, Any]:
     """
     Core incident analysis logic with LLM self-correction loop.
 
     Business Requirements:
     - BR-HAPI-002 (Incident analysis)
+    - BR-HAPI-011 (Investigation metrics)
     - BR-HAPI-197 (needs_human_review field)
     - BR-HAPI-211 (LLM Input Sanitization)
     - BR-HAPI-212 (Mock LLM Mode)
     - BR-HAPI-250 (Workflow Catalog Toolset)
+    - BR-HAPI-301 (LLM observability metrics)
 
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 
@@ -190,7 +198,18 @@ async def analyze_incident(
     3. If invalid, feed errors back to LLM for self-correction
     4. Retry up to MAX_VALIDATION_ATTEMPTS times
     5. If all attempts fail, set needs_human_review=True
+    
+    Args:
+        request_data: Incident request data dict
+        mcp_config: Optional MCP configuration
+        app_config: Optional application configuration
+        metrics: Optional HAMetrics instance (injected by caller, uses global if None)
     """
+    import time
+    
+    # Start timing for BR-HAPI-011 (Investigation metrics)
+    start_time = time.time()
+    
     incident_id = request_data.get("incident_id", "unknown")
 
     logger.info({
@@ -234,6 +253,8 @@ async def analyze_incident(
         toolsets_config = prepare_toolsets_config_for_sdk(app_config)
 
         # Create HolmesGPT SDK Config
+        # NOTE: api_key is obtained from OPENAI_API_KEY environment variable via SDK's model registry
+        # Do NOT pass api_key to Config() - it's not a valid field and will cause Pydantic validation error
         config = Config(
             model=model_name,
             api_base=os.getenv("LLM_ENDPOINT"),
@@ -590,7 +611,27 @@ async def analyze_incident(
             })
 
         # Add validation history to response (BR-HAPI-197)
-        result["validation_attempts_history"] = validation_attempts_history
+        # E2E-HAPI-003: Only override if LLM didn't provide a history (for max_retries_exhausted simulation)
+        logger.info({
+            "event": "validation_history_decision",
+            "incident_id": incident_id,
+            "has_key": "validation_attempts_history" in result,
+            "llm_provided_count": len(result.get("validation_attempts_history", [])),
+            "hapi_loop_count": len(validation_attempts_history)
+        })
+        if "validation_attempts_history" not in result or not result["validation_attempts_history"]:
+            result["validation_attempts_history"] = validation_attempts_history
+            logger.info({
+                "event": "validation_history_using_hapi_loop",
+                "incident_id": incident_id,
+                "count": len(validation_attempts_history)
+            })
+        else:
+            logger.info({
+                "event": "validation_history_using_llm",
+                "incident_id": incident_id,
+                "count": len(result["validation_attempts_history"])
+            })
 
         logger.info({
             "event": "incident_analysis_completed",
@@ -601,6 +642,20 @@ async def analyze_incident(
             "needs_human_review": result.get("needs_human_review", False),
             "validation_attempts": len(validation_errors_history) + 1 if validation_errors_history else 1
         })
+        
+        # Record metrics (BR-HAPI-011: Investigation metrics)
+        if metrics:
+            # Determine status for metrics
+            if result.get("needs_human_review", False):
+                status = "needs_review"
+            else:
+                status = "success"
+            
+            logger.info(f"🔍 METRICS DEBUG (analyze_incident): About to record metrics - status={status}, metrics={metrics}")
+            metrics.record_investigation_complete(start_time, status)
+            logger.info(f"🔍 METRICS DEBUG (analyze_incident): Metrics recorded successfully")
+        else:
+            logger.warning(f"🔍 METRICS DEBUG (analyze_incident): metrics is None - NOT recording")
 
         return result
 
@@ -610,5 +665,10 @@ async def analyze_incident(
             "incident_id": incident_id,
             "error": str(e)
         }, exc_info=True)
+        
+        # Record error metrics (BR-HAPI-011)
+        if metrics:
+            metrics.record_investigation_complete(start_time, "error")
+        
         raise
 

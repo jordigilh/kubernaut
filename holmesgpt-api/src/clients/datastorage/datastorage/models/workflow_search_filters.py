@@ -34,7 +34,7 @@ class WorkflowSearchFilters(BaseModel):
     signal_type: StrictStr = Field(description="Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.)")
     severity: StrictStr = Field(description="Severity level (mandatory: critical, high, medium, low)")
     component: StrictStr = Field(description="Component type (mandatory: pod, node, deployment, etc.)")
-    environment: StrictStr = Field(description="Environment (mandatory: production, staging, development)")
+    environment: StrictStr = Field(description="Environment filter (mandatory, single value from Signal Processing)")
     priority: StrictStr = Field(description="Priority level (mandatory: P0, P1, P2, P3)")
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format")
     detected_labels: Optional[DetectedLabels] = None

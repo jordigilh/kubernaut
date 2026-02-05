@@ -50,7 +50,7 @@ import os
 import time
 import pytest
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # ========================================
 # BUSINESS LOGIC IMPORTS (Direct Calls)
@@ -88,45 +88,15 @@ from datastorage.models.audit_event import AuditEvent
 # HELPER FUNCTIONS
 # ========================================
 
-def query_audit_events(
-    data_storage_url: str,
-    correlation_id: str,
-    timeout: int = 10
-) -> List[AuditEvent]:
-    """
-    Query Data Storage for audit events by correlation_id using OpenAPI client.
-
-    DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
-
-    Args:
-        data_storage_url: Data Storage service URL
-        correlation_id: Remediation ID for audit correlation
-        timeout: Request timeout in seconds
-
-    Returns:
-        List of AuditEvent Pydantic models
-    """
-    config = DataStorageConfiguration(host=data_storage_url)
-    client = DataStorageApiClient(configuration=config)
-    api_instance = AuditWriteAPIApi(client)
-
-    # DD-API-001: Use OpenAPI generated client
-    response = api_instance.query_audit_events(
-        correlation_id=correlation_id,
-        _request_timeout=timeout
-    )
-
-    # Return Pydantic models directly
-    return response.data if response.data else []
-
-
 def query_audit_events_with_retry(
-    data_storage_url: str,
+    audit_store,
     correlation_id: str,
+    event_category: str,
+    event_type: Optional[str] = None,
     min_expected_events: int = 1,
-    timeout_seconds: int = 10,
-    poll_interval: float = 0.5,
-    audit_store=None
+    timeout_seconds: int = 30,
+    poll_interval: float = 1.0,  # Increased from 0.5s to 1.0s to match DataStorage batch flush interval
+    limit: int = 100
 ) -> List[AuditEvent]:
     """
     Query Data Storage for audit events with explicit flush support.
@@ -134,23 +104,40 @@ def query_audit_events_with_retry(
     This function eliminates async race conditions by flushing the audit buffer
     before querying, similar to Go integration tests.
 
-    Pattern: flush() → query() → assert (deterministic, no polling needed)
+    Pattern: flush() → poll with Eventually() → assert
+    
+    Timeout Alignment (Feb 1, 2026):
+    - Polling: 30s (matches Go AIAnalysis INT: Eventually(30*time.Second, 1*time.Second))
+    - Poll interval: 1.0s (increased from 0.5s to match DataStorage 1-second batch flush interval)
+    - Flush: 10s (matches Go Gateway/AuthWebhook suite_test.go)
+    
+    Pattern Difference from Go:
+    - Go AIAnalysis: Flush on EACH retry (controller may buffer during polling)
+    - HAPI Python: Flush ONCE (analyze_incident() completes before polling)
+    Rationale: Direct function calls complete before polling, so single flush is sufficient.
+    
+    Architectural Fixes (Jan 31, 2026 - User Feedback):
+    1. ✅ No direct DS access: Uses audit_store._audit_api (not separate DS client)
+    2. ✅ Proper filtering: Requires event_category (mandatory) + event_type (optional)
+    3. ✅ Pagination: Supports limit parameter (default 100, max 1000)
+    4. ✅ Correct event_category: "aiagent" (AI Agent Provider, not "analysis")
 
     Args:
-        data_storage_url: Data Storage service URL
-        correlation_id: Remediation ID for audit correlation
+        audit_store: BufferedAuditStore instance (MANDATORY per ADR-032)
+        correlation_id: Correlation ID for audit correlation
+        event_category: Event category (ADR-034 mandatory field, "aiagent" for HAPI)
+        event_type: Optional event type filter (e.g., "holmesgpt.response.complete")
         min_expected_events: Minimum number of events expected (default 1)
-        timeout_seconds: Maximum time to wait for events (default 10s)
-        poll_interval: Time between polling attempts (default 0.5s)
-        audit_store: Optional BufferedAuditStore instance for explicit flush
+        timeout_seconds: Maximum time to wait for events (default 30s, aligned with Go)
+        poll_interval: Time between polling attempts (default 1.0s, matches DataStorage batch flush)
+        limit: Maximum events per query (1-1000, default 100 for pagination)
 
     Returns:
         List of AuditEvent Pydantic models
 
     Raises:
-        AssertionError: If events don't appear within timeout
+        AssertionError: If events don't appear within timeout or audit_store not provided
     """
-    # Explicit flush to eliminate async race conditions (like Go tests)
     # ADR-032: Audit is MANDATORY - fail if audit_store not provided
     if audit_store is None:
         raise AssertionError(
@@ -158,41 +145,70 @@ def query_audit_events_with_retry(
             "Ensure audit_store fixture is provided to test."
         )
 
-    print(f"🔄 Flushing audit buffer before querying...")
-    success = audit_store.flush(timeout=5.0)
+    print(f"🔄 Flushing audit buffer before querying (correlation_id={correlation_id})...")
+    # Increased timeout from 5s to 10s for parallel test execution (4 workers)
+    # With connection pool contention, flush may take longer
+    success = audit_store.flush(timeout=10.0)
     if not success:
         raise AssertionError(
             "Audit flush timeout - events may not be persisted. "
-            "This indicates a problem with the audit buffer."
+            "This indicates a problem with the audit buffer or DataStorage connection pool."
         )
-    print(f"✅ Audit buffer flushed")
+    print(f"✅ Audit buffer flushed successfully")
 
     start_time = time.time()
     attempts = 0
 
     while time.time() - start_time < timeout_seconds:
         attempts += 1
-        events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+        
+        # Query using audit_store's internal authenticated client (no separate DS access)
+        if attempts == 1:
+            print(f"🔍 AUDIT DEBUG: Querying DataStorage with:")
+            print(f"   correlation_id={correlation_id}")
+            print(f"   event_category={event_category}")
+            print(f"   event_type={event_type}")
+            print(f"   limit={limit}")
+        
+        response = audit_store._audit_api.query_audit_events(
+            correlation_id=correlation_id,
+            event_category=event_category,
+            event_type=event_type,
+            limit=limit,
+            _request_timeout=5
+        )
+        events = response.data if response.data else []
 
         if len(events) >= min_expected_events:
             elapsed = time.time() - start_time
             print(f"✅ Found {len(events)} audit events after {elapsed:.2f}s ({attempts} attempts)")
+            if events:
+                print(f"🔍 AUDIT DEBUG: Event types found: {[e.event_type for e in events]}")
             return events
 
         if attempts % 5 == 0:  # Log every 5 attempts
             elapsed = time.time() - start_time
             print(f"⏳ Waiting for audit events... {len(events)}/{min_expected_events} found after {elapsed:.2f}s")
+            if events:
+                print(f"   Event types so far: {[e.event_type for e in events]}")
 
         time.sleep(poll_interval)
 
     # Timeout - fail with diagnostic info
     elapsed = time.time() - start_time
-    final_events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+    final_response = audit_store._audit_api.query_audit_events(
+        correlation_id=correlation_id,
+        event_category=event_category,
+        event_type=event_type,
+        limit=limit,
+        _request_timeout=5
+    )
+    final_events = final_response.data if final_response.data else []
     raise AssertionError(
         f"Timeout waiting for audit events: expected >={min_expected_events}, "
         f"got {len(final_events)} after {elapsed:.2f}s ({attempts} attempts). "
         f"ADR-038: Buffered audit flush may be delayed. "
-        f"correlation_id={correlation_id}"
+        f"Filters: correlation_id={correlation_id}, event_category={event_category}, event_type={event_type}"
     )
 
 
@@ -218,7 +234,6 @@ class TestIncidentAnalysisAuditFlow:
     @pytest.mark.asyncio
     async def test_incident_analysis_emits_llm_request_and_response_events(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -251,18 +266,25 @@ class TestIncidentAnalysisAuditFlow:
 
         # ACT: Call business logic DIRECTLY (no HTTP, no API client)
         # This is the integration testing pattern - direct function call
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (audit tests don't assert on metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
 
         # Verify business operation succeeded
         assert response is not None, "Business logic should return a response"
         assert "incident_id" in response, "Response should contain incident_id"
 
+        # Give async audit operations time to complete before querying
+        # DataStorage batches events with 1-second timer
+        import asyncio
+        await asyncio.sleep(1.5)
+
         # ASSERT: Verify audit events emitted as side effect
         # Uses explicit flush to eliminate async race conditions
         all_events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
             audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2 - autonomous tool-calling agent)
+            event_type=None,  # Query all event types, filter in test
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
@@ -298,7 +320,6 @@ class TestIncidentAnalysisAuditFlow:
     @pytest.mark.asyncio
     async def test_incident_analysis_emits_llm_tool_call_events(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -329,16 +350,18 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify tool call events emitted
         # Expect 4 events: llm_request, llm_tool_call, llm_response, workflow_validation_attempt
         events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
-            min_expected_events=4,  # All 4 audit events from mock mode
             audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
+            event_type=None,  # Query all event types, filter in test
+            min_expected_events=4,  # All 4 audit events from mock mode
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -350,7 +373,6 @@ class TestIncidentAnalysisAuditFlow:
     @pytest.mark.asyncio
     async def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -381,15 +403,17 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify validation attempt events emitted (with retry polling)
         events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
-            min_expected_events=1,  # At least workflow_validation_attempt
             audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
+            event_type="workflow_validation_attempt",  # Specific event type for this test
+            min_expected_events=1,  # At least workflow_validation_attempt
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -413,7 +437,6 @@ class TestRecoveryAnalysisAuditFlow:
     @pytest.mark.asyncio
     async def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -437,15 +460,17 @@ class TestRecoveryAnalysisAuditFlow:
         }
 
         # ACT: Call business logic directly (no HTTP)
-        response = await analyze_recovery(recovery_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_recovery(request_data=recovery_request, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify audit events emitted
         all_events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
-            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
+            event_type=None,  # Query all event types, filter in test
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
 
@@ -476,7 +501,6 @@ class TestAuditEventSchemaValidation:
     @pytest.mark.asyncio
     async def test_audit_events_have_required_adr034_fields(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -507,15 +531,17 @@ class TestAuditEventSchemaValidation:
         }
 
         # ACT: Call business logic directly
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
         assert response is not None
 
         # ASSERT: Verify all audit events have ADR-034 required fields
         events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
-            min_expected_events=1,
             audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
+            event_type=None,  # Query all event types for comprehensive validation
+            min_expected_events=1,
             timeout_seconds=10
         )
         assert len(events) > 0, "No audit events found"
@@ -543,10 +569,10 @@ class TestAuditEventSchemaValidation:
                 assert field_value is not None, \
                     f"Event {event.event_type} has null value for ADR-034 required field: {field}"
 
-            # ADR-034 v1.1+: HAPI triggers workflow search in DataStorage.
-            # DataStorage emits workflow.catalog.search_completed with category="workflow".
-            # Tests must expect MIXED event categories (enabled by Mock LLM extraction Jan 2026).
-            valid_categories = ["analysis", "workflow"]
+            # ADR-034 v1.6: HAPI uses 'aiagent', DataStorage uses 'workflow'
+            # AIAnalysis controller uses 'analysis' (not tested here - separate service)
+            # Tests must expect MIXED event categories (HAPI + DataStorage).
+            valid_categories = ["aiagent", "workflow"]  # Updated for ADR-034 v1.6
             assert event.event_category in valid_categories, \
                 f"Expected ADR-034 category in {valid_categories}, got '{event.event_category}'"
 
@@ -555,8 +581,14 @@ class TestAuditEventSchemaValidation:
                 assert event.event_category == "workflow", \
                     f"Workflow events must have category='workflow', got '{event.event_category}'"
             elif event.event_type.startswith("aianalysis."):
+                # This should NOT appear in HAPI tests - AIAnalysis controller only
                 assert event.event_category == "analysis", \
                     f"AI Analysis events must have category='analysis', got '{event.event_category}'"
+            elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
+                                       "workflow_validation_attempt", "holmesgpt.response.complete"]:
+                # ADR-034 v1.6: HAPI events use 'aiagent' category
+                assert event.event_category == "aiagent", \
+                    f"HAPI events must have category='aiagent' per ADR-034 v1.6, got '{event.event_category}'"
 
             # Verify event has valid version
             assert event.version is not None, \
@@ -575,7 +607,6 @@ class TestErrorScenarioAuditFlow:
     @pytest.mark.asyncio
     async def test_workflow_not_found_emits_audit_with_error_context(
         self,
-        data_storage_url,
         audit_store,
         unique_test_id):
         """
@@ -612,7 +643,8 @@ class TestErrorScenarioAuditFlow:
         }
 
         # ACT: Call business logic directly - will fail gracefully
-        response = await analyze_incident(incident_request)
+        # Note: metrics=None is acceptable (testing error audit, not metrics)
+        response = await analyze_incident(request_data=incident_request, mcp_config=None, app_config=None, metrics=None)
 
         # Verify business operation completed (even if no workflow found)
         assert response is not None, "Business logic should return a response"
@@ -621,11 +653,12 @@ class TestErrorScenarioAuditFlow:
 
         # ASSERT: Verify audit events were generated despite business failure
         all_events = query_audit_events_with_retry(
-            data_storage_url,
-            remediation_id,
+            audit_store=audit_store,
+            correlation_id=remediation_id,
+            event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
+            event_type=None,  # Query all event types, filter in test
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
-            timeout_seconds=10,
-            audit_store=audit_store
+            timeout_seconds=10
         )
 
         # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution

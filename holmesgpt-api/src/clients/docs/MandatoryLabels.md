@@ -1,6 +1,6 @@
 # MandatoryLabels
 
-5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)
+5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)
 
 ## Properties
 
@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **signal_type** | **str** | Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff) | 
 **severity** | **str** | Severity level this workflow is designed for | 
 **component** | **str** | Kubernetes resource type this workflow targets (e.g., pod, deployment, node) | 
-**environment** | **str** | Target environment (production, staging, development, test, * for any) | 
+**environment** | **List[str]** | Target environments (workflow can declare multiple, &#39;*&#39; matches all) | 
 **priority** | **str** | Business priority level (P0, P1, P2, P3, * for any) | 
 
 ## Example

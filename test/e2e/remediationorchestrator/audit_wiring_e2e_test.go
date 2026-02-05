@@ -30,8 +30,13 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"github.com/google/uuid"
+)
+
+import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,11 +50,12 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 	const (
-		dataStorageURL = "http://localhost:8081" // DD-TEST-001: Access via NodePort/extraPortMappings
+		dataStorageURL = "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
 		e2eTimeout     = 120 * time.Second       // Same as suite timeout
 		e2eInterval    = 500 * time.Millisecond
 	)
@@ -66,17 +72,23 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// Create unique namespace for E2E test
 			testNamespace = createTestNamespace("audit-wiring-e2e")
 
-			// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)
+			// ✅ DD-API-001 + DD-AUTH-014: Use authenticated OpenAPI client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
+			// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
 			var err error
-			dsClient, err = dsgen.NewClient(dataStorageURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 			// Create RemediationRequest
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("e2e-audit-test-%d", time.Now().Unix()),
+					Name:      fmt.Sprintf("e2e-audit-test-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{

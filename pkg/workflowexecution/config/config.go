@@ -55,10 +55,10 @@ type ExecutionConfig struct {
 	Namespace string `yaml:"namespace" validate:"required"`
 
 	// ServiceAccount for PipelineRuns
-	ServiceAccount string `yaml:"service_account" validate:"required"`
+	ServiceAccount string `yaml:"serviceAccount" validate:"required"`
 
 	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
-	CooldownPeriod time.Duration `yaml:"cooldown_period" validate:"required,gt=0"`
+	CooldownPeriod time.Duration `yaml:"cooldownPeriod" validate:"required,gt=0"`
 }
 
 // BackoffConfig holds exponential backoff settings.
@@ -71,16 +71,16 @@ type ExecutionConfig struct {
 // Capped at: MaxCooldown
 type BackoffConfig struct {
 	// BaseCooldown is the initial cooldown for exponential backoff
-	BaseCooldown time.Duration `yaml:"base_cooldown" validate:"required,gt=0"`
+	BaseCooldown time.Duration `yaml:"baseCooldown" validate:"required,gt=0"`
 
 	// MaxCooldown caps the exponential backoff
-	MaxCooldown time.Duration `yaml:"max_cooldown" validate:"required,gt=0,gtefield=BaseCooldown"`
+	MaxCooldown time.Duration `yaml:"maxCooldown" validate:"required,gt=0,gtefield=BaseCooldown"`
 
 	// MaxExponent limits exponential growth (e.g., 4 means max multiplier is 2^4 = 16x)
-	MaxExponent int `yaml:"max_exponent" validate:"required,gte=1,lte=10"`
+	MaxExponent int `yaml:"maxExponent" validate:"required,gte=1,lte=10"`
 
 	// MaxConsecutiveFailures before auto-failing with ExhaustedRetries
-	MaxConsecutiveFailures int `yaml:"max_consecutive_failures" validate:"required,gt=0"`
+	MaxConsecutiveFailures int `yaml:"maxConsecutiveFailures" validate:"required,gt=0"`
 }
 
 // AuditConfig holds settings for audit trail via Data Storage service.
@@ -91,7 +91,7 @@ type BackoffConfig struct {
 // - DD-AUDIT-003: Audit store configuration
 type AuditConfig struct {
 	// DataStorageURL is the Data Storage Service URL for audit events (ADR-032: MANDATORY)
-	DataStorageURL string `yaml:"datastorage_url" validate:"required,url"`
+	DataStorageURL string `yaml:"dataStorageUrl" validate:"required,url"`
 
 	// Timeout for audit API calls
 	Timeout time.Duration `yaml:"timeout" validate:"required,gt=0"`
@@ -102,16 +102,16 @@ type AuditConfig struct {
 // Standard controller configuration following DD-005 (Observability Standards).
 type ControllerConfig struct {
 	// MetricsAddr is the address for Prometheus metrics endpoint
-	MetricsAddr string `yaml:"metrics_addr" validate:"required"`
+	MetricsAddr string `yaml:"metricsAddr" validate:"required"`
 
 	// HealthProbeAddr is the address for health and readiness probes
-	HealthProbeAddr string `yaml:"health_probe_addr" validate:"required"`
+	HealthProbeAddr string `yaml:"healthProbeAddr" validate:"required"`
 
 	// LeaderElection enables leader election for multi-replica deployments
-	LeaderElection bool `yaml:"leader_election"`
+	LeaderElection bool `yaml:"leaderElection"`
 
 	// LeaderElectionID is the unique ID for leader election
-	LeaderElectionID string `yaml:"leader_election_id" validate:"required"`
+	LeaderElectionID string `yaml:"leaderElectionId" validate:"required"`
 }
 
 // DefaultConfig returns the default WorkflowExecution controller configuration.
@@ -135,7 +135,7 @@ func DefaultConfig() *Config {
 			MaxConsecutiveFailures: 5,
 		},
 		Audit: AuditConfig{
-			DataStorageURL: "http://datastorage-service:8080",
+			DataStorageURL: "http://data-storage-service:8080", // DD-AUTH-011: Standard service name (with hyphen)
 			Timeout:        10 * time.Second,
 		},
 		Controller: ControllerConfig{
@@ -187,7 +187,7 @@ func LoadFromFile(path string) (*Config, error) {
 		cfg.Backoff.MaxConsecutiveFailures = 5
 	}
 	if cfg.Audit.DataStorageURL == "" {
-		cfg.Audit.DataStorageURL = "http://datastorage-service:8080"
+		cfg.Audit.DataStorageURL = "http://data-storage-service:8080" // DD-AUTH-011: Standard service name (with hyphen)
 	}
 	if cfg.Audit.Timeout == 0 {
 		cfg.Audit.Timeout = 10 * time.Second

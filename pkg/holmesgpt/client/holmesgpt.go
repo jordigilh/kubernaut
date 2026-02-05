@@ -33,7 +33,9 @@ limitations under the License.
 // - ✅ Consistent with Data Storage: Same pattern across all OpenAPI services
 //
 // ⚠️ FORBIDDEN: Manual HTTP clients for HAPI endpoints
-//    Validation: scripts/validate-openapi-client-usage.sh
+//
+//	Validation: scripts/validate-openapi-client-usage.sh
+//
 // ========================================
 //
 // BR-AI-006: API call construction and response handling.
@@ -46,6 +48,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -169,42 +172,37 @@ func NewHolmesGPTClientWithTransport(cfg Config, transport http.RoundTripper) (*
 func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
 	// DD-HAPI-003: Use generated client method for compile-time type safety
 	res, err := c.client.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+
+	// ✅ Convert ogen response to Go error using generic utility (Phase 4)
+	// Handles both: undefined status codes (error strings) and typed responses
+	// Authority: OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md (SME-validated)
+	err = ogenx.ToError(res, err)
 	if err != nil {
-		// Extract status code from ogen error message (format: "unexpected status code: NNN")
-		statusCode := 0
-		errMsg := err.Error()
-		if _, scanErr := fmt.Sscanf(errMsg, "decode response: unexpected status code: %d", &statusCode); scanErr == nil {
-			// Successfully extracted status code from ogen error
+		// Convert ogenx.HTTPError to APIError for wrapper compatibility
+		if httpErr := ogenx.GetHTTPError(err); httpErr != nil {
 			return nil, &APIError{
-				StatusCode: statusCode,
-				Message:    fmt.Sprintf("HolmesGPT-API returned HTTP %d: %v", statusCode, err),
+				StatusCode: httpErr.StatusCode,
+				Message:    httpErr.Error(),
 			}
 		}
-		// True network error (no HTTP response)
+		// Network error (no HTTP response)
 		return nil, &APIError{
 			StatusCode: 0,
 			Message:    fmt.Sprintf("HolmesGPT-API call failed: %v", err),
 		}
 	}
 
-	// DD-HAPI-003: Type-assert response interface to concrete type
-	// The generated client returns an interface; we need the concrete type.
-	response, ok := res.(*IncidentResponse)
-	if !ok {
-		// Handle non-200 responses (e.g., 422 validation error)
-		if validationErr, ok := res.(*HTTPValidationError); ok {
-			return nil, &APIError{
-				StatusCode: http.StatusUnprocessableEntity,
-				Message:    fmt.Sprintf("HAPI validation error: %+v", validationErr),
-			}
-		}
-		return nil, &APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    fmt.Sprintf("unexpected response type from HAPI: %T", res),
-		}
+	// DD-HAPI-003: Type-assert response to success type
+	// ogenx.ToError already handled error responses
+	if incident, ok := res.(*IncidentResponse); ok {
+		return incident, nil
 	}
 
-	return response, nil
+	// Unexpected response type (should never happen if HAPI spec is correct)
+	return nil, &APIError{
+		StatusCode: http.StatusInternalServerError,
+		Message:    fmt.Sprintf("unexpected response type from HAPI: %T", res),
+	}
 }
 
 // InvestigateRecovery calls the HolmesGPT-API recovery analyze endpoint.
@@ -231,41 +229,37 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 
 	// DD-HAPI-003: Use generated client method for compile-time type safety
 	res, err := c.client.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+
+	// ✅ Convert ogen response to Go error using generic utility (Phase 4)
+	// Handles both: undefined status codes (error strings) and typed responses
+	// Authority: OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md (SME-validated)
+	err = ogenx.ToError(res, err)
 	if err != nil {
-		// Extract status code from ogen error message (format: "unexpected status code: NNN")
-		statusCode := 0
-		errMsg := err.Error()
-		if _, scanErr := fmt.Sscanf(errMsg, "decode response: unexpected status code: %d", &statusCode); scanErr == nil {
-			// Successfully extracted status code from ogen error
+		// Convert ogenx.HTTPError to APIError for wrapper compatibility
+		if httpErr := ogenx.GetHTTPError(err); httpErr != nil {
 			return nil, &APIError{
-				StatusCode: statusCode,
-				Message:    fmt.Sprintf("HolmesGPT-API recovery returned HTTP %d: %v", statusCode, err),
+				StatusCode: httpErr.StatusCode,
+				Message:    httpErr.Error(),
 			}
 		}
-		// True network error (no HTTP response)
+		// Network error (no HTTP response)
 		return nil, &APIError{
 			StatusCode: 0,
 			Message:    fmt.Sprintf("HolmesGPT-API recovery call failed: %v", err),
 		}
 	}
 
-	// DD-HAPI-003: Type-assert response interface to concrete type
-	response, ok := res.(*RecoveryResponse)
-	if !ok {
-		// Handle non-200 responses (e.g., 422 validation error)
-		if validationErr, ok := res.(*HTTPValidationError); ok {
-			return nil, &APIError{
-				StatusCode: http.StatusUnprocessableEntity,
-				Message:    fmt.Sprintf("HAPI recovery validation error: %+v", validationErr),
-			}
-		}
-		return nil, &APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    fmt.Sprintf("unexpected response type from HAPI recovery endpoint: %T", res),
-		}
+	// DD-HAPI-003: Type-assert response to success type
+	// ogenx.ToError already handled error responses
+	if recovery, ok := res.(*RecoveryResponse); ok {
+		return recovery, nil
 	}
 
-	return response, nil
+	// Unexpected response type (should never happen if HAPI spec is correct)
+	return nil, &APIError{
+		StatusCode: http.StatusInternalServerError,
+		Message:    fmt.Sprintf("unexpected response type from HAPI recovery endpoint: %T", res),
+	}
 }
 
 // ========================================
@@ -287,6 +281,3 @@ func (e *APIError) Error() string {
 	}
 	return fmt.Sprintf("HolmesGPT-API error (HTTP %d): %s", e.StatusCode, e.Message)
 }
-
-
-

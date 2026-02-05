@@ -1,9 +1,40 @@
 # DD-GATEWAY-006: Gateway Authentication and Authorization Strategy
 
-**Status**: Approved
-**Date**: 2025-10-27
+**Status**: ⛔ **SUPERSEDED** by DD-AUTH-014 V2.0 (January 29, 2026)
+**Original Date**: 2025-10-27
+**Superseded Date**: 2026-01-29
 **Deciders**: @jordigilh
 **Related**: BR-GATEWAY-066 (Authentication), BR-GATEWAY-069 (Authorization), VULN-GATEWAY-001, VULN-GATEWAY-002
+
+---
+
+## ⚠️ **SUPERSEDED NOTICE**
+
+**This design decision has been superseded by [DD-AUTH-014 V2.0](./DD-AUTH-014-middleware-based-sar-authentication.md).**
+
+**Reason for Change**:
+- Gateway is **external-facing** entry point (Prometheus AlertManager, K8s Event forwarders)
+- **Network Policies alone** insufficient for defense-in-depth security
+- **SOC2 compliance** requires operator attribution for signal injection (ActorID)
+- **Zero-trust architecture** requires authentication at application layer
+- **Webhook compatibility**: AlertManager + K8s Events natively support Bearer tokens
+
+**New Approach** (DD-AUTH-014 V2.0):
+- ✅ **Kubernetes TokenReview**: Validate ServiceAccount tokens (BR-GATEWAY-182)
+- ✅ **SubjectAccessReview (SAR)**: Authorize CRD creation permissions (BR-GATEWAY-183)
+- ✅ **Audit Logging**: Capture authenticated user identity for SOC2 compliance
+- ✅ **No caching**: Low throughput (<100 signals/min) + NetworkPolicies reduce risk
+
+**Migration Path**:
+- Deploy Gateway with SAR middleware (same pattern as DataStorage/HAPI)
+- Configure webhooks with Bearer tokens (AlertManager `http_config.authorization`)
+- Create RBAC: ClusterRole `gateway-signal-sender` with `create remediationrequests` permission
+
+**See**: [DD-AUTH-014 V2.0](./DD-AUTH-014-middleware-based-sar-authentication.md) for complete implementation details
+
+---
+
+## 📜 **Original Decision (OBSOLETE - For Historical Reference)**
 
 ## Context
 

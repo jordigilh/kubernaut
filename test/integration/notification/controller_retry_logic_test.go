@@ -158,6 +158,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			By("Waiting for exponential backoff retries (up to 5 attempts)")
 		// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
 		// + 5s for controller reconciliation and status propagation
+		// DD-AUTH-014: 25s timeout sufficient with 5 concurrent workers (no queue saturation)
 		Eventually(func() int {
 			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 				Name:      notification.Name,
@@ -173,18 +174,19 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			// PHASE 3: Verify final state after max attempts
 			// ========================================
-			By("Verifying notification marked as PartiallySent after max retries")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
+		By("Verifying notification marked as PartiallySent after max retries")
+		// DD-AUTH-014: 30s timeout sufficient with 5 concurrent workers
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+			"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
 
 			// ========================================
 			// ASSERTIONS: Retry Logic Validation

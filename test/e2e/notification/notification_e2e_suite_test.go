@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ var (
 	kubeconfigPath string
 	cfg            *rest.Config
 	k8sClient      client.Client
+	apiReader      client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// Shared Notification Controller configuration (deployed ONCE for all tests)
 	controllerNamespace string = "notification-e2e"
@@ -71,6 +73,9 @@ var (
 	// Data Storage NodePort for audit E2E tests (0 if not deployed)
 	// When audit infrastructure is deployed, this is set to the NodePort for external access
 	dataStorageNodePort int
+
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -171,12 +176,25 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "AuthWebhook manifest deployment should succeed")
 		logger.Info("✅ AuthWebhook deployed - SOC2 CC8.1 cancellation attribution enabled")
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "notification-e2e-sa"
+		namespace := controllerNamespace
+
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Ready for parallel processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Return kubeconfig path to all processes
-		return []byte(kubeconfigPath)
+		// Return kubeconfig path and auth token to all processes
+		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes (including process 1) - connects to cluster
 	func(data []byte) {
@@ -193,8 +211,12 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize failure tracking
 		anyTestFailed = false
 
-		// Get kubeconfig path from process 1
-		kubeconfigPath = string(data)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(data), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 			"process", GinkgoParallelProcess())
@@ -215,14 +237,15 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		Expect(k8sClient).ToNot(BeNil())
 
-		// Set up E2E file output directory for FileService validation
-		// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
-		e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
+		// Create direct API reader for Eventually() blocks to bypass client cache
+		// This ensures fresh reads from API server for status polling
+		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
-		// Directory already created in SynchronizedBeforeSuite before Kind cluster creation
-		// No need to create here - just verify it exists
-		_, err = os.Stat(e2eFileOutputDir)
-		Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
+
+		// Set up E2E file output directory reference for FileService validation
+		// NOTE: With emptyDir volume, files are stored inside the pod at /tmp/notifications
+		// Tests use kubectl exec/cp to access files (no host directory needed)
+		e2eFileOutputDir = "/tmp/notifications" // Pod-internal path for reference only
 
 		// Wait for Notification Controller metrics NodePort to be responsive
 		// NodePort 30186 (in cluster) → localhost:9186 (on host via Kind extraPortMappings)
@@ -289,10 +312,9 @@ var _ = SynchronizedAfterSuite(
 			"process", GinkgoParallelProcess())
 		logger.Info("Notification E2E Process Cleanup", "process", GinkgoParallelProcess())
 
-		// NOTE: Do NOT clean up e2eFileOutputDir here!
-		// It's a shared HostPath directory used by all parallel processes.
-		// If we clean it here, parallel processes will race and delete each other's files.
-		// Cleanup happens in cluster cleanup (second function) after all tests complete.
+		// NOTE: With emptyDir volume, files are stored inside the pod and automatically
+		// cleaned up when the pod is deleted during cluster cleanup.
+		// No manual host directory cleanup needed.
 
 		// Cancel context
 		if cancel != nil {
@@ -351,17 +373,27 @@ var _ = SynchronizedAfterSuite(
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
 		// Prevents disk space accumulation (~200-500MB per run)
-		logger.Info("Cleaning up Notification controller image built for Kind...")
-		imageTag := "e2e-test" // Default tag used for E2E tests
-		imageName := "localhost/kubernaut-notification:" + imageTag
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
+		imageTag := os.Getenv("IMAGE_TAG")
 
-		pruneCmd := exec.Command("podman", "rmi", imageName)
-		_, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			logger.Info("⚠️  Failed to remove service image (may not exist)",
-				"image", imageName, "error", pruneErr)
+		// Skip cleanup when using registry images (CI/CD mode)
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
 		} else {
-			logger.Info("✅ Service image removed", "image", imageName)
+			// Local build mode: Remove locally built images
+			logger.Info("Cleaning up Notification controller image built for Kind...")
+			localImageTag := "e2e-test" // Default tag used for E2E tests
+			imageName := "localhost/kubernaut-notification:" + localImageTag
+
+			pruneCmd := exec.Command("podman", "rmi", imageName)
+			_, pruneErr := pruneCmd.CombinedOutput()
+			if pruneErr != nil {
+				logger.Info("⚠️  Failed to remove service image (may not exist)",
+					"image", imageName, "error", pruneErr)
+			} else {
+				logger.Info("✅ Service image removed", "image", imageName)
+			}
 		}
 
 		// Prune dangling images from failed builds

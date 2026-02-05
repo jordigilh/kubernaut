@@ -33,6 +33,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,9 +92,33 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	// ═══════════════════════════════════════════════════════════════════════
+	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
+	// ═══════════════════════════════════════════════════════════════════════
+	// In CI/CD (IMAGE_REGISTRY set), GitHub Actions workflow collects must-gather
+	// artifacts. Tests must NOT delete cluster on failure so workflow can inspect
+	// pod status, events, and logs.
+	//
+	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
+	// then delete cluster to free resources.
+	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
+	
 	if testsFailed {
+		if inCICD {
+			// ═══════════════════════════════════════════════════════════════════════
+			// CI/CD MODE: Preserve cluster for GitHub Actions must-gather
+			// ═══════════════════════════════════════════════════════════════════════
+			_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected in CI/CD environment\n")
+			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for must-gather collection\n")
+			_, _ = fmt.Fprintf(writer, "   • Cluster: %s\n", clusterName)
+			_, _ = fmt.Fprintf(writer, "   • GitHub Actions will collect pod logs, events, and status\n")
+			_, _ = fmt.Fprintf(writer, "   • Workflow will delete cluster after artifact collection\n")
+			_, _ = fmt.Fprintf(writer, "✅ Cluster preserved for diagnostics\n")
+			return nil // Don't delete - let GitHub Actions handle it
+		}
+		
 		// ═══════════════════════════════════════════════════════════════════════
-		// EXPORT LOGS (Must-Gather Style)
+		// LOCAL MODE: Export logs immediately (Must-Gather Style)
 		// ═══════════════════════════════════════════════════════════════════════
 		_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
 		_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
@@ -117,7 +142,7 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// ALWAYS DELETE CLUSTER (even after log export)
+	// DELETE CLUSTER (normal cleanup or after local log export)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(writer, "🗑️  Deleting Kind cluster...\n")
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
@@ -254,6 +279,18 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// Deploy ClusterRole for client access (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// Deploy ServiceAccount and RBAC for DataStorage middleware (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -411,6 +448,14 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
+	// 4.5. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED before deployment
+	// Creates ServiceAccount 'data-storage-sa' that deployment references
+	// Without this, pod creation will be rejected by Kubernetes (silent failure)
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC (ServiceAccount + auth permissions)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
 	// 5. Deploy Data Storage Service with OAuth2-Proxy (TD-E2E-001 Phase 1 - image from quay.io)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
@@ -441,6 +486,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 //
 //	// Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
 //	DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
+//
 // DeployDataStorageTestServicesWithNodePort deploys DataStorage with OAuth2-Proxy using a specific NodePort.
 // TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
@@ -474,13 +520,19 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service with OAuth2-Proxy and custom NodePort (TD-E2E-001 Phase 1 - image from quay.io)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy from quay.io (NodePort %d)...\n", nodePort)
+	// 5. Deploy DataStorage service RBAC (DD-AUTH-014) - REQUIRED for pod creation
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
+	// 6. Deploy Data Storage Service with middleware-based auth and custom NodePort (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
-	// 6. Wait for all services ready
+	// 7. Wait for all services ready
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
@@ -551,6 +603,84 @@ func getKubernetesClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
 	}
 
 	return clientset, nil
+}
+
+// deployDataStorageClientClusterRole deploys the data-storage-client ClusterRole
+// for E2E tests. This ClusterRole grants full CRUD permissions on the data-storage-service
+// resource, which is required for all DataStorage REST API operations with SAR validation.
+//
+// Authority: DD-AUTH-014 (Middleware-based authentication with Zero Trust)
+//
+// The ClusterRole is applied from deploy/data-storage/client-rbac-v2.yaml, which contains:
+//   - ClusterRole: data-storage-client (verbs: ["create", "get", "list", "update", "delete"])
+//   - RoleBindings for production services (Gateway, RO, SP, AA, WE, Notification, etc.)
+//
+// Note: E2E tests create their own RoleBindings programmatically (not from manifest).
+func deployDataStorageClientClusterRole(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	rbacManifest := filepath.Join(workspaceRoot, "deploy", "data-storage", "client-rbac-v2.yaml")
+	if _, err := os.Stat(rbacManifest); os.IsNotExist(err) {
+		return fmt.Errorf("ClusterRole manifest not found at %s", rbacManifest)
+	}
+
+	// Apply only ClusterRole (skip RoleBindings which reference kubernaut-system namespace)
+	// E2E tests create dynamic RoleBindings programmatically as needed
+	// Use yq to extract only the ClusterRole (second document in manifest)
+	applyCmd := exec.CommandContext(ctx, "sh", "-c",
+		fmt.Sprintf("yq eval 'select(.kind == \"ClusterRole\")' %s | kubectl apply --kubeconfig %s --server-side --field-manager=e2e-test -f -",
+			rbacManifest, kubeconfigPath))
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply ClusterRole: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ ClusterRole 'data-storage-client' deployed (verbs: create, get, list, update, delete)\n")
+	return nil
+}
+
+// deployDataStorageServiceRBAC deploys the ServiceAccount, ClusterRole, and ClusterRoleBinding
+// required for DataStorage's auth middleware to call TokenReview and SubjectAccessReview APIs.
+//
+// Authority: DD-AUTH-014 (Middleware-based authentication)
+//
+// The manifest contains:
+//   - ServiceAccount: data-storage-sa
+//   - ClusterRole: data-storage-auth-middleware (tokenreviews, subjectaccessreviews)
+//   - ClusterRoleBinding: Binds SA to ClusterRole
+//
+// Without this RBAC, DataStorage cannot validate tokens or check permissions.
+func deployDataStorageServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	rbacManifest := filepath.Join(workspaceRoot, "deploy", "data-storage", "service-rbac.yaml")
+	if _, err := os.Stat(rbacManifest); os.IsNotExist(err) {
+		return fmt.Errorf("service RBAC manifest not found at %s", rbacManifest)
+	}
+
+	// Apply manifest with namespace substitution for ServiceAccount
+	applyCmd := exec.CommandContext(ctx, "sh", "-c",
+		fmt.Sprintf("sed 's/namespace: kubernaut-system/namespace: %s/' %s | kubectl apply --kubeconfig %s --server-side --field-manager=e2e-test -f -",
+			namespace, rbacManifest, kubeconfigPath))
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply service RBAC: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ DataStorage service RBAC deployed (TokenReview + SAR permissions)\n")
+	return nil
 }
 
 func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -886,11 +1016,13 @@ func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubecon
 }
 
 // deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage with OAuth2-Proxy sidecar.
-// Architecture: Service:8080 → oauth2-proxy:8080 → DataStorage:8081
-// TD-E2E-001 Phase 1: Pass-through mode (--skip-auth-regex=.*) for architecture parity without breaking existing tests.
-// OAuth2-Proxy image: quay.io/oauth2-proxy/oauth2-proxy:v7.5.1 (pulled automatically by Kubernetes).
+// Architecture: Direct access via DD-AUTH-014 (no oauth-proxy)
+// DD-AUTH-010: Real authentication with ServiceAccount tokens (no pass-through mode)
+// DD-AUTH-011: SubjectAccessReview (SAR) with verb:"create" for all DataStorage operations
+// DD-AUTH-009 v2.0: OpenShift oauth-proxy (NOT CNCF oauth2-proxy)
+// DD-AUTH-014: Middleware-based SAR authentication (no oauth-proxy sidecar)
 func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with OAuth2-Proxy sidecar (public registry: quay.io)...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with middleware-based auth (DD-AUTH-014)...\n")
 
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
@@ -904,7 +1036,7 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
+  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
@@ -974,10 +1106,89 @@ password: test_password`,
 		}
 	}
 
+	// 2.5. Create ServiceAccount + RBAC for middleware-based auth (DD-AUTH-014)
+	// Required for TokenReview and SubjectAccessReview API calls
+	_, _ = fmt.Fprintf(writer, "   🔐 Creating DataStorage ServiceAccount + RBAC...\n")
+
+	// ServiceAccount
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "data-storage-sa",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+	}
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, serviceAccount, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount: %w", err)
+	}
+
+	// ClusterRole for TokenReview + SubjectAccessReview
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-storage-auth-middleware",
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"authentication.k8s.io"},
+				Resources: []string{"tokenreviews"},
+				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"authorization.k8s.io"},
+				Resources: []string{"subjectaccessreviews"},
+				Verbs:     []string{"create"},
+			},
+		},
+	}
+	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ClusterRole: %w", err)
+	}
+
+	// ClusterRoleBinding
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-storage-auth-middleware",
+			Labels: map[string]string{
+				"app":           "data-storage-service",
+				"component":     "auth",
+				"authorization": "dd-auth-014",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "data-storage-auth-middleware",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "data-storage-sa",
+				Namespace: namespace,
+			},
+		},
+	}
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create DataStorage ClusterRoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage RBAC configured\n")
+
 	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
+	// DD-AUTH-014: Direct to DataStorage (no oauth-proxy)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "datastorage",
+			Name:      "data-storage-service", // DD-AUTH-011: Match production service name for SAR
 			Namespace: namespace,
 			Labels: map[string]string{
 				"app": "datastorage",
@@ -988,9 +1199,9 @@ password: test_password`,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "http",
-					Port:       8080,
-					TargetPort: intstr.FromInt(8080),
-					NodePort:   nodePort, // Configurable per service (default: 30081)
+					Port:       8080,                 // DD-AUTH-014: Direct to DataStorage (no proxy)
+					TargetPort: intstr.FromInt(8080), // Maps to DataStorage container port
+					NodePort:   nodePort,             // Configurable per service (default: 30081)
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
@@ -1035,6 +1246,9 @@ password: test_password`,
 					},
 				},
 				Spec: corev1.PodSpec{
+					// DD-AUTH-014: ServiceAccount for middleware-based auth
+					// Required for TokenReview and SubjectAccessReview API calls
+					ServiceAccountName: "data-storage-sa",
 					// DD-TEST-001: Schedule on control-plane where images are loaded
 					// Kind loads images to control-plane only by default
 					NodeSelector: map[string]string{
@@ -1060,52 +1274,17 @@ password: test_password`,
 						}
 						return nil
 					}(),
-				Containers: []corev1.Container{
-					// Container 1: oauth2-proxy sidecar (TD-E2E-001 Phase 1: SOC2 architecture parity)
-					// Image pulled automatically from public registry (no manual build/load needed)
-					{
-						Name:            "oauth2-proxy",
-						Image:           "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1",
-						ImagePullPolicy: corev1.PullIfNotPresent, // Pull from quay.io if not cached
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "http",
-								ContainerPort: 8080, // External port (Service routes here)
-							},
-						},
-					Args: []string{
-						"--http-address=0.0.0.0:8080",
-						"--upstream=http://localhost:8081",      // Forward to DataStorage internal port
-						"--skip-auth-regex=.*",                  // Phase 1: Pass-through mode (no real auth)
-						"--set-xauthrequest=true",               // Still inject X-Forwarded-User header
-						"--pass-user-headers=true",              // Pass through headers
-						"--email-domain=*",                      // Allow all email domains
-						"--provider=google",                     // Dummy provider (not used in pass-through)
-						"--client-id=e2e-test-client",           // Dummy client-id (not used in pass-through)
-						"--client-secret=e2e-test-secret",       // Dummy client-secret (not used in pass-through)
-						"--cookie-secret=0123456789ABCDEF0123456789ABCDEF", // Dummy 32-char secret (not used)
-						"--skip-provider-button=true",           // No provider UI
-					},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("20Mi"),
-							},
-							Limits: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("100m"),
-								corev1.ResourceMemory: resource.MustParse("100Mi"),
-							},
-						},
-					},
-					// Container 2: DataStorage (TD-E2E-001: Changed to internal port 8081, behind oauth2-proxy)
-					{
-						Name:            "datastorage",
-						Image:           dataStorageImage, // DD-TEST-001: service-specific tag
-						ImagePullPolicy: corev1.PullNever, // DD-TEST-001: Use local Kind image (scheduled on control-plane where images are loaded)
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "http-internal", // TD-E2E-001: Renamed from "http" (now internal port)
-								ContainerPort: 8081,            // TD-E2E-001: Changed from 8080 (behind oauth2-proxy)
+					Containers: []corev1.Container{
+						// DD-AUTH-014: DataStorage with middleware-based auth (no oauth-proxy sidecar)
+						// Authenticates using Kubernetes TokenReview API + authorizes using SAR API
+						{
+							Name:            "datastorage",
+							Image:           dataStorageImage,       // DD-TEST-001: service-specific tag
+							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "http", // DD-AUTH-014: Direct access (no proxy)
+									ContainerPort: 8080,   // Internal port (matches config.yaml)
 								},
 								{
 									Name:          "metrics",
@@ -1118,6 +1297,14 @@ password: test_password`,
 										Name:  "CONFIG_PATH",
 										Value: "/etc/datastorage/config.yaml",
 									},
+									// DD-AUTH-014: POD_NAMESPACE required for SAR namespace context
+									{
+										Name:  "POD_NAMESPACE",
+										Value: namespace,
+									},
+									// DD-AUTH-014: Use in-cluster config (ServiceAccount mounted automatically)
+									// KUBECONFIG env var removed - was causing crashes in E2E (host path doesn't exist in container)
+									// With proper data-storage-sa ServiceAccount + RBAC, in-cluster config works correctly
 								}
 								// DD-TEST-007: E2E Coverage Capture Standard
 								// Only add GOCOVERDIR if E2E_COVERAGE=true
@@ -1133,6 +1320,7 @@ password: test_password`,
 								} else {
 									_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
 								}
+								_, _ = fmt.Fprintf(writer, "   ✅ DD-AUTH-014: Using in-cluster config with ServiceAccount, POD_NAMESPACE=%s\n", namespace)
 								return envVars
 							}(),
 							VolumeMounts: func() []corev1.VolumeMount {
@@ -1173,23 +1361,25 @@ password: test_password`,
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path: "/health",
-										Port: intstr.FromInt(8080),
+										Port: intstr.FromInt(8080), // DataStorage listens on 8080
 									},
 								},
-								InitialDelaySeconds: 5,
+								InitialDelaySeconds: 30, // Allow PostgreSQL/Redis startup (was 5s - too short)
 								PeriodSeconds:       5,
 								TimeoutSeconds:      3,
+								FailureThreshold:    3,
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path: "/health",
-										Port: intstr.FromInt(8080),
+										Port: intstr.FromInt(8080), // DataStorage listens on 8080
 									},
 								},
 								InitialDelaySeconds: 30,
 								PeriodSeconds:       10,
 								TimeoutSeconds:      5,
+								FailureThreshold:    3,
 							},
 						},
 					},
@@ -1776,7 +1966,7 @@ service:
   logLevel: debug
   shutdownTimeout: 30s
 server:
-  port: 8081  # TD-E2E-001: Changed from 8080 (now behind oauth2-proxy sidecar)
+  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
@@ -2022,47 +2212,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	return nil
 }
 
-// loadDataStorageImageWithTag loads DataStorage image into Kind cluster with specific tag
-// Per DD-TEST-001: Each service loads its own fresh-built DataStorage image
-func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  📦 Loading DataStorage image: %s\n", imageTag)
-
-	// Save image to tar
-	saveCmd := exec.Command("podman", "save", imageTag, "-o", "/tmp/datastorage-e2e.tar")
-	saveCmd.Stdout = writer
-	saveCmd.Stderr = writer
-
-	if err := saveCmd.Run(); err != nil {
-		return fmt.Errorf("failed to save image: %w", err)
-	}
-
-	// Load image into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/datastorage-e2e.tar", "--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image into Kind: %w", err)
-	}
-
-	// Clean up tar file
-	_ = exec.Command("rm", "-f", "/tmp/datastorage-e2e.tar").Run()
-
-	// CRITICAL: Remove Podman image immediately to free disk space
-	// Image is now in Kind, Podman copy is duplicate
-	_, _ = fmt.Fprintf(writer, "     🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageTag)
-	rmiCmd.Stdout = writer
-	rmiCmd.Stderr = writer
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "     ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
-	} else {
-		_, _ = fmt.Fprintf(writer, "     ✅ Podman image removed: %s\n", imageTag)
-	}
-
-	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
-	return nil
-}
+// Removed: loadDataStorageImageWithTag (unused) - E2E tests now use loadImageToKind from shared_integration_utils.go
 
 // InstallCertManager installs cert-manager into the Kind cluster for SOC2 E2E testing.
 // This is ONLY needed for DataStorage SOC2 compliance tests to validate production
@@ -2254,4 +2404,3 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
-

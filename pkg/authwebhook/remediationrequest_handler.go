@@ -99,7 +99,7 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	// Write complete audit event (webhook.remediationrequest.timeout_modified)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "webhook.remediationrequest.timeout_modified")
-	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.5: event_category = webhook
+	audit.SetEventCategory(auditEvent, "orchestration") // Gap #8: Use orchestration category (webhook is RR implementation detail)
 	audit.SetEventAction(auditEvent, "timeout_modified")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
@@ -130,10 +130,9 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	auditEvent.EventData = api.NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
-	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		// Log error but don't fail the webhook (audit should not block operations)
-		// The audit store has retry + DLQ mechanisms
-	}
+	// Explicitly ignore errors - audit should not block webhook operations
+	// The audit store has retry + DLQ mechanisms for reliability
+	_ = h.auditStore.StoreAudit(ctx, auditEvent)
 
 	// Marshal the patched object
 	marshaledRR, err := json.Marshal(rr)

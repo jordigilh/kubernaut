@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V2.3 - Detection Methods Documented)
+**Status**: ✅ **APPROVED** (V2.4 - Multi-Environment Support)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
-**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 2.3
+**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-004 v1.6 (Multi-Environment Queries)
+**Version**: 2.4
 
 ---
 
@@ -34,6 +34,46 @@
 ---
 
 ## 📝 **Changelog**
+
+### Version 2.5 (2026-01-28) **← CURRENT**
+**FEATURE**: Multi-environment workflow capability (workflows declare target environments)
+
+**Breaking Changes**:
+- **Storage Model**: `MandatoryLabels.environment` changed from `string` to `[]string`
+  - Before: `environment: "production"` (single string)
+  - After: `environment: ["production"]` or `["staging", "production"]` (array)
+- **Search Model**: `WorkflowSearchFilters.environment` **REVERTED** to `string` (from v2.4's `[]string`)
+  - Signal Processing sends single value: `"production"`
+  - HAPI passes through single value: `"production"`
+  - DataStorage searches workflows where array contains value
+
+**SQL Pattern**:
+```sql
+-- Before (v2.4): Search multiple environments (INCORRECT)
+WHERE labels->>'environment' IN ('staging', 'production')
+
+-- After (v2.5): Workflow declares multiple environments, search single (CORRECT)
+WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
+```
+
+**Use Cases**:
+- **Workflow Creation**: DevOps creates workflow: `environment: ["staging", "production"]`
+- **Signal from Production**: SP extracts `"production"` → HAPI searches `"production"` → finds workflows with `["staging", "production"]` or `["production"]`
+- **Signal from Staging**: SP extracts `"staging"` → HAPI searches `"staging"` → finds workflows with `["staging", "production"]` or `["staging"]`
+- **Universal Workflow**: `environment: ["*"]` matches ANY environment search
+
+**Validation**: `validate:"required,min=1"` (explicit declaration required, no default)
+
+**Rationale**: Single workflow can be reused across multiple environments without duplication. Workflows explicitly declare their scope, Signal Processing always sends single environment.
+
+**Breaking Impact**: Pre-release only, no backwards compatibility required
+
+**Authority**: BR-STORAGE-040 v2.0, DD-WORKFLOW-004 v2.0
+
+### Version 2.4 (2026-01-26) **[SUPERSEDED by v2.5]**
+- **REVERTED**: Incorrect implementation - implemented search-side arrays instead of storage-side arrays
+- **ISSUE**: Allowed HAPI to search multiple environments, but workflows were still single-environment
+- **CORRECTION**: v2.5 implements correct model (storage-side arrays, search-side single value)
 
 ### Version 2.3 (2025-12-06)
 - **NEW**: Added **Detailed Detection Methods** section documenting specific annotations/labels for each detection type

@@ -2,8 +2,9 @@
 
 **Status**: ✅ **APPROVED & IMPLEMENTED**
 **Date**: November 2, 2025
-**Last Updated**: November 2, 2025 (Gateway refactored to follow Context API pattern)
+**Last Updated**: January 30, 2026 (camelCase mandate added - V1.1)
 **Authoritative Implementation**: **Context API Service** ([`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go))
+**Naming Convention**: ✅ **camelCase for YAML fields** - See [CRD_FIELD_NAMING_CONVENTION.md V1.1](../CRD_FIELD_NAMING_CONVENTION.md)
 **Applies To**: All microservices in Kubernaut platform
 
 ---
@@ -79,21 +80,23 @@ type ServerConfig struct {
 }
 
 // DatabaseConfig contains PostgreSQL database configuration
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase (AUTHORITATIVE)
 type DatabaseConfig struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Name     string `yaml:"name"`
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
-	SSLMode  string `yaml:"ssl_mode"`
+	SSLMode  string `yaml:"sslMode"`  // camelCase per naming convention
 }
 
 // CacheConfig contains Redis and LRU cache configuration
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase (AUTHORITATIVE)
 type CacheConfig struct {
-	RedisAddr  string        `yaml:"redis_addr"`
-	RedisDB    int           `yaml:"redis_db"`
-	LRUSize    int           `yaml:"lru_size"`
-	DefaultTTL time.Duration `yaml:"default_ttl"`
+	RedisAddr  string        `yaml:"redisAddr"`   // camelCase per naming convention
+	RedisDB    int           `yaml:"redisDb"`     // camelCase per naming convention
+	LRUSize    int           `yaml:"lruSize"`     // camelCase per naming convention
+	DefaultTTL time.Duration `yaml:"defaultTtl"`  // camelCase per naming convention
 }
 
 // LoggingConfig contains logging configuration
@@ -161,22 +164,28 @@ func (c *Config) Validate() error {
 
 **Reference Example**: [`pkg/contextapi/config/testdata/valid-config.yaml`](../../pkg/contextapi/config/testdata/valid-config.yaml)
 
+**NAMING CONVENTION**: ✅ **camelCase for YAML fields** (MANDATORY)
+- **Authority**: [CRD_FIELD_NAMING_CONVENTION.md](../CRD_FIELD_NAMING_CONVENTION.md) §2 "Use camelCase for JSON/YAML Fields"
+- **Applies To**: ALL YAML configuration files (service configs, CRD specs, Kubernetes manifests)
+- **Rationale**: Consistency across entire platform, clean JSON/YAML serialization
+
 ```yaml
 # Context API Configuration Example
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 server:
   port: 8091
   host: "0.0.0.0"
-  read_timeout: "30s"
-  write_timeout: "30s"
+  readTimeout: "30s"   # camelCase (not read_timeout)
+  writeTimeout: "30s"  # camelCase (not write_timeout)
 
 logging:
   level: "info"          # debug, info, warn, error
   format: "json"         # json, console
 
 cache:
-  redis_addr: "localhost:6379"
-  redis_db: 0
-  lru_size: 1000
+  redisAddr: "localhost:6379"  # camelCase (not redis_addr)
+  redisDb: 0                   # camelCase (not redis_db)
+  lruSize: 1000                # camelCase (not lru_size)
   default_ttl: "5m"
 
 database:

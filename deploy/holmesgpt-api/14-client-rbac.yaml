@@ -3,23 +3,23 @@
 # DD-AUTH-006: RBAC for OAuth-Proxy Protected HolmesGPT API Access
 # ========================================
 #
-# This RBAC configuration enables Gateway to authenticate with HolmesGPT API
-# via the oauth-proxy sidecar using ServiceAccount tokens.
+# This RBAC configuration enables AIAnalysis controller to authenticate with HolmesGPT API
+# via DD-AUTH-014 middleware using ServiceAccount tokens.
 #
 # Flow:
-# 1. Gateway → oauth-proxy (with ServiceAccount token in Authorization header)
-# 2. oauth-proxy validates token
-# 3. oauth-proxy performs Subject Access Review (SAR) using this RBAC
-# 4. oauth-proxy injects X-Auth-Request-User header (for logging/audit)
+# 1. AIAnalysis controller → HolmesGPT API (with ServiceAccount token in Authorization header)
+# 2. DD-AUTH-014 middleware validates token (TokenReview)
+# 3. DD-AUTH-014 middleware performs Subject Access Review (SAR) using this RBAC
+# 4. DD-AUTH-014 middleware authorizes request
 # 5. HolmesGPT API receives authenticated request
 #
 # Services (1 total):
-# - Gateway (only service that calls HolmesGPT API for LLM analysis)
+# - AIAnalysis Controller (calls HAPI for investigation/recovery analysis)
 #
-# Why Only Gateway?
-# - Gateway is the orchestrator that interfaces with external users
-# - Gateway decides when to invoke LLM for investigation/recovery
-# - Other services (AIAnalysis, WorkflowExecution, etc.) don't directly call HAPI
+# Why Only AIAnalysis?
+# - AIAnalysis controller orchestrates the investigation workflow
+# - AIAnalysis is responsible for calling LLM for incident/recovery analysis
+# - Gateway receives alerts but does NOT call HAPI (it creates AIAnalysis CRDs instead)
 # - This minimizes LLM API surface area and cost exposure
 #
 # ========================================
@@ -35,23 +35,24 @@ metadata:
     app.kubernetes.io/name: holmesgpt-api
     app.kubernetes.io/component: rbac
 rules:
-  # OAuth-proxy SAR check: Can the ServiceAccount "get" the holmesgpt-api service?
-  # This is the authorization check performed by oauth-proxy before proxying requests
+  # DD-AUTH-014 middleware SAR check: Can the ServiceAccount "create" the holmesgpt-api service?
+  # Note: 'create' verb represents "permission to use the service" in this context
+  # This is the authorization check performed by DD-AUTH-014 middleware
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["holmesgpt-api"]
-    verbs: ["get"]
+    verbs: ["create"]  # Changed from 'get' to match middleware SAR check
 
 ---
-# RoleBinding: Grant Gateway ServiceAccount access to HolmesGPT API
-# DD-AUTH-006: Gateway is the ONLY service authorized to call HAPI
+# RoleBinding: Grant AIAnalysis Controller ServiceAccount access to HolmesGPT API
+# DD-AUTH-006: AIAnalysis is the ONLY service authorized to call HAPI
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: gateway-holmesgpt-api-client
+  name: aianalysis-controller-holmesgpt-api-client
   namespace: kubernaut-system
   labels:
-    app.kubernetes.io/name: gateway
+    app.kubernetes.io/name: aianalysis
     app.kubernetes.io/component: rbac
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -59,7 +60,7 @@ roleRef:
   name: holmesgpt-api-client
 subjects:
   - kind: ServiceAccount
-    name: gateway-sa
+    name: aianalysis-controller
     namespace: kubernaut-system
 
 # ========================================
@@ -80,16 +81,22 @@ subjects:
 #    - Security auditing: Detect misuse patterns
 #    - Future SOC2 readiness: If HAPI generates audit events
 #
-# 4. **Future Expansion**: To add more services:
+# 4. **Architecture Clarification**: AIAnalysis vs Gateway
+#    - AIAnalysis Controller: Creates HolmesGPT client, calls HAPI for analysis
+#    - Gateway Service: Receives alerts, creates AIAnalysis CRDs (does NOT call HAPI)
+#    - Flow: Alert → Gateway → AIAnalysis CRD → AIAnalysis Controller → HAPI
+#    - This separation ensures LLM calls are isolated in the AIAnalysis controller
+#
+# 5. **Future Expansion**: To add more services:
 #    - Create new RoleBinding for each service
-#    - Update SAR check in oauth-proxy deployment (if needed)
-#    - Example: If AIAnalysis needs direct HAPI access, add:
+#    - Grant "get" permission on "holmesgpt-api" service
+#    - Example for another service:
 #      ```yaml
 #      ---
 #      apiVersion: rbac.authorization.k8s.io/v1
 #      kind: RoleBinding
 #      metadata:
-#        name: aianalysis-holmesgpt-api-client
+#        name: other-service-holmesgpt-api-client
 #        namespace: kubernaut-system
 #      roleRef:
 #        apiGroup: rbac.authorization.k8s.io
@@ -97,7 +104,7 @@ subjects:
 #        name: holmesgpt-api-client
 #      subjects:
 #        - kind: ServiceAccount
-#          name: aianalysis-sa
+#          name: other-service-sa
 #          namespace: kubernaut-system
 #      ```
 #

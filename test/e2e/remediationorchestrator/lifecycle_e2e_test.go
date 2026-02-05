@@ -659,17 +659,17 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			By("Deleting parent RemediationRequest")
 			Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
 
-			By("Verifying parent RR is deleted")
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), &remediationv1.RemediationRequest{})
-				return err != nil
-			}, timeout, interval).Should(BeTrue())
+		By("Verifying parent RR is deleted")
+		Eventually(func() bool {
+			err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), &remediationv1.RemediationRequest{})
+			return err != nil
+		}, timeout, interval).Should(BeTrue())
 
-			By("Verifying child SP is deleted via cascade")
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &signalprocessingv1.SignalProcessing{})
-				return err != nil
-			}, timeout, interval).Should(BeTrue())
+		By("Verifying child SP is deleted via cascade")
+		Eventually(func() bool {
+			err := apiReader.Get(ctx, client.ObjectKeyFromObject(sp), &signalprocessingv1.SignalProcessing{})
+			return err != nil
+		}, timeout, interval).Should(BeTrue())
 		})
 	})
 })

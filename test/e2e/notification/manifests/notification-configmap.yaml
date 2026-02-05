@@ -35,16 +35,16 @@ data:
     # These values control metrics, health probes, and leader election
     controller:
       # Prometheus metrics endpoint
-      metrics_addr: ":9186"
+      metricsAddr: ":9186"
 
       # Health and readiness probe endpoint
-      health_probe_addr: ":8081"
+      healthProbeAddr: ":8081"
 
       # Leader election (set to true for HA multi-replica deployments)
-      leader_election: false
+      leaderElection: false
 
       # Leader election ID (must be unique per service)
-      leader_election_id: "notification.kubernaut.ai"
+      leaderElectionId: "notification.kubernaut.ai"
 
     # ========================================
     # DELIVERY SECTION (SERVICE-SPECIFIC)
@@ -62,9 +62,9 @@ data:
       # Writes notifications to JSON/YAML files for audit trails
       # Used for compliance logging and persistent notification history
       file:
-        output_dir: "/tmp/notifications"  # Directory for file output
-        format: "json"                     # File format: json, yaml, text
-        timeout: 5s                        # Write timeout
+        outputDir: "/tmp/notifications"  # Directory for file output
+        format: "json"                   # File format: json, yaml, text
+        timeout: 5s                      # Write timeout
 
       # Log delivery (DD-NOT-006: Production feature)
       # Outputs notifications as structured JSON to stdout for observability
@@ -89,7 +89,7 @@ data:
       # Used for audit event emission and persistent storage
       # Format: http://{service}.{namespace}.svc.cluster.local:{port}
       # NOTE: ${NAMESPACE} is substituted by envsubst during deployment
-      data_storage_url: "http://datastorage.${NAMESPACE}.svc.cluster.local:8080"
+      dataStorageUrl: "http://data-storage-service.${NAMESPACE}.svc.cluster.local:8080"
 
 # ========================================
 # Deployment Integration (ADR-030 Pattern)

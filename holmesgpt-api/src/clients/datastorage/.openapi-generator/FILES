@@ -22,6 +22,7 @@ datastorage/models/ai_analysis_error_payload.py
 datastorage/models/ai_analysis_holmes_gpt_call_payload.py
 datastorage/models/ai_analysis_phase_transition_payload.py
 datastorage/models/ai_analysis_rego_evaluation_payload.py
+datastorage/models/async_acceptance_response.py
 datastorage/models/audit_event.py
 datastorage/models/audit_event_request.py
 datastorage/models/audit_event_request_event_data.py
@@ -66,6 +67,7 @@ datastorage/models/reconstruction_response.py
 datastorage/models/release_legal_hold200_response.py
 datastorage/models/release_legal_hold_request.py
 datastorage/models/remediation_approval_audit_payload.py
+datastorage/models/remediation_approval_decision_payload.py
 datastorage/models/remediation_orchestrator_audit_payload.py
 datastorage/models/remediation_request_webhook_audit_payload.py
 datastorage/models/remediation_workflow.py
@@ -99,6 +101,7 @@ docs/AIAnalysisErrorPayload.md
 docs/AIAnalysisHolmesGPTCallPayload.md
 docs/AIAnalysisPhaseTransitionPayload.md
 docs/AIAnalysisRegoEvaluationPayload.md
+docs/AsyncAcceptanceResponse.md
 docs/AuditEvent.md
 docs/AuditEventRequest.md
 docs/AuditEventRequestEventData.md
@@ -148,6 +151,7 @@ docs/ReconstructionResponse.md
 docs/ReleaseLegalHold200Response.md
 docs/ReleaseLegalHoldRequest.md
 docs/RemediationApprovalAuditPayload.md
+docs/RemediationApprovalDecisionPayload.md
 docs/RemediationOrchestratorAuditPayload.md
 docs/RemediationRequestWebhookAuditPayload.md
 docs/RemediationWorkflow.md
@@ -186,6 +190,7 @@ test/test_ai_analysis_error_payload.py
 test/test_ai_analysis_holmes_gpt_call_payload.py
 test/test_ai_analysis_phase_transition_payload.py
 test/test_ai_analysis_rego_evaluation_payload.py
+test/test_async_acceptance_response.py
 test/test_audit_event.py
 test/test_audit_event_request.py
 test/test_audit_event_request_event_data.py
@@ -234,6 +239,7 @@ test/test_reconstruction_response.py
 test/test_release_legal_hold200_response.py
 test/test_release_legal_hold_request.py
 test/test_remediation_approval_audit_payload.py
+test/test_remediation_approval_decision_payload.py
 test/test_remediation_orchestrator_audit_payload.py
 test/test_remediation_request_webhook_audit_payload.py
 test/test_remediation_workflow.py

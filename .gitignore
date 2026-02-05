@@ -218,18 +218,19 @@ pkg/audit/openapi_spec_data.yaml
 covcounters.*
 covmeta.*
 
-# Coverage report files (all formats and tiers)
-e2e-coverage*
-unit-coverage*
-integration-coverage*
-coverage.html
-coverage.txt
+# Coverage files and directories (ANY file/directory starting with "coverage")
+coverage*
+**/coverage*
 
 # Coverage directories (all tiers)
 coverage-unit/
 coverage-integration/
 coverage-e2e/
 **/coverdata/
+
+# Integration test auth tokens (generated during test setup)
+.hapi-integration-sa-token
+.*-integration-sa-token
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/

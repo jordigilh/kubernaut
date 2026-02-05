@@ -143,7 +143,8 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			log.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// Requeue after short delay after adding finalizer
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// ========================================
@@ -161,14 +162,15 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// Initialize phase to Pending on first reconciliation
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		analysis.Status.Phase = PhasePending
-		analysis.Status.Message = "AIAnalysis created"
-		if err := r.Status().Update(ctx, analysis); err != nil {
-			log.Error(err, "Failed to initialize phase to Pending")
-			return ctrl.Result{}, err
-		}
-		// Requeue to process Pending phase
-		return ctrl.Result{Requeue: true}, nil
+	analysis.Status.Message = "AIAnalysis created"
+	if err := r.Status().Update(ctx, analysis); err != nil {
+		log.Error(err, "Failed to initialize phase to Pending")
+		return ctrl.Result{}, err
 	}
+	// Requeue after short delay to process Pending phase
+	// Using RequeueAfter instead of deprecated Requeue field
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+}
 
 	// 4. PHASE STATE MACHINE
 	// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed

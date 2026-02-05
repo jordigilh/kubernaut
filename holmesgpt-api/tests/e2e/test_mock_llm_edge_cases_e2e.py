@@ -50,31 +50,34 @@ from holmesgpt_api_client.models.recovery_request import RecoveryRequest
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.mock_llm,
-    pytest.mark.skipif(
-        os.getenv("MOCK_LLM_MODE", "").lower() != "true",
-        reason="MOCK_LLM_MODE=true required for mock E2E tests"
-    )
+    # Mock LLM tests run by default in E2E (Mock LLM service is part of E2E infrastructure)
+    # Real LLM tests require explicit opt-in via RUN_REAL_LLM=true
 ]
-
-# HAPI service URL - configurable for different environments
-# Port 30120 for Kind E2E, 18120 for local integration (DD-TEST-001)
-# Prefer HAPI_BASE_URL (set by E2E suite) over HAPI_URL (local tests)
-HAPI_URL = os.getenv("HAPI_BASE_URL", os.getenv("HAPI_URL", "http://localhost:18120"))
 
 
 @pytest.fixture(scope="module")
-def hapi_incident_api():
+def hapi_incident_api(hapi_service_url, hapi_auth_token):
     """HAPI Incident Analysis API client for E2E tests (DD-API-001)."""
-    config = HAPIConfiguration(host=HAPI_URL)
+    config = HAPIConfiguration(host=hapi_service_url)
+    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
+    # WORKAROUND: OpenAPI spec doesn't apply security to endpoints
+    # Manually inject Authorization header via default_headers
     api_client = HAPIApiClient(configuration=config)
+    # DD-AUTH-014: Auth ALWAYS enabled in E2E/INT for ALL services
+    api_client.default_headers['Authorization'] = f'Bearer {hapi_auth_token}'
     return IncidentAnalysisApi(api_client=api_client)
 
 
 @pytest.fixture(scope="module")
-def hapi_recovery_api():
+def hapi_recovery_api(hapi_service_url, hapi_auth_token):
     """HAPI Recovery Analysis API client for E2E tests (DD-API-001)."""
-    config = HAPIConfiguration(host=HAPI_URL)
+    config = HAPIConfiguration(host=hapi_service_url)
+    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
+    # WORKAROUND: OpenAPI spec doesn't apply security to endpoints
+    # Manually inject Authorization header via default_headers
     api_client = HAPIApiClient(configuration=config)
+    # DD-AUTH-014: Auth ALWAYS enabled in E2E/INT for ALL services
+    api_client.default_headers['Authorization'] = f'Bearer {hapi_auth_token}'
     return RecoveryAnalysisApi(api_client=api_client)
 
 

@@ -105,7 +105,7 @@ generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from sp
 .PHONY: generate-holmesgpt-client
 generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
-	@go generate ./pkg/holmesgpt/client/...
+	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ HolmesGPT-API client generated successfully"
 
 .PHONY: fmt
@@ -119,7 +119,7 @@ vet: ## Run go vet against code
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint
-	$(GOLANGCI_LINT) run ./...
+	$(GOLANGCI_LINT) run cmd/... pkg/... internal/... test/...
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -130,55 +130,43 @@ clean: ## Clean build artifacts
 
 ##@ Pattern-Based Service Targets
 
+# Coverage Directory Setup
+.PHONY: ensure-coverage-dirs
+ensure-coverage-dirs: ## Ensure coverage directories exist for all test tiers
+	@mkdir -p coverdata coverage-reports
+	@chmod -f 777 coverdata coverage-reports 2>/dev/null || true
+
 # Unit Tests
 .PHONY: test-unit-%
-test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-unit-gateway)
+test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service (e.g., make test-unit-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic ./test/unit/$*/...
+	@if [ -f coverage_unit_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
+		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
+	fi
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: generate ginkgo setup-envtest ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "💡 For coverage: make test-integration-$*-coverage"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
-
-# Integration Tests with Coverage (WorkflowExecution pattern)
-.PHONY: test-integration-%-coverage
-test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 $* - Integration Tests with Production Code Coverage"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: go test with -coverpkg (captures goroutine controller code)"
-	@echo "⏱️  Note: Sequential execution (no parallel) for accurate coverage"
-	@go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) \
-		-coverprofile=coverage_integration_$*.out \
-		-coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$* \
-		./test/integration/$*/...
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ Coverage report: coverage_integration_$*.out"
-	@echo "📊 View details: go tool cover -func=coverage_integration_$*.out"
-	@echo "🌐 HTML report: go tool cover -html=coverage_integration_$*.out"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# E2E Tests
-.PHONY: ensure-coverdata
-ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collection (DD-TEST-007)
-	@if [ ! -d "coverdata" ]; then \
-		echo "📁 Creating coverdata directory for E2E coverage collection..."; \
-		mkdir -p coverdata; \
-		chmod 777 coverdata; \
-		echo "   ✅ coverdata directory created"; \
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going ./test/integration/$*/...
+	@if [ -f coverage_integration_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_$*.out"; \
+		go tool cover -func=coverage_integration_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+
+# E2E Tests
 .PHONY: test-e2e-%
-test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -191,7 +179,7 @@ test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified serv
 		}; \
 		echo "✅ DataStorage client validated successfully"; \
 	fi
-	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS)"; \
+	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_$*.out --covermode=atomic"; \
 	if [ -n "$(GINKGO_LABEL)" ]; then \
 		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
 		echo "🏷️  Label filter: $(GINKGO_LABEL)"; \
@@ -205,6 +193,11 @@ test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified serv
 		echo "⏭️  Skipping: $(GINKGO_SKIP)"; \
 	fi; \
 	eval "$$GINKGO_CMD ./test/e2e/$*/..."
+	@if [ -f coverage_e2e_$*.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_$*.out"; \
+		go tool cover -func=coverage_e2e_$*.out | grep total || echo "No coverage data"; \
+	fi
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -237,7 +230,7 @@ test-tier-unit: $(addprefix test-unit-,$(SERVICES)) ## Run unit tests for all se
 test-tier-integration: $(addprefix test-integration-,$(SERVICES)) ## Run integration tests for all services
 
 .PHONY: test-tier-e2e
-test-tier-e2e: ensure-coverdata $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
+test-tier-e2e: ensure-coverage-dirs $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
 
 .PHONY: test-all-services
 test-all-services: $(addprefix test-all-,$(SERVICES)) ## Run all tests for all services
@@ -324,18 +317,17 @@ build-holmesgpt-api-image: ## Build holmesgpt-api Docker image (PRODUCTION - ful
 .PHONY: build-holmesgpt-api-image-e2e
 build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minimal dependencies)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🐳 Building HolmesGPT API Docker Image (E2E)"
+	@echo "🐳 Building HolmesGPT API Docker Image (E2E - Local Architecture)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile.e2e"
 	@echo "📋 Requirements: requirements-e2e.txt (minimal dependencies)"
 	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
 	@echo "🎯 Use Case: E2E testing, CI/CD"
 	@echo ""
-	@cd holmesgpt-api && podman build \
-		--platform linux/amd64,linux/arm64 \
+	@podman build \
 		-t localhost/kubernaut-holmesgpt-api:e2e \
 		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
-		-f Dockerfile.e2e \
+		-f holmesgpt-api/Dockerfile.e2e \
 		.
 	@echo ""
 	@echo "✅ E2E image built successfully!"
@@ -395,7 +387,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
+test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports ensure-coverage-dirs ## Run holmesgpt-api integration tests (direct business logic calls)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐍 HolmesGPT API Integration Tests (Direct Business Logic)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -407,66 +399,43 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
 	@echo "✅ OpenAPI client generated (used for Data Storage audit validation only)"
 	@echo ""
-	@# Start Go infrastructure in background (PostgreSQL, Redis, Data Storage only - no HAPI container)
-	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
-	@echo "   Note: HAPI business logic called directly (no container needed)"
-	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
-	GINKGO_PID=$$!; \
-	echo "   Infrastructure PID: $$GINKGO_PID"; \
-	echo "⏳ Waiting for Data Storage to be ready..."; \
-	for i in {1..60}; do \
-		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
-			echo "✅ Data Storage ready ($$((i*5))s)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 60 ]; then \
-			echo "❌ Timeout waiting for infrastructure"; \
-			kill $$GINKGO_PID 2>/dev/null || true; \
-			exit 1; \
-		fi; \
-		sleep 5; \
-	done; \
-	echo ""; \
-	echo "🐳 Phase 2: Running Python tests in container..."; \
-	podman build -t holmesgpt-api-integration-test:latest \
-		-f docker/holmesgpt-api-integration-test.Dockerfile . && \
-	podman run --rm \
-		--network=host \
-		--add-host=host.containers.internal:host-gateway \
-		-v $(CURDIR):/workspace:z \
-		holmesgpt-api-integration-test:latest; \
-	TEST_RESULT=$$?; \
-	echo ""; \
-	echo "🧹 Phase 3: Cleanup..."; \
-	touch /tmp/hapi-integration-tests-complete; \
-	sleep 2; \
-	kill $$GINKGO_PID 2>/dev/null || true; \
-	wait $$GINKGO_PID 2>/dev/null || true; \
-	rm -f /tmp/hapi-integration-tests-complete; \
-	echo "✅ Cleanup complete"; \
-	echo ""; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ All HAPI integration tests passed (containerized)"; \
-	else \
-		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
-		exit $$TEST_RESULT; \
+	@# FIX: HAPI-INT-CONFIG-001 - Run as standard Ginkgo test with envtest
+	@# Architecture: Go sets up infrastructure (envtest + PostgreSQL + Redis + DataStorage with auth)
+	@#              Python tests run in container via coordination test
+	@echo "🏗️  Running HAPI integration tests (hybrid Go + Python pattern)..."
+	@echo "   Pattern: DD-INTEGRATION-001 v2.0 + DD-AUTH-014 (envtest + auth)"
+	@echo "   Infrastructure: Go (envtest, PostgreSQL, Redis, DataStorage with auth)"
+	@echo "   Tests: Python (pytest in container, business logic calls)"
+	@echo ""
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=1 --coverprofile=coverage_integration_holmesgpt-api.out --covermode=atomic ./test/integration/holmesgptapi/...
+	@if [ -f coverage_integration_holmesgpt-api.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_holmesgpt-api.out"; \
+		go tool cover -func=coverage_integration_holmesgpt-api.out | grep total || echo "No coverage data"; \
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
+	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Containerized Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped Kind infrastructure)"
-	@echo "🐍 Test Logic: Python (native for HAPI service)"
+	@echo "🐍 Test Logic: Python pytest in container (Red Hat UBI9, same as unit tests)"
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1
 	@echo "✅ Client generated successfully"
 	@echo ""
-	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
-	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
+	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests in UBI9 container)..."
+	@echo "   Container: registry.access.redhat.com/ubi9/python-312:latest"
+	@echo "   Network: host (access NodePort services: HAPI 30120, DS 30098)"
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --output-dir=../../.. --coverprofile=coverage_e2e_holmesgpt-api.out --covermode=atomic
+	@if [ -f coverage_e2e_holmesgpt-api.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_holmesgpt-api.out"; \
+		go tool cover -func=coverage_e2e_holmesgpt-api.out | grep total || echo "No coverage data"; \
+	fi
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
@@ -477,13 +446,20 @@ test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api t
 	@echo "════════════════════════════════════════════════════════════════════════"
 
 .PHONY: test-unit-holmesgpt-api
-test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI)
+test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (containerized with UBI)
 	@echo "🧪 Running holmesgpt-api unit tests (containerized with Red Hat UBI)..."
 	@podman run --rm \
 		-v $(CURDIR):/workspace:z \
+		-v /tmp:/tmp:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --no-cov"
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /tmp/coverage_unit_holmesgpt-api.txt"
+	@if [ -f /tmp/coverage_unit_holmesgpt-api.txt ]; then \
+		cp /tmp/coverage_unit_holmesgpt-api.txt $(CURDIR)/coverage_unit_holmesgpt-api.txt; \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
+		grep "TOTAL" /tmp/coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+	fi
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
@@ -504,19 +480,29 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 ##@ Special Cases - Authentication Webhook
 
 .PHONY: test-unit-authwebhook
-test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
+test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic ./test/unit/authwebhook/...
+	@if [ -f coverage_unit_authwebhook.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \
+		go tool cover -func=coverage_unit_authwebhook.out | grep total || echo "No coverage data"; \
+	fi
 
 # test-integration-authwebhook now uses the general test-integration-% pattern (no override needed)
 .PHONY: test-e2e-authwebhook
-test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
+test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind cluster)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/e2e/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic ./test/e2e/authwebhook/...
+	@if [ -f coverage_e2e_authwebhook.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_e2e_authwebhook.out"; \
+		go tool cover -func=coverage_e2e_authwebhook.out | grep total || echo "No coverage data"; \
+	fi
 
 .PHONY: test-all-authwebhook
 test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)

@@ -50,7 +50,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/open-policy-agent/opa/rego"
+	rego "github.com/open-policy-agent/opa/v1/rego"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"

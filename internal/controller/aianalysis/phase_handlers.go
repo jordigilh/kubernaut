@@ -77,7 +77,9 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 
 	r.Recorder.Event(analysis, "Normal", "AIAnalysisCreated", "AIAnalysis processing started")
 
-	return ctrl.Result{Requeue: true}, nil
+	// Requeue after short delay to process Investigating phase
+	// Using RequeueAfter instead of deprecated Requeue field
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
 // reconcileInvestigating handles AIAnalysis in Investigating phase.
@@ -151,7 +153,8 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
 			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
 
-			return ctrl.Result{Requeue: true}, nil
+			// Requeue quickly after phase transition
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 		}
 		return result, nil
 	}
@@ -225,7 +228,8 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
 			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
 
-			return ctrl.Result{Requeue: true}, nil
+			// Requeue quickly after phase transition
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 		}
 		return result, nil
 	}

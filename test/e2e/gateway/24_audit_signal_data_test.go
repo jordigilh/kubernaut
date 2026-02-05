@@ -32,7 +32,9 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // =============================================================================
@@ -127,10 +129,36 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
-		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
-		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		// DD-AUTH-014: Create E2E ServiceAccount with DataStorage access permissions
+		e2eSAName := "gateway-e2e-audit-client"
+		err := infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
+			ctx,
+			gatewayNamespace,
+			kubeconfigPath,
+			e2eSAName,
+			GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+		
+		// Get token for E2E ServiceAccount
+		e2eToken, err := infrastructure.GetServiceAccountToken(
+			ctx,
+			gatewayNamespace,
+			e2eSAName,
+			kubeconfigPath,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+
+		// ✅ DD-API-001 + DD-AUTH-014: Create authenticated OpenAPI client for audit queries
+		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
+		// DD-AUTH-014: Client must use ServiceAccount token for middleware authentication
+		saTransport := testauth.NewServiceAccountTransport(e2eToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
+		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 		// ✅ MANDATORY: Verify Data Storage is running
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable (NO Skip())

@@ -43,6 +43,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (DD-010: Migrated from lib/pq)
 )
@@ -52,6 +53,7 @@ import (
 // BR-STORAGE-024: RFC 7807 error responses
 //
 // DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
+// DD-AUTH-014: Middleware-based authentication and authorization
 type Server struct {
 	handler    *Handler
 	db         *sql.DB
@@ -81,6 +83,14 @@ type Server struct {
 	// SOC2 Day 9.1: Digital signature for audit exports
 	// BR-AUDIT-007: Signed exports for tamper detection
 	signer *cert.Signer
+
+	// DD-AUTH-014: Authentication and authorization via dependency injection
+	// Authenticator validates tokens (TokenReview)
+	// Authorizer checks permissions (SubjectAccessReview)
+	// Production: Real K8s APIs, Integration: Mocks, E2E: Real K8s APIs
+	authenticator auth.Authenticator
+	authorizer    auth.Authorizer
+	authNamespace string // Namespace for SAR checks (dynamically determined from pod)
 }
 
 // DD-007 + DD-008 graceful shutdown constants
@@ -102,6 +112,7 @@ const (
 // BR-STORAGE-021: REST API Gateway for database access
 // BR-STORAGE-001 to BR-STORAGE-020: Audit write API
 // SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
+// DD-AUTH-014: Middleware-based authentication and authorization
 //
 // Parameters:
 // - dbConnStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
@@ -111,6 +122,9 @@ const (
 // - appCfg: Full application configuration (includes database pool settings)
 // - serverCfg: Server-specific configuration (port, timeouts)
 // - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
+// - authenticator: Token validator (DD-AUTH-014) - K8s implementation for production/E2E, mock for integration tests
+// - authorizer: Permission checker (DD-AUTH-014) - K8s implementation for production/E2E, mock for integration tests
+// - authNamespace: Namespace for SAR checks (DD-AUTH-014) - dynamically determined from pod's ServiceAccount
 func NewServer(
 	dbConnStr string,
 	redisAddr string,
@@ -119,7 +133,22 @@ func NewServer(
 	appCfg *config.Config,
 	serverCfg *Config,
 	dlqMaxLen int64,
+	authenticator auth.Authenticator,
+	authorizer auth.Authorizer,
+	authNamespace string,
 ) (*Server, error) {
+	// DD-AUTH-014: Authenticator and authorizer are MANDATORY
+	// Service must not start without authentication configured
+	if authenticator == nil {
+		return nil, fmt.Errorf("authenticator is nil - DD-AUTH-014 requires authentication (K8s in production, mock in unit tests)")
+	}
+	if authorizer == nil {
+		return nil, fmt.Errorf("authorizer is nil - DD-AUTH-014 requires authorization (K8s in production, mock in unit tests)")
+	}
+	if authNamespace == "" {
+		return nil, fmt.Errorf("authNamespace is empty - DD-AUTH-014 requires namespace for SAR checks")
+	}
+
 	// Connect to PostgreSQL using pgx driver (DD-010)
 	db, err := sql.Open("pgx", dbConnStr)
 	if err != nil {
@@ -295,6 +324,9 @@ func NewServer(
 		auditStore:      auditStore,
 		metrics:         metrics,
 		signer:          signer,
+		authenticator:   authenticator,   // DD-AUTH-014: Injected at runtime
+		authorizer:      authorizer,      // DD-AUTH-014: Injected at runtime
+		authNamespace:   authNamespace,   // DD-AUTH-014: Dynamic namespace for SAR checks
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -366,6 +398,29 @@ func (s *Server) Handler() http.Handler {
 		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// DD-AUTH-014: Authentication and authorization middleware (MANDATORY)
+		// Applied to all /api/v1 routes (excludes /health, /metrics)
+		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
+		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
+		authMiddleware := dsmiddleware.NewAuthMiddleware(
+			s.authenticator,
+			s.authorizer,
+			dsmiddleware.AuthConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "create", // DD-AUTH-014: All services need audit write permissions
+			},
+			s.logger,
+		)
+		r.Use(authMiddleware.Handler)
+		s.logger.Info("Auth middleware enabled (DD-AUTH-014)",
+			"namespace", s.authNamespace,
+			"resource", "services",
+			"resourceName", "data-storage-service",
+			"verb", "create",
+		)
+
 		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
 		r.Get("/incidents/{id}", s.handler.GetIncident)

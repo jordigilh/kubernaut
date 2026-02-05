@@ -85,13 +85,17 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	args = append(args, request.Filters.Component)
 	argIndex++
 
-	// Mandatory Filter 4: environment (exact match)
+	// Mandatory Filter 4: environment (JSONB array containment)
+	// DD-WORKFLOW-001 v2.5: Workflows store array, search with single value
+	// SQL: labels->'environment' ? 'production' OR labels->'environment' ? '*'
 	if request.Filters.Environment == "" {
 		return nil, fmt.Errorf("filters.environment is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'environment' = $%d", argIndex))
+	envWhereClause := fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", argIndex)
+	whereClauses = append(whereClauses, envWhereClause)
 	args = append(args, request.Filters.Environment)
 	argIndex++
+
 
 	// Mandatory Filter 5: priority (exact match)
 	if request.Filters.Priority == "" {

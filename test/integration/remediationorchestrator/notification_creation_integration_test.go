@@ -340,23 +340,25 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// DEBUG: First list all RRs to see what's in the namespace
 			allRRs := &remediationv1.RemediationRequestList{}
-			err = k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(testNamespace))
+			err = k8sClient.List(ctx, allRRs, client.InNamespace(testNamespace))
 			Expect(err).ToNot(HaveOccurred())
 			GinkgoWriter.Printf("DEBUG: Found %d RRs in namespace %s\n", len(allRRs.Items), testNamespace)
 			for i, rr := range allRRs.Items {
 				GinkgoWriter.Printf("  RR %d: name=%s, fingerprint=%s (len=%d)\n", i, rr.Name, rr.Spec.SignalFingerprint, len(rr.Spec.SignalFingerprint))
 			}
 
-			// Now try field selector query
+			// Now try field selector query (must use cached client, not API reader)
+			// Field index only works with cached client (k8sClient), not API reader
+			// CRD selectableFields is disabled for K8s 1.27.3 compatibility (requires 1.30+)
 			rrList := &remediationv1.RemediationRequestList{}
 			GinkgoWriter.Printf("DEBUG: Querying with field selector: spec.signalFingerprint=%s (len=%d)\n", fingerprint, len(fingerprint))
-			err = k8sManager.GetAPIReader().List(ctx, rrList, client.InNamespace(testNamespace), client.MatchingFields{
+			err = k8sClient.List(ctx, rrList, client.InNamespace(testNamespace), client.MatchingFields{
 				"spec.signalFingerprint": fingerprint, // Full 64-char SHA256 fingerprint
 			})
 			if err != nil {
 				GinkgoWriter.Printf("DEBUG: Field selector error: %v (type: %T)\n", err, err)
 			}
-			Expect(err).ToNot(HaveOccurred(), "Field selector should work in envtest (field index set up by reconciler.SetupWithManager)")
+			Expect(err).ToNot(HaveOccurred(), "Field selector should work with cached client (field index set up by reconciler.SetupWithManager)")
 
 			GinkgoWriter.Printf("DEBUG: Field selector returned %d RRs\n", len(rrList.Items))
 			Expect(len(rrList.Items)).To(BeNumerically(">=", 1), "Should find RemediationRequest by fingerprint field")

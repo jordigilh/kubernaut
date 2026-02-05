@@ -196,7 +196,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			expectedPhase: remediationv1.PhasePending, // First reconcile just initializes
 			expectedResult: ctrl.Result{
-				Requeue: true, // Immediate requeue to process Pending phase
+				RequeueAfter: 100 * time.Millisecond, // Requeue after short delay to process Pending phase
 			},
 			expectedChildren: map[string]bool{
 				"SP": false, // SP created in second reconcile
@@ -370,7 +370,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			expectedPhase: remediationv1.PhaseAwaitingApproval,
 			expectedResult: ctrl.Result{
-				Requeue: true, // Requeue immediately after creating RAR
+				RequeueAfter: 100 * time.Millisecond, // Requeue after short delay after creating RAR
 			},
 			expectedChildren: map[string]bool{
 				"RAR": true,  // RemediationApprovalRequest should be created

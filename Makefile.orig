@@ -139,17 +139,25 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: generate ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "🧪 $* - Integration Tests (parallel via go test -p)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "💡 For coverage: make test-integration-$*-coverage"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
+	@echo "📊 Coverage: All business code (pkg/, internal/, cmd/) - excludes test/"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" \
+	go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) -p=$(TEST_PROCS) \
+		-coverprofile=coverage_integration_$*.out -covermode=atomic \
+		-coverpkg=github.com/jordigilh/kubernaut/pkg/...,github.com/jordigilh/kubernaut/internal/...,github.com/jordigilh/kubernaut/cmd/... \
+		./test/integration/$*/...
+	@echo ""
+	@echo "📊 Coverage report generated: coverage_integration_$*.out"
+	@go tool cover -func=coverage_integration_$*.out | tail -1
 
-# Integration Tests with Coverage (WorkflowExecution pattern)
+# Integration Tests with Coverage (DEPRECATED - use test-integration-% instead)
+# This target is kept for backwards compatibility but is no longer needed
 .PHONY: test-integration-%-coverage
-test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
+test-integration-%-coverage: test-integration-% ## DEPRECATED: Use test-integration-% instead (now includes business logic coverage)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📊 $* - Integration Tests with Production Code Coverage"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -330,11 +338,11 @@ build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minima
 	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
 	@echo "🎯 Use Case: E2E testing, CI/CD"
 	@echo ""
-	@cd holmesgpt-api && podman build \
-		--platform linux/amd64,linux/arm64 \
+	@podman build \
+		--no-cache \
 		-t localhost/kubernaut-holmesgpt-api:e2e \
 		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
-		-f Dockerfile.e2e \
+		-f holmesgpt-api/Dockerfile.e2e \
 		.
 	@echo ""
 	@echo "✅ E2E image built successfully!"
@@ -394,7 +402,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
+test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐍 HolmesGPT API Integration Tests (Direct Business Logic)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -406,65 +414,24 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
 	@echo "✅ OpenAPI client generated (used for Data Storage audit validation only)"
 	@echo ""
-	@# Start Go infrastructure in background (PostgreSQL, Redis, Data Storage only - no HAPI container)
-	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
-	@echo "   Note: HAPI business logic called directly (no container needed)"
-	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
-	GINKGO_PID=$$!; \
-	echo "   Infrastructure PID: $$GINKGO_PID"; \
-	echo "⏳ Waiting for Data Storage to be ready..."; \
-	for i in {1..60}; do \
-		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
-			echo "✅ Data Storage ready ($$((i*5))s)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 60 ]; then \
-			echo "❌ Timeout waiting for infrastructure"; \
-			kill $$GINKGO_PID 2>/dev/null || true; \
-			exit 1; \
-		fi; \
-		sleep 5; \
-	done; \
-	echo ""; \
-	echo "🐳 Phase 2: Running Python tests in container..."; \
-	podman build -t holmesgpt-api-integration-test:latest \
-		-f docker/holmesgpt-api-integration-test.Dockerfile . && \
-	podman run --rm \
-		--network=host \
-		--add-host=host.containers.internal:host-gateway \
-		-v $(CURDIR):/workspace:z \
-		holmesgpt-api-integration-test:latest; \
-	TEST_RESULT=$$?; \
-	echo ""; \
-	echo "🧹 Phase 3: Cleanup..."; \
-	touch /tmp/hapi-integration-tests-complete; \
-	sleep 2; \
-	kill $$GINKGO_PID 2>/dev/null || true; \
-	wait $$GINKGO_PID 2>/dev/null || true; \
-	rm -f /tmp/hapi-integration-tests-complete; \
-	echo "✅ Cleanup complete"; \
-	echo ""; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ All HAPI integration tests passed (containerized)"; \
-	else \
-		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
-		exit $$TEST_RESULT; \
-	fi
+	@# FIX: HAPI-INT-CONFIG-001 - Run as standard Ginkgo test with envtest
+	@echo "🏗️  Running HAPI integration tests (standardized pattern)..."
+	@echo "   Pattern: DD-INTEGRATION-001 v2.0 + DD-AUTH-014 (envtest + auth)"
+	@echo "   Infrastructure: envtest, PostgreSQL, Redis, DataStorage (auto-managed)"
+	@echo "   Test Logic: Direct business logic calls (no HTTP, no HAPI container)"
+	@echo ""
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=20m --procs=12 ./test/integration/holmesgptapi/...
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverdata generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
+	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Go Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped Kind infrastructure)"
-	@echo "🐍 Test Logic: Python (native for HAPI service)"
+	@echo "🦾 Test Logic: Go with ogen OpenAPI client (type-safe)"
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
-	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
-	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1
-	@echo "✅ Client generated successfully"
-	@echo ""
-	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
+	@echo "🧪 Running E2E tests (Go infrastructure + Go tests)..."
 	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"

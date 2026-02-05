@@ -75,7 +75,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
 // Test constants for timeout and polling intervals
@@ -144,23 +144,61 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • Data Storage API (port 18094)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// DD-AUTH-014: Create envtest FIRST for ServiceAccount authentication
+	By("Creating envtest for DataStorage authentication (DD-AUTH-014)")
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	sharedK8sConfig, err := sharedTestEnv.Start()
+	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
+	Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
+	GinkgoWriter.Printf("✅ envtest started: %s\n", sharedK8sConfig.Host)
+	
+	// Write kubeconfig to temporary file for DataStorage container
+	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "signalprocessing-integration")
+	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
+	GinkgoWriter.Printf("✅ envtest kubeconfig written: %s\n", kubeconfigPath)
+	
+	// DD-AUTH-014: Create ServiceAccount with DataStorage access
+	GinkgoWriter.Println("🔐 Creating ServiceAccount for DataStorage authentication...")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedK8sConfig,
+		"signalprocessing-integration-sa",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
+	GinkgoWriter.Println("✅ ServiceAccount created with Bearer token")
+	
 	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
 	// Per DD-TEST-001 v2.6: PostgreSQL=15436, Redis=16382, DS=18094
-	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:     "signalprocessing",
-		PostgresPort:    15436, // DD-TEST-001 v2.2
-		RedisPort:       16382, // DD-TEST-001 v2.2
-		DataStoragePort: 18094, // DD-TEST-001 v2.2 (OFFICIAL SP allocation)
-		MetricsPort:     19094,
-		ConfigDir:       "test/integration/signalprocessing/config",
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"signalprocessing",
+		15436, 16382, 18094, 19094,
+		"test/integration/signalprocessing/config",
+		authConfig,
+	)
+	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	dsInfra.SharedTestEnv = sharedTestEnv // Store for cleanup
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		// DD-AUTH-014: Stop shared envtest
+		if dsInfra != nil && dsInfra.SharedTestEnv != nil {
+			if sharedEnv, ok := dsInfra.SharedTestEnv.(*envtest.Environment); ok {
+				if err := sharedEnv.Stop(); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
+				} else {
+					GinkgoWriter.Println("✅ Shared envtest stopped")
+				}
+			}
+		}
 	})
 
 	// SP-BUG-006: Capture infrastructure state for diagnostics
@@ -228,9 +266,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ Phase 1 Complete: Shared infrastructure ready")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-TEST-010: Multi-Controller Pattern - No config serialization needed
-	// Each process will create its own envtest + controller in Phase 2
-	return []byte{}
+	// DD-AUTH-014: Pass ServiceAccount token to all processes
+	// Note: DataStorage health check now includes auth readiness validation
+	// StartDSBootstrap waits for /health to return 200, which includes auth middleware check
+	return []byte(authConfig.Token)
 }, func(data []byte) {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 2: ALL PROCESSES (DD-TEST-010 Multi-Controller Pattern)
@@ -275,33 +314,31 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	// Create DataStorage client adapter for audit store (per-process)
-	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
-	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testauth.NewMockUserTransport("test-signalprocessing@integration.test")
-	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
+	// DD-AUTH-014: Create authenticated DataStorage clients (both audit + query)
+	// Uses centralized helper to ensure both clients use ServiceAccount authentication
+	saToken := string(data) // Extract token from Phase 1
+	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
+	
+	dsClients := integration.NewAuthenticatedDataStorageClients(
+		dataStorageURL,
+		saToken,
 		5*time.Second,
-		mockTransport,
 	)
-	Expect(err).NotTo(HaveOccurred(), "Failed to create OpenAPI client adapter")
+	GinkgoWriter.Println("✅ Authenticated DataStorage clients created (audit + query)")
 
 	// SP-CACHE-001: Create audit store per-process (uses shared DataStorage infrastructure)
 	auditConfig := audit.DefaultConfig()
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	logger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err = audit.NewBufferedStore(dsAuditClient, auditConfig, "signalprocessing", logger)
+	auditStore, err = audit.NewBufferedStore(dsClients.AuditClient, auditConfig, "signalprocessing", logger)
 	Expect(err).NotTo(HaveOccurred(), "Audit store creation must succeed for BR-SP-090")
 	GinkgoWriter.Println("✅ Per-process audit store configured")
 
-	// Create DataStorage ogen client for audit event queries in tests
-	// Per service boundary rules: SignalProcessing queries DataStorage via HTTP API
-	dsClient, err = ogenclient.NewClient(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
-	)
-	Expect(err).NotTo(HaveOccurred(), "DataStorage ogen client creation must succeed")
-	GinkgoWriter.Printf("✅ DataStorage ogen client ready for test queries\n")
+	// Use authenticated OpenAPI client for audit event queries in tests
+	// DD-AUTH-014: Query client now uses ServiceAccount Bearer token
+	dsClient = dsClients.OpenAPIClient
+	GinkgoWriter.Printf("✅ Authenticated DataStorage query client ready for tests\n")
 
 	By("Setting up the per-process controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
@@ -770,7 +807,7 @@ func deleteTestNamespace(ns string) {
 // waitForPhase waits for a SignalProcessing CR to reach a specific phase.
 // Returns error if timeout is exceeded.
 func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1.SignalProcessingPhase, timeout time.Duration) error {
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
 		if err != nil {
@@ -782,7 +819,7 @@ func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1
 
 // waitForCompletion waits for a SignalProcessing CR to reach Completed phase with CompletionTime set.
 func waitForCompletion(name, namespace string, timeout time.Duration) error {
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
 		if err != nil {
@@ -803,7 +840,7 @@ func deleteAndWait(sp *signalprocessingv1alpha1.SignalProcessing, timeout time.D
 	}
 
 	// Wait for deletion to complete
-	return wait.PollImmediate(100*time.Millisecond, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      sp.Name,
 			Namespace: sp.Namespace,

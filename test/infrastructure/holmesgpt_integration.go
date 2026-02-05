@@ -19,10 +19,6 @@ package infrastructure
 import (
 	"fmt"
 	"io"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"time"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -59,10 +55,11 @@ const (
 )
 
 // Container names (unique to HAPI integration tests)
+// Pattern: DSBootstrap programmatic setup uses {service}_{component}_test suffix
 const (
-	HAPIIntegrationPostgresContainer    = "holmesgptapi_postgres_1"
-	HAPIIntegrationRedisContainer       = "holmesgptapi_redis_1"
-	HAPIIntegrationDataStorageContainer = "holmesgptapi_datastorage_1"
+	HAPIIntegrationPostgresContainer    = "holmesgptapi_postgres_test"    // Matches DSBootstrap pattern
+	HAPIIntegrationRedisContainer       = "holmesgptapi_redis_test"       // Matches DSBootstrap pattern
+	HAPIIntegrationDataStorageContainer = "holmesgptapi_datastorage_test" // Matches DSBootstrap pattern
 	HAPIIntegrationHAPIContainer        = "holmesgptapi_hapi_1"
 	HAPIIntegrationMigrationsContainer  = "holmesgptapi_migrations"
 	HAPIIntegrationNetwork              = "holmesgptapi_test-network"
@@ -75,10 +72,16 @@ const (
 	HAPIIntegrationDBPassword = "test_password"
 )
 
+// HAPIIntegrationInfra holds infrastructure handles for HAPI integration tests
+// Used for cleanup in SynchronizedAfterSuite
+type HAPIIntegrationInfra struct {
+	DSInfra *DSBootstrapInfra // DataStorage infrastructure (includes PostgreSQL, Redis)
+}
+
 // StartHolmesGPTAPIIntegrationInfrastructure starts the full Podman stack for HAPI integration tests
-// This includes: PostgreSQL, Redis, DataStorage API, and HolmesGPT-API (HAPI) service
+// This includes: envtest, PostgreSQL, Redis, DataStorage API (with auth), and HolmesGPT-API service
 //
-// Pattern: DD-TEST-002 Sequential Startup Pattern (using shared utilities from shared_integration_utils.go)
+// Pattern: DD-TEST-002 Sequential Startup Pattern (using shared utilities)
 // - Programmatic `podman run` commands (NOT docker-compose)
 // - Explicit health checks after each service
 // - Parallel-safe (called from SynchronizedBeforeSuite)
@@ -88,13 +91,11 @@ const (
 // - Ports 15439, 16387, 18098, 18120 must be available (per DD-TEST-001 v2.0 - all unique)
 //
 // Returns:
+// - *HAPIIntegrationInfra: Infrastructure handles (for cleanup)
 // - error: Any errors during infrastructure startup
 //
-// Migration Note:
-//
-//	Replaces holmesgpt-api/tests/integration/conftest.py start_infrastructure()
-//	which used subprocess.run() to call docker-compose.
-func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
+// Authority: DD-AUTH-014 (DataStorage requires auth middleware)
+func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer, envtestKubeconfig string) (*HAPIIntegrationInfra, error) {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Starting HolmesGPT API Integration Test Infrastructure\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -106,154 +107,34 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  Migration:      From Python subprocess → Go shared utilities\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
-	projectRoot := getProjectRoot()
+	// ============================================================================
+	// STEP 1: Start DataStorage infrastructure (PostgreSQL + Redis + DataStorage)
+	// ============================================================================
+	// FIX: HAPI-INT-CONFIG-001 - Use standardized StartDSBootstrap helper
+	// ROOT CAUSE: Manual DataStorage start was missing KUBECONFIG env var
+	// SOLUTION: Use StartDSBootstrap which handles auth config properly
+	//
+	// Note: We don't need ServiceAccount token for HAPI tests (business logic tests)
+	// but DataStorage MUST have KUBECONFIG to initialize its auth middleware (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage with auth middleware (DD-AUTH-014)...\n")
+	_, _ = fmt.Fprintf(writer, "   Using StartDSBootstrap helper (standardized pattern)\n\n")
 
-	// ============================================================================
-	// STEP 1: Cleanup existing containers and network
-	// ============================================================================
-	CleanupContainers([]string{
-		HAPIIntegrationHAPIContainer,
-		HAPIIntegrationDataStorageContainer,
-		HAPIIntegrationRedisContainer,
-		HAPIIntegrationPostgresContainer,
-		HAPIIntegrationMigrationsContainer,
-	}, writer)
-	_ = exec.Command("podman", "network", "rm", HAPIIntegrationNetwork).Run() // Ignore errors
-	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
-
-	// ============================================================================
-	// STEP 2: Create custom network for internal communication
-	// ============================================================================
-	_, _ = fmt.Fprintf(writer, "🌐 Creating custom Podman network '%s'...\n", HAPIIntegrationNetwork)
-	createNetworkCmd := exec.Command("podman", "network", "create", HAPIIntegrationNetwork)
-	createNetworkCmd.Stdout = writer
-	createNetworkCmd.Stderr = writer
-	if err := createNetworkCmd.Run(); err != nil {
-		// Ignore if network already exists
-		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("failed to create network '%s': %w", HAPIIntegrationNetwork, err)
-		}
-		_, _ = fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", HAPIIntegrationNetwork)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", HAPIIntegrationNetwork)
-
-	// ============================================================================
-	// STEP 3: Start PostgreSQL FIRST (DD-TEST-002 Sequential Pattern)
-	// ============================================================================
-	pgConfig := PostgreSQLConfig{
-		ContainerName:  HAPIIntegrationPostgresContainer,
-		Port:           HAPIIntegrationPostgresPort,
-		DBName:         HAPIIntegrationDBName,
-		DBUser:         HAPIIntegrationDBUser,
-		DBPassword:     HAPIIntegrationDBPassword,
-		Network:        HAPIIntegrationNetwork,
-		MaxConnections: 200,
-	}
-	if err := StartPostgreSQL(pgConfig, writer); err != nil {
-		return fmt.Errorf("failed to start PostgreSQL: %w", err)
+	cfg := DSBootstrapConfig{
+		ServiceName:       "holmesgptapi",
+		PostgresPort:      HAPIIntegrationPostgresPort,
+		RedisPort:         HAPIIntegrationRedisPort,
+		DataStoragePort:   HAPIIntegrationDataStoragePort,
+		MetricsPort:       19098, // Metrics port for DataStorage
+		ConfigDir:         "test/integration/holmesgptapi/config",
+		EnvtestKubeconfig: envtestKubeconfig, // DD-AUTH-014: Required for auth middleware
 	}
 
-	// CRITICAL: Wait for PostgreSQL to be ready before proceeding
-	if err := WaitForPostgreSQLReady(HAPIIntegrationPostgresContainer, HAPIIntegrationDBUser, HAPIIntegrationDBName, writer); err != nil {
-		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
-
-	// ============================================================================
-	// STEP 4: Run migrations (inline approach - same as AIAnalysis/RO)
-	// ============================================================================
-	_, _ = fmt.Fprintf(writer, "🔄 Running migrations...\n")
-	migrationsCmd := exec.Command("podman", "run", "--rm",
-		"--network", HAPIIntegrationNetwork,
-		"-e", "PGHOST="+HAPIIntegrationPostgresContainer,
-		"-e", "PGPORT=5432",
-		"-e", "PGUSER="+HAPIIntegrationDBUser,
-		"-e", "PGPASSWORD="+HAPIIntegrationDBPassword,
-		"-e", "PGDATABASE="+HAPIIntegrationDBName,
-		"-v", filepath.Join(projectRoot, "migrations")+":/migrations:ro",
-		"postgres:16-alpine",
-		"sh", "-c",
-		`set -e
-echo "Applying migrations (Up sections only)..."
-find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
-  echo "Applying $f..."
-  sed -n '1,/^-- +goose Down/p' "$f" | grep -v '^-- +goose Down' | psql
-done
-echo "Migrations complete!"`)
-	migrationsCmd.Stdout = writer
-	migrationsCmd.Stderr = writer
-	if err := migrationsCmd.Run(); err != nil {
-		return fmt.Errorf("migrations failed: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
-
-	// ============================================================================
-	// STEP 5: Start Redis
-	// ============================================================================
-	redisConfig := RedisConfig{
-		ContainerName: HAPIIntegrationRedisContainer,
-		Port:          HAPIIntegrationRedisPort,
-		Network:       HAPIIntegrationNetwork,
-	}
-	if err := StartRedis(redisConfig, writer); err != nil {
-		return fmt.Errorf("failed to start Redis: %w", err)
+	dsInfra, err := StartDSBootstrap(cfg, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start DataStorage infrastructure: %w", err)
 	}
 
-	// CRITICAL: Wait for Redis to be ready before proceeding
-	if err := WaitForRedisReady(HAPIIntegrationRedisContainer, writer); err != nil {
-		return fmt.Errorf("Redis failed to become ready: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
-
-	// ============================================================================
-	// STEP 6: Build and start DataStorage
-	// ============================================================================
-	_, _ = fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
-
-	// Use composite image tag per DD-INTEGRATION-001 v2.0 (collision avoidance)
-	dsImageTag := GenerateInfraImageName("datastorage", "holmesgptapi")
-	_, _ = fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", dsImageTag)
-
-	buildCmd := exec.Command("podman", "build",
-		"-t", dsImageTag,
-		"-f", filepath.Join(projectRoot, "docker/data-storage.Dockerfile"),
-		projectRoot,
-	)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build DataStorage image: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n\n", dsImageTag)
-
-	_, _ = fmt.Fprintf(writer, "🚀 Starting DataStorage container...\n")
-
-	// ADR-030: Mount config directory and set CONFIG_PATH
-	// The same directory contains both config.yaml and secrets files
-	configDir := filepath.Join(projectRoot, "test", "integration", "holmesgptapi", "config")
-
-	dsCmd := exec.Command("podman", "run", "-d",
-		"--name", HAPIIntegrationDataStorageContainer,
-		"--network", HAPIIntegrationNetwork,
-		"-p", fmt.Sprintf("%d:8080", HAPIIntegrationDataStoragePort),
-		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
-		"-v", fmt.Sprintf("%s:/etc/datastorage-secrets:ro", configDir), // Mount same dir for secrets
-		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"-e", "LOG_LEVEL=DEBUG", // Debug level for integration tests
-		dsImageTag,
-	)
-	dsCmd.Stdout = writer
-	dsCmd.Stderr = writer
-	if err := dsCmd.Run(); err != nil {
-		return fmt.Errorf("failed to start DataStorage: %w", err)
-	}
-
-	// CRITICAL: Wait for DataStorage HTTP health endpoint
-	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d/health", HAPIIntegrationDataStoragePort)
-	if err := WaitForHTTPHealth(dataStorageURL, 60*time.Second, writer); err != nil {
-		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready at %s\n\n", dataStorageURL)
+	_, _ = fmt.Fprintf(writer, "✅ DataStorage ready at %s (with auth middleware)\n\n", dsInfra.ServiceURL)
 
 	// ============================================================================
 	// INTEGRATION TEST PATTERN: HAPI business logic called directly (no container)
@@ -293,13 +174,12 @@ echo "Migrations complete!"`)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (ready)\n", HAPIIntegrationPostgresPort)
 	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d (ready)\n", HAPIIntegrationRedisPort)
-	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d (healthy)\n", HAPIIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    %s (healthy with auth)\n", dsInfra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "  HAPI:           Business logic called directly (no HTTP, no container)\n")
-	_, _ = fmt.Fprintf(writer, "  Duration:       ~2 minutes (no HAPI container needed)\n")
-	_, _ = fmt.Fprintf(writer, "  Pattern:        Direct business logic calls (matches Go service testing)\n")
+	_, _ = fmt.Fprintf(writer, "  Pattern:        StartDSBootstrap (standardized)\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
-	return nil
+	return &HAPIIntegrationInfra{DSInfra: dsInfra}, nil
 }
 
 // StopHolmesGPTAPIIntegrationInfrastructure stops all HAPI integration test infrastructure
@@ -313,29 +193,17 @@ echo "Migrations complete!"`)
 //
 //	Replaces holmesgpt-api/tests/integration/conftest.py cleanup_infrastructure_after_tests()
 //	which used subprocess.run() to call docker-compose down.
-func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
+func StopHolmesGPTAPIIntegrationInfrastructure(infra *HAPIIntegrationInfra, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "\n🛑 Stopping HolmesGPT API Integration Infrastructure...\n")
 
-	// Stop containers (no HAPI container for integration tests - uses TestClient)
-	// Note: HAPI container only exists for E2E tests in Kind
-	containers := []string{
-		HAPIIntegrationDataStorageContainer,
-		HAPIIntegrationRedisContainer,
-		HAPIIntegrationPostgresContainer,
+	// FIX: HAPI-INT-CONFIG-001 - Use standardized StopDSBootstrap helper
+	// Stops: DataStorage, Redis, PostgreSQL (in correct order)
+	if infra != nil && infra.DSInfra != nil {
+		if err := StopDSBootstrap(infra.DSInfra, writer); err != nil {
+			return fmt.Errorf("failed to stop DataStorage infrastructure: %w", err)
+		}
 	}
-	CleanupContainers(containers, writer)
 
-	// Remove network
-	_, _ = fmt.Fprintf(writer, "   Removing network %s...\n", HAPIIntegrationNetwork)
-	_ = exec.Command("podman", "network", "rm", HAPIIntegrationNetwork).Run() // Ignore errors
-
-	// Prune dangling images (DD-INTEGRATION-001 v2.0: composite tags cleanup)
-	_, _ = fmt.Fprintf(writer, "   Pruning dangling images (composite tags)...\n")
-	pruneCmd := exec.Command("podman", "image", "prune", "-f")
-	pruneCmd.Stdout = writer
-	pruneCmd.Stderr = writer
-	_ = pruneCmd.Run() // Ignore errors
-
-	_, _ = fmt.Fprintf(writer, "✅ Infrastructure cleaned up\n\n")
+	_, _ = fmt.Fprintf(writer, "✅ Infrastructure cleaned up (standardized StopDSBootstrap pattern)\n\n")
 	return nil
 }

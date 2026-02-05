@@ -37,6 +37,7 @@ import (
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 
 	"github.com/google/uuid"
@@ -74,16 +75,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion (success or failure)
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion (success or failure)
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Verify events were emitted for this WFE
 			// Business Behavior: Events should be visible via kubectl get events
@@ -133,14 +134,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for Running phase (PipelineRun created)
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+		// Wait for Running phase (PipelineRun created)
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
 			GinkgoWriter.Println("✅ WFE is Running, PipelineRun exists")
 
@@ -165,14 +166,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("🗑️  Deleting PipelineRun %s externally...\n", targetPR.Name)
 			Expect(k8sClient.Delete(ctx, targetPR)).To(Succeed())
 
-			// Business Behavior: WFE should detect deletion and mark as Failed
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		// Business Behavior: WFE should detect deletion and mark as Failed
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Verify failure details explain the external deletion
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
@@ -209,16 +210,16 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion to generate metrics
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion to generate metrics
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			GinkgoWriter.Println("✅ WFE completed, checking metrics...")
 
@@ -306,14 +307,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for completion
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
-				}
-				return false
-			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
+		// Wait for completion
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
+			}
+			return false
+		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
 
 			GinkgoWriter.Println("✅ Workflow completed, checking metrics...")
 
@@ -377,14 +378,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for failure
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
+		// Wait for failure
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
 
 			GinkgoWriter.Println("✅ Workflow failed as expected, checking metrics...")
 
@@ -422,8 +423,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	// 2. PostgreSQL database accessible
 	// 3. Controller configured with --datastorage-url
 	Context("BR-WE-005: Audit Persistence in PostgreSQL (E2E)", Label("datastorage", "audit"), func() {
-		// NodePort access per DD-TEST-001: localhost:8081 → NodePort 30081 → DS pod:8080
-		const dataStorageServiceURL = "http://localhost:8081"
+		// NodePort access per DD-TEST-001: localhost:8092 → NodePort 30081 → DS pod:8080
+		const dataStorageServiceURL = "http://localhost:8092"
 
 		It("should persist audit events to Data Storage for completed workflow", func() {
 			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - NO EXCEPTIONS
@@ -449,26 +450,32 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for workflow to complete")
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		By("Waiting for workflow to complete")
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for audit events via OpenAPI client")
+			By("Querying Data Storage for audit events via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 			// Query DS audit events API for events with this WFE's correlation ID
 			// This verifies the full flow: Controller -> pkg/audit -> DS -> PostgreSQL
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
@@ -521,7 +528,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// This validation moved from integration tests (EnvTest limitation) to E2E
 			// Per DD-AUDIT-004: Type-safe audit payloads with complete failure context
 
-			const dataStorageServiceURL = "http://localhost:8081"
+			const dataStorageServiceURL = "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 
 			Expect(isDataStorageDeployed()).To(BeTrue(),
 				"Data Storage REQUIRED but not deployed in cluster")
@@ -542,12 +549,12 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Name:       "test-rr-" + testName,
 						Namespace:  "default",
 					},
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: "test-intentional-failure",
-						Version:    "v1.0.0",
-						// Use test registry per test/infrastructure/workflow_bundles.go
-						ContainerImage: "quay.io/jordigilh/test-workflows/failing:v1.0.0",
-					},
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID: "test-intentional-failure",
+					Version:    "v1.0.0",
+					// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
+					ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+				},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
 						// Per test/fixtures/tekton/failing-pipeline.yaml
@@ -563,23 +570,29 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for Failed phase")
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+		By("Waiting for Failed phase")
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for workflow.failed audit event via OpenAPI client")
+			By("Querying Data Storage for workflow.failed audit event via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 			// Use correlation ID to find this specific WFE's events
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var failedEvent *ogenclient.AuditEvent
@@ -674,25 +687,31 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for workflow to complete")
-			Eventually(func() string {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 120*time.Second).Should(Or(
-				Equal(workflowexecutionv1alpha1.PhaseCompleted),
-				Equal(workflowexecutionv1alpha1.PhaseFailed),
-			))
+		By("Waiting for workflow to complete")
+		Eventually(func() string {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				return updated.Status.Phase
+			}
+			return ""
+		}, 120*time.Second).Should(Or(
+			Equal(workflowexecutionv1alpha1.PhaseCompleted),
+			Equal(workflowexecutionv1alpha1.PhaseFailed),
+		))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
 
-			By("Querying Data Storage for all audit events via OpenAPI client")
+			By("Querying Data Storage for all audit events via authenticated OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+			// DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			httpClient := &http.Client{
+				Timeout:   20 * time.Second,
+				Transport: saTransport,
+			}
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL, ogenclient.WithClient(httpClient))
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated OpenAPI audit client")
 
 			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
@@ -823,30 +842,30 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Business Behavior: WFE should have PipelineRunRef after Running
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
-					return updated.Status.PipelineRunRef != nil
-				}
-				return false
-			}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
+		// Business Behavior: WFE should have PipelineRunRef after Running
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
+				return updated.Status.PipelineRunRef != nil
+			}
+			return false
+		}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
 			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
 			GinkgoWriter.Printf("✅ WFE tracks PipelineRun: %s\n",
 				runningWFE.Status.PipelineRunRef.Name)
 
-			// Wait for completion
-			Eventually(func() bool {
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					phase := updated.Status.Phase
-					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-						phase == workflowexecutionv1alpha1.PhaseFailed
-				}
-				return false
-			}, 120*time.Second).Should(BeTrue())
+		// Wait for completion
+		Eventually(func() bool {
+			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			if updated != nil {
+				phase := updated.Status.Phase
+				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+					phase == workflowexecutionv1alpha1.PhaseFailed
+			}
+			return false
+		}, 120*time.Second).Should(BeTrue())
 
 			// Business Behavior: Completion should include timing information
 			completedWFE, err := getWFE(wfe.Name, wfe.Namespace)

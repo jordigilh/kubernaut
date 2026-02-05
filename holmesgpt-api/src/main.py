@@ -57,6 +57,9 @@ from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
+# Import auth components for dependency injection (DD-AUTH-014)
+from src.auth import K8sAuthenticator, K8sAuthorizer, MockAuthenticator, MockAuthorizer
+
 
 # ========================================
 # GRACEFUL SHUTDOWN STATE (GREEN Phase)
@@ -133,6 +136,8 @@ def load_config() -> AppConfig:
     """
     import os
 
+    # ANTI-PATTERN EXCEPTION: CONFIG_FILE is the ONLY allowed env var (ADR-030)
+    # All other configuration MUST come from YAML files
     # ADR-030 EXCEPTION: Read from env var (set by entrypoint.sh from -config flag)
     config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
     config_path = Path(config_file)
@@ -161,7 +166,7 @@ def load_config() -> AppConfig:
             "service_name": "holmesgpt-api",
             "version": "1.0.0",
             "dev_mode": False,
-            "auth_enabled": False,
+            "auth_enabled": True,  # DD-AUTH-014: Auth always enabled via middleware
             "api_host": "0.0.0.0",
             "api_port": 8080,
             "llm": {
@@ -279,144 +284,240 @@ def init_config_manager() -> Optional[ConfigManager]:
         logger.error(f"Failed to start ConfigManager: {e}, using static config")
         return None
 
-# Create FastAPI application
-app = FastAPI(
-    title="HolmesGPT API Service",
-    description="Minimal internal service wrapper around HolmesGPT SDK",
-    version=config["version"],
-    docs_url="/docs" if config["dev_mode"] else None,
-    redoc_url="/redoc" if config["dev_mode"] else None,
-)
+def create_app(authenticator=None, authorizer=None):
+    """
+    Factory function to create FastAPI application with dependency injection.
+    
+    This design eliminates module-level side effects and enables unit testing
+    without K8s cluster dependency.
+    
+    Args:
+        authenticator: Optional Authenticator instance (K8sAuthenticator or MockAuthenticator)
+                      If None, creates K8sAuthenticator (production mode)
+        authorizer: Optional Authorizer instance (K8sAuthorizer or MockAuthorizer)
+                   If None, creates K8sAuthorizer (production mode)
+    
+    Returns:
+        FastAPI: Configured application instance
+    
+    Usage:
+        Production: app = create_app()  # Uses K8s auth
+        Tests:      app = create_app(MockAuthenticator(), MockAuthorizer())
+    """
+    # Create FastAPI application
+    app = FastAPI(
+        title="HolmesGPT API Service",
+        description="Minimal internal service wrapper around HolmesGPT SDK",
+        version=config["version"],
+        docs_url="/docs" if config["dev_mode"] else None,
+        redoc_url="/redoc" if config["dev_mode"] else None,
+    )
 
-# Add CORS middleware (minimal - internal service)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if config["dev_mode"] else ["http://localhost", "http://127.0.0.1"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
+    # Add CORS middleware (minimal - internal service)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"] if config["dev_mode"] else ["http://localhost", "http://127.0.0.1"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
-# Add Prometheus metrics middleware
-app.add_middleware(PrometheusMetricsMiddleware)
-logger.info("Prometheus metrics middleware enabled")
+    # Add Prometheus metrics middleware
+    app.add_middleware(PrometheusMetricsMiddleware)
+    logger.info("Prometheus metrics middleware enabled")
 
-# Add authentication middleware
-if config["auth_enabled"]:
-    app.add_middleware(AuthenticationMiddleware, config=config)
-    logger.info("Authentication middleware enabled (K8s ServiceAccount tokens)")
+    # Initialize auth components if not provided (production mode)
+    # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
+    if authenticator is None or authorizer is None:
+        try:
+            # DD-AUTH-014: Support file-based kubeconfig for integration tests
+            # If KUBECONFIG env var is set, load from file (integration tests with envtest)
+            # Otherwise, load in-cluster config (production)
+            from kubernetes import client as k8s_client, config as k8s_config
+            
+            if os.getenv("KUBECONFIG"):
+                logger.info({
+                    "event": "loading_kubeconfig",
+                    "path": os.getenv("KUBECONFIG"),
+                    "mode": "file-based (integration tests with envtest)"
+                })
+                k8s_config.load_kube_config()
+                api_client = k8s_client.ApiClient()
+                authenticator = K8sAuthenticator(api_client)
+                authorizer = K8sAuthorizer(api_client)
+            else:
+                logger.info({"event": "loading_incluster_config", "mode": "production"})
+                authenticator = K8sAuthenticator()
+                authorizer = K8sAuthorizer()
+            
+            logger.info({
+                "event": "auth_initialized",
+                "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
+                "authenticator": "K8sAuthenticator",
+                "authorizer": "K8sAuthorizer"
+            })
+        except Exception as e:
+            logger.error({
+                "event": "auth_init_failed",
+                "error": str(e)
+            })
+            # In production, fail fast if K8s auth cannot be initialized
+            raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
+
+    # Get pod namespace dynamically (for SAR checks)
+    # In production, read from ServiceAccount namespace file
+    # In integration/E2E, use environment variable or default
+    POD_NAMESPACE = os.getenv("POD_NAMESPACE")
+    if not POD_NAMESPACE:
+        namespace_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+        if namespace_path.exists():
+            POD_NAMESPACE = namespace_path.read_text().strip()
+        else:
+            POD_NAMESPACE = "kubernaut-system"  # Default fallback
+
+    logger.info({"event": "sar_namespace_configured", "namespace": POD_NAMESPACE})
+
+    # Apply auth middleware with dependency injection
+    # Authority: DD-AUTH-014 - SAR authorization enforced on all endpoints
+    app.add_middleware(
+        AuthenticationMiddleware,
+        authenticator=authenticator,
+        authorizer=authorizer,
+        config={
+            "namespace": POD_NAMESPACE,
+            "resource": "services",
+            "resource_name": "holmesgpt-api",  # Match actual Kubernetes Service name (was: holmesgpt-api-service)
+            "verb": "create",  # Default verb, will be mapped per HTTP method
+        }
+    )
+    logger.info({
+        "event": "auth_middleware_enabled",
+        "authority": "DD-AUTH-014",
+        "namespace": POD_NAMESPACE
+    })
+
+    # Add RFC 7807 exception handlers
+    add_rfc7807_exception_handlers(app)
+    logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
+
+    # Register extension routers
+    # All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
+    # No router.config anti-pattern - tests use mock LLM server instead
+    app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
+    app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
+    # DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0
+    # Logic preserved in src/extensions/postexec.py for V1.1
+    # app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
+    app.include_router(health.router, tags=["Health"])
+    
+    return app
+
+
+# Create application instance (production mode - no injected dependencies)
+# Skip module-level app creation during pytest to allow test fixtures to inject mock auth
+import sys
+_is_test_mode = "pytest" in sys.modules
+
+if not _is_test_mode:
+    app = create_app()
+    
+    # ========================================
+    # METRICS ENDPOINT
+    # ========================================
+    
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics():
+        """
+        Prometheus metrics endpoint
+
+        Business Requirement: BR-HAPI-100 to 103
+
+        Exposes metrics in Prometheus exposition format for scraping
+        """
+        return metrics_endpoint()
+
+
+    @app.on_event("startup")
+    async def startup_event():
+        global config_manager
+
+        logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
+        logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
+        logger.info(f"Dev mode: {config.get('dev_mode', False)}")
+        logger.info("Auth: K8s TokenReview + SAR (DD-AUTH-014)")
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # MANDATORY: Validate audit initialization (ADR-032 §2)
+        # Per ADR-032 §3: HAPI is P0 service - audit is MANDATORY for LLM interactions
+        # Service MUST crash if audit cannot be initialized (ADR-032 §2)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        from src.audit.factory import get_audit_store
+        try:
+            # Get audit config from loaded YAML config (ADR-030)
+            audit_config = config.get("audit", {})
+            data_storage_url = config.get("data_storage", {}).get("url", "http://data-storage:8080")
+
+            audit_store = get_audit_store(
+                data_storage_url=data_storage_url,
+                flush_interval_seconds=audit_config.get("flush_interval_seconds"),
+                buffer_size=audit_config.get("buffer_size"),
+                batch_size=audit_config.get("batch_size")
+            )  # Will crash (sys.exit(1)) if init fails
+            logger.info({
+                "event": "audit_store_initialized",
+                "status": "mandatory_per_adr_032",
+                "classification": "P0",
+                "adr": "ADR-032 §2",
+                "audit_config": {
+                    "flush_interval_seconds": audit_config.get("flush_interval_seconds", 5.0),
+                    "buffer_size": audit_config.get("buffer_size", 10000),
+                    "batch_size": audit_config.get("batch_size", 50),
+                }
+            })
+        except Exception as e:
+            # This should never be reached (get_audit_store calls sys.exit(1))
+            # But included for completeness
+            logger.error(
+                f"FATAL: Audit initialization failed - service cannot start per ADR-032 §2: {e}",
+                extra={"adr": "ADR-032 §2"}
+            )
+            import sys
+            sys.exit(1)  # Crash immediately - Kubernetes will restart pod
+
+        # Initialize ConfigManager for hot-reload (BR-HAPI-199)
+        config_manager = init_config_manager()
+        if config_manager:
+            app.state.config_manager = config_manager
+            logger.info({
+                "event": "hot_reload_enabled",
+                "br": "BR-HAPI-199",
+                "fields": ["llm.model", "llm.provider", "llm.endpoint", "toolsets", "log_level"],
+            })
+        else:
+            app.state.config_manager = None
+            logger.info("Hot-reload not available, using static configuration")
+
+        logger.info("Service started successfully")
+
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        global config_manager
+
+        logger.info("Service shutting down")
+
+        # Stop ConfigManager (BR-HAPI-199)
+        if config_manager:
+            config_manager.stop()
+            logger.info({
+                "event": "config_manager_stopped",
+                "br": "BR-HAPI-199",
+                "reload_count": config_manager.reload_count,
+                "error_count": config_manager.error_count,
+            })
 else:
-    logger.warning("Authentication middleware DISABLED (dev mode only)")
-
-# Add RFC 7807 exception handlers
-add_rfc7807_exception_handlers(app)
-logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
-
-# Register extension routers
-# All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
-# No router.config anti-pattern - tests use mock LLM server instead
-app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
-app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
-# DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0
-# Logic preserved in src/extensions/postexec.py for V1.1
-# app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
-app.include_router(health.router, tags=["Health"])
-
-
-# ========================================
-# METRICS ENDPOINT
-# ========================================
-
-@app.get("/metrics", include_in_schema=False)
-async def metrics():
-    """
-    Prometheus metrics endpoint
-
-    Business Requirement: BR-HAPI-100 to 103
-
-    Exposes metrics in Prometheus exposition format for scraping
-    """
-    return metrics_endpoint()
-
-
-@app.on_event("startup")
-async def startup_event():
-    global config_manager
-
-    logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
-    logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
-    logger.info(f"Dev mode: {config.get('dev_mode', False)}")
-    logger.info(f"Auth enabled: {config.get('auth_enabled', False)}")
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # MANDATORY: Validate audit initialization (ADR-032 §2)
-    # Per ADR-032 §3: HAPI is P0 service - audit is MANDATORY for LLM interactions
-    # Service MUST crash if audit cannot be initialized (ADR-032 §2)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    from src.audit.factory import get_audit_store
-    try:
-        # Get audit config from loaded YAML config (ADR-030)
-        audit_config = config.get("audit", {})
-        data_storage_url = config.get("data_storage", {}).get("url", "http://data-storage:8080")
-
-        audit_store = get_audit_store(
-            data_storage_url=data_storage_url,
-            flush_interval_seconds=audit_config.get("flush_interval_seconds"),
-            buffer_size=audit_config.get("buffer_size"),
-            batch_size=audit_config.get("batch_size")
-        )  # Will crash (sys.exit(1)) if init fails
-        logger.info({
-            "event": "audit_store_initialized",
-            "status": "mandatory_per_adr_032",
-            "classification": "P0",
-            "adr": "ADR-032 §2",
-            "audit_config": {
-                "flush_interval_seconds": audit_config.get("flush_interval_seconds", 5.0),
-                "buffer_size": audit_config.get("buffer_size", 10000),
-                "batch_size": audit_config.get("batch_size", 50),
-            }
-        })
-    except Exception as e:
-        # This should never be reached (get_audit_store calls sys.exit(1))
-        # But included for completeness
-        logger.error(
-            f"FATAL: Audit initialization failed - service cannot start per ADR-032 §2: {e}",
-            extra={"adr": "ADR-032 §2"}
-        )
-        import sys
-        sys.exit(1)  # Crash immediately - Kubernetes will restart pod
-
-    # Initialize ConfigManager for hot-reload (BR-HAPI-199)
-    config_manager = init_config_manager()
-    if config_manager:
-        app.state.config_manager = config_manager
-        logger.info({
-            "event": "hot_reload_enabled",
-            "br": "BR-HAPI-199",
-            "fields": ["llm.model", "llm.provider", "llm.endpoint", "toolsets", "log_level"],
-        })
-    else:
-        app.state.config_manager = None
-        logger.info("Hot-reload not available, using static configuration")
-
-    logger.info("Service started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    global config_manager
-
-    logger.info("Service shutting down")
-
-    # Stop ConfigManager (BR-HAPI-199)
-    if config_manager:
-        config_manager.stop()
-        logger.info({
-            "event": "config_manager_stopped",
-            "br": "BR-HAPI-199",
-            "reload_count": config_manager.reload_count,
-            "error_count": config_manager.error_count,
-        })
+    # In test mode, app is created by conftest client fixture
+    app = None
 
 
 if __name__ == "__main__":

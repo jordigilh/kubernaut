@@ -83,7 +83,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 		GinkgoWriter.Println("E2E: Reconstruction REST API Tests")
 		GinkgoWriter.Println("========================================")
 		GinkgoWriter.Println("DataStorage URL:", dataStorageURL)
-		GinkgoWriter.Println("OpenAPI Client:", dsClient != nil)
+		GinkgoWriter.Println("OpenAPI Client:", DSClient != nil)
 		GinkgoWriter.Println("========================================")
 	})
 
@@ -314,7 +314,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			// ACT: Call reconstruction endpoint via OpenAPI client
 			GinkgoWriter.Printf("🔄 Calling reconstruction API for correlation ID: %s\n", correlationID)
 
-			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
+			response, err := DSClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
 
@@ -436,7 +436,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 		It("should reconstruct partial RR with validation warnings", func() {
 			// ACT: Call reconstruction endpoint
-			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
+			response, err := DSClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
 
@@ -487,7 +487,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			nonExistentID := "nonexistent-correlation-id-12345"
 
 			// ACT: Call with non-existent correlation ID
-			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
+			response, err := DSClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: nonExistentID,
 			})
 
@@ -529,7 +529,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: Call reconstruction (should fail - gateway event required)
-			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
+			response, err := DSClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
 

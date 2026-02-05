@@ -266,7 +266,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 		// We validate the LAST event (operator modification)
 		webhookEvent := webhookEvents[len(webhookEvents)-1]
 		Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
-		Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWebhook))
+		Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryOrchestration)) // Gap #8: Webhook is RR implementation detail
 		Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
 		Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 		Expect(webhookEvent.CorrelationID).To(Equal(correlationID))

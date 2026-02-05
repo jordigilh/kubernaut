@@ -767,14 +767,28 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 #### **BR-STORAGE-040: Workflow Catalog Search API**
 - **Priority**: P0
 - **Status**: ✅ Active
-- **Description**: Provide REST API endpoint for semantic search of workflows (`POST /api/v1/workflows/search`) with hybrid weighted scoring
-- **Business Value**: Enable AI-driven workflow discovery based on incident characteristics
+- **Version**: 2.0 (Multi-environment workflow capability - January 28, 2026)
+- **Description**: Provide REST API endpoint for semantic search of workflows (`POST /api/v1/workflows/search`) with hybrid weighted scoring and multi-environment workflow support
+- **Multi-Environment Workflow Support (v2.0)**:
+  - **BREAKING CHANGE**: Workflows can declare multiple target environments (array in storage)
+  - Workflow storage: `environment: ["staging", "production"]` (workflow works in BOTH)
+  - Search filter: `environment: "production"` (single value from Signal Processing)
+  - SQL uses PostgreSQL JSONB `?` operator for array containment check
+  - Wildcard support: `environment: ["*"]` matches ALL environments
+  - Validation: `minItems: 1` (explicit declaration required, no default)
+  - Rationale: Single workflow can be reused across multiple environments without duplication
+- **Business Value**: Enable AI-driven workflow discovery based on incident characteristics; single workflow reusable across multiple environments reduces duplication
+- **Version History**:
+  - v1.5 (2026-01-26): REVERTED - Implemented search-side arrays incorrectly
+  - v2.0 (2026-01-28): CORRECT - Implemented storage-side arrays with search-side single value
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/workflow_search_test.go`
   - Integration: `test/integration/datastorage/workflow_catalog_test.go`
+  - Integration: `test/integration/datastorage/workflow_search_multi_env_test.go` (v2.0 - updated)
+  - E2E: `test/e2e/datastorage/19_workflow_multi_environment_test.go` (v2.0 - planned)
 - **Implementation**: `pkg/datastorage/server/workflow_handlers.go:HandleSearchWorkflows`
 - **Related BRs**: BR-STORAGE-012 (embedding generation), BR-STORAGE-013 (query performance)
-- **Design Decisions**: DD-WORKFLOW-004 (hybrid scoring), BR-STORAGE-013 (semantic search)
+- **Design Decisions**: DD-WORKFLOW-004 v2.0 (hybrid scoring + multi-environment), DD-WORKFLOW-001 v2.5 (multi-environment schema)
 
 #### **BR-STORAGE-041: Workflow Catalog Update API**
 - **Priority**: P1

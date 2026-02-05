@@ -343,17 +343,18 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 
 					// Create
 					if err := k8sClient.Create(ctx, notif); err == nil {
-						// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
-						// Wait for controller to start processing (status phase set) before deletion
-						processed := Eventually(func() bool {
-							var checkNotif notificationv1alpha1.NotificationRequest
-							err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &checkNotif)
-							if err != nil {
-								return false
-							}
-							// Processing started when phase is set
-							return checkNotif.Status.Phase != ""
-						}, 2*time.Second, 50*time.Millisecond).Should(BeTrue())
+					// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
+					// DD-AUTH-014: 2s timeout sufficient with 5 concurrent workers
+					// Wait for controller to start processing (status phase set) before deletion
+					processed := Eventually(func() bool {
+						var checkNotif notificationv1alpha1.NotificationRequest
+						err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &checkNotif)
+						if err != nil {
+							return false
+						}
+						// Processing started when phase is set
+						return checkNotif.Status.Phase != ""
+					}, 2*time.Second, 50*time.Millisecond).Should(BeTrue())
 
 						// Only delete if we confirmed processing started (rapid lifecycle stress test)
 						if processed {

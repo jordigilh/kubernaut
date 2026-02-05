@@ -1,0 +1,87 @@
+---
+# ========================================
+# DD-AUTH-014: DataStorage Service RBAC
+# Required for middleware-based authentication/authorization
+# ========================================
+#
+# DataStorage middleware needs permissions to:
+# 1. Validate Bearer tokens using TokenReview API
+# 2. Check RBAC permissions using SubjectAccessReview API
+#
+# Authority: DD-AUTH-014 (Middleware-based authentication)
+# Related: BR-SECURITY-016 (Kubernetes RBAC enforcement)
+# ========================================
+
+---
+# ServiceAccount: DataStorage service identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  namespace: kubernaut-system
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+
+---
+# ClusterRole: Permissions for DataStorage to validate tokens and check access
+#
+# Required APIs:
+# - tokenreviews: Validate ServiceAccount Bearer tokens (authentication)
+# - subjectaccessreviews: Check RBAC permissions (authorization)
+#
+# These are cluster-scoped resources, so ClusterRole is required (not Role)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+rules:
+  # TokenReview API: Validate Bearer tokens
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  
+  # SubjectAccessReview API: Check RBAC permissions
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+
+---
+# ClusterRoleBinding: Grant DataStorage SA the auth middleware permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# USAGE NOTES
+# ========================================
+#
+# This RBAC configuration is REQUIRED for DataStorage to:
+# 1. Authenticate incoming Bearer tokens (TokenReview)
+# 2. Authorize requests based on RBAC (SubjectAccessReview)
+#
+# Without this:
+# - All requests will fail with 401 Unauthorized
+# - Error: "cannot create resource tokenreviews at cluster scope"
+#
+# Authority: DD-AUTH-014 (Middleware-based authentication)
+# ========================================

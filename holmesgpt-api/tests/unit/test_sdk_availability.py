@@ -78,11 +78,17 @@ class TestSDKErrorHandling:
         # GREEN phase: Service should start even if SDK is not fully set up
         # Health endpoint should work
         from fastapi.testclient import TestClient
+        from src.main import create_app
+        from src.auth import MockAuthenticator, MockAuthorizer
         import os
         os.environ["DEV_MODE"] = "true"
         os.environ["AUTH_ENABLED"] = "false"
 
-        from src.main import app
+        # Use factory pattern with mock auth (no K8s dependency)
+        app = create_app(
+            authenticator=MockAuthenticator(valid_users={"test-token": "system:serviceaccount:test:sa"}),
+            authorizer=MockAuthorizer(default_allow=True)
+        )
         client = TestClient(app)
 
         response = client.get("/health")

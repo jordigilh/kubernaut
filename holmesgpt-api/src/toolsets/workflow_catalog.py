@@ -63,6 +63,7 @@ from datastorage.models.workflow_search_filters import WorkflowSearchFilters
 from datastorage.api_client import ApiClient
 from datastorage.configuration import Configuration
 from datastorage.exceptions import ApiException
+from datastorage_pool_manager import get_shared_datastorage_pool_manager  # DD-AUTH-014 + Performance Fix
 
 # Import DetectedLabels for type hints
 from src.models.incident_models import DetectedLabels
@@ -411,12 +412,18 @@ class SearchWorkflowCatalogTool(Tool):
             "DATA_STORAGE_URL",
             "http://data-storage:8080"
         ))
-        object.__setattr__(self, '_http_timeout', int(os.getenv("DATA_STORAGE_TIMEOUT", "10")))
+        object.__setattr__(self, '_http_timeout', int(os.getenv("DATA_STORAGE_TIMEOUT", "60")))
 
         # Initialize OpenAPI client for type-safe Data Storage API calls
         # DD-STORAGE-011: OpenAPI Client Generation
+        # DD-AUTH-014: ServiceAccount authentication for DataStorage access
+        # Performance Fix: Use singleton pool manager to reuse HTTP connections
+        auth_pool = get_shared_datastorage_pool_manager()
         config = Configuration(host=self._data_storage_url)
+        # CRITICAL: Set timeout on Configuration to prevent "read timeout=0" errors
+        config.timeout = self._http_timeout  # Default: 10s from DATA_STORAGE_TIMEOUT
         api_client = ApiClient(configuration=config)
+        api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         object.__setattr__(self, '_search_api', WorkflowCatalogAPIApi(api_client))
 
         # Store remediation_id for audit correlation (BR-AUDIT-005, DD-WORKFLOW-014)
@@ -482,8 +489,14 @@ class SearchWorkflowCatalogTool(Tool):
         """Set Data Storage Service URL (for testing)"""
         object.__setattr__(self, '_data_storage_url', value)
         # Reinitialize OpenAPI client with new URL
+        # DD-AUTH-014: Include ServiceAccount authentication
+        # Performance Fix: Use singleton pool manager to reuse HTTP connections
+        auth_pool = get_shared_datastorage_pool_manager()
         config = Configuration(host=value)
+        # CRITICAL: Set timeout on Configuration to prevent "read timeout=0" errors
+        config.timeout = self._http_timeout  # Default: 10s from DATA_STORAGE_TIMEOUT
         api_client = ApiClient(configuration=config)
+        api_client.rest_client.pool_manager = auth_pool  # Inject ServiceAccount token
         object.__setattr__(self, '_search_api', WorkflowCatalogAPIApi(api_client))
 
     @property
@@ -709,7 +722,7 @@ class SearchWorkflowCatalogTool(Tool):
                 severity = sev
                 break
 
-        # Build filters with 5 MANDATORY fields (DD-WORKFLOW-001 v1.6)
+        # Build filters with 5 MANDATORY fields (DD-WORKFLOW-001 v2.5)
         filters = {
             "signal_type": signal_type,
             "severity": severity,
@@ -717,7 +730,8 @@ class SearchWorkflowCatalogTool(Tool):
             # NOTE: Wildcards should be in workflow labels (DB), not search filters
             # Default to most common values when RCA resource unavailable
             "component": self._extract_component_from_rca(rca_resource) or "pod",  # Most common K8s resource
-            "environment": self._extract_environment_from_rca(rca_resource) or "production",  # Most common environment
+            # DD-WORKFLOW-001 v2.5: Single environment value from Signal Processing
+            "environment": self._extract_environment_from_rca(rca_resource) or "production",  # Single environment
             "priority": self._map_severity_to_priority(severity),  # Map severity → priority
         }
 
@@ -737,7 +751,9 @@ class SearchWorkflowCatalogTool(Tool):
 
             for llm_key, api_key in filter_mapping.items():
                 if llm_key in additional_filters:
-                    filters[api_key] = additional_filters[llm_key]
+                    value = additional_filters[llm_key]
+                    # DD-WORKFLOW-001 v2.5: Environment is single string (not array)
+                    filters[api_key] = value
 
         return filters
 

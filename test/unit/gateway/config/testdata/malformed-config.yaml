@@ -2,8 +2,8 @@
 # BR-GATEWAY-024: Configuration validation
 
 server:
-  listen_addr: ":8080"
-  read_timeout: 30s
+  listenAddr: ":8080"
+  readTimeout: 30s
   invalid_yaml_structure_here
     this: is: not: valid: yaml:
   - missing

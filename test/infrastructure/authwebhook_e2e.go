@@ -94,9 +94,17 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		buildResults <- buildResult{name: "DataStorage", imageName: dsImageName, err: err}
 	}()
 
-	// Goroutine 2: Build AuthWebhook image
+	// Goroutine 2: Build AuthWebhook image using standardized BuildImageForKind (with registry pull fallback)
+	// Registry Strategy: Attempts pull from ghcr.io first, falls back to local build
 	go func() {
-		awImageName, err := buildAuthWebhookImageOnly(writer)
+		cfg := E2EImageConfig{
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook", // No repo prefix, just service name
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
+			BuildContextPath: "",    // Empty = project root
+			EnableCoverage:   false, // AuthWebhook doesn't support coverage yet
+		}
+		awImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("AuthWebhook image build failed: %w", err)
 		}
@@ -303,6 +311,7 @@ func buildAuthWebhookImageOnly(writer io.Writer) (string, error) {
 func loadAuthWebhookImageOnly(imageName, clusterName string, writer io.Writer) error {
 	return LoadImageToKind(imageName, "authwebhook", clusterName, writer)
 }
+
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster
 func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	// Get workspace root for config paths
@@ -340,6 +349,13 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
 	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
+	
+	// Replace hardcoded imagePullPolicy with dynamic value
+	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
+	// Local mode: Use Never (uses images loaded into Kind)
+	substitutedManifest = strings.ReplaceAll(substitutedManifest,
+		"imagePullPolicy: Never",
+		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Apply substituted manifest via kubectl
 	cmd = exec.Command("kubectl", "apply",
@@ -922,7 +938,7 @@ password: test_password`,
 						{
 							Name:            "datastorage",
 							Image:           imageTag,
-							ImagePullPolicy: corev1.PullNever,
+							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 							Ports: []corev1.ContainerPort{
 								{Name: "http", ContainerPort: 8080},
 								{Name: "metrics", ContainerPort: 9181},

@@ -83,9 +83,9 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "Failed to create test namespace")
 
 		// Create Gateway server with shared K8s client
-		cfg := createGatewayConfig(getDataStorageURL())
+		cfg := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 		var err error
-		gwServer, err = createGatewayServer(cfg, testLogger, k8sClient)
+		gwServer, err = createGatewayServer(cfg, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 	})
 

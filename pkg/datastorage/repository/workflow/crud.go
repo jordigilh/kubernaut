@@ -257,8 +257,10 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		if filters.Component != "" {
 			builder.Where("labels->>'component' = ?", filters.Component)
 		}
+		// DD-WORKFLOW-001 v2.5: JSONB array containment (workflows store array, filter with single value)
 		if filters.Environment != "" {
-			builder.Where("labels->>'environment' = ?", filters.Environment)
+			// SQL: labels->'environment' ? 'production' OR labels->'environment' ? '*'
+			builder.WhereRaw(fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", builder.CurrentArgIndex()), filters.Environment)
 		}
 		if filters.Priority != "" {
 			builder.Where("labels->>'priority' = ?", filters.Priority)

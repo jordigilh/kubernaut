@@ -19,6 +19,7 @@ package workflowexecution
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -49,8 +50,8 @@ import (
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
-	"github.com/jordigilh/kubernaut/test/infrastructure" // Shared infrastructure (PostgreSQL + Redis + DS)
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/infrastructure"    // Shared infrastructure (PostgreSQL + Redis + DS)
+	"github.com/jordigilh/kubernaut/test/shared/integration" // DD-AUTH-014: Authenticated DataStorage clients
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
 )
@@ -86,6 +87,9 @@ var (
 	dataStorageBaseURL string                                         = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
 	auditStore         audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
 	reconciler         *workflowexecution.WorkflowExecutionReconciler                                                                                   // Controller instance for metrics access
+	
+	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
+	dsClients *integration.AuthenticatedDataStorageClients
 )
 
 // Test namespaces (unique per test run for parallel safety)
@@ -110,22 +114,89 @@ func TestWorkflowExecutionIntegration(t *testing.T) {
 }
 
 var _ = SynchronizedBeforeSuite(func() []byte {
-	// Phase 1: Runs ONCE on parallel process #1
-	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
-	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	// ======================================================================
+	// PHASE 1: INFRASTRUCTURE SETUP (ONCE - GLOBAL)
+	// ======================================================================
+	// Runs ONCE on process 1 only
+	// Starts shared infrastructure + envtest for DataStorage auth
+	//
+	// DD-AUTH-014: Real Kubernetes authentication via envtest
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// ======================================================================
+	
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("PHASE 1: Infrastructure Setup (DD-TEST-010 + DD-AUTH-014)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("Starting shared infrastructure...")
+	GinkgoWriter.Println("  • Shared envtest (for DataStorage auth)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15441)")
+	GinkgoWriter.Println("  • Redis (port 16388)")
+	GinkgoWriter.Println("  • Data Storage API (port 18097)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	var err error
+
+	// DD-AUTH-014: Start shared envtest for DataStorage auth
+	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
+	
+	// DD-AUTH-014: Force envtest to bind to IPv4 (critical for macOS!)
+	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
+	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
+	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md
+	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
+	
+	sharedTestEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+		ControlPlane: envtest.ControlPlane{
+			APIServer: &envtest.APIServer{
+				// Force IPv4 binding (DD-TEST-012)
+				SecureServing: envtest.SecureServing{
+					ListenAddr: envtest.ListenAddr{
+						Address: "127.0.0.1", // NOT "localhost"!
+					},
+				},
+			},
+		},
+	}
+	sharedCfg, err := sharedTestEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(sharedCfg).NotTo(BeNil())
+	
+	GinkgoWriter.Printf("✅ Shared envtest started\n")
+	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
+	GinkgoWriter.Printf("   ℹ️  Forced IPv4 binding (127.0.0.1)\n")
+
+	DeferCleanup(func() {
+		By("Stopping shared envtest")
+		err := sharedTestEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	// DD-AUTH-014: Create ServiceAccount + RBAC for DataStorage access
+	By("Creating ServiceAccount with DataStorage RBAC in shared envtest")
+	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+		sharedCfg,
+		"workflowexecution-ds-client",
+		"default",
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Println("✅ ServiceAccount + RBAC created in shared envtest")
+
+	By("Starting WorkflowExecution integration infrastructure (DD-TEST-002)")
 	// Use shared DSBootstrap infrastructure (replaces custom StartWEIntegrationInfrastructure)
 	// Per DD-TEST-001 v2.6: WE uses PostgreSQL=15441, Redis=16388, DS=18097
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
-		ServiceName:     "workflowexecution",
-		PostgresPort:    15441, // DD-TEST-001 v2.2
-		RedisPort:       16388, // DD-TEST-001 v2.2 (unique, resolved conflict with HAPI)
-		DataStoragePort: 18097, // DD-TEST-001 v2.2
-		MetricsPort:     19097,
-		ConfigDir:       "test/integration/workflowexecution/config",
-	}, GinkgoWriter)
+	// DD-AUTH-014: Helper function ensures auth is properly configured
+	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+		"workflowexecution",
+		15441, 16388, 18097, 19097,
+		"test/integration/workflowexecution/config",
+		authConfig,
+	)
+	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
@@ -134,7 +205,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
-	return []byte{} // No data to share between processes
+	// DD-AUTH-014: DataStorage health endpoint now validates auth middleware readiness
+	// No explicit warmup needed - /health returns 200 only when auth is ready
+	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// DD-AUTH-014: Serialize token for Phase 2 DataStorage client
+	return []byte(authConfig.Token)
 }, func(data []byte) {
 	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
 	// Set up envtest, K8s client, and controller manager per process
@@ -204,29 +281,33 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Note: DataStorage health check already done by StartWEIntegrationInfrastructure()
 	GinkgoWriter.Printf("✅ DataStorage confirmed healthy at %s\n", dataStorageBaseURL)
 
-	By("Creating REAL audit store with DataStorage OpenAPI client (DD-API-001)")
-	// Create OpenAPI DataStorage client (DD-API-001 compliant)
-	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testauth.NewMockUserTransport("test-workflowexecution@integration.test")
-	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		dataStorageBaseURL,
-		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
-	)
-	if err != nil {
-		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage client: %v", err))
+	By("Creating REAL audit store with authenticated DataStorage client (DD-AUTH-014)")
+	// DD-AUTH-014: Parse token from Phase 1 and create authenticated clients
+	token := string(data)
+	if token == "" {
+		Fail("ServiceAccount token from Phase 1 is empty")
 	}
+	GinkgoWriter.Printf("✅ Received ServiceAccount token from Phase 1 (length: %d bytes)\n", len(token))
 
-	// Create REAL buffered audit store (Defense-in-Depth Layer 4)
+	// DD-AUTH-014: Create authenticated DataStorage clients (assign to global variable)
+	// Uses ServiceAccount Bearer token for all DataStorage API calls
+	dsClients = integration.NewAuthenticatedDataStorageClients(
+		dataStorageBaseURL,
+		token,
+		5*time.Second,
+	)
+	GinkgoWriter.Println("✅ Authenticated DataStorage clients created")
+
+	// Create REAL buffered audit store with authenticated client
 	auditStore, err = audit.NewBufferedStore(
-		dsClient,
+		dsClients.AuditClient, // ← Authenticated with ServiceAccount token!
 		audit.DefaultConfig(),
 		"workflowexecution-controller",
 		ctrl.Log.WithName("audit"),
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create real audit store")
 
-	GinkgoWriter.Println("✅ Real audit store created (connected to DataStorage)")
+	GinkgoWriter.Println("✅ Real audit store created (connected to DataStorage with real authentication)")
 
 	By("Creating metrics with test registry for isolation (DD-METRICS-001)")
 	// Create isolated Prometheus registry for integration tests to prevent conflicts

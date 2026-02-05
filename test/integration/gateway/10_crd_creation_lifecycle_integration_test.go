@@ -107,12 +107,13 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		// NEW: Create Gateway with SHARED K8s client
+		// NEW: Create Gateway with SHARED K8s client AND shared audit store
 		// This is the KEY DIFFERENCE from E2E tests: Gateway and test use the SAME client
-		cfg := createGatewayConfig("") // No DataStorage for this test
+		// ADR-032: Audit is MANDATORY for P0 services (Gateway) - use shared audit store
+		cfg := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 
 		var err error
-		gwServer, err = gateway.NewServerWithK8sClient(cfg, testLogger, nil, k8sClient)
+		gwServer, err = createGatewayServer(cfg, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)

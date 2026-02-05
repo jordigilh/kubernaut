@@ -246,10 +246,25 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Build and register test workflow bundles
 	// This creates OCI bundles for test workflows and registers them in DataStorage
-	// Per DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
+	// Per DD-WORKFLOW-005 v1.0: OpenAPI client workflow registration
 	_, _ = fmt.Fprintf(output, "\n🎯 Building and registering test workflow bundles...\n")
-	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001
-	if _, err := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, output); err != nil {
+
+	// DD-AUTH-014: Create ServiceAccount for workflow registration with DataStorage
+	workflowRegSAName := "workflow-registration-sa"
+	_, _ = fmt.Fprintf(output, "🔐 Creating ServiceAccount for workflow registration (DD-AUTH-014)...\n")
+	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, WorkflowExecutionNamespace, kubeconfigPath, workflowRegSAName, output); err != nil {
+		return fmt.Errorf("failed to create workflow registration ServiceAccount: %w", err)
+	}
+
+	// Get ServiceAccount token for authenticated workflow registration
+	saToken, err := GetServiceAccountToken(ctx, WorkflowExecutionNamespace, workflowRegSAName, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
+
+	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
+	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
@@ -303,10 +318,17 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 		}
 	}
 
-	// Load into Kind
-	_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
-	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
-		return fmt.Errorf("failed to load image: %w", err)
+	// Load into Kind (skip when using registry images - IMAGE_REGISTRY + IMAGE_TAG set)
+	// Pattern matches buildImageWithArgs() in shared_integration_utils.go
+	if os.Getenv("IMAGE_REGISTRY") != "" && os.Getenv("IMAGE_TAG") != "" {
+		_, _ = fmt.Fprintln(output, "    Skipping image load (registry mode - Kubernetes pulls from registry)")
+		_, _ = fmt.Fprintf(output, "    ℹ️  IMAGE_REGISTRY=%s, IMAGE_TAG=%s\n", os.Getenv("IMAGE_REGISTRY"), os.Getenv("IMAGE_TAG"))
+		_, _ = fmt.Fprintf(output, "    📦 Image will be pulled directly by Kubernetes: kubernaut-datastorage:latest\n")
+	} else {
+		_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
+		if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
+			return fmt.Errorf("failed to load image: %w", err)
+		}
 	}
 
 	// Deploy ConfigMap with ADR-030 configuration
@@ -382,7 +404,7 @@ stringData:
 
 	// Deploy Data Storage with proper volumes and CONFIG_PATH
 	// Note: Image name is localhost/kubernaut-datastorage:latest when loaded via kind load
-	deploymentManifest := `
+	deploymentManifest := fmt.Sprintf(`
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -401,7 +423,7 @@ spec:
       containers:
       - name: datastorage
         image: localhost/kubernaut-datastorage:latest
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
           name: http
@@ -468,7 +490,7 @@ spec:
   - port: 8080
     targetPort: 8080
     name: http
-`
+`, GetImagePullPolicy())
 	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(deploymentManifest)
 	cmd.Stdout = output

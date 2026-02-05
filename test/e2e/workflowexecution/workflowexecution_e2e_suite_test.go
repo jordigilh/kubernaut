@@ -74,9 +74,13 @@ var (
 	kubeconfigPath string
 	cfg            *rest.Config
 	k8sClient      client.Client
+	apiReader      client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// Controller namespace
 	controllerNamespace string = infrastructure.WorkflowExecutionNamespace
+
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
 
 	// Track test failures
 	anyTestFailed bool
@@ -166,10 +170,23 @@ var _ = SynchronizedBeforeSuite(
 
 		// Note: Test pipeline is already created by hybrid infrastructure setup
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		logger.Info("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "workflowexecution-e2e-sa"
+		namespace := infrastructure.WorkflowExecutionNamespace
+
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		logger.Info("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		logger.Info("✅ WorkflowExecution E2E environment ready!")
 
-		// Return kubeconfig path for other processes
-		return []byte(kubeconfigPath)
+		// Return kubeconfig path and auth token for other processes
+		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
 	},
 	// This runs on ALL processes - connects to the shared cluster
 	func(kubeconfigBytes []byte) {
@@ -183,8 +200,12 @@ var _ = SynchronizedBeforeSuite(
 			ServiceName: "workflowexecution-e2e-test",
 		})
 
-		// Get kubeconfig path from process 1
-		kubeconfigPath = string(kubeconfigBytes)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(kubeconfigBytes), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		// Set KUBECONFIG environment variable
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
@@ -201,6 +222,11 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create direct API reader for Eventually() blocks to bypass client cache
+		// This ensures fresh reads from API server for status polling
+		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
 		logger.Info("✅ Connected to WorkflowExecution E2E cluster",
@@ -347,33 +373,41 @@ var _ = SynchronizedAfterSuite(
 		// DD-TEST-001 v1.1: E2E Test Image Cleanup (MANDATORY)
 		// Clean up service images built for Kind to prevent disk space exhaustion
 		// This runs regardless of test success/failure to prevent image accumulation
-		logger.Info("🗑️  Cleaning up service images built for Kind...")
-
-		// Service-specific images built during E2E test setup
-		// Per DD-TEST-001: Use service-specific tags to avoid conflicts when multiple services run E2E tests
-		imagesToClean := []string{
-			"localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // This service's controller
-			"localhost/kubernaut-datastorage:e2e-test-datastorage",             // DataStorage infrastructure
-		}
-
-		// DD-TEST-001: Clean up IMAGE_TAG if set (CI/CD builds with unique tags)
-		// Format: {service}:{service}-{user}-{git-hash}-{timestamp}
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		if imageTag != "" {
-			imagesToClean = append(imagesToClean,
-				fmt.Sprintf("workflowexecution:%s", imageTag))
-		}
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else {
+			// Local build mode: Remove locally built images
+			logger.Info("🗑️  Cleaning up service images built for Kind...")
 
-		// Remove each image
-		for _, imageName := range imagesToClean {
-			rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
-			rmiOutput, rmiErr := rmiCmd.CombinedOutput()
-			if rmiErr != nil {
-				logger.Info("⚠️  Failed to remove image (may not exist)",
-					"image", imageName,
-					"output", string(rmiOutput))
-			} else {
-				logger.Info("✅ Image removed", "image", imageName)
+			// Service-specific images built during E2E test setup
+			// Per DD-TEST-001: Use service-specific tags to avoid conflicts when multiple services run E2E tests
+			imagesToClean := []string{
+				"localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // This service's controller
+				"localhost/kubernaut-datastorage:e2e-test-datastorage",             // DataStorage infrastructure
+			}
+
+			// DD-TEST-001: Clean up IMAGE_TAG if set (local builds with unique tags)
+			if imageTag != "" {
+				imagesToClean = append(imagesToClean,
+					fmt.Sprintf("workflowexecution:%s", imageTag))
+			}
+
+			// Remove each image
+			for _, imageName := range imagesToClean {
+				rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+				rmiOutput, rmiErr := rmiCmd.CombinedOutput()
+				if rmiErr != nil {
+					logger.Info("⚠️  Failed to remove image (may not exist)",
+						"image", imageName,
+						"output", string(rmiOutput))
+				} else {
+					logger.Info("✅ Image removed", "image", imageName)
+				}
 			}
 		}
 
@@ -422,10 +456,10 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-hello-world",
 				Version:    "v1.0.0",
-				// Use production bundle from quay.io (Option B: builds locally only if not found)
+				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
 				// Per ADR-043: Bundle contains pipeline.yaml + workflow-schema.yaml
 				// Per test/infrastructure/workflow_bundles.go: BuildAndRegisterTestWorkflows
-				ContainerImage: "quay.io/jordigilh/test-workflows/hello-world:v1.0.0",
+				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{
@@ -439,6 +473,14 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 func getWFE(name, namespace string) (*workflowexecutionv1alpha1.WorkflowExecution, error) {
 	wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
 	err := k8sClient.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, wfe)
+	return wfe, err
+}
+
+// getWFEDirect reads WorkflowExecution directly from API server, bypassing client cache.
+// Use this in Eventually() blocks for status polling to avoid cache consistency issues.
+func getWFEDirect(name, namespace string) (*workflowexecutionv1alpha1.WorkflowExecution, error) {
+	wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
+	err := apiReader.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, wfe)
 	return wfe, err
 }
 

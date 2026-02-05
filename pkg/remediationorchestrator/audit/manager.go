@@ -425,6 +425,9 @@ func (m *Manager) BuildApprovalRequestedEvent(
 // BuildApprovalDecisionEvent builds an audit event for approval decision.
 // Related to ADR-040 (RemediationApprovalRequest)
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+//
+// REFACTOR-RO-AUD-001: Refactored to use ApprovalDecisionMapping type (eliminates triple switch)
+// REFACTOR-RO-AUD-002: Refactored to use DetermineActor helper
 func (m *Manager) BuildApprovalDecisionEvent(
 	correlationID string,
 	namespace string,
@@ -434,78 +437,38 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	decidedBy string,
 	message string,
 ) (*ogenclient.AuditEventRequest, error) {
-	// Determine action and outcome based on decision
-	var action string
-	var apiOutcome api.AuditEventRequestEventOutcome
-	switch decision {
-	case "Approved":
-		action = ActionApproved
-		apiOutcome = audit.OutcomeSuccess
-	case "Rejected":
-		action = ActionRejected
-		apiOutcome = audit.OutcomeFailure
-	case "Expired":
-		action = ActionExpired
-		apiOutcome = audit.OutcomeFailure
-	default:
-		action = decision
-		apiOutcome = audit.OutcomePending
-	}
+	// REFACTOR-RO-AUD-001: Get decision mapping (replaces triple switch statement)
+	mapping, _ := GetApprovalDecisionMapping(decision)
 
-	// Determine actor
-	var actorType, actorID string
-	if decidedBy == "system" {
-		actorType = "service"
-		actorID = m.serviceName
-	} else {
-		actorType = "user"
-		actorID = decidedBy
-	}
+	// REFACTOR-RO-AUD-002: Determine actor using extracted helper
+	actorType, actorID := DetermineActor(decidedBy, m.serviceName)
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.approval."+action)
+	audit.SetEventType(event, "orchestrator.approval."+mapping.Action)
 	audit.SetEventCategory(event, CategoryOrchestration)
-	audit.SetEventAction(event, action)
-	audit.SetEventOutcome(event, apiOutcome)
+	audit.SetEventAction(event, mapping.Action)
+	audit.SetEventOutcome(event, mapping.Outcome)
 	audit.SetActor(event, actorType, actorID)
 	audit.SetResource(event, "RemediationApprovalRequest", rarName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	// Determine the correct EventType based on decision
-	var payloadEventType api.RemediationOrchestratorAuditPayloadEventType
-	switch decision {
-	case "Approved":
-		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved
-	case "Rejected":
-		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected
-	default:
-		payloadEventType = api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected // Default to rejected for Expired/other
-	}
-
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType: payloadEventType,
+		EventType: mapping.PayloadEventType,
 		RarName:   api.OptString{Value: rarName, Set: true},
 		RrName:    rrName,
 		Namespace: namespace,
 		Decision:  ToOptDecision(decision),
-		// DecidedBy: decidedBy, // TODO: Add to OpenAPI schema
-		// Message:   message, // TODO: Add to OpenAPI schema
-
+		// Note: DecidedBy and Message are intentionally NOT in payload per ADR-034 v1.7
+		// Two-Event Pattern: DecidedBy is captured by AuthWebhook (webhook category event)
+		// Orchestration event focuses on WHAT/WHY (business context), not WHO (attribution)
 	}
 
-	// Wrap with the correct discriminator based on decision
-	switch decision {
-	case "Approved":
-		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
-	case "Rejected":
-		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
-	default:
-		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload) // Default to rejected for Expired/other
-	}
+	// REFACTOR-RO-AUD-001: Use mapping discriminator wrapper (replaces switch statement)
+	event.EventData = mapping.DiscriminatorWrapper(payload)
 
 	return event, nil
 }

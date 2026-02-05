@@ -1,0 +1,21 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.5
+  - containerPort: 30120
+    hostPort: 30120
+    protocol: TCP
+  # Data Storage - Per DD-TEST-001 v2.5
+  - containerPort: 30089
+    hostPort: 8089
+    protocol: TCP
+  # PostgreSQL - Per DD-TEST-001 v1.8
+  - containerPort: 30439
+    hostPort: 30439
+    protocol: TCP
+  # Redis - Per DD-TEST-001 v1.8
+  - containerPort: 30387
+    hostPort: 30387
+    protocol: TCP

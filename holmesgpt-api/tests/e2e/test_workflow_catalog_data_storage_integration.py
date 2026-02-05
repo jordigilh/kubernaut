@@ -484,6 +484,7 @@ def verify_test_data_exists():
     try:
         # Configure Data Storage OpenAPI client
         config = DSConfiguration(host=DATA_STORAGE_URL)
+        config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
         api_client = DSApiClient(configuration=config)
         search_api = WorkflowCatalogAPIApi(api_client=api_client)
 

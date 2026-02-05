@@ -10,7 +10,15 @@ DD-TEST-011 v2.0: File-Based Configuration Pattern
 """
 
 import os
+import logging
 from src.server import start_server, load_scenarios_from_file
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 
 if __name__ == "__main__":
     print("🚀 Mock LLM v2.0 - File-Based Configuration (DD-TEST-011 v2.0)")

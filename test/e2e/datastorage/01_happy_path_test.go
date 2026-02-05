@@ -60,9 +60,9 @@ import (
 
 var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audit Trail (DD-AUDIT-003)", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
-		httpClient    *http.Client
+		testCancel context.CancelFunc
+		testLogger logr.Logger
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -72,7 +72,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "happy-path")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 1: Happy Path - Setup")
@@ -84,19 +84,16 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for Data Storage Service HTTP endpoint to be responsive
-		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
+		// Wait for Data Storage Service to be responsive using raw HTTP (health endpoint returns text/plain)
+		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() error {
 			resp, err := httpClient.Get(serviceURL + "/health")
 			if err != nil {
 				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
 				return err
 			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					testLogger.Error(err, "failed to close response body")
-				}
-			}()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
@@ -156,7 +153,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
-		eventID := createAuditEventOpenAPI(ctx, dsClient, gatewayEvent)
+		eventID := createAuditEventOpenAPI(ctx, DSClient, gatewayEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Gateway audit event should be created")
 		testLogger.Info("✅ Gateway audit event created")
 
@@ -175,7 +172,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventData:      newMinimalAIAnalysisPayload(fmt.Sprintf("analysis-%s", testNamespace)),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, aiEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, aiEvent)
 		Expect(eventID).ToNot(BeEmpty(), "AIAnalysis audit event should be created")
 		testLogger.Info("✅ AIAnalysis audit event created")
 
@@ -194,7 +191,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventData:      newMinimalWorkflowPayload(fmt.Sprintf("workflow-%s", testNamespace)),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, workflowEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, workflowEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Workflow audit event should be created")
 		testLogger.Info("✅ Workflow audit event created")
 
@@ -212,7 +209,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventData:      newMinimalGenericPayload(),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, orchestratorEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, orchestratorEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Orchestrator audit event should be created")
 		testLogger.Info("✅ Orchestrator audit event created")
 
@@ -230,7 +227,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventData:      newMinimalGenericPayload(),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, monitorEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, monitorEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Monitor audit event should be created")
 		testLogger.Info("✅ Monitor audit event created")
 
@@ -255,7 +252,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		limit := 100
 
 		for {
-			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			queryResp, err := DSClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
 				Limit:         dsgen.NewOptInt(limit),
 				Offset:        dsgen.NewOptInt(offset),

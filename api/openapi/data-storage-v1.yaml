@@ -172,6 +172,34 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: |
+            Authentication failed - Invalid or missing Bearer token.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authentication)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '403':
+          description: |
+            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authorization)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '409':
+          description: |
+            Conflict - Duplicate workflow.
+            Workflow with same workflow_name and version already exists.
+            
+            **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
           content:
@@ -381,13 +409,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuditEventResponse'
         '202':
-          description: Database write failed, queued to DLQ
+          description: Database write failed, queued to DLQ for async processing
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuditEventResponse'
+                $ref: '#/components/schemas/AsyncAcceptanceResponse'
         '400':
           description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: |
+            Authentication failed - Invalid or missing Bearer token.
+            
+            **Source**: DataStorage auth middleware (DD-AUTH-014)
+            
+            **Cause**: 
+            - No Authorization header
+            - Invalid Bearer token
+            - Expired token
+            - TokenReview API rejection
+            
+            **Resolution**: Provide valid Kubernetes ServiceAccount token via `Authorization: Bearer <token>` header.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authentication)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '403':
+          description: |
+            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
+            
+            **Source**: DataStorage auth middleware (DD-AUTH-014)
+            
+            **Cause**: ServiceAccount lacks required RBAC permission on data-storage-service resource.
+            
+            **Resolution**: Grant ServiceAccount the `data-storage-client` ClusterRole via RoleBinding.
+            
+            **Authority**: DD-AUTH-014 (Middleware-based authorization)
           content:
             application/problem+json:
               schema:
@@ -1516,17 +1578,19 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, signalprocessing, workflow, workflowexecution, orchestration, webhook]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
           description: |
-            Service-level event category (ADR-034 v1.5).
+            Service-level event category (ADR-034 v1.7).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
             - notification: Notification Service
-            - analysis: AI Analysis Service
+            - analysis: AI Analysis Controller (NOT HolmesGPT API)
+            - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
             - signalprocessing: Signal Processing Service
             - workflow: Workflow Catalog Service
             - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
+            - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
           example: gateway
@@ -1590,6 +1654,7 @@ components:
             - $ref: '#/components/schemas/NotificationAuditPayload'
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
+            - $ref: '#/components/schemas/RemediationApprovalDecisionPayload'
             - $ref: '#/components/schemas/WorkflowSearchAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -1688,6 +1753,22 @@ components:
         message:
           type: string
 
+    AsyncAcceptanceResponse:
+      type: object
+      description: Response when audit event is queued for async processing (202 Accepted)
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: Status of the async operation
+          example: "accepted"
+        message:
+          type: string
+          description: Explanation of the async processing
+          example: "audit event queued for async processing"
+
     AuditEventsQueryResponse:
       type: object
       properties:
@@ -1783,7 +1864,7 @@ components:
           example: "pod"
         environment:
           type: string
-          description: "Environment (mandatory: production, staging, development)"
+          description: "Environment filter (mandatory, single value from Signal Processing)"
           example: "production"
         priority:
           type: string
@@ -1803,7 +1884,7 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)"
+      description: "5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)"
       required:
         - signal_type
         - severity
@@ -1825,9 +1906,13 @@ components:
           description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"
           example: "pod"
         environment:
-          type: string
-          description: "Target environment (production, staging, development, test, * for any)"
-          example: "production"
+          type: array
+          items:
+            type: string
+            enum: ["production", "staging", "development", "test", "*"]
+          minItems: 1
+          description: "Target environments (workflow can declare multiple, '*' matches all)"
+          example: ["staging", "production"]
         priority:
           type: string
           description: "Business priority level (P0, P1, P2, P3, * for any)"
@@ -2922,6 +3007,89 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+
+    # ========================================
+    # RemediationApprovalRequest Controller Audit Payloads
+    # From: pkg/remediationapprovalrequest/audit/
+    # BR-AUDIT-006: Approval decision audit trail (SOC 2 CC8.1)
+    # ========================================
+
+    RemediationApprovalDecisionPayload:
+      type: object
+      required: [event_type, remediation_request_name, ai_analysis_name, decision, decided_by, confidence, workflow_id]
+      description: |
+        Audit payload for approval decision event (approval.decision).
+        Captures WHO, WHEN, WHAT, WHY for SOC 2 CC8.1 (User Attribution) compliance.
+        Emitted by RemediationApprovalRequest controller when decision is made.
+      properties:
+        event_type:
+          type: string
+          enum: [approval.decision, approval.request.created, approval.timeout]
+          description: Event type for discriminator (matches parent event_type)
+        remediation_request_name:
+          type: string
+          description: Parent RemediationRequest name (correlation ID)
+          example: "rr-oomkilled-abc123"
+        ai_analysis_name:
+          type: string
+          description: AIAnalysis CRD that required approval
+          example: "ai-rr-oomkilled-abc123"
+        decision:
+          type: string
+          enum: [approved, rejected, expired]
+          description: Final approval decision
+          example: "approved"
+        decided_by:
+          type: string
+          description: Authenticated username from webhook (SOC 2 CC8.1)
+          example: "alice@example.com"
+        decided_at:
+          type: string
+          format: date-time
+          description: When decision was made
+          example: "2026-01-15T10:30:00Z"
+        decision_message:
+          type: string
+          description: Optional rationale from operator
+          example: "Root cause accurate. Safe to proceed with memory increase."
+        confidence:
+          type: number
+          format: float
+          description: AI confidence score that triggered approval
+          example: 0.75
+        workflow_id:
+          type: string
+          description: Workflow being approved
+          example: "oomkill-increase-memory-limits"
+        workflow_version:
+          type: string
+          description: Workflow version
+          example: "v1.2.0"
+        target_resource:
+          type: string
+          description: Target resource being remediated
+          example: "payment/deployment/payment-api"
+        timeout_deadline:
+          type: string
+          format: date-time
+          description: Approval deadline
+          example: "2026-01-15T10:45:00Z"
+        decision_duration_seconds:
+          type: integer
+          description: Time to decision (seconds)
+          example: 180
+        approval_reason:
+          type: string
+          description: Reason for requiring approval (for request.created event)
+          example: "Confidence below 80% auto-approve threshold"
+        timeout_reason:
+          type: string
+          description: Reason for timeout (for timeout event)
+          example: "No operator response within deadline"
+        timeout_duration_seconds:
+          type: integer
+          description: Timeout duration in seconds (for timeout event)
+          example: 900
 
     RemediationRequestWebhookAuditPayload:
       type: object

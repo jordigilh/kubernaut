@@ -20,10 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -68,9 +65,9 @@ import (
 
 var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)", Label("e2e", "workflow-version", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
-		httpClient    *http.Client
+		testCancel context.CancelFunc
+		testLogger logr.Logger
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -86,7 +83,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "workflow-version-management")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 7: Workflow Version Management - Setup")
@@ -101,15 +98,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for service to be ready
+		// Wait for service to be ready using typed OpenAPI client
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health/ready")
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			return nil
+			_, err := DSClient.ReadinessCheck(ctx)
+			return err
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		testLogger.Info("✅ Data Storage Service is ready")
 
@@ -162,25 +155,25 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ExecutionEngine: "tekton",
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
-					Component:   "deployment",                          // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Component:   "deployment",                                                                               // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-		createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
-		Expect(err).ToNot(HaveOccurred())
-		testLogger.Info("Create v1.0.0 response", "status", 201)
+			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
+			Expect(err).ToNot(HaveOccurred())
+			testLogger.Info("Create v1.0.0 response", "status", 201)
 
-		// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
-		workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
-		Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
-		workflowV1UUID = workflowResp.WorkflowID.Value.String()
-		Expect(workflowV1UUID).ToNot(BeEmpty())
-		testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			workflowV1UUID = workflowResp.WorkflowID.Value.String()
+			Expect(workflowV1UUID).ToNot(BeEmpty())
+			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
 
 			// Verify UUID format (8-4-4-4-12)
 			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -213,16 +206,16 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
-					Component:   "deployment",                          // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Component:   "deployment",                                                                               // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.1.0 response", "status", 201)
 
@@ -272,16 +265,16 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
-					Component:   "deployment",                          // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
-					Environment: "production",                          // mandatory
+					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Component:   "deployment",                                                                               // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
+					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
@@ -322,7 +315,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				TopK: dsgen.NewOptInt(topK),
 			}
 
-			resp, err := dsClient.SearchWorkflows(ctx, &searchReq)
+			resp, err := DSClient.SearchWorkflows(ctx, &searchReq)
 			Expect(err).ToNot(HaveOccurred())
 			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
 			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
@@ -363,22 +356,25 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("🔍 Getting workflow by UUID...")
 
 			// DD-WORKFLOW-002 v3.0: Get by UUID only (no version parameter)
-			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s", serviceURL, workflowV3UUID))
+			workflowUUID, err := uuid.Parse(workflowV3UUID)
 			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
 
-			body, _ := io.ReadAll(resp.Body)
-
-			var workflow map[string]interface{}
-			err = json.Unmarshal(body, &workflow)
+			// Use typed OpenAPI client
+			resp, err := DSClient.GetWorkflowByID(ctx, dsgen.GetWorkflowByIDParams{
+				WorkflowID: workflowUUID,
+			})
 			Expect(err).ToNot(HaveOccurred())
+
+			// Type assert to RemediationWorkflow (success response)
+			workflow, ok := resp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
 
 			// Verify UUID matches
-			Expect(workflow["workflow_id"]).To(Equal(workflowV3UUID))
+			Expect(workflow.WorkflowID.Value.String()).To(Equal(workflowV3UUID))
 
 			// Verify workflow_name and version are present (for human reference)
-			Expect(workflow["workflow_name"]).To(Equal(workflowName))
-			Expect(workflow["version"]).To(Equal("v2.0.0"))
+			Expect(workflow.WorkflowName).To(Equal(workflowName))
+			Expect(workflow.Version).To(Equal("v2.0.0"))
 
 			testLogger.Info("✅ Workflow retrieved by UUID", "uuid", workflowV3UUID)
 		})
@@ -387,21 +383,20 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("🔍 Listing versions by workflow_name...")
 
 			// DD-WORKFLOW-002 v3.0: List versions by workflow_name
-			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions", serviceURL, workflowName))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, _ := io.ReadAll(resp.Body)
-
-			var versionsResp map[string]interface{}
-			err = json.Unmarshal(body, &versionsResp)
+			// Use ListWorkflows with WorkflowName filter (replaces non-existent /by-name/{name}/versions endpoint)
+			resp, err := DSClient.ListWorkflows(ctx, dsgen.ListWorkflowsParams{
+				WorkflowName: dsgen.NewOptString(workflowName),
+			})
 			Expect(err).ToNot(HaveOccurred())
 
-			versions, ok := versionsResp["versions"].([]interface{})
-			Expect(ok).To(BeTrue(), "Response should have 'versions' array")
-			Expect(len(versions)).To(Equal(3), "Should have 3 versions (v1.0.0, v1.1.0, v2.0.0)")
+			// Type assert to WorkflowListResponse (success response)
+			workflowList, ok := resp.(*dsgen.WorkflowListResponse)
+			Expect(ok).To(BeTrue(), "Response should be *WorkflowListResponse")
 
-			testLogger.Info("✅ All versions listed", "count", len(versions))
+			// Verify all 3 versions returned (v1.0.0, v1.1.0, v2.0.0)
+			Expect(workflowList.Workflows).To(HaveLen(3), "Should have 3 versions (v1.0.0, v1.1.0, v2.0.0)")
+
+			testLogger.Info("✅ All versions listed", "count", len(workflowList.Workflows))
 		})
 	})
 })

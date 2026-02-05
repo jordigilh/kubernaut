@@ -43,13 +43,42 @@ func NewAuthWebhookInfrastructure() *AuthWebhookInfrastructure {
 // Setup starts all infrastructure using shared DSBootstrap
 // Sequential Order: Cleanup → Network → PostgreSQL → Migrations → Redis → DataStorage
 func (i *AuthWebhookInfrastructure) Setup(writer io.Writer) error {
+	return i.SetupWithKubeconfig("", writer)
+}
+
+// SetupWithKubeconfig starts all infrastructure with optional envtest kubeconfig for DataStorage SAR auth
+// DD-AUTH-014: Pass envtest kubeconfig to enable ServiceAccount authentication in DataStorage
+// SetupWithAuth sets up DataStorage infrastructure with proper authentication
+// DD-AUTH-014: Takes full authConfig to ensure DataStorage service token is mounted
+func (i *AuthWebhookInfrastructure) SetupWithAuth(authConfig *IntegrationAuthConfig, writer io.Writer) error {
+	cfg := NewDSBootstrapConfigWithAuth(
+		"authwebhook",
+		15442, 16386, 18099, 19099,
+		"test/integration/authwebhook/config",
+		authConfig,
+	)
+
+	infra, err := StartDSBootstrap(cfg, writer)
+	if err != nil {
+		return err
+	}
+
+	i.DSBootstrapInfra = infra
+	return nil
+}
+
+// SetupWithKubeconfig is deprecated - use SetupWithAuth instead
+// Kept for backward compatibility during migration
+func (i *AuthWebhookInfrastructure) SetupWithKubeconfig(kubeconfigPath string, writer io.Writer) error {
 	cfg := DSBootstrapConfig{
-		ServiceName:     "authwebhook",
-		PostgresPort:    15442, // DD-TEST-001 v2.2
-		RedisPort:       16386, // DD-TEST-001 v2.2
-		DataStoragePort: 18099, // DD-TEST-001 v2.2
-		MetricsPort:     19099, // DD-TEST-001 v2.2
-		ConfigDir:       "test/integration/authwebhook/config",
+		ServiceName:        "authwebhook",
+		PostgresPort:       15442, // DD-TEST-001 v2.2
+		RedisPort:          16386, // DD-TEST-001 v2.2
+		DataStoragePort:    18099, // DD-TEST-001 v2.2
+		MetricsPort:        19099, // DD-TEST-001 v2.2
+		ConfigDir:          "test/integration/authwebhook/config",
+		EnvtestKubeconfig:  kubeconfigPath, // DD-AUTH-014: Enable DataStorage SAR auth
+		// WARNING: DataStorageServiceTokenPath not set - health check won't validate auth
 	}
 
 	infra, err := StartDSBootstrap(cfg, writer)

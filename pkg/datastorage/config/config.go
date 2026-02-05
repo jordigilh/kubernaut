@@ -55,8 +55,8 @@ type Config struct {
 type ServerConfig struct {
 	Port         int    `yaml:"port"`
 	Host         string `yaml:"host"`
-	ReadTimeout  string `yaml:"read_timeout"`  // e.g., "30s"
-	WriteTimeout string `yaml:"write_timeout"` // e.g., "30s"
+	ReadTimeout  string `yaml:"readTimeout"`  // e.g., "30s"
+	WriteTimeout string `yaml:"writeTimeout"` // e.g., "30s"
 }
 
 // LoggingConfig contains logging configuration

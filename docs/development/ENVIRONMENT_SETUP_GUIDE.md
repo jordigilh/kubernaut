@@ -33,13 +33,15 @@ This guide walks you through setting up your local development environment for K
 
 ### Required Software
 
-| Tool | Minimum Version | Purpose | Installation |
-|------|----------------|---------|--------------|
+| Tool | Version | Purpose | Installation |
+|------|---------|---------|--------------|
 | **Go** | 1.23+ | Primary language | [golang.org/dl](https://golang.org/dl/) |
 | **Docker** or **Podman** | Latest | Container runtime | [docker.com](https://docker.com) or [podman.io](https://podman.io) |
-| **KIND** | 0.20+ | Local Kubernetes | `go install sigs.k8s.io/kind@latest` |
+| **KIND** | v0.30.0 | Local Kubernetes | `go install sigs.k8s.io/kind@v0.30.0` |
 | **kubectl** | 1.28+ | Kubernetes CLI | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/) |
 | **make** | 3.81+ | Build automation | Usually pre-installed on Linux/macOS |
+
+**Note**: KIND v0.30.0 is the tested and recommended version. E2E tests use Kubernetes v1.27.3 (kindest/node:v1.27.3) for stability with Podman.
 
 ### Optional Tools
 

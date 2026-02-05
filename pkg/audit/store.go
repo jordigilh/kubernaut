@@ -194,6 +194,16 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		return fmt.Errorf("invalid audit event: %w", err)
 	}
 
+	// Check if store is closed before sending (prevents panic during test cleanup)
+	if atomic.LoadInt32(&s.closed) == 1 {
+		s.logger.V(1).Info("⚠️ Audit store closed, dropping event",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID)
+		atomic.AddInt64(&s.droppedCount, 1)
+		s.metrics.RecordDropped()
+		return nil // Silently drop event during graceful shutdown
+	}
+
 	// DEBUG: Validation passed
 	s.logger.Info("✅ Validation passed, attempting to buffer event",
 		"event_type", event.EventType,
@@ -375,12 +385,13 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				return
 			}
 
-		batch = append(batch, event)
-		bufferSize := len(s.buffer)
-		s.metrics.SetBufferSize(bufferSize)
-		s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
+			// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
+			batch = append(batch, event)
+			bufferSize := len(s.buffer)
+			s.metrics.SetBufferSize(bufferSize)
+			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
-		// Write when batch is full
+			// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
 				// Capture size BEFORE flushing (AA Team: prevent misleading logs)
 				batchSizeBeforeFlush := len(batch)

@@ -72,6 +72,7 @@ var (
 	coverageMode   bool   // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
 	coverDir       string // Coverage data directory
 	anyTestFailed  bool   // Track test failures for cluster cleanup decision
+	e2eAuthToken   string // DD-AUTH-014: ServiceAccount token for DataStorage authentication
 )
 
 const (
@@ -122,16 +123,32 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupSignalProcessingInfrastructureHybridWithCoverage(ctx, clusterName, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Return kubeconfig path and coverage mode flag
-		return []byte(fmt.Sprintf("%s|%t", kubeconfigPath, coverageMode))
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "signalprocessing-e2e-sa"
+		namespace := "kubernaut-system"
+		
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+		
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		By("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
+		// Return kubeconfig path, coverage mode flag, and auth token
+		return []byte(fmt.Sprintf("%s|%t|%s", kubeconfigPath, coverageMode, token))
 	},
 	// This runs on ALL processes - connect to cluster
 	func(data []byte) {
-		// Parse data: "kubeconfig|coverageMode"
+		// Parse data: "kubeconfig|coverageMode|authToken"
 		parts := strings.Split(string(data), "|")
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			coverageMode = parts[1] == "true"
+		}
+		if len(parts) > 2 {
+			e2eAuthToken = parts[2] // DD-AUTH-014: Store token for authenticated DataStorage access
 		}
 
 		ctx, cancel = context.WithCancel(context.Background())
