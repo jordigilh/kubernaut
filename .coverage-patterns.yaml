@@ -1,0 +1,66 @@
+# Coverage Pattern Configuration
+# Defines which packages are unit-testable vs integration-testable for each service
+#
+# Unit-testable: Pure logic (config, validators, builders, formatters, metrics, classifiers)
+# Integration-testable: I/O-dependent (handlers, servers, DB adapters, K8s clients, workers)
+
+go_services:
+  aianalysis:
+    pkg_pattern: "/pkg/aianalysis/"
+    unit_exclude: "/(handler\\.go|audit)/"
+    integration_include: "/(handler\\.go|audit)/"
+  
+  authwebhook:
+    pkg_pattern: "/pkg/authwebhook/"
+    unit_exclude: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
+    integration_include: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
+  
+  datastorage:
+    pkg_pattern: "/pkg/datastorage/"
+    unit_exclude: "/(server|repository|dlq|ogen-client|mocks)/"
+    integration_include: "/(server|repository|dlq)/"
+  
+  gateway:
+    pkg_pattern: "/pkg/gateway/"
+    unit_exclude: "/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
+    integration_include: "/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
+  
+  notification:
+    pkg_pattern: "/pkg/notification/"
+    unit_exclude: "/(client\\.go|delivery|phase|status)/"
+    integration_include: "/(client\\.go|delivery|phase|status)/"
+  
+  remediationorchestrator:
+    pkg_pattern: "/pkg/remediationorchestrator/"
+    unit_exclude: "/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/"
+    integration_include: "/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/"
+  
+  signalprocessing:
+    pkg_pattern: "/pkg/signalprocessing/"
+    unit_exclude: "/(audit|cache|enricher|handler|status)/"
+    integration_include: "/(audit|cache|enricher|handler|status)/"
+  
+  workflowexecution:
+    pkg_pattern: "/pkg/workflowexecution/"
+    unit_exclude: "/(audit|status)/"
+    integration_include: "/(audit|status)/"
+
+python_services:
+  holmesgpt-api:
+    unit_testable:
+      - "models/"
+      - "validation/"
+      - "sanitization/"
+      - "toolsets/"
+      - "config/"
+      - "audit/buffered_store.py"
+      - "errors.py"
+    integration_testable:
+      - "extensions/"
+      - "middleware/"
+      - "auth/"
+      - "clients/"
+      - "main.py"
+      - "audit/events.py"
+      - "audit/factory.py"
+      - "metrics/instrumentation.py"
