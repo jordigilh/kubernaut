@@ -182,23 +182,23 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// Controller will attempt Email delivery, which will fail (service not configured)
 		// Expected phases: Pending → Sending → Failed (or PartiallySent)
-		// Give controller time to process and emit audit event
-		Eventually(func() bool {
-			var n notificationv1alpha1.NotificationRequest
-			if err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: notificationNS,
-			}, &n); err != nil {
-				return false
-			}
+	// Give controller time to process and emit audit event
+	Eventually(func() bool {
+		var n notificationv1alpha1.NotificationRequest
+		if err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, &n); err != nil {
+			return false
+		}
 
-			// Check if controller has processed and recorded failure
-			// Phase might be Failed (all channels failed) or PartiallySent (some succeeded, some failed)
-			// or Sending (still attempting)
-			// We're looking for delivery attempts recorded in status
-			return len(n.Status.DeliveryAttempts) > 0
-		}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-			"Controller should attempt delivery and record delivery attempt")
+		// Check if controller has processed and recorded failure
+		// Phase might be Failed (all channels failed) or PartiallySent (some succeeded, some failed)
+		// or Sending (still attempting)
+		// We're looking for delivery attempts recorded in status
+		return len(n.Status.DeliveryAttempts) > 0
+	}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+		"Controller should attempt delivery and record delivery attempt")
 
 		// ===== STEP 3: Verify failed audit event persisted to PostgreSQL =====
 		By("Verifying notification.message.failed audit event persisted to PostgreSQL")
@@ -389,19 +389,19 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		err := k8sClient.Create(testCtx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for controller to process both channels")
-		Eventually(func() int {
-			var n notificationv1alpha1.NotificationRequest
-			if err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: "default",
-			}, &n); err != nil {
-				return 0
-			}
-			// Wait for both channels to be attempted
-			return len(n.Status.DeliveryAttempts)
-		}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
-			"Controller should attempt delivery for both channels")
+	By("Waiting for controller to process both channels")
+	Eventually(func() int {
+		var n notificationv1alpha1.NotificationRequest
+		if err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: "default",
+		}, &n); err != nil {
+			return 0
+		}
+		// Wait for both channels to be attempted
+		return len(n.Status.DeliveryAttempts)
+	}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
+		"Controller should attempt delivery for both channels")
 
 		By("Verifying BOTH success and failure audit events are persisted")
 
