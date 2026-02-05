@@ -17,9 +17,9 @@ limitations under the License.
 package notification
 
 import (
+	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -102,15 +102,16 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			By("Validating file was created with notification content")
-			// Find the notification file (has timestamp in name)
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-complete-message-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file for notification")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			// File has timestamp in name, use wildcard pattern
+			// WaitForFileInPod polls the pod and copies file when found
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-complete-message-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
+			defer CleanupCopiedFile(filePath)
 
 			By("Reading and validating JSON file content")
-			// Read the first file (if multiple reconciliations occurred, any file is valid)
-			fileContent, err := os.ReadFile(files[0])
+			// Read the copied file from temp directory
+			fileContent, err := os.ReadFile(filePath)
 			Expect(err).ToNot(HaveOccurred())
 
 			var savedNotification notificationv1alpha1.NotificationRequest
@@ -187,13 +188,13 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			By("Validating sanitized file content")
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-sanitization-test-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-sanitization-test-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
+			defer CleanupCopiedFile(filePath)
 
-			// Read the first file (if multiple reconciliations occurred, any file is valid)
-			fileContent, err := os.ReadFile(files[0])
+			// Read the copied file from temp directory
+			fileContent, err := os.ReadFile(filePath)
 			Expect(err).ToNot(HaveOccurred())
 
 			var savedNotification notificationv1alpha1.NotificationRequest
@@ -383,13 +384,13 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			By("Validating distinct files created for each notification")
 			for _, name := range notificationNames {
-				files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+name+"-*.json"))
-				Expect(err).ToNot(HaveOccurred())
-				// Controller may reconcile multiple times, creating multiple files (expected behavior)
-				Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file for "+name)
+				// Use kubectl exec to find and copy file from pod (emptyDir volume)
+				filePath, err := WaitForFileInPod(context.Background(), "notification-"+name+"-*.json", 15*time.Second)
+				Expect(err).ToNot(HaveOccurred(), "Should find notification file for "+name+" in pod")
+				defer CleanupCopiedFile(filePath)
 
 				// Verify file content matches notification
-				fileContent, err := os.ReadFile(files[0])
+				fileContent, err := os.ReadFile(filePath)
 				Expect(err).ToNot(HaveOccurred())
 
 				var savedNotification notificationv1alpha1.NotificationRequest
@@ -459,10 +460,10 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			By("Validating FileService created file when available")
 			// Since FileService is working in this test, file should be created
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-error-handling-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "At least one file should be created")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-error-handling-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "At least one file should be created in pod")
+			defer CleanupCopiedFile(filePath)
 
 			By("CRITICAL VALIDATION: Code inspection confirms non-blocking pattern")
 			// The controller code contains:

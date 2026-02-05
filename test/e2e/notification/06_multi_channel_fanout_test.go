@@ -19,7 +19,6 @@ package notification
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -59,15 +58,9 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up test-specific files from shared directory
-		// Pattern: notification-<test-name>-*.json
-		// This prevents file accumulation while allowing parallel test execution
-		pattern := filepath.Join(e2eFileOutputDir, "notification-e2e-multi-channel-*.json")
-		files, _ := filepath.Glob(pattern)
-		for _, f := range files {
-			_ = os.Remove(f)
-		}
-		logger.Info("Cleaned up test files", "pattern", pattern, "count", len(files))
+		// NOTE: With emptyDir volume, files are ephemeral and automatically
+		// cleaned up when the pod restarts. No manual cleanup needed.
+		// Files copied to host via kubectl cp are cleaned up by defer CleanupCopiedFile()
 	})
 
 	// ========================================
