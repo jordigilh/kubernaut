@@ -194,6 +194,11 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		switch r := resp.(type) {
 		case *ogenclient.RemediationWorkflow:
 			return r.WorkflowID.Value.String(), nil
+		case *ogenclient.CreateWorkflowConflict:
+			// DS-BUG-001: 409 Conflict - workflow already exists
+			// Fall through to query logic below to retrieve existing UUID
+			// This maintains idempotency for test workflows
+			_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409 Conflict), querying for UUID...\n")
 		default:
 			return "", fmt.Errorf("unexpected response type from CreateWorkflow: %T", resp)
 		}
