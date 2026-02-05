@@ -178,41 +178,45 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
 
-			// BUSINESS VALIDATION: Query for audit events
+			// BUSINESS VALIDATION: Query for audit events with proper filters
+			// Use separate queries with EventCategory + EventType filters for performance (BR-AUDIT-006)
 			By("Querying DataStorage for RAR audit events")
 			correlationID := testRR.Name // Per DD-AUDIT-CORRELATION-002
 
-			var allEvents []dsgen.AuditEvent
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+			var webhookEvents, orchestrationApprovalEvents []dsgen.AuditEvent
+			Eventually(func() (int, int) {
+				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
+				// Prevents pagination overhead - all 3 filters ensure efficient query (BR-AUDIT-006)
+				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
+					EventCategory: dsgen.NewOptString("webhook"),
+					EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
-					return 0
+					GinkgoWriter.Printf("⏳ Webhook audit query error: %v\n", err)
+					return 0, 0
 				}
-				allEvents = resp.Data
-				return len(allEvents)
-			}, e2eTimeout, e2eInterval).Should(BeNumerically(">=", 2),
-				"COMPLIANCE FAILURE: Need at least 2 audit events (webhook + approval)")
+				webhookEvents = webhookResp.Data
 
-			// BUSINESS VALIDATION: Separate events by category
-			var webhookEvents, orchestrationApprovalEvents []dsgen.AuditEvent
-			for _, event := range allEvents {
-				switch string(event.EventCategory) {
-				case "webhook":
-					webhookEvents = append(webhookEvents, event)
-				case "orchestration":
-					// RO approval controller emits category="orchestration" with type="orchestrator.approval.*"
-					if event.EventType == "orchestrator.approval.approved" || event.EventType == "orchestrator.approval.rejected" {
-						orchestrationApprovalEvents = append(orchestrationApprovalEvents, event)
-					}
+				// Query orchestration approval events with all 3 required filters
+				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+					CorrelationID: dsgen.NewOptString(correlationID),
+					EventCategory: dsgen.NewOptString("orchestration"),
+					EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
+					Limit:         dsgen.NewOptInt(100),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Orchestration audit query error: %v\n", err)
+					return len(webhookEvents), 0
 				}
-			}
+				orchestrationApprovalEvents = orchestrationResp.Data
 
-			GinkgoWriter.Printf("📊 E2E: Found %d total events (%d webhook, %d orchestration approval)\n",
-				len(allEvents), len(webhookEvents), len(orchestrationApprovalEvents))
+				GinkgoWriter.Printf("📊 E2E: Found webhook=%d, orchestration=%d\n",
+					len(webhookEvents), len(orchestrationApprovalEvents))
+				return len(webhookEvents), len(orchestrationApprovalEvents)
+			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
+				"COMPLIANCE FAILURE: Need exactly 1 webhook event and 1 orchestration approval event")
 
 			// BUSINESS OUTCOME 1: Webhook audit event exists (AuthWebhook)
 			Expect(webhookEvents).To(HaveLen(1),
