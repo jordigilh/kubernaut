@@ -179,14 +179,16 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
 
 			// BUSINESS VALIDATION: Query for audit events with proper filters
+			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
+			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
 			// Use separate queries with EventCategory + EventType filters for performance (BR-AUDIT-006)
 			By("Querying DataStorage for RAR audit events")
 			correlationID := testRR.Name // Per DD-AUDIT-CORRELATION-002
 
 			var webhookEvents, orchestrationApprovalEvents []dsgen.AuditEvent
-			Eventually(func() (int, int) {
+			Eventually(func() ([2]int, error) {
 				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
-				// Prevents pagination overhead - all 3 filters ensure efficient query (BR-AUDIT-006)
+				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("webhook"),
@@ -194,8 +196,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					GinkgoWriter.Printf("⏳ Webhook audit query error: %v\n", err)
-					return 0, 0
+					return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
 				}
 				webhookEvents = webhookResp.Data
 
@@ -207,14 +208,17 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					GinkgoWriter.Printf("⏳ Orchestration audit query error: %v\n", err)
-					return len(webhookEvents), 0
+					return [2]int{len(webhookEvents), 0}, fmt.Errorf("orchestration query failed: %w", err)
 				}
 				orchestrationApprovalEvents = orchestrationResp.Data
 
-				GinkgoWriter.Printf("📊 E2E: Found webhook=%d, orchestration=%d\n",
-					len(webhookEvents), len(orchestrationApprovalEvents))
-				return len(webhookEvents), len(orchestrationApprovalEvents)
+				counts := [2]int{len(webhookEvents), len(orchestrationApprovalEvents)}
+				GinkgoWriter.Printf("📊 E2E: Found webhook=%d, orchestration=%d\n", counts[0], counts[1])
+
+				if counts != [2]int{1, 1} {
+					return counts, fmt.Errorf("incomplete: webhook=%d, orchestration=%d (expecting [1, 1])", counts[0], counts[1])
+				}
+				return counts, nil
 			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
 				"COMPLIANCE FAILURE: Need exactly 1 webhook event and 1 orchestration approval event")
 
@@ -420,10 +424,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 
 			// Wait for BOTH webhook and orchestration approval audit events to be persisted
+			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
+			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
 			// Two-Event Pattern: webhook (WHO) + orchestration approval (WHAT/WHY)
-			Eventually(func() (int, int) {
+			Eventually(func() ([2]int, error) {
 				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
-				// Prevents pagination overhead - all 3 filters ensure efficient query (BR-AUDIT-006)
+				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("webhook"),
@@ -431,8 +437,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					GinkgoWriter.Printf("🔍 DEBUG: Webhook query ERROR: %v\n", err)
-					return 0, 0
+					return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
 				}
 				GinkgoWriter.Printf("🔍 DEBUG: Webhook query returned %d events\n", len(webhookResp.Data))
 				for i, evt := range webhookResp.Data {
@@ -440,8 +445,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 						i, evt.CorrelationID, evt.EventType, evt.EventCategory)
 				}
 
-				// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
-				// Note: We query for "approved" events only; test logic validates approval decision
+				// Query orchestration approval events with all 3 required filters
 				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
 					EventCategory: dsgen.NewOptString("orchestration"),
@@ -449,8 +453,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					GinkgoWriter.Printf("🔍 DEBUG: Orchestration query ERROR: %v\n", err)
-					return len(webhookResp.Data), 0
+					return [2]int{len(webhookResp.Data), 0}, fmt.Errorf("orchestration query failed: %w", err)
 				}
 				GinkgoWriter.Printf("🔍 DEBUG: Orchestration query returned %d events\n", len(orchestrationResp.Data))
 				for i, evt := range orchestrationResp.Data {
@@ -459,13 +462,16 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				}
 
 				// No client-side filtering needed - EventType filter ensures only approval events returned
-				webhookCount := len(webhookResp.Data)
-				orchestrationCount := len(orchestrationResp.Data)
+				counts := [2]int{len(webhookResp.Data), len(orchestrationResp.Data)}
 				GinkgoWriter.Printf("🔍 DEBUG: Returning counts: webhook=%d, orchestration=%d (expecting [1, 1])\n",
-					webhookCount, orchestrationCount)
-				return webhookCount, orchestrationCount
-			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
-				"Both webhook and orchestration approval events must be persisted before CRD deletion")
+					counts[0], counts[1])
+
+				if counts != [2]int{1, 1} {
+					return counts, fmt.Errorf("incomplete: webhook=%d, orchestration=%d (expecting [1, 1])", counts[0], counts[1])
+				}
+				return counts, nil
+			}, 15*time.Second, 1*time.Second).Should(Equal([2]int{1, 1}),
+				"Both webhook and orchestration approval events must be persisted before CRD deletion (15s = 15x buffer flush)")
 
 			GinkgoWriter.Printf("🚀 E2E-RO-AUD006-003: Created RAR %s and persisted audit events\n", testRAR.Name)
 		})

@@ -553,23 +553,23 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// ACT: Query with multiple filters (ADR-034 field names)
-		// FIX: Include correlation_id to isolate this test's events in parallel execution
-		resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&event_category=gateway&event_outcome=failure", baseURL, correlationID))
-		Expect(err).ToNot(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
+			// ACT: Query with multiple filters (ADR-034 field names)
+			// FIX: Include correlation_id to isolate this test's events in parallel execution
+			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&event_category=gateway&event_outcome=failure", baseURL, correlationID))
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
 
-		// ASSERT: Response is 200 OK
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			// ASSERT: Response is 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		// ASSERT: Only events matching ALL filters are returned
-		var response map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&response)
-		Expect(err).ToNot(HaveOccurred())
+			// ASSERT: Only events matching ALL filters are returned
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
 
-		data, ok := response["data"].([]interface{})
-		Expect(ok).To(BeTrue())
-		Expect(data).To(HaveLen(2), "should return only 2 failure events for this correlation_id")
+			data, ok := response["data"].([]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(data).To(HaveLen(2), "should return only 2 failure events for this correlation_id")
 
 			for _, item := range data {
 				event := item.(map[string]interface{})
@@ -610,41 +610,47 @@ var _ = Describe("Audit Events Query API", func() {
 			}
 
 			// WAIT: Allow events to be persisted (async buffering + flush)
+			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
+			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
 			// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
-			// Timeout increased from 10s to 30s to account for:
+			// Timeout increased to 60s with better error visibility
 			// - Parallel test execution (12 processes) - high contention
 			// - Database connection contention across processes
 			// - Audit store buffering (1s flush interval)
 			// - Schema isolation overhead in parallel mode
 			var response map[string]interface{}
-			Eventually(func() float64 {
+			Eventually(func() (float64, error) {
 				resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
 				if err != nil {
-					return 0
+					return 0, fmt.Errorf("HTTP GET failed: %w", err)
 				}
 				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusOK {
-					return 0
+					return 0, fmt.Errorf("HTTP status: %d", resp.StatusCode)
 				}
 
 				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-					return 0
+					return 0, fmt.Errorf("JSON decode failed: %w", err)
 				}
 
 				pagination, ok := response["pagination"].(map[string]interface{})
 				if !ok {
-					return 0
+					return 0, fmt.Errorf("no pagination field in response")
 				}
 
 				total, ok := pagination["total"].(float64)
 				if !ok {
-					return 0
+					return 0, fmt.Errorf("pagination.total is not a number")
 				}
 
-				return total
-			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-				"should have at least 75 events after write completes")
+				if total < 75 {
+					return total, fmt.Errorf("still waiting: %.0f/75 events", total)
+				}
+
+				return total, nil
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+				"should have at least 75 events after write completes (10s = 10x buffer flush interval)")
 
 			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
 			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
