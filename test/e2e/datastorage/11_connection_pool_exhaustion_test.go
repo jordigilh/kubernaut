@@ -307,12 +307,13 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				}
 
 				normalStart := time.Now()
-				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+			req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
 
-				req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Content-Type", "application/json")
 
-				resp, err := HTTPClient.Do(req)
-				normalDuration = time.Since(normalStart)
+			httpClient := &http.Client{Timeout: 30 * time.Second}
+			resp, err := httpClient.Do(req)
+			normalDuration = time.Since(normalStart)
 
 				if err != nil || resp == nil {
 					return false
