@@ -229,27 +229,23 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		cfg = config
 
-	// Create Kubernetes client
-	err = notificationv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).ToNot(HaveOccurred())
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
-	Expect(k8sClient).ToNot(BeNil())
-
-	// Create direct API reader for Eventually() blocks to bypass client cache
-	// This ensures fresh reads from API server for status polling
-	apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
-
-	// Set up E2E file output directory for FileService validation
-		// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
-		e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
+		// Create Kubernetes client
+		err = notificationv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
-		// Directory already created in SynchronizedBeforeSuite before Kind cluster creation
-		// No need to create here - just verify it exists
-		_, err = os.Stat(e2eFileOutputDir)
-		Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
+
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(k8sClient).ToNot(BeNil())
+
+		// Create direct API reader for Eventually() blocks to bypass client cache
+		// This ensures fresh reads from API server for status polling
+		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Set up E2E file output directory reference for FileService validation
+		// NOTE: With emptyDir volume, files are stored inside the pod at /tmp/notifications
+		// Tests use kubectl exec/cp to access files (no host directory needed)
+		e2eFileOutputDir = "/tmp/notifications" // Pod-internal path for reference only
 
 		// Wait for Notification Controller metrics NodePort to be responsive
 		// NodePort 30186 (in cluster) → localhost:9186 (on host via Kind extraPortMappings)
@@ -316,10 +312,9 @@ var _ = SynchronizedAfterSuite(
 			"process", GinkgoParallelProcess())
 		logger.Info("Notification E2E Process Cleanup", "process", GinkgoParallelProcess())
 
-		// NOTE: Do NOT clean up e2eFileOutputDir here!
-		// It's a shared HostPath directory used by all parallel processes.
-		// If we clean it here, parallel processes will race and delete each other's files.
-		// Cleanup happens in cluster cleanup (second function) after all tests complete.
+		// NOTE: With emptyDir volume, files are stored inside the pod and automatically
+		// cleaned up when the pod is deleted during cluster cleanup.
+		// No manual host directory cleanup needed.
 
 		// Cancel context
 		if cancel != nil {
@@ -380,7 +375,7 @@ var _ = SynchronizedAfterSuite(
 		// Prevents disk space accumulation (~200-500MB per run)
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		if imageRegistry != "" && imageTag != "" {
 			logger.Info("ℹ️  Registry mode detected - skipping local image removal",

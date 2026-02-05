@@ -33,18 +33,6 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// 0. Create E2E file output directory (platform-specific)
-	e2eDir, err := GetE2EFileOutputDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get E2E file output directory: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
-	// Use 0777 permissions to ensure container (uid 1000) can write
-	// hostPath volumes don't respect fsGroup, so world-writable is required
-	if err := os.MkdirAll(e2eDir, 0777); err != nil {
-		return "", fmt.Errorf("failed to create E2E file output directory: %w", err)
-	}
-
 	// ============================================================
 	// PHASE 1: Build images IN PARALLEL (BEFORE cluster creation)
 	// ============================================================
@@ -116,18 +104,13 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  • Cluster created AFTER build prevents idle timeout")
-	extraMounts := []ExtraMount{
-		{
-			HostPath:      e2eDir,
-			ContainerPath: "/tmp/e2e-notifications",
-			ReadOnly:      false,
-		},
-	}
+	// No extraMounts needed - tests use emptyDir volume and kubectl exec to read files
+	// This avoids hostPath permission issues in CI/CD (Linux)
 	if err := CreateKindClusterWithExtraMounts(
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
-		extraMounts,
+		nil, // No extraMounts - using emptyDir
 		writer,
 	); err != nil {
 		return "", fmt.Errorf("failed to create Kind cluster: %w", err)
