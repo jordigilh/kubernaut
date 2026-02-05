@@ -54,29 +54,29 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			Expect(cfg.Infrastructure.DataStorageURL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
 		})
 
-		It("should support environment variable overrides for deployment flexibility", func() {
-			// BUSINESS OUTCOME: Operators can override config via env vars without rebuilding images
-			// This enables: 12-factor app deployments, multi-environment configurations
-			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
-			Expect(err).ToNot(HaveOccurred())
+	It("should support environment variable overrides for deployment flexibility", func() {
+		// BUSINESS OUTCOME: Operators can override config via env vars without rebuilding images
+		// This enables: 12-factor app deployments, multi-environment configurations
+		// NOTE: Per ADR-030, server settings (listen address, timeouts) come from YAML only
+		// Environment overrides are only for infrastructure/processing settings
+		cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
+		Expect(err).ToNot(HaveOccurred())
 
-			// Override critical settings via environment variables
-			_ = os.Setenv("GATEWAY_LISTEN_ADDR", ":9090")
-			_ = os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
-			_ = os.Setenv("GATEWAY_DEDUP_TTL", "10m")
-			defer func() {
-				_ = os.Unsetenv("GATEWAY_LISTEN_ADDR")
-				_ = os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
-				_ = os.Unsetenv("GATEWAY_DEDUP_TTL")
-			}()
+		// Override critical settings via environment variables
+		_ = os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
+		_ = os.Setenv("GATEWAY_DEDUP_TTL", "10m")
+		defer func() {
+			_ = os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
+			_ = os.Unsetenv("GATEWAY_DEDUP_TTL")
+		}()
 
-			cfg.LoadFromEnv()
+		cfg.LoadFromEnv()
 
-			// Verify environment overrides work (enables multi-environment deployments)
-			Expect(cfg.Server.ListenAddr).To(Equal(":9090"), "Env override enables port customization per environment")
-			Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://datastorage:8080"), "Env override enables service URL customization")
-			Expect(cfg.Processing.Deduplication.TTL).To(Equal(10*time.Minute), "Env override enables TTL tuning per environment")
-		})
+		// Verify environment overrides work (enables multi-environment deployments)
+		// NOTE: Server.ListenAddr NOT overridable per ADR-030 (comes from YAML only)
+		Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://datastorage:8080"), "Env override enables service URL customization")
+		Expect(cfg.Processing.Deduplication.TTL).To(Equal(10*time.Minute), "Env override enables TTL tuning per environment")
+	})
 	})
 
 	Context("Invalid Configuration (Gateway Fails Fast)", func() {
@@ -98,9 +98,9 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 				},
 			}
 
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred(), "Invalid config must fail validation to prevent silent failures")
-			Expect(err.Error()).To(MatchRegexp("listen.*addr|address"), "Error message must identify missing required field")
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(), "Invalid config must fail validation to prevent silent failures")
+		Expect(err.Error()).To(MatchRegexp("listenAddr|listen.*address"), "Error message must identify missing required field")
 		})
 
 		It("should reject configuration with invalid business-critical values", func() {

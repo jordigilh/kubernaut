@@ -21,9 +21,10 @@ type Config struct {
 
 // AuditConfig defines audit client behavior
 // Per DS Team: Controls client-side buffering (not server-side)
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
 type AuditConfig struct {
 	// DataStorage service URL for audit events (REQUIRED)
-	DataStorageURL string `yaml:"datastorage_url"`
+	DataStorageURL string `yaml:"dataStorageUrl"`
 
 	// Timeout for audit API calls
 	Timeout time.Duration `yaml:"timeout"`
@@ -35,28 +36,30 @@ type AuditConfig struct {
 
 // BufferConfig controls audit event buffering and batching
 // Per DS Team: This is where the 60s delay issue originates
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
 type BufferConfig struct {
 	// Max events to buffer in memory before blocking
-	BufferSize int `yaml:"buffer_size"`
+	BufferSize int `yaml:"bufferSize"`
 
 	// Events per batch write to DataStorage
-	BatchSize int `yaml:"batch_size"`
+	BatchSize int `yaml:"batchSize"`
 
 	// Max time before partial batch flush
 	// CRITICAL for test timing: Lower = faster feedback, Higher = more efficient batching
 	// Production: 1s (default), Integration Tests: 1s (fast feedback)
-	FlushInterval time.Duration `yaml:"flush_interval"`
+	FlushInterval time.Duration `yaml:"flushInterval"`
 
 	// Retry attempts for failed writes (DLQ fallback after exhaustion)
-	MaxRetries int `yaml:"max_retries"`
+	MaxRetries int `yaml:"maxRetries"`
 }
 
 // ControllerConfig defines controller runtime settings
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
 type ControllerConfig struct {
-	MetricsAddr      string `yaml:"metrics_addr"`
-	HealthProbeAddr  string `yaml:"health_probe_addr"`
-	LeaderElection   bool   `yaml:"leader_election"`
-	LeaderElectionID string `yaml:"leader_election_id"`
+	MetricsAddr      string `yaml:"metricsAddr"`
+	HealthProbeAddr  string `yaml:"healthProbeAddr"`
+	LeaderElection   bool   `yaml:"leaderElection"`
+	LeaderElectionID string `yaml:"leaderElectionId"`
 }
 
 // DefaultConfig returns safe defaults matching pkg/audit defaults
@@ -64,7 +67,7 @@ type ControllerConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Audit: AuditConfig{
-			DataStorageURL: "http://datastorage:8080", // Correct service name (not datastorage-service)
+			DataStorageURL: "http://data-storage-service:8080", // DD-AUTH-011: Match Service name
 			Timeout:        10 * time.Second,
 			Buffer: BufferConfig{
 				BufferSize:    10000,
@@ -118,7 +121,7 @@ func LoadFromFile(path string) (*Config, error) {
 func (c *Config) Validate() error {
 	// Validate audit config
 	if c.Audit.DataStorageURL == "" {
-		return fmt.Errorf("audit.datastorage_url is required")
+		return fmt.Errorf("audit.dataStorageUrl is required")
 	}
 	if c.Audit.Timeout <= 0 {
 		return fmt.Errorf("audit.timeout must be positive")
@@ -126,24 +129,24 @@ func (c *Config) Validate() error {
 
 	// Validate buffer config
 	if c.Audit.Buffer.BufferSize <= 0 {
-		return fmt.Errorf("audit.buffer.buffer_size must be positive")
+		return fmt.Errorf("audit.buffer.bufferSize must be positive")
 	}
 	if c.Audit.Buffer.BatchSize <= 0 {
-		return fmt.Errorf("audit.buffer.batch_size must be positive")
+		return fmt.Errorf("audit.buffer.batchSize must be positive")
 	}
 	if c.Audit.Buffer.FlushInterval <= 0 {
-		return fmt.Errorf("audit.buffer.flush_interval must be positive")
+		return fmt.Errorf("audit.buffer.flushInterval must be positive")
 	}
 	if c.Audit.Buffer.MaxRetries < 0 {
-		return fmt.Errorf("audit.buffer.max_retries must be non-negative")
+		return fmt.Errorf("audit.buffer.maxRetries must be non-negative")
 	}
 
 	// Validate controller config
 	if c.Controller.MetricsAddr == "" {
-		return fmt.Errorf("controller.metrics_addr is required")
+		return fmt.Errorf("controller.metricsAddr is required")
 	}
 	if c.Controller.HealthProbeAddr == "" {
-		return fmt.Errorf("controller.health_probe_addr is required")
+		return fmt.Errorf("controller.healthProbeAddr is required")
 	}
 
 	return nil

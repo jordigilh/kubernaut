@@ -20,11 +20,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -112,13 +111,15 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 // This constructor allows integration tests to inject mock auth transports.
 //
 // Production Usage (transport=nil):
-//   client := audit.NewOpenAPIClientAdapter(url, timeout)
-//   // Uses ServiceAccountTransport automatically
+//
+//	client := audit.NewOpenAPIClientAdapter(url, timeout)
+//	// Uses ServiceAccountTransport automatically
 //
 // Integration Test Usage (transport=mockTransport):
-//   mockTransport := testutil.NewMockUserTransport("test-user@example.com")
-//   client := audit.NewOpenAPIClientAdapterWithTransport(url, timeout, mockTransport)
-//   // Uses mock transport (injects X-Auth-Request-User header)
+//
+//	mockTransport := testutil.NewMockUserTransport("test-user@example.com")
+//	client := audit.NewOpenAPIClientAdapterWithTransport(url, timeout, mockTransport)
+//	// Uses mock transport (injects X-Auth-Request-User header)
 //
 // DD-AUTH-005: Integration tests use this to inject mock user headers without oauth-proxy.
 func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) (DataStorageClient, error) {
@@ -206,50 +207,25 @@ func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogencli
 	// ✅ DD-API-001 COMPLIANCE: Use ogen-generated OpenAPI client
 	// Type-safe parameters, contract-validated request/response
 	resp, err := a.client.CreateAuditEventsBatch(ctx, valueEvents)
-	if err != nil {
-		// Parse HTTP status code from ogen error if present
-		// Ogen errors for non-2xx responses contain "unexpected status code: XXX"
-		return parseOgenError(err)
-	}
 
-	// Ogen returns typed response directly, no status code checking needed
-	// Errors are returned via err parameter above
-	_ = resp // Response contains BatchAuditEventResponse
+	// ✅ Convert ogen response to Go error using generic utility (Phase 3)
+	// Handles both: undefined status codes (error strings) and typed responses
+	// Authority: OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md (SME-validated)
+	err = ogenx.ToError(resp, err)
+	if err != nil {
+		// Wrap ogen error as NetworkError or HTTPError for BufferedStore compatibility
+		// BufferedStore uses error types to determine retry behavior:
+		// - HTTPError 4xx: NOT retryable (client errors)
+		// - HTTPError 5xx: retryable (server errors)
+		// - NetworkError: retryable (connection failures)
+		if httpErr := ogenx.GetHTTPError(err); httpErr != nil {
+			return NewHTTPError(httpErr.StatusCode, httpErr.Error())
+		}
+		return NewNetworkError(err)
+	}
 
 	// Success (2xx status code)
+	// Response contains BatchAuditEventResponse
+	_ = resp
 	return nil
-}
-
-// parseOgenError extracts HTTP status code from ogen errors and returns appropriate error type.
-//
-// Ogen returns errors for non-2xx responses with message format:
-// "decode response: unexpected status code: 400"
-//
-// This function:
-// - Extracts the status code from the error message
-// - Returns HTTPError for 4xx/5xx codes (with correct retry semantics)
-// - Returns NetworkError for other errors (connection failures, timeouts)
-//
-// Error Type Mapping (compatible with HTTPDataStorageClient):
-// - 4xx: HTTPError (NOT retryable - client errors)
-// - 5xx: HTTPError (retryable - server errors)
-// - Other: NetworkError (retryable - network failures)
-func parseOgenError(err error) error {
-	errMsg := err.Error()
-
-	// Check for HTTP status code in ogen error message
-	// Format: "decode response: unexpected status code: 400"
-	if strings.Contains(errMsg, "unexpected status code:") {
-		parts := strings.Split(errMsg, "unexpected status code:")
-		if len(parts) == 2 {
-			statusStr := strings.TrimSpace(parts[1])
-			if statusCode, parseErr := strconv.Atoi(statusStr); parseErr == nil {
-				// Create HTTPError with extracted status code (include full error)
-				return NewHTTPError(statusCode, fmt.Sprintf("HTTP %d error: %s", statusCode, errMsg))
-			}
-		}
-	}
-
-	// Not an HTTP error - treat as network error (connection failure, timeout, etc.)
-	return NewNetworkError(err)
 }

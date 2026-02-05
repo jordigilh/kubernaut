@@ -66,9 +66,9 @@ import (
 
 var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outage", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
-		httpClient    *http.Client
+		testCancel context.CancelFunc
+		testLogger logr.Logger
+		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
 		db            *sql.DB
@@ -78,7 +78,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.WithValues("test", "dlq-fallback")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		// DD-AUTH-014: HTTPClient is now provided by suite setup with ServiceAccount auth
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 2: DLQ Fallback - Setup")
@@ -90,18 +90,15 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for Data Storage Service HTTP endpoint to be responsive
-		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
+		// Wait for Data Storage Service to be responsive using raw HTTP (health endpoint returns text/plain)
+		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() error {
 			resp, err := httpClient.Get(serviceURL + "/health")
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					testLogger.Error(err, "failed to close response body")
-				}
-			}()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
@@ -168,7 +165,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
-		eventID := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
+		eventID := createAuditEventOpenAPI(ctx, DSClient, baselineEvent)
 		Expect(eventID).ToNot(BeEmpty(), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
@@ -215,7 +212,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventData:      newMinimalGatewayPayload("prometheus-alert", "NodeNotReady"),
 		}
 
-		eventID = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
+		eventID = createAuditEventOpenAPI(ctx, DSClient, outageEvent)
 		// During network partition, the service should accept the event (DLQ fallback)
 		Expect(eventID).ToNot(BeEmpty(), "Event should be accepted during network partition (DLQ fallback)")
 		testLogger.Info("✅ Event accepted during network partition (DLQ fallback)")

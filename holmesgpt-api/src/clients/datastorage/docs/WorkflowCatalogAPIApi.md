@@ -80,6 +80,9 @@ No authorization required
 |-------------|-------------|------------------|
 **201** | Workflow created successfully |  -  |
 **400** | Validation error |  -  |
+**401** | Authentication failed - Invalid or missing Bearer token.  **Authority**: DD-AUTH-014 (Middleware-based authentication)  |  -  |
+**403** | Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.  **Authority**: DD-AUTH-014 (Middleware-based authorization)  |  -  |
+**409** | Conflict - Duplicate workflow. Workflow with same workflow_name and version already exists.  **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)  |  -  |
 **500** | Internal server error |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

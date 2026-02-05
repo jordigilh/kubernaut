@@ -3,6 +3,8 @@
 package client
 
 import (
+	"net/url"
+
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 )
@@ -377,23 +379,83 @@ func (s *ExecutionFailure) SetExecutionTime(val string) {
 	s.ExecutionTime = val
 }
 
-// Ref: #/components/schemas/HTTPValidationError
-type HTTPValidationError struct {
-	Detail []ValidationError `json:"detail"`
+// RFC 7807 Problem Details for HTTP APIs - Authentication/Authorization errors.
+// See: https://www.rfc-editor.org/rfc/rfc7807.html.
+// Ref: #/components/schemas/HTTPError
+type HTTPError struct {
+	// URI reference identifying the problem type.
+	Type url.URL `json:"type"`
+	// Short, human-readable summary of the problem type.
+	Title string `json:"title"`
+	// HTTP status code for this occurrence.
+	Status int32 `json:"status"`
+	// Human-readable explanation specific to this occurrence.
+	Detail OptString `json:"detail"`
+	// URI reference identifying the specific occurrence of the problem.
+	Instance OptURI `json:"instance"`
+	// Request tracing identifier (RFC 7807 extension member).
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *HTTPError) GetType() url.URL {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *HTTPError) GetTitle() string {
+	return s.Title
+}
+
+// GetStatus returns the value of Status.
+func (s *HTTPError) GetStatus() int32 {
+	return s.Status
 }
 
 // GetDetail returns the value of Detail.
-func (s *HTTPValidationError) GetDetail() []ValidationError {
+func (s *HTTPError) GetDetail() OptString {
 	return s.Detail
 }
 
+// GetInstance returns the value of Instance.
+func (s *HTTPError) GetInstance() OptURI {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *HTTPError) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *HTTPError) SetType(val url.URL) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *HTTPError) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetStatus sets the value of Status.
+func (s *HTTPError) SetStatus(val int32) {
+	s.Status = val
+}
+
 // SetDetail sets the value of Detail.
-func (s *HTTPValidationError) SetDetail(val []ValidationError) {
+func (s *HTTPError) SetDetail(val OptString) {
 	s.Detail = val
 }
 
-func (*HTTPValidationError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
-func (*HTTPValidationError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
+// SetInstance sets the value of Instance.
+func (s *HTTPError) SetInstance(val OptURI) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *HTTPError) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
 
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200
@@ -474,6 +536,31 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity HTTPError
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 // Request model for initial incident analysis endpoint
@@ -2217,6 +2304,52 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
+// NewOptURI returns new OptURI with value set to v.
+func NewOptURI(v url.URL) OptURI {
+	return OptURI{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptURI is optional url.URL.
+type OptURI struct {
+	Value url.URL
+	Set   bool
+}
+
+// IsSet returns true if OptURI was set.
+func (o OptURI) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptURI) Reset() {
+	var v url.URL
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptURI) SetTo(v url.URL) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptURI) Get() (v url.URL, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptURI) Or(d url.URL) url.URL {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Summary of the original root cause analysis from initial AIAnalysis.
 // Ref: #/components/schemas/OriginalRCA
 type OriginalRCA struct {
@@ -2337,6 +2470,31 @@ func (s *PreviousExecution) SetFailure(val ExecutionFailure) {
 // SetNaturalLanguageSummary sets the value of NaturalLanguageSummary.
 func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity HTTPError
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
 // Request model for recovery analysis endpoint
@@ -2611,6 +2769,9 @@ type RecoveryResponse struct {
 	NeedsHumanReview OptBool `json:"needs_human_review"`
 	// Reason why human review is needed (BR-HAPI-197).
 	HumanReviewReason OptNilString `json:"human_review_reason"`
+	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
+	// automatic execution. Helps operators understand AI reasoning and decision alternatives.
+	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -2668,6 +2829,11 @@ func (s *RecoveryResponse) GetHumanReviewReason() OptNilString {
 	return s.HumanReviewReason
 }
 
+// GetAlternativeWorkflows returns the value of AlternativeWorkflows.
+func (s *RecoveryResponse) GetAlternativeWorkflows() []AlternativeWorkflow {
+	return s.AlternativeWorkflows
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *RecoveryResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -2721,6 +2887,11 @@ func (s *RecoveryResponse) SetNeedsHumanReview(val OptBool) {
 // SetHumanReviewReason sets the value of HumanReviewReason.
 func (s *RecoveryResponse) SetHumanReviewReason(val OptNilString) {
 	s.HumanReviewReason = val
+}
+
+// SetAlternativeWorkflows sets the value of AlternativeWorkflows.
+func (s *RecoveryResponse) SetAlternativeWorkflows(val []AlternativeWorkflow) {
+	s.AlternativeWorkflows = val
 }
 
 func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
@@ -3019,105 +3190,4 @@ func (s *ValidationAttempt) SetErrors(val []string) {
 // SetTimestamp sets the value of Timestamp.
 func (s *ValidationAttempt) SetTimestamp(val string) {
 	s.Timestamp = val
-}
-
-// Ref: #/components/schemas/ValidationError
-type ValidationError struct {
-	Loc  []ValidationErrorLocItem `json:"loc"`
-	Msg  string                   `json:"msg"`
-	Type string                   `json:"type"`
-}
-
-// GetLoc returns the value of Loc.
-func (s *ValidationError) GetLoc() []ValidationErrorLocItem {
-	return s.Loc
-}
-
-// GetMsg returns the value of Msg.
-func (s *ValidationError) GetMsg() string {
-	return s.Msg
-}
-
-// GetType returns the value of Type.
-func (s *ValidationError) GetType() string {
-	return s.Type
-}
-
-// SetLoc sets the value of Loc.
-func (s *ValidationError) SetLoc(val []ValidationErrorLocItem) {
-	s.Loc = val
-}
-
-// SetMsg sets the value of Msg.
-func (s *ValidationError) SetMsg(val string) {
-	s.Msg = val
-}
-
-// SetType sets the value of Type.
-func (s *ValidationError) SetType(val string) {
-	s.Type = val
-}
-
-// ValidationErrorLocItem represents sum type.
-type ValidationErrorLocItem struct {
-	Type   ValidationErrorLocItemType // switch on this field
-	String string
-	Int    int
-}
-
-// ValidationErrorLocItemType is oneOf type of ValidationErrorLocItem.
-type ValidationErrorLocItemType string
-
-// Possible values for ValidationErrorLocItemType.
-const (
-	StringValidationErrorLocItem ValidationErrorLocItemType = "string"
-	IntValidationErrorLocItem    ValidationErrorLocItemType = "int"
-)
-
-// IsString reports whether ValidationErrorLocItem is string.
-func (s ValidationErrorLocItem) IsString() bool { return s.Type == StringValidationErrorLocItem }
-
-// IsInt reports whether ValidationErrorLocItem is int.
-func (s ValidationErrorLocItem) IsInt() bool { return s.Type == IntValidationErrorLocItem }
-
-// SetString sets ValidationErrorLocItem to string.
-func (s *ValidationErrorLocItem) SetString(v string) {
-	s.Type = StringValidationErrorLocItem
-	s.String = v
-}
-
-// GetString returns string and true boolean if ValidationErrorLocItem is string.
-func (s ValidationErrorLocItem) GetString() (v string, ok bool) {
-	if !s.IsString() {
-		return v, false
-	}
-	return s.String, true
-}
-
-// NewStringValidationErrorLocItem returns new ValidationErrorLocItem from string.
-func NewStringValidationErrorLocItem(v string) ValidationErrorLocItem {
-	var s ValidationErrorLocItem
-	s.SetString(v)
-	return s
-}
-
-// SetInt sets ValidationErrorLocItem to int.
-func (s *ValidationErrorLocItem) SetInt(v int) {
-	s.Type = IntValidationErrorLocItem
-	s.Int = v
-}
-
-// GetInt returns int and true boolean if ValidationErrorLocItem is int.
-func (s ValidationErrorLocItem) GetInt() (v int, ok bool) {
-	if !s.IsInt() {
-		return v, false
-	}
-	return s.Int, true
-}
-
-// NewIntValidationErrorLocItem returns new ValidationErrorLocItem from int.
-func NewIntValidationErrorLocItem(v int) ValidationErrorLocItem {
-	var s ValidationErrorLocItem
-	s.SetInt(v)
-	return s
 }

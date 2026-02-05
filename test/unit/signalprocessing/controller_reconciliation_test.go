@@ -145,7 +145,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Phase should be initialized to Pending
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue(), "Should requeue to continue processing")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should requeue to continue processing")
 
 				// Verify status was updated
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
@@ -183,7 +183,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should return without error (resource was deleted)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 		})
 	})
@@ -248,7 +248,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should transition to Enriching and requeue
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 				// Verify phase transition
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
@@ -315,7 +315,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should not requeue (terminal state)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify phase unchanged
@@ -377,7 +377,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should not requeue (terminal state)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify phase unchanged
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
@@ -481,7 +481,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should continue processing (requeue for next phase)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 				// Verify enrichment occurred
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
@@ -550,7 +550,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should continue processing (graceful degradation)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 				// Verify enrichment continued (degraded mode)
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
@@ -641,7 +641,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 				// Then: Should requeue for next phase transition
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 			})
 		})
 	})
@@ -734,7 +734,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should transition or continue processing
-				Expect(result.Requeue || updatedSP.Status.Phase == signalprocessingv1alpha1.PhaseCompleted).To(BeTrue())
+				Expect(result.RequeueAfter != 0 || updatedSP.Status.Phase == signalprocessingv1alpha1.PhaseCompleted).To(BeTrue())
 			})
 		})
 	})

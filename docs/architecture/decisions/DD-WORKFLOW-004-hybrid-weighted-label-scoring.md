@@ -1,17 +1,68 @@
 # DD-WORKFLOW-004: Hybrid Weighted Label Scoring for Workflow Selection
 
 **Date**: November 22, 2025
-**Status**: ✅ **APPROVED** (V1.5 IMPLEMENTED)
+**Status**: ✅ **APPROVED** (V1.6 IMPLEMENTED)
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.8 (Mandatory Label Schema), DD-HAPI-001 (Custom Labels Auto-Append)
-**Version**: 1.5 (CURRENT), 2.2 (SPECIFICATION)
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v2.4 (Mandatory Label Schema + Multi-Environment), DD-HAPI-001 (Custom Labels Auto-Append)
+**Version**: 1.6 (CURRENT), 2.2 (SPECIFICATION)
 
 ---
 
 ## 📝 **Changelog**
 
-### Version 1.5 (2025-12-11) **← CURRENT IMPLEMENTATION**
+### Version 2.0 (2026-01-28) **← CURRENT IMPLEMENTATION**
+**FEATURE**: Multi-environment workflow capability with JSONB array containment.
+
+**Breaking Changes**:
+- ✅ **Storage Model**: Workflows declare `environment: []string`
+  - Example: `["staging", "production"]` (workflow works in BOTH environments)
+  - Example: `["*"]` (workflow works in ALL environments - wildcard)
+  - Example: `["production"]` (workflow only for production)
+- ✅ **Search Model**: Filters use `environment: string` (reverted from v1.6's `[]string`)
+  - Signal Processing sends: `"production"` (single value)
+  - HAPI passes through: `"production"` (single value)
+- ✅ **SQL Pattern**: `labels->'environment' ? $N OR labels->'environment' ? '*'`
+  - PostgreSQL JSONB `?` operator checks if array contains value
+  - Wildcard check ensures `["*"]` workflows match all searches
+- ✅ **Performance**: Uses existing GIN index on `labels` JSONB column (optimized for `?` operator)
+
+**SQL Example**:
+```sql
+-- Workflow Storage (JSONB):
+-- Workflow A: {"environment": ["staging", "production"], ...}
+-- Workflow B: {"environment": ["production"], ...}
+-- Workflow C: {"environment": ["*"], ...}
+
+-- Search from Production Signal:
+WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
+-- Matches: Workflow A, B, and C
+
+-- Search from Staging Signal:
+WHERE labels->'environment' ? 'staging' OR labels->'environment' ? '*'
+-- Matches: Workflow A and C (NOT B)
+```
+
+**Use Case**: DevOps creates one workflow for multiple environments, reducing duplication and maintenance burden.
+
+**Authority**: DD-WORKFLOW-001 v2.5, BR-STORAGE-040 v2.0
+
+### Version 1.6 (2026-01-26) **[SUPERSEDED by v2.0]**
+**REVERTED**: Incorrect implementation - search-side arrays instead of storage-side arrays
+
+**SQL Example**:
+```sql
+-- Before (v1.5): Single environment
+WHERE labels->>'environment' = 'production'
+
+-- After (v1.6): Multiple environments
+WHERE labels->>'environment' = ANY(ARRAY['staging', 'production'])
+-- PostgreSQL expands to: WHERE labels->>'environment' IN ('staging', 'production')
+```
+
+**Authority**: DD-WORKFLOW-001 v2.4, BR-STORAGE-040 v1.5
+
+### Version 1.5 (2025-12-11)
 **IMPLEMENTATION**: Fixed weights for DetectedLabels (no configuration).
 
 **Changes**:

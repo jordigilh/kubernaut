@@ -109,23 +109,20 @@ func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 // ========================================
 var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Label("integration", "audit", "flow"), func() {
 	var (
-		ctx            context.Context
-		namespace      string
-		datastorageURL string
-		dsClient       *ogenclient.Client
+		ctx       context.Context
+		namespace string
+		dsClient  *ogenclient.Client
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		namespace = "default"
 
-		// Data Storage URL for audit event queries
-		datastorageURL = "http://127.0.0.1:18095" // AIAnalysis integration test DS port (DD-TEST-001, IPv4 explicit)
-
-		// Create Data Storage client for querying audit events
-		var err error
-		dsClient, err = ogenclient.NewClient(datastorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// FIX: Creating unauthenticated client here caused HTTP 401 errors when querying audit events
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		// Pattern follows notification/controller_audit_emission_test.go:70
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	// ========================================
@@ -196,26 +193,30 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			By("Verifying complete audit trail in Data Storage")
 
-			// Flush audit buffer to ensure all events are persisted (eliminates race conditions)
-			// Timeout increased from 2s → 10s to accommodate realistic flush chain latency:
-			// AIAnalysis → HTTP → Data Storage → PostgreSQL → Response (~2-5s under parallel test load)
-			flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
-
-			// Query ALL audit events for this remediation ID
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
+			// Rationale: Ensures events buffered AFTER previous query are written to DataStorage
 			correlationID := analysis.Spec.RemediationID
 			eventCategory := "analysis"
-			params := ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-			}
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			Expect(err).ToNot(HaveOccurred(), "Audit query should succeed")
-			Expect(resp.Data).ToNot(BeNil(), "Audit data should be present")
+			var allEvents []ogenclient.AuditEvent
+			Eventually(func() bool {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
 
-			allEvents := resp.Data
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+				}
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				if err != nil {
+					return false
+				}
+				if resp.Data == nil {
+					return false
+				}
+				allEvents = resp.Data
+				return len(allEvents) > 0
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should generate complete audit trail")
 
 			// Filter to ONLY AIAnalysis events (exclude HAPI events like llm_request, llm_response, etc.)
 			// AIAnalysis events have event_type prefix "aianalysis."
@@ -459,25 +460,31 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			By("Verifying HolmesGPT call was automatically audited")
 
-			// Flush audit buffer to ensure events are persisted (eliminates race conditions)
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
-
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeHolmesGPTCall
 			eventCategory := "analysis"
-			params := ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-			}
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Data).ToNot(BeNil())
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
 
-			events := resp.Data
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+				}
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				if err != nil {
+					return 0
+				}
+				if resp.Data == nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Controller MUST generate HolmesGPT call audit events")
 
 			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
 			eventCounts := countEventsByType(events)
@@ -762,12 +769,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			By("Verifying Rego evaluation was automatically audited")
 
-			// Flush audit buffer before polling
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeRegoEvaluation
 			eventCategory := "analysis"
@@ -777,28 +779,27 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventCategory: ogenclient.NewOptString(eventCategory),
 			}
 
+			var events []ogenclient.AuditEvent
 			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
+
 				resp, err := dsClient.QueryAuditEvents(ctx, params)
 				if err != nil {
 					return 0
 				}
-				return len(resp.Data)
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				if resp.Data == nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"AnalyzingHandler MUST automatically audit Rego evaluations")
 
 			By("Verifying Rego evaluation audit event contains policy decision")
 
-			// Flush again to ensure latest events are visible
-			flushCtx2, flushCancel2 := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel2()
-			err = auditStore.Flush(flushCtx2)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Data).ToNot(BeNil())
-
-			events := resp.Data
+			// Events already captured in Eventually() above
+			Expect(events).ToNot(BeEmpty(), "Should have Rego evaluation events")
 			event := events[0]
 
 			// Business Value: Compliance teams can audit all policy decisions
@@ -876,25 +877,31 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			By("Verifying phase transitions were automatically audited")
 
-			// Flush audit buffer to ensure all transitions are persisted
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypePhaseTransition
 			eventCategory := "analysis"
-			params := ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-			}
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Data).ToNot(BeNil())
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
 
-			events := resp.Data
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+				}
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				if err != nil {
+					return 0
+				}
+				if resp.Data == nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(3),
+				"Controller should audit exactly 3 phase transitions: Pending→Investigating, Investigating→Analyzing, Analyzing→Completed")
 			Expect(events).To(HaveLen(3),
 				"Controller should audit 3 phase transitions: Pending→Investigating, Investigating→Analyzing, Analyzing→Completed")
 		})
@@ -944,21 +951,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-			By("Waiting for controller to call HAPI and audit event (DD-TESTING-001: Eventually() instead of time.Sleep())")
+			By("Waiting for controller to call HAPI and audit event")
 
-			// Flush audit buffer before polling
-			flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-
+			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeHolmesGPTCall
 			eventCategory := "analysis"
-
-			// DD-TESTING-001: Use Eventually() for async event polling
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
+
 				params := ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
 					EventType:     ogenclient.NewOptString(eventType),
@@ -968,9 +971,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				if err != nil {
 					return 0
 				}
+				if resp.Data == nil {
+					return 0
+				}
 				events = resp.Data
 				return len(events)
-			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"InvestigatingHandler MUST audit HolmesGPT calls even when they fail")
 
 			// DD-TESTING-001: Validate specific event counts for HolmesGPT calls

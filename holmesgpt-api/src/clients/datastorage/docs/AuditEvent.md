@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **version** | **str** | Schema version (e.g., \&quot;1.0\&quot;) | 
 **event_type** | **str** | Event type identifier (e.g., gateway.signal.received) | 
 **event_timestamp** | **datetime** | ISO 8601 timestamp when the event occurred | 
-**event_category** | **str** | Service-level event category (ADR-034 v1.5). Per ADR-034 v1.2: event_category MUST match the service name that emits the event. Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5) - orchestration: Remediation Orchestrator Service - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)  | 
+**event_category** | **str** | Service-level event category (ADR-034 v1.7). Per ADR-034 v1.2: event_category MUST match the service name that emits the event. Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Controller (NOT HolmesGPT API) - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5) - approval: RemediationApprovalRequest Controller (BR-AUDIT-006) - orchestration: Remediation Orchestrator Service - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)  | 
 **event_action** | **str** | Action performed (ADR-034) | 
 **event_outcome** | **str** | Result of the event | 
 **actor_type** | **str** |  | [optional] 

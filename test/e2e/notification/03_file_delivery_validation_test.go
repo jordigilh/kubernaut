@@ -17,9 +17,9 @@ limitations under the License.
 package notification
 
 import (
+	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -78,6 +78,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#e2e-test"},
@@ -102,15 +103,16 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			By("Validating file was created with notification content")
-			// Find the notification file (has timestamp in name)
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-complete-message-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file for notification")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			// File has timestamp in name, use wildcard pattern
+			// WaitForFileInPod polls the pod and copies file when found
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-complete-message-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
+			defer CleanupCopiedFile(filePath)
 
 			By("Reading and validating JSON file content")
-			// Read the first file (if multiple reconciliations occurred, any file is valid)
-			fileContent, err := os.ReadFile(files[0])
+			// Read the copied file from temp directory
+			fileContent, err := os.ReadFile(filePath)
 			Expect(err).ToNot(HaveOccurred())
 
 			var savedNotification notificationv1alpha1.NotificationRequest
@@ -123,16 +125,26 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Complete Message Validation"))
 			Expect(savedNotification.Spec.Body).To(Equal("This is a comprehensive test message with multiple fields to validate complete delivery."))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(HaveLen(1))
-			Expect(savedNotification.Spec.Channels[0]).To(Equal(notificationv1alpha1.ChannelConsole))
+			Expect(savedNotification.Spec.Channels).To(HaveLen(2))
+			Expect(savedNotification.Spec.Channels).To(ContainElements(notificationv1alpha1.ChannelConsole, notificationv1alpha1.ChannelFile))
 			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 			Expect(savedNotification.Spec.Recipients[0].Slack).To(Equal("#e2e-test"))
 
 			By("Verifying status fields are present")
-			// Note: Status may be intermediate (Sending) when file is captured during reconciliation
-			// We validate successful delivery by checking SuccessfulDeliveries counter
+			// Note: File content is captured during delivery, so Status.SuccessfulDeliveries may be 0
+			// This is expected behavior - file is written mid-reconciliation
+			// Validate final status by reading live from API server instead
 			Expect(savedNotification.Status.Phase).ToNot(BeEmpty(), "Status phase should be set")
-			Expect(savedNotification.Status.SuccessfulDeliveries).To(BeNumerically(">=", 1), "Should have successful deliveries")
+			
+			// Validate live status from API server (not from file)
+			// Use apiReader to bypass client cache (DD-STATUS-001)
+			var liveNotification notificationv1alpha1.NotificationRequest
+			err = apiReader.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, &liveNotification)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(liveNotification.Status.SuccessfulDeliveries).To(BeNumerically(">=", 2), "Should have 2 successful deliveries (console + file)")
 		})
 	})
 
@@ -164,6 +176,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#security-alerts"},
@@ -187,13 +200,13 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			By("Validating sanitized file content")
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-sanitization-test-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-sanitization-test-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
+			defer CleanupCopiedFile(filePath)
 
-			// Read the first file (if multiple reconciliations occurred, any file is valid)
-			fileContent, err := os.ReadFile(files[0])
+			// Read the copied file from temp directory
+			fileContent, err := os.ReadFile(filePath)
 			Expect(err).ToNot(HaveOccurred())
 
 			var savedNotification notificationv1alpha1.NotificationRequest
@@ -203,20 +216,20 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			By("Verifying sensitive patterns are sanitized (BR-NOT-054)")
 			sanitizedBody := savedNotification.Spec.Body
 
-			// Validate password is redacted (sanitizer uses ***REDACTED***)
-			Expect(sanitizedBody).To(ContainSubstring("password: ***REDACTED***"),
+			// Validate password is redacted (sanitizer uses [REDACTED])
+			Expect(sanitizedBody).To(ContainSubstring("password: [REDACTED]"),
 				"Password should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("mySecretPass123"),
 				"Raw password should not appear in file")
 
 			// Validate API key is redacted
-			Expect(sanitizedBody).To(ContainSubstring("api_key: ***REDACTED***"),
+			Expect(sanitizedBody).To(ContainSubstring("api_key: [REDACTED]"),
 				"API key should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("sk-1234567890abcdef"),
 				"Raw API key should not appear in file")
 
 			// Validate token is redacted
-			Expect(sanitizedBody).To(ContainSubstring("token: ***REDACTED***"),
+			Expect(sanitizedBody).To(ContainSubstring("token: [REDACTED]"),
 				"Token should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"),
 				"Raw token should not appear in file")
@@ -314,6 +327,11 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred())
 
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
+
 			// Verify priority is preserved exactly
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
 				"Priority must be preserved as Critical (BR-NOT-056)")
@@ -378,13 +396,13 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			By("Validating distinct files created for each notification")
 			for _, name := range notificationNames {
-				files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+name+"-*.json"))
-				Expect(err).ToNot(HaveOccurred())
-				// Controller may reconcile multiple times, creating multiple files (expected behavior)
-				Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file for "+name)
+				// Use kubectl exec to find and copy file from pod (emptyDir volume)
+				filePath, err := WaitForFileInPod(context.Background(), "notification-"+name+"-*.json", 15*time.Second)
+				Expect(err).ToNot(HaveOccurred(), "Should find notification file for "+name+" in pod")
+				defer CleanupCopiedFile(filePath)
 
 				// Verify file content matches notification
-				fileContent, err := os.ReadFile(files[0])
+				fileContent, err := os.ReadFile(filePath)
 				Expect(err).ToNot(HaveOccurred())
 
 				var savedNotification notificationv1alpha1.NotificationRequest
@@ -429,6 +447,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#e2e-error-test"},
@@ -454,10 +473,10 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			By("Validating FileService created file when available")
 			// Since FileService is working in this test, file should be created
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-error-handling-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "At least one file should be created")
+			// Use kubectl exec to find and copy file from pod (emptyDir volume)
+			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-error-handling-*.json", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "At least one file should be created in pod")
+			defer CleanupCopiedFile(filePath)
 
 			By("CRITICAL VALIDATION: Code inspection confirms non-blocking pattern")
 			// The controller code contains:

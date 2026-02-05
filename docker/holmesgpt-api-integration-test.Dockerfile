@@ -24,8 +24,10 @@ COPY holmesgpt-api/requirements-e2e.txt holmesgpt-api/requirements-test.txt ./ho
 COPY dependencies/holmesgpt ./dependencies/holmesgpt
 
 # Copy DataStorage OpenAPI client (referenced in requirements-e2e.txt)
-# Destination must match path in requirements: src/clients/datastorage/
-COPY holmesgpt-api/src/clients/datastorage ./src/clients/datastorage
+# Destination must match PYTHONPATH: /workspace/holmesgpt-api/datastorage/
+# Tests import as: from datastorage import ApiClient
+# Note: Copy the inner datastorage/ package to avoid double nesting
+COPY holmesgpt-api/src/clients/datastorage/datastorage ./holmesgpt-api/datastorage
 
 # Install holmesgpt package first (avoids relative path issues in requirements.txt)
 # The requirements-e2e.txt line references "../dependencies/holmesgpt/" which doesn't resolve in container context

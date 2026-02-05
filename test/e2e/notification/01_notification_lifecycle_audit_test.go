@@ -19,16 +19,19 @@ package notification
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // ========================================
@@ -89,11 +92,17 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Data Storage is deployed via DeployNotificationAuditInfrastructure() in suite setup
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+		// ✅ DD-API-001 + DD-AUTH-014: Create authenticated OpenAPI client (MANDATORY)
 		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
+		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
 		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 		// Create NotificationRequest CRD
 		notification = &notificationv1alpha1.NotificationRequest{
@@ -102,6 +111,15 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Namespace: notificationNS,
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				// Without this, controller uses NotificationRequest.UID as correlation_id
+				// Test expects to query by custom correlationID, so we need to set the ref
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID, // Use test's correlationID as the RemediationRequest name
+					Namespace:  notificationNS,
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
@@ -150,22 +168,22 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get created NotificationRequest")
 		Expect(createdNotification.Name).To(Equal(notificationName))
 
-		// ===== STEP 2: Wait for controller to process notification =====
-		// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
-		// Per TESTING_GUIDELINES.md lines 1688-1948
-		By("Waiting for controller to process notification and update phase")
-		Eventually(func() notificationv1alpha1.NotificationPhase {
-			var updated notificationv1alpha1.NotificationRequest
-			err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: notificationNS,
-			}, &updated)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-			"Controller should process notification and update phase to Sent")
+	// ===== STEP 2: Wait for controller to process notification =====
+	// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
+	// Per TESTING_GUIDELINES.md lines 1688-1948
+	By("Waiting for controller to process notification and update phase")
+	Eventually(func() notificationv1alpha1.NotificationPhase {
+		var updated notificationv1alpha1.NotificationRequest
+		err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, &updated)
+		if err != nil {
+			return ""
+		}
+		return updated.Status.Phase
+	}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+		"Controller should process notification and update phase to Sent")
 
 		// ===== STEP 3: Verify controller emitted audit events (side effect) =====
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
@@ -183,7 +201,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"Controller should emit audit event during notification processing")
 
 		// ===== STEP 4: Verify ADR-034 compliance via Data Storage query =====

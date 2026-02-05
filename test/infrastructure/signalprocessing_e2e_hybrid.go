@@ -85,9 +85,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Build SignalProcessing with coverage in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "signalprocessing-controller",
-			ImageName:        "kubernaut/signalprocessing-controller",
-			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile",
+			ServiceName:      "signalprocessing", // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/signalprocessing",
+			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
@@ -222,6 +222,30 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	phase3Duration := phase3End.Sub(phase3Start)
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 3 Duration: %.1f seconds\n", phase3Duration.Seconds())
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	// Required for SAR checks to pass when services call DataStorage REST API
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// Step 1: Deploy DataStorage ServiceAccount + auth middleware RBAC
+	// Required for DataStorage to call TokenReview and SubjectAccessReview APIs
+	_, _ = fmt.Fprintf(writer, "🔐 Creating DataStorage ServiceAccount + auth middleware RBAC (DD-AUTH-014)...\n")
+	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RBAC: %w", err)
+	}
+
+	// Step 2: Create RoleBinding for DataStorage to access its own service (client RBAC)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage client access (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
+	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
@@ -836,7 +860,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	return nil
 }
 
-func signalProcessingControllerCoverageManifest(imageName string) string {
+func signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy string) string {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// No longer generates own tag - uses pre-built image
@@ -918,15 +942,16 @@ spec:
       containers:
       - name: controller
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         env:
         - name: NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
         # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
+        # Fix: Correct service name is data-storage-service (not datastorage)
         - name: DATA_STORAGE_URL
-          value: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+          value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
         # E2E Coverage: Set GOCOVERDIR to enable coverage capture
         - name: GOCOVERDIR
           value: /coverdata
@@ -999,14 +1024,22 @@ spec:
     name: metrics
   selector:
     app: signalprocessing-controller
-`, imageName)
+`, imageName, imagePullPolicy)
+}
+
+// signalProcessingControllerCoverageManifest wraps the new function for backward compatibility
+func signalProcessingControllerCoverageManifest(imageName string) string {
+	return signalProcessingControllerCoverageManifestWithPolicy(imageName, "Never")
 }
 
 func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
-	manifest := signalProcessingControllerCoverageManifest(imageName)
+
+	// Use dynamic imagePullPolicy based on environment (CI/CD registry vs local)
+	imagePullPolicy := GetImagePullPolicy()
+	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

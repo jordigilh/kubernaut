@@ -85,6 +85,21 @@ def setup_logging(app_config: Optional[AppConfig] = None) -> None:
     log_level = get_log_level(app_config)
     log_level_int = getattr(logging, log_level)
 
+    # Configure root logger with handler (CRITICAL: without handler, no logs appear!)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level_int)
+    
+    # Add StreamHandler if root logger has no handlers
+    # Uvicorn will add its own handlers, but application loggers need this
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(log_level_int)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+
     # Configure holmesgpt-api modules
     holmesgpt_modules = [
         "src.extensions.llm_config",
@@ -92,6 +107,8 @@ def setup_logging(app_config: Optional[AppConfig] = None) -> None:
         "src.extensions.recovery",
         "src.toolsets.workflow_catalog",
         "src.config",
+        "src.auth",        # Authentication/authorization (DD-AUTH-014)
+        "src.middleware",  # Auth middleware
     ]
 
     for module in holmesgpt_modules:

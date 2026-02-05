@@ -66,7 +66,6 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 		uniqueSuffix string
 		// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
 		// No need to declare it here - each test gets a unique namespace automatically
-		dataStorageURL = "http://127.0.0.1:18095" // From suite infrastructure (IPv4 explicit)
 	)
 
 	BeforeEach(func() {
@@ -312,19 +311,22 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			}
 
 			// Query audit events via Data Storage API
-			dsClient, err := ogenclient.NewClient(dataStorageURL)
-			Expect(err).NotTo(HaveOccurred())
+			// DD-AUTH-014: Use authenticated client from suite setup
+			dsClient := dsClients.OpenAPIClient
 
 			correlationID := analysis.Spec.RemediationID
 			eventCategory := "analysis"
+			// Query for phase transition events specifically (most reliable indicator of buffer flush)
+			eventType := "aianalysis.phase.transition"
 			resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventCategory: ogenclient.NewOptString(eventCategory),
+				EventType:     ogenclient.NewOptString(eventType),
 			})
 			Expect(err).NotTo(HaveOccurred(), "Audit query should succeed")
 			Expect(resp.Data).ToNot(BeNil(), "Response should have data array")
 			Expect(len(resp.Data)).To(BeNumerically(">=", 1),
-				"Audit events must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
+				"At least one phase.transition event must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
 
 			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(resp.Data))
 

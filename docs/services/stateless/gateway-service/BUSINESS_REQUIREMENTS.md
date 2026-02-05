@@ -1,15 +1,16 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.6
-**Last Updated**: 2026-01-09
+**Version**: v1.7
+**Last Updated**: 2026-01-29
 **Status**: ✅ APPROVED
 **Owner**: Gateway Team
-**Total BRs**: 75 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
+**Total BRs**: 77 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-183)
 
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-111**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
+> | v1.7 | 2026-01-29 | **NEW BR-GATEWAY-182, BR-GATEWAY-183**: ServiceAccount Authentication and SAR Authorization. Gateway MUST authenticate webhook requests using Kubernetes TokenReview and authorize using SubjectAccessReview for defense-in-depth security and SOC2 compliance. Supersedes DD-GATEWAY-006 (network-only security). | [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) |
+> | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-181**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
 > | v1.5 | 2025-12-07 | BR-GATEWAY-038: Rate limiting code REMOVED (middleware + tests). Proxy delegation complete. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
 > | v1.4 | 2025-12-07 | BR-GATEWAY-038 (Rate Limiting): Delegated to Ingress/Route proxy. Gateway middleware DEPRECATED. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
 > | v1.3 | 2025-12-06 | Classification code REMOVED from Gateway (not placeholder). Updated BR-007, BR-014-017 to reflect file deletions. | [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md) |
@@ -762,3 +763,93 @@ This document provides a comprehensive list of all business requirements for the
 
 **Authority**: [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) v1.1, Week 3
 
+---## 🔐 **Authentication & Authorization** (BR-GATEWAY-182 to BR-GATEWAY-183)### **BR-GATEWAY-182: ServiceAccount Authentication (TokenReview)**
+**Description**: Gateway MUST authenticate incoming webhook requests using Kubernetes TokenReview API to validate ServiceAccount tokens
+**Priority**: P0 (Critical)
+**Status**: 🚧 In Progress (January 2026)
+**Test Coverage**: ⏳ Planned (Unit + Integration + E2E)
+**Implementation**: `pkg/gateway/middleware/auth.go` (pending)
+**Tests**: 
+- `test/unit/gateway/middleware/auth_test.go` (pending)
+- `test/integration/gateway/auth_integration_test.go` (pending)
+- `test/e2e/gateway/auth_e2e_test.go` (pending)
+
+**Rationale**:
+1. **Security**: Gateway is external-facing entry point (Prometheus AlertManager, K8s Event forwarders)
+2. **Zero-Trust**: Network Policies alone insufficient for defense-in-depth
+3. **SOC2 Compliance**: Operator attribution for signal injection (CC8.1 requirement)
+4. **Webhook Compatibility**: AlertManager + K8s Events support Bearer tokens natively
+
+**Authentication Flow**:
+```
+1. Extract Bearer token from Authorization header
+2. Call Kubernetes TokenReview API to validate token
+3. Extract user identity (e.g., "system:serviceaccount:monitoring:prometheus-sa")
+4. Inject user into request context for audit logging
+5. Return 401 Unauthorized if token invalid
+```
+
+**User Identity Format**:
+- ServiceAccount: `system:serviceaccount:<namespace>:<sa-name>`
+- User: `<username>@<domain>`
+- System: `system:<component-name>`
+
+**Related Requirements**:
+- REQ-3 (DD-AUTH-014): Extract user identity for audit logging
+- BR-GATEWAY-054: Audit logging (must capture ActorID)
+
+**Decision Reference**: [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)
+
+**Supersedes**: [DD-GATEWAY-006](../../../architecture/decisions/DD-GATEWAY-006-authentication-strategy.md) (Network Policies only - now obsolete)
+
+---### **BR-GATEWAY-183: SubjectAccessReview Authorization**
+**Description**: Gateway MUST authorize incoming webhook requests using Kubernetes SubjectAccessReview (SAR) to validate RBAC permissions
+**Priority**: P0 (Critical)
+**Status**: 🚧 In Progress (January 2026)
+**Test Coverage**: ⏳ Planned (Unit + Integration + E2E)
+**Implementation**: `pkg/gateway/middleware/auth.go` (pending)
+**Tests**: 
+- `test/unit/gateway/middleware/auth_test.go` (pending)
+- `test/integration/gateway/auth_integration_test.go` (pending)
+- `test/e2e/gateway/auth_e2e_test.go` (pending)**Authorization Check**:
+```
+Can <ServiceAccount> CREATE remediationrequests.kubernaut.ai IN <namespace>?
+```**SAR Parameters**:
+- **User**: Authenticated ServiceAccount name (from BR-GATEWAY-182)
+- **Resource**: `remediationrequests.kubernaut.ai` (CRD API group)
+- **Verb**: `create` (Gateway creates RemediationRequest CRDs)
+- **Namespace**: Target namespace from signal payload (e.g., `monitoring`, `prod`)**Authorization Outcomes**:
+- ✅ **Allowed**: SAR returns `allowed=true` → Process signal, create RemediationRequest
+- ❌ **Denied**: SAR returns `allowed=false` → Return 403 Forbidden with explanation
+- ⚠️ **Error**: SAR API fails → Return 500 Internal Server Error (fail-closed)**RBAC Example** (Prometheus AlertManager):
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-signal-sender
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationrequests"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-to-gateway
+subjects:
+- kind: ServiceAccount
+  name: prometheus-sa
+  namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: gateway-signal-sender
+  apiGroup: rbac.authorization.k8s.io
+```**Error Handling**:
+- **401 Unauthorized**: Token validation fails (BR-GATEWAY-182)
+- **403 Forbidden**: SAR denies access (this BR)
+- **500 Internal Server Error**: TokenReview/SAR API failure (fail-closed for security)**Performance Considerations** (per DD-AUTH-014 V2.0):
+- ✅ No caching: Gateway throughput <100 signals/min (low load)
+- ✅ Network Policies: Reduce unauthorized traffic before SAR check
+- ✅ Fail-closed: API server unavailability blocks requests (secure default)**Related Requirements**:
+- BR-GATEWAY-182: ServiceAccount Authentication (prerequisite)
+- BR-GATEWAY-053: RBAC Permissions (general RBAC requirement)**Decision Reference**: [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)**Authority**: DD-AUTH-014 V2.0 (January 29, 2026)

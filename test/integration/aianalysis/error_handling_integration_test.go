@@ -68,11 +68,11 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 120*time.Second)
 
-		// Setup OpenAPI client for audit verification
-		// Per DD-API-001: Use generated OpenAPI client (type-safe, spec-validated)
-		var err error
-		dsClient, err = ogenclient.NewClient("http://127.0.0.1:18095") // AIAnalysis integration test DS port
-		Expect(err).ToNot(HaveOccurred(), "DataStorage OpenAPI client must initialize successfully")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// FIX: Creating unauthenticated client here caused HTTP 401 errors when querying audit events
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		// Pattern follows notification/controller_audit_emission_test.go:70
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	AfterEach(func() {
@@ -155,11 +155,14 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-			// Verify holmesgpt.response.complete event exists (HAPI returned needs_human_review=true)
-			Eventually(func() bool {
-				// Query audit events via OpenAPI client (DD-API-001)
-				eventCategory := ogenclient.NewOptString("analysis")
-				eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+		// Verify holmesgpt.response.complete event exists (HAPI returned needs_human_review=true)
+		Eventually(func() bool {
+			// NT Pattern: Flush audit buffer on each retry
+			_ = auditStore.Flush(testCtx)
+			
+			// Query audit events via OpenAPI client (DD-API-001)
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -194,7 +197,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				}
 
 				return true
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Controller should emit holmesgpt.response.complete audit event when HAPI returns needs_human_review=true")
 
 			// Verify analysis.failed event exists (AIAnalysis failed due to workflow resolution failure)
@@ -352,10 +355,13 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-			// Verify holmesgpt.response.complete event exists with success outcome
-			Eventually(func() bool {
-				eventCategory := ogenclient.NewOptString("analysis")
-				eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+		// Verify holmesgpt.response.complete event exists with success outcome
+		Eventually(func() bool {
+			// NT Pattern: Flush audit buffer on each retry
+			_ = auditStore.Flush(testCtx)
+			
+			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
+			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -386,7 +392,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				}
 
 				return true
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Controller should emit holmesgpt.response.complete audit event when HAPI returns problem_resolved")
 
 			// Verify analysis.complete event exists

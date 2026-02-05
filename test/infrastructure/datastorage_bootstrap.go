@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -40,6 +42,62 @@ type DSBootstrapConfig struct {
 
 	// Service-specific configuration directory
 	ConfigDir string // Path to DataStorage config.yaml (e.g., "test/integration/gateway/config")
+
+	// EnvtestKubeconfig is the path to kubeconfig for envtest Kubernetes API server (DD-AUTH-014)
+	// If provided, DataStorage will use envtest for TokenReview/SAR validation (real K8s APIs)
+	// Optional: Only needed when using real middleware auth in integration tests
+	EnvtestKubeconfig string // Path to envtest kubeconfig (e.g., "/tmp/envtest-kubeconfig-ds-client.yaml")
+
+	// DataStorageServiceTokenPath is the path to the data-storage-sa ServiceAccount token file (DD-AUTH-014)
+	// If provided, this token is mounted at /var/run/secrets/kubernetes.io/serviceaccount/token in the container
+	// This allows DataStorage to self-validate its auth middleware in the /health endpoint
+	// Optional: Only needed when using real middleware auth in integration tests
+	DataStorageServiceTokenPath string // Path to data-storage-sa token file (e.g., "/tmp/datastorage-service-token")
+}
+
+// NewDSBootstrapConfigWithAuth creates a DSBootstrapConfig with authentication properly configured
+// This helper ensures all services configure DataStorage auth consistently (DD-AUTH-014)
+//
+// Parameters:
+//   - serviceName: Service name for container naming (e.g., "gateway", "signalprocessing")
+//   - postgresPort, redisPort, dataStoragePort, metricsPort: Service-specific port allocations (per DD-TEST-001)
+//   - configDir: Path to service's DataStorage config directory (e.g., "test/integration/gateway/config")
+//   - authConfig: Result from CreateIntegrationServiceAccountWithDataStorageAccess()
+//
+// Returns:
+//   - DSBootstrapConfig with all auth fields properly set
+//
+// Usage:
+//
+//	// Phase 1: Create ServiceAccount + RBAC
+//	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
+//	    sharedK8sConfig, "gateway-integration-sa", "default", GinkgoWriter)
+//
+//	// Phase 2: Build config with helper (no manual field mapping needed)
+//	cfg := infrastructure.NewDSBootstrapConfigWithAuth(
+//	    "gateway", 15437, 16380, 18091, 19091,
+//	    "test/integration/gateway/config", authConfig)
+//
+//	// Phase 3: Start infrastructure
+//	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+//
+// Authority: DD-AUTH-014 (Middleware-based authentication)
+func NewDSBootstrapConfigWithAuth(
+	serviceName string,
+	postgresPort, redisPort, dataStoragePort, metricsPort int,
+	configDir string,
+	authConfig *IntegrationAuthConfig,
+) DSBootstrapConfig {
+	return DSBootstrapConfig{
+		ServiceName:                 serviceName,
+		PostgresPort:                postgresPort,
+		RedisPort:                   redisPort,
+		DataStoragePort:             dataStoragePort,
+		MetricsPort:                 metricsPort,
+		ConfigDir:                   configDir,
+		EnvtestKubeconfig:           authConfig.KubeconfigPath,
+		DataStorageServiceTokenPath: authConfig.DataStorageServiceTokenPath,
+	}
 }
 
 // Internal constants - shared across all services, not exposed in config
@@ -81,11 +139,73 @@ type DSBootstrapInfra struct {
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
 	Config DSBootstrapConfig // Original configuration (for reference)
+
+	// SharedTestEnv holds envtest environment for cleanup (DD-AUTH-014)
+	// Only set if envtest was created in Phase 1 (for services needing DataStorage auth)
+	SharedTestEnv interface{} // *envtest.Environment (interface{} to avoid import cycle)
+}
+
+// tryPullFromRegistry attempts to pull an image from IMAGE_REGISTRY if configured.
+// This enables CI/CD optimization where pre-built images are pulled from ghcr.io
+// instead of building locally, saving ~70% disk space and ~30% time.
+//
+// Environment Variables:
+//   - IMAGE_REGISTRY: Registry URL (e.g., "ghcr.io/jordigilh/kubernaut")
+//   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
+//
+// Returns:
+//   - imageName: The local image name after tagging (same as input localImageName)
+//   - pulled: true if successfully pulled from registry, false otherwise
+//   - error: Only returns error if pull succeeded but tagging failed
+//
+// Usage:
+//
+//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", localImageName, writer); pulled {
+//	    return imageName, nil // Use registry image
+//	}
+//	// Otherwise, fall through to local build
+//
+// Authority: CI/CD pipeline optimization for integration tests
+func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string, writer io.Writer) (string, bool, error) {
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+
+	if registry == "" || tag == "" {
+		return "", false, nil // Not configured, caller should build locally
+	}
+
+	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
+	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
+
+	// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
+	// Benefits:
+	// - No disk space used (metadata only, ~2KB vs multi-GB image)
+	// - No network transfer of layers (90%+ bandwidth savings)
+	// - Faster execution (~1s vs 10-30s for full pull)
+	// - Kubernetes will pull automatically during pod deployment
+	exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+
+	if err != nil || !exists {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
+		return "", false, nil // Verification failed, caller should build locally
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping local build)\n")
+	_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Kubernetes will fetch during pod deployment\n")
+
+	// Return registry image path - Kubernetes will pull it automatically
+	return registryImage, true, nil
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
 // This function is extracted to enable parallel image builds (build can happen in parallel,
 // while deployment must remain sequential due to workflow seeding dependencies).
+//
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Pull from registry (ghcr.io)
+//   - Otherwise: Build locally (existing behavior for local dev)
+//   - Automatic fallback to local build if registry pull fails
 //
 // Returns:
 // - string: Full image name with tag (e.g., "kubernaut/datastorage:aianalysis-a1b2c3d4")
@@ -99,6 +219,19 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
 	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
+	// DEBUG: Show environment variable status
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
+
+	// CI/CD Optimization: Try to pull from registry if configured
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", imageName, writer); pulled {
+		if err != nil {
+			return "", err // Tag failed after successful pull
+		}
+		return pulledImageName, nil // Use registry image
+	}
+
 	// Check if image already exists (cache hit)
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 	if checkCmd.Run() == nil {
@@ -106,8 +239,8 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 		return imageName, nil
 	}
 
-	// Build the image
-	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image (tag: %s)...\n", imageTag)
+	// Build the image locally
+	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image locally (tag: %s)...\n", imageTag)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 		"-t", imageName,
@@ -439,27 +572,110 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 
 // startDSBootstrapService starts the DataStorage container using a pre-built image
 // The image should be built using BuildDataStorageImage() before calling this function
+//
+// DD-AUTH-014: Platform-specific network configuration (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
+//   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
+//   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
+//
+// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
 
-	cmd := exec.Command("podman", "run", "-d",
+	// DD-AUTH-014: Platform-specific network configuration
+	// Linux: Use --network=host when envtest kubeconfig is provided (allows direct localhost access)
+	// macOS: Always use bridge network (--network=host doesn't work on macOS Podman VM)
+	useHostNetwork := false
+	if cfg.EnvtestKubeconfig != "" && runtime.GOOS == "linux" {
+		useHostNetwork = true
+		_, _ = fmt.Fprintf(writer, "   🌐 Using host network (Linux CI/CD) - container can reach localhost directly\n")
+	} else if cfg.EnvtestKubeconfig != "" {
+		_, _ = fmt.Fprintf(writer, "   🌐 Using bridge network (macOS) - kubeconfig rewrites 127.0.0.1 → host.containers.internal\n")
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Requires IPv6 disabled: sudo networksetup -setv6off Wi-Fi\n")
+	}
+
+	// Base container arguments
+	args := []string{"run", "-d",
 		"--name", infra.DataStorageContainer,
-		"--network", infra.Network,
-		"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
-		"-p", fmt.Sprintf("%d:9090", cfg.MetricsPort),
+	}
+
+	// Network configuration (platform-specific)
+	if useHostNetwork {
+		// Linux: Host network mode (no port mapping needed)
+		args = append(args, "--network", "host")
+	} else {
+		// macOS: Bridge network (requires port mapping)
+		args = append(args,
+			"--network", infra.Network,
+			"-p", fmt.Sprintf("%d:8080", cfg.DataStoragePort),
+			"-p", fmt.Sprintf("%d:9090", cfg.MetricsPort),
+		)
+	}
+
+	// Database/Redis configuration (network-dependent)
+	var postgresHost string
+	var postgresPort int
+	var redisAddr string
+	var listenPort int
+
+	if useHostNetwork {
+		// Host network: Access PostgreSQL/Redis via localhost at their exposed ports
+		// PostgreSQL exposes internal 5432 → external cfg.PostgresPort
+		// Redis exposes internal 6379 → external cfg.RedisPort
+		postgresHost = "localhost"
+		postgresPort = cfg.PostgresPort // Use exposed port (e.g., 15437)
+		redisAddr = fmt.Sprintf("localhost:%d", cfg.RedisPort)
+
+		// CRITICAL: Host network - no port mapping, so listen on external port
+		// Test infrastructure expects DataStorage on cfg.DataStoragePort
+		listenPort = cfg.DataStoragePort
+	} else {
+		// Bridge network: Access via container names at internal ports
+		postgresHost = infra.PostgresContainer
+		postgresPort = 5432 // Internal PostgreSQL port
+		redisAddr = fmt.Sprintf("%s:6379", infra.RedisContainer)
+
+		// Bridge network: Always listen on 8080, port mapping handles external
+		// BACKWARDS COMPATIBLE: This is the original behavior for macOS
+		// Example: -p 18096:8080 maps external 18096 → internal 8080
+		listenPort = 8080
+	}
+
+	// Common configuration
+	args = append(args,
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"-e", fmt.Sprintf("POSTGRES_HOST=%s", infra.PostgresContainer),
-		"-e", "POSTGRES_PORT=5432",
+		"-e", fmt.Sprintf("POSTGRES_HOST=%s", postgresHost),
+		"-e", fmt.Sprintf("POSTGRES_PORT=%d", postgresPort),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
-		"-e", "CONN_MAX_LIFETIME=30m", // Fix for Notification/WorkflowExecution BeforeSuite failures
-		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", infra.RedisContainer),
-		"-e", "PORT=8080",
-		imageName,
+		"-e", "CONN_MAX_LIFETIME=30m",
+		"-e", fmt.Sprintf("REDIS_ADDR=%s", redisAddr),
+		"-e", fmt.Sprintf("PORT=%d", listenPort),
 	)
+
+	// DD-AUTH-014: If EnvtestKubeconfig provided, mount it for real K8s auth
+	if cfg.EnvtestKubeconfig != "" {
+		_, _ = fmt.Fprintf(writer, "   🔐 Mounting envtest kubeconfig (IPv4-rewritten): %s\n", cfg.EnvtestKubeconfig)
+		args = append(args,
+			"-v", fmt.Sprintf("%s:/tmp/kubeconfig:ro", cfg.EnvtestKubeconfig),
+			"-e", "KUBECONFIG=/tmp/kubeconfig",
+			"-e", "POD_NAMESPACE=default",
+		)
+
+		// DD-AUTH-014: Mount DataStorage service token for health check self-validation
+		if cfg.DataStorageServiceTokenPath != "" {
+			_, _ = fmt.Fprintf(writer, "   🎫 Mounting DataStorage service token: %s\n", cfg.DataStorageServiceTokenPath)
+			args = append(args,
+				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro", cfg.DataStorageServiceTokenPath),
+			)
+		}
+	}
+
+	args = append(args, imageName)
+
+	cmd := exec.Command("podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {

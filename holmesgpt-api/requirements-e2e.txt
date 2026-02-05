@@ -30,8 +30,9 @@ httpx<0.28,>=0.24   # Supabase stack requires <0.28
 urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 
 # HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
-# Using local copy from ../dependencies/holmesgpt/ for faster installation
-../dependencies/holmesgpt/
+# Using local copy from ./dependencies/holmesgpt/ for faster installation
+# NOTE: Build context is project root, dependencies copied to /opt/app-root/src/dependencies
+./dependencies/holmesgpt/
 
 # DataStorage OpenAPI Client (SOC2 audit events) - Required for audit emission
 # NOTE: Installed explicitly in Dockerfile before requirements.txt

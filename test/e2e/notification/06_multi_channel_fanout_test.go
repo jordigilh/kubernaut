@@ -19,7 +19,6 @@ package notification
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -59,15 +58,9 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	})
 
 	AfterEach(func() {
-		// Clean up test-specific files from shared directory
-		// Pattern: notification-<test-name>-*.json
-		// This prevents file accumulation while allowing parallel test execution
-		pattern := filepath.Join(e2eFileOutputDir, "notification-e2e-multi-channel-*.json")
-		files, _ := filepath.Glob(pattern)
-		for _, f := range files {
-			_ = os.Remove(f)
-		}
-		logger.Info("Cleaned up test files", "pattern", pattern, "count", len(files))
+		// NOTE: With emptyDir volume, files are ephemeral and automatically
+		// cleaned up when the pod restarts. No manual cleanup needed.
+		// Files copied to host via kubectl cp are cleaned up by defer CleanupCopiedFile()
 	})
 
 	// ========================================
@@ -121,21 +114,21 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"All channels should deliver successfully")
 
-			By("Verifying all three channels delivered (BR-NOT-053)")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying all three channels delivered (BR-NOT-053)")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Should have 3 successful deliveries (console + file + log)
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
-				"Should have 3 successful deliveries (console, file, log)")
+		// Should have 3 successful deliveries (console + file + log)
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
+			"Should have 3 successful deliveries (console, file, log)")
 
-			// Should have 0 failed deliveries
-			Expect(notification.Status.FailedDeliveries).To(Equal(0),
-				"Should have 0 failed deliveries")
+		// Should have 0 failed deliveries
+		Expect(notification.Status.FailedDeliveries).To(Equal(0),
+			"Should have 0 failed deliveries")
 
 			By("Verifying file channel created audit file")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
@@ -157,7 +150,10 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			err = json.Unmarshal(fileContent, &savedNotification)
 			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
-			Expect(savedNotification.Name).To(Equal("e2e-multi-channel-fanout"))
+			// CRITICAL: Validate we read the CORRECT notification (not cross-test pollution)
+			Expect(savedNotification.Name).To(Equal(notification.Name),
+				"File must belong to current test notification '%s' (found: '%s') - cross-test pollution detected!",
+				notification.Name, savedNotification.Name)
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Multi-Channel Fanout"))
 			Expect(savedNotification.Spec.Body).To(Equal("Testing delivery to console, file, and log channels simultaneously"))
 
@@ -229,18 +225,18 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"Log channel should deliver successfully")
 
-			By("Verifying log channel delivery recorded")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying log channel delivery recorded")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
-				"Log channel should deliver successfully")
-			Expect(notification.Status.DeliveryAttempts).To(HaveLen(1),
-				"Should record 1 delivery attempt for log channel")
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
+			"Log channel should deliver successfully")
+		Expect(notification.Status.DeliveryAttempts).To(HaveLen(1),
+			"Should record 1 delivery attempt for log channel")
 
 			// Verify delivery attempt details
 			logAttempt := notification.Status.DeliveryAttempts[0]

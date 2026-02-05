@@ -30,8 +30,10 @@ import (
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
-	"github.com/jordigilh/kubernaut/test/shared/validators"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // Test 15: Audit Trace Validation (DD-AUDIT-003)
@@ -61,18 +63,49 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "audit-trace")
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 15: Audit Trace Validation (DD-AUDIT-003) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Setup OpenAPI audit client for Data Storage
-		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
-		dataStorageURL := "http://127.0.0.1:18091" // Kind hostPort maps to NodePort 30081 - Use 127.0.0.1 for CI/CD IPv4 compatibility
-		auditClient, _ = dsgen.NewClient(dataStorageURL)
+		// DD-AUTH-014: Create E2E ServiceAccount with DataStorage access permissions
+		testLogger.Info("🔐 Creating E2E ServiceAccount for audit client authentication...")
+		e2eSAName := "gateway-e2e-audit-client"
+		err := infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
+			ctx,
+			gatewayNamespace,
+			kubeconfigPath,
+			e2eSAName,
+			GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+		
+		// Get token for E2E ServiceAccount
+		testLogger.Info("🎫 Retrieving ServiceAccount token...")
+		e2eToken, err := infrastructure.GetServiceAccountToken(
+			ctx,
+			gatewayNamespace,
+			e2eSAName,
+			kubeconfigPath,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		testLogger.Info("✅ ServiceAccount token retrieved")
 
-		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
+		// Setup OpenAPI audit client for Data Storage with authentication
+		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
+		// DD-AUTH-014: Client must use ServiceAccount token for middleware authentication
+		dataStorageURL := "http://127.0.0.1:18091" // Kind hostPort maps to NodePort 30081 - Use 127.0.0.1 for CI/CD IPv4 compatibility
+		saTransport := testauth.NewServiceAccountTransport(e2eToken)
+		httpClient = &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
+		auditClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated audit client")
+
+		testLogger.Info("✅ Authenticated OpenAPI audit client initialized (DD-AUTH-014)",
+			"dataStorageURL", dataStorageURL,
+			"transport", "ServiceAccountTransport")
 
 		// Create unique test namespace (Pattern: RO E2E)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "audit-trace")

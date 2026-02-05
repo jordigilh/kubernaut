@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -98,9 +102,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "aianalysis-controller",
-			ImageName:        "kubernaut/aianalysis-controller",
-			DockerfilePath:   "docker/aianalysis.Dockerfile",
+			ServiceName:      "aianalysis", // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/aianalysis",
+			DockerfilePath:   "docker/aianalysis.Dockerfile", // Dockerfile can have suffix (but this one doesn't)
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
@@ -137,9 +141,20 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 2-3: Export images to .tar and aggressive Podman cleanup
 	// ═══════════════════════════════════════════════════════════════════════
 	// This frees ~5-9 GB of disk space by removing Podman cache and intermediate layers
-	tarFiles, err := ExportImagesAndPrune(builtImages, "/tmp", writer)
-	if err != nil {
-		return fmt.Errorf("failed to export images and prune: %w", err)
+	// FIX: Skip export/prune in CI/CD mode (images pushed to registry, not stored locally)
+	var tarFiles map[string]string
+	var err error
+	if ShouldSkipImageExportAndPrune() {
+		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 2-3: Skipping image export/prune (CI/CD registry mode)")
+		_, _ = fmt.Fprintln(writer, "   Images already pushed to GHCR and will be pulled directly by Kind")
+		LogDiskSpace("EXPORT_SKIPPED", writer)
+	} else {
+		// Local mode: export and prune to save disk space
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2-3: Exporting images to .tar and pruning Podman cache...")
+		tarFiles, err = ExportImagesAndPrune(builtImages, "/tmp", writer)
+		if err != nil {
+			return fmt.Errorf("failed to export images and prune: %w", err)
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -171,9 +186,30 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 5-6: Load images from .tar into Kind and cleanup .tar files
 	// ═══════════════════════════════════════════════════════════════════════
 	// Uses shared helpers for efficient loading and cleanup
-	if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
-		return fmt.Errorf("failed to load images and cleanup: %w", err)
+	// FIX: Skip image loading in CI/CD mode (images will be pulled from registry)
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "\n⏩ PHASE 5-6: Skipping .tar image loading (CI/CD registry mode)")
+		_, _ = fmt.Fprintln(writer, "   Kind will pull images directly from GHCR as needed")
+	} else {
+		// Local mode: load images from .tar files
+		_, _ = fmt.Fprintln(writer, "\n📦 PHASE 5-6: Loading images from .tar into Kind...")
+		if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
+			return fmt.Errorf("failed to load images and cleanup: %w", err)
+		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 6.5: Deploy DataStorage RBAC (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 6.5: Deploying DataStorage RBAC (DD-AUTH-014)...")
+
+	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "  🔐 Deploying data-storage-client ClusterRole...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage RBAC deployed\n")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7a: Deploy DataStorage infrastructure FIRST (required for workflow seeding)
@@ -188,6 +224,14 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage infrastructure deployed successfully")
 
+	// Create ServiceAccount for workflow seeding with DataStorage access (DD-AUTH-014)
+	// This MUST happen before workflow seeding (Phase 7b) since seeding needs the SA token
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating ServiceAccount for workflow seeding...")
+	if err := createAIAnalysisE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create E2E ServiceAccount: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ aianalysis-e2e-sa created with DataStorage access")
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7b: Seed workflows and create ConfigMap (DD-TEST-011 Alt 2)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -199,8 +243,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
 
 	// Start port-forward to DataStorage
+	// Service name is "data-storage-service" per DD-AUTH-011 (matches production)
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "port-forward", "svc/datastorage", "38080:8080")
+		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080")
 	if err := portForwardCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start DataStorage port-forward: %w", err)
 	}
@@ -210,21 +255,83 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		}
 	}()
 
-	// Wait for port-forward to be ready
-	time.Sleep(3 * time.Second)
+	// Wait for port-forward to be ready (active polling, not fixed sleep)
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for port-forward to be ready (active polling)...")
+	ready := false
+	for i := 0; i < 30; i++ { // 30 seconds max
+		time.Sleep(1 * time.Second)
+		resp, err := http.Get(fmt.Sprintf("%s/health", dataStorageURL))
+		if err == nil && resp.StatusCode == 200 {
+			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
+			ready = true
+			_, _ = fmt.Fprintf(writer, "  ✅ Port-forward ready after %d seconds\n", i+1)
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
+		}
+	}
+	if !ready {
+		return fmt.Errorf("port-forward not ready after 30 seconds")
+	}
 
-	// Seed workflows and capture UUIDs
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, writer)
+	// Seed workflows and capture UUIDs (with DD-AUTH-014 authentication)
+	// Pattern: Uses shared workflow_seeding.go library (refactored from duplicate code)
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating authenticated DataStorage client for workflow seeding...")
+
+	// Get ServiceAccount token for authentication
+	// GetServiceAccountToken signature: (ctx, namespace, saName, kubeconfigPath)
+	saToken, err := GetServiceAccountToken(context.Background(), namespace, "aianalysis-e2e-sa", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
+	}
+
+	// Create authenticated OpenAPI client for DataStorage
+	seedClient, err := ogenclient.NewClient(
+		dataStorageURL,
+		ogenclient.WithClient(&http.Client{
+			Transport: testauth.NewServiceAccountTransport(saToken),
+			Timeout:   30 * time.Second,
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create DataStorage client: %w", err)
+	}
+
+	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
+	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
+	// Acceptable trade-off: Small duplication avoids architectural issues
+	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
+	testWorkflows := []TestWorkflow{
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0"},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "staging", Priority: "P1"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "production", Priority: "P1"},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", SignalType: "CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "test", Priority: "P1"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "production", Priority: "P0"},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Environment: "test", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0"},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", SignalType: "OOMKilled", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "staging", Priority: "P2"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "production", Priority: "P2"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", SignalType: "Unknown", Severity: "medium", Component: "deployment", Environment: "test", Priority: "P2"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "staging", Priority: "P1"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "production", Priority: "P1"},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", SignalType: "TestSignal", Severity: "critical", Component: "pod", Environment: "test", Priority: "P1"},
+	}
+
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
 
-	// Create ConfigMap with workflow UUIDs for Mock LLM
-	if err := createMockLLMConfigMap(ctx, namespace, kubeconfigPath, workflowUUIDs, writer); err != nil {
-		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap created for Mock LLM")
+	// NOTE: ConfigMap creation moved to deployMockLLMInNamespace() (Phase 7c)
+	// This avoids duplication and ensures workflows are passed correctly
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7c: Deploy remaining services IN PARALLEL (ConfigMap ready)
@@ -362,41 +469,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 // - Creates ConfigMap with workflow_name → UUID mapping
 // - Mock LLM reads ConfigMap at startup (no HTTP self-discovery needed)
 // - Deterministic ordering, no timing issues
-func createMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  Creating Mock LLM ConfigMap with workflow UUIDs...")
-
-	// Build YAML content for scenarios (properly indented for ConfigMap data field)
-	yamlContent := "    scenarios:\n"
-	for key, uuid := range workflowUUIDs {
-		// key format: "workflow_name:environment"
-		// We'll simplify the key for the Mock LLM (just use workflow_name without environment for now)
-		yamlContent += fmt.Sprintf("      %s: %s\n", key, uuid)
-	}
-
-	manifest := fmt.Sprintf(`
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: mock-llm-scenarios
-  namespace: %s
-  labels:
-    app: mock-llm
-    component: test-infrastructure
-data:
-  scenarios.yaml: |
-%s`, namespace, yamlContent)
-
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
-	}
-
-	return nil
-}
+// Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
 func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
@@ -414,13 +487,68 @@ data:
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
     data_storage:
-      url: "http://datastorage:8080"
+      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
     logging:
       level: "INFO"
     audit:
       flush_interval_seconds: 0.1
       buffer_size: 10000
       batch_size: 50
+    auth:
+      resource_name: "holmesgpt-api"  # Match actual Service name (DD-AUTH-014)
+---
+# ServiceAccount: HolmesGPT-API (DD-AUTH-014 middleware needs TokenReview permissions)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+automountServiceAccountToken: true
+---
+# ClusterRole: HolmesGPT-API Middleware Permissions (DD-AUTH-014)
+# Grants TokenReview permission so middleware can validate incoming Bearer tokens
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-middleware
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+# ClusterRoleBinding: Grant HolmesGPT-API SA middleware permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-middleware
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-middleware
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api
+  namespace: kubernaut-system
+---
+# RoleBinding: Grant HolmesGPT-API access to DataStorage for audit writes (DD-AUTH-014)
+# Authority: DD-AUTH-014 (Middleware-based authentication) + BR-HAPI-197 (Audit trail)
+# Required for: HAPI audit events → DataStorage REST API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-datastorage-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api
+  namespace: kubernaut-system
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -437,10 +565,11 @@ spec:
       labels:
         app: holmesgpt-api
     spec:
+      serviceAccountName: holmesgpt-api
       containers:
       - name: holmesgpt-api
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
         args:
@@ -458,7 +587,7 @@ spec:
         - name: OPENAI_API_KEY
           value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
-          value: "http://datastorage:8080"
+          value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
@@ -481,7 +610,7 @@ spec:
   - port: 8080
     targetPort: 8080
     nodePort: 30088
-`, imageName)
+`, imageName, GetImagePullPolicy())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
@@ -515,7 +644,7 @@ data:
       url: "http://holmesgpt-api:8080"
       timeout: "60s"
     datastorage:
-      url: "http://datastorage:8080"
+      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
       timeout: "60s"
     rego:
       policy_path: "/etc/aianalysis/policies/approval.rego"
@@ -525,6 +654,7 @@ kind: ServiceAccount
 metadata:
   name: aianalysis-controller
   namespace: kubernaut-system
+automountServiceAccountToken: true  # Kubernetes 1.24+ - ensure token is mounted
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -554,6 +684,50 @@ subjects:
   name: aianalysis-controller
   namespace: kubernaut-system
 ---
+# ClusterRole: HolmesGPT API Client Access (DD-AUTH-014 middleware)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-client
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["holmesgpt-api"]
+  verbs: ["create"]  # Changed from 'get' - DD-AUTH-014 middleware checks 'create' verb
+---
+# RoleBinding: Grant AIAnalysis controller access to HolmesGPT API
+# Required for DD-AUTH-014 middleware SubjectAccessReview check
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-holmesgpt-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-client
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+# RoleBinding: Grant AIAnalysis controller access to DataStorage for audit writes (DD-AUTH-014)
+# Authority: DD-AUTH-014 (Middleware-based authentication) + BR-AI-009 (Audit trail)
+# Required for: AIAnalysis audit events → DataStorage REST API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-datastorage-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -573,7 +747,7 @@ spec:
       containers:
       - name: aianalysis
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         ports:
         - containerPort: 8080
         - containerPort: 9090
@@ -594,7 +768,7 @@ spec:
         - name: HOLMESGPT_API_URL
           value: http://holmesgpt-api:8080
         - name: DATASTORAGE_URL
-          value: http://datastorage:8080
+          value: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
         volumeMounts:
         - name: config
           mountPath: /etc/aianalysis
@@ -632,7 +806,7 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: 30284
-`, imageName)
+`, imageName, GetImagePullPolicy())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
@@ -967,4 +1141,44 @@ data:
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// createAIAnalysisE2EServiceAccount creates the ServiceAccount for workflow seeding
+// with DataStorage access using DD-AUTH-014 (SubjectAccessReview authorization)
+func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Create a fresh context (workaround for potential context issues)
+	freshCtx := context.Background()
+
+	// Create ServiceAccount
+	saName := "aianalysis-e2e-sa"
+	if err := CreateServiceAccount(freshCtx, namespace, kubeconfigPath, saName, writer); err != nil {
+		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+
+	// Bind to data-storage-client ClusterRole (already deployed in Phase 6.5)
+	// This ClusterRole has SubjectAccessReview permissions for DataStorage access
+	roleBindingYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-e2e-datastorage-access
+  namespace: %s
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: data-storage-client
+  apiGroup: rbac.authorization.k8s.io
+`, namespace, saName, namespace)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(roleBindingYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create RoleBinding: %w", err)
+	}
+
+	return nil
 }

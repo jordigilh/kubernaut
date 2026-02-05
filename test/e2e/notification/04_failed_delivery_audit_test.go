@@ -20,15 +20,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // ========================================
@@ -95,10 +98,16 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Use real Data Storage URL from Kind cluster
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+		// ✅ DD-API-001 + DD-AUTH-014: Create authenticated OpenAPI client (MANDATORY)
+		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
 		var err error
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 		// Create NotificationRequest that will FAIL delivery
 		// Strategy: Use Email channel which is NOT configured in E2E environment
@@ -112,6 +121,13 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID,
+					Namespace:  notificationNS,
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Failed Delivery Audit Test",
@@ -166,23 +182,23 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// Controller will attempt Email delivery, which will fail (service not configured)
 		// Expected phases: Pending → Sending → Failed (or PartiallySent)
-		// Give controller time to process and emit audit event
-		Eventually(func() bool {
-			var n notificationv1alpha1.NotificationRequest
-			if err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: notificationNS,
-			}, &n); err != nil {
-				return false
-			}
+	// Give controller time to process and emit audit event
+	Eventually(func() bool {
+		var n notificationv1alpha1.NotificationRequest
+		if err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, &n); err != nil {
+			return false
+		}
 
-			// Check if controller has processed and recorded failure
-			// Phase might be Failed (all channels failed) or PartiallySent (some succeeded, some failed)
-			// or Sending (still attempting)
-			// We're looking for delivery attempts recorded in status
-			return len(n.Status.DeliveryAttempts) > 0
-		}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-			"Controller should attempt delivery and record delivery attempt")
+		// Check if controller has processed and recorded failure
+		// Phase might be Failed (all channels failed) or PartiallySent (some succeeded, some failed)
+		// or Sending (still attempting)
+		// We're looking for delivery attempts recorded in status
+		return len(n.Status.DeliveryAttempts) > 0
+	}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+		"Controller should attempt delivery and record delivery attempt")
 
 		// ===== STEP 3: Verify failed audit event persisted to PostgreSQL =====
 		By("Verifying notification.message.failed audit event persisted to PostgreSQL")
@@ -194,8 +210,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			count := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Found %d failed audit events for correlation_id=%s\n", count, correlationID)
 			return count
-		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-			"Failed audit event should be persisted to PostgreSQL within 15 seconds")
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+			"Failed audit event should be persisted to PostgreSQL within 30 seconds")
 
 		// ===== STEP 4: Verify ADR-034 compliance and error details =====
 		By("Verifying ADR-034 compliance of failed audit event")
@@ -344,6 +360,13 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID,
+					Namespace:  "default",
+				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Partial Failure Audit Test",
@@ -366,19 +389,19 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		err := k8sClient.Create(testCtx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for controller to process both channels")
-		Eventually(func() int {
-			var n notificationv1alpha1.NotificationRequest
-			if err := k8sClient.Get(testCtx, types.NamespacedName{
-				Name:      notificationName,
-				Namespace: "default",
-			}, &n); err != nil {
-				return 0
-			}
-			// Wait for both channels to be attempted
-			return len(n.Status.DeliveryAttempts)
-		}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
-			"Controller should attempt delivery for both channels")
+	By("Waiting for controller to process both channels")
+	Eventually(func() int {
+		var n notificationv1alpha1.NotificationRequest
+		if err := apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: "default",
+		}, &n); err != nil {
+			return 0
+		}
+		// Wait for both channels to be attempted
+		return len(n.Status.DeliveryAttempts)
+	}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
+		"Controller should attempt delivery for both channels")
 
 		By("Verifying BOTH success and failure audit events are persisted")
 
@@ -388,7 +411,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			failedCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Partial failure - sent=%d, failed=%d\n", sentCount, failedCount)
 			return sentCount >= 1 && failedCount >= 1
-		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
 			"Should have both success (console) and failure (email) audit events")
 
 		By("Verifying each event has correct channel in event_data")

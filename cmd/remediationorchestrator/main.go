@@ -31,14 +31,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	//+kubebuilder:scaffold:imports
 )
@@ -209,6 +209,21 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}
+
+	// REFACTOR: Setup RemediationApprovalRequest audit controller (BR-AUDIT-006)
+	// This controller watches RAR for status.Decision changes and emits audit events
+	// Enhanced with metrics for SOC 2 compliance tracking
+	setupLog.Info("Setting up RemediationApprovalRequest audit controller (BR-AUDIT-006)")
+	if err = controller.NewRARReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		auditStore,
+		roMetrics, // REFACTOR: Pass metrics for business value tracking
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RemediationApprovalRequestAudit")
+		os.Exit(1)
+	}
+	setupLog.Info("RemediationApprovalRequest audit controller ready with metrics")
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

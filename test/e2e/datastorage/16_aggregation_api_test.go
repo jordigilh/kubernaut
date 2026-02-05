@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -38,7 +37,7 @@ import (
 // against a REAL Data Storage Service (Podman container) with real PostgreSQL.
 //
 // INTEGRATION TEST STRATEGY:
-// - Use REAL HTTP client to call Data Storage Service API
+// - Use REAL HTTP HTTPClient to call Data Storage Service API
 // - Insert test data directly into PostgreSQL database
 // - Execute HTTP GET requests to aggregation endpoints
 // - Verify API responses against direct database queries
@@ -61,7 +60,6 @@ import (
 
 var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Ordered, func() {
 	var (
-		client          *http.Client
 		adr033HistoryID int64 // Auto-generated history ID for test data
 	)
 
@@ -72,8 +70,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		// schemas, the API won't find the data and tests will fail.
 		// This is NOT a parallel execution issue - it's an API server architecture decision.
 
-		// Use 30-second timeout for HTTP requests
-		client = &http.Client{Timeout: 30 * time.Second}
+		// NOTE: Using suite-level AuthHTTPClient for aggregation endpoints (not in OpenAPI spec)
+		// DD-AUTH-014: Authenticated HTTP client required for all API calls
 
 		GinkgoWriter.Println("📊 ADR-033 Integration Tests: HTTP API + PostgreSQL")
 
@@ -130,8 +128,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "pod-oom-recovery", "v1.0", true, false, false)
 				}
 
-				// Execute HTTP request
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				// Execute HTTP request (using local client - endpoint not in OpenAPI spec)
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -204,7 +202,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -230,7 +228,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -252,7 +250,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -274,7 +272,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -321,7 +319,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				`, adr033HistoryID, incidentType)
 				Expect(err).ToNot(HaveOccurred())
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -339,7 +337,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			It("should handle zero data gracefully", func() {
 				incidentType := "integration-test-no-data"
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -366,7 +364,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -389,7 +387,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "test-workflow", "v1.0", true, false, false)
 				}
 
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -407,7 +405,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 		Context("TC-ADR033-05: Error handling", func() {
 			It("should return 400 Bad Request for missing incident_type", func() {
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?time_range=7d",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?time_range=7d",
 					dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -418,7 +416,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			})
 
 			It("should return 400 Bad Request for invalid time_range", func() {
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=test&time_range=invalid",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=test&time_range=invalid",
 					dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -452,7 +450,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// Execute HTTP request
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=%s&time_range=7d&min_samples=5",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=%s&time_range=7d&min_samples=5",
 					dataStorageURL, workflowID, workflowVersion))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -510,7 +508,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// Query for v1.0 only
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=v1.0&time_range=7d&min_samples=1",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=v1.0&time_range=7d&min_samples=1",
 					dataStorageURL, workflowID))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -527,7 +525,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 		Context("TC-ADR033-08: Error handling", func() {
 			It("should return 400 Bad Request for missing workflow_id", func() {
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?time_range=7d",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?time_range=7d",
 					dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -561,7 +559,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
 
 				// ACT: Query incident-type success rate
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -605,7 +603,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query incident-type success rate
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -644,7 +642,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query incident-type success rate
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					dataStorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
@@ -718,7 +716,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				insertADR033ActionTrace(adr033HistoryID, "integration-test-other", "completed", "other-workflow", "v2.0", true, false, false)
 
 				// ACT: Query multi-dimensional endpoint with all 3 dimensions
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&action_type=increase_memory&time_range=1h", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&action_type=increase_memory&time_range=1h", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -797,7 +795,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query without action_type (should aggregate both actions)
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&time_range=1h", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&time_range=1h", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -833,7 +831,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query with only incident_type
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -858,7 +856,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		Context("validation errors", func() {
 			It("should return 400 Bad Request when workflow_version without workflow_id", func() {
 				// ACT: Query with invalid parameters
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&workflow_version=v1.0&time_range=7d", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&workflow_version=v1.0&time_range=7d", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -876,7 +874,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 			It("should return 400 Bad Request when no dimensions are specified", func() {
 				// ACT: Query with no dimension filters (only time_range)
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?time_range=7d", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?time_range=7d", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -894,7 +892,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 			It("should return 400 Bad Request for invalid time_range", func() {
 				// ACT: Query with invalid time_range
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 
@@ -914,7 +912,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				insertADR033ActionTrace(adr033HistoryID, "integration-test-defaults", "completed", "test-workflow", "v1.0", true, false, false)
 
 				// ACT: Query without time_range
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", dataStorageURL))
+				resp, err := AuthHTTPClient.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", dataStorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 

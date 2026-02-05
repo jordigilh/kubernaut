@@ -121,6 +121,9 @@ type Server struct {
 	httpServer *http.Server
 	router     chi.Router // Chi router for adapter registration and route grouping
 
+	// Configuration
+	config *config.ServerConfig // ADR-030: Service configuration (needed for middleware setup)
+
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
 	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
@@ -235,12 +238,18 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	// Create statusUpdater
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
 
-	// Create CRD creator
+	// BR-GATEWAY-093: Wrap K8s client with circuit breaker (must be consistent in production AND tests)
+	// FIX: GW-INT-AUD-019 was failing because circuit breaker was missing in test mode
+	// Without circuit breaker, errors.Is(err, gobreaker.ErrOpenState) always returns false
+	// Result: Test expected ERR_CIRCUIT_BREAKER_OPEN but got ERR_K8S_UNKNOWN
+	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
+
+	// Create CRD creator with circuit-breaker-protected client
 	fallbackNamespace := "default"
 	if cfg.Processing.CRD.FallbackNamespace != "" {
 		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
 	}
-	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
+	crdCreator := processing.NewCRDCreator(cbClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
 
 	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety (test environment)
 	// Uses ctrlClient as apiReader (test clients don't have separate cache/apiReader)
@@ -256,6 +265,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 
 	// Create server
 	server := &Server{
+		config:          cfg,
 		adapterRegistry: adapterRegistry,
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
@@ -492,6 +502,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// Create server (Redis-free)
 	server := &Server{
+		config:          cfg,
 		adapterRegistry: adapterRegistry,
 		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
 		statusUpdater:   statusUpdater,
@@ -555,6 +566,18 @@ func (s *Server) setupRoutes() chi.Router {
 			"allowed_origins", corsOpts.AllowedOrigins)
 	}
 	r.Use(kubecors.Handler(corsOpts))
+
+	// ADR-048-ADDENDUM-001: Concurrency limiting (defense-in-depth with Nginx/HAProxy)
+	// Prevents per-pod overload with chi's built-in Throttle middleware
+	// - Returns HTTP 503 Service Unavailable when limit exceeded
+	// - Complements cluster-wide rate limiting at Ingress/Route layer
+	// - Essential for E2E tests that bypass Ingress
+	if s.config.Server.MaxConcurrentRequests > 0 {
+		s.logger.Info("Concurrency throttling enabled",
+			"max_concurrent_requests", s.config.Server.MaxConcurrentRequests,
+			"authority", "ADR-048-ADDENDUM-001")
+		r.Use(chimiddleware.Throttle(s.config.Server.MaxConcurrentRequests))
+	}
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID) // Chi's built-in request ID

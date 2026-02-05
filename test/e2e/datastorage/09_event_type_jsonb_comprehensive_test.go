@@ -1038,12 +1038,12 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(approvalName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(ogenclient.RemediationApprovalAuditPayload{
-					EventType:        ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
-					RequestName:      approvalName,
-					Decision:         ogenclient.RemediationApprovalAuditPayloadDecisionApproved,
-					DecidedAt:        time.Now().UTC(),
-					DecisionMessage:  "Approved by ops team for E2E testing",
-					AiAnalysisRef:    "aianalysis-test-ref-123",
+					EventType:       ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
+					RequestName:     approvalName,
+					Decision:        ogenclient.RemediationApprovalAuditPayloadDecisionApproved,
+					DecidedAt:       time.Now().UTC(),
+					DecisionMessage: "Approved by ops team for E2E testing",
+					AiAnalysisRef:   "aianalysis-test-ref-123",
 				}),
 			}
 		},
@@ -1157,15 +1157,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(workflowID.String()),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewWorkflowCatalogCreatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogCreatedPayload{
-					WorkflowID:      workflowID,                                            // REQUIRED
-					WorkflowName:    "test-workflow",                                       // REQUIRED
-					Version:         "v1.0.0",                                              // REQUIRED
-					Status:          ogenclient.WorkflowCatalogCreatedPayloadStatusActive, // REQUIRED
-					IsLatestVersion: true,                                                  // REQUIRED
-					ExecutionEngine: "tekton",                                              // REQUIRED
-					Name:            "Test Workflow Display Name",                          // REQUIRED
-					Description:     ogenclient.NewOptString("Test workflow description"),  // OPTIONAL
-					Labels: ogenclient.NewOptWorkflowCatalogCreatedPayloadLabels(ogenclient.WorkflowCatalogCreatedPayloadLabels{}), // OPTIONAL
+					WorkflowID:      workflowID,                                                                                             // REQUIRED
+					WorkflowName:    "test-workflow",                                                                                        // REQUIRED
+					Version:         "v1.0.0",                                                                                               // REQUIRED
+					Status:          ogenclient.WorkflowCatalogCreatedPayloadStatusActive,                                                   // REQUIRED
+					IsLatestVersion: true,                                                                                                   // REQUIRED
+					ExecutionEngine: "tekton",                                                                                               // REQUIRED
+					Name:            "Test Workflow Display Name",                                                                           // REQUIRED
+					Description:     ogenclient.NewOptString("Test workflow description"),                                                   // OPTIONAL
+					Labels:          ogenclient.NewOptWorkflowCatalogCreatedPayloadLabels(ogenclient.WorkflowCatalogCreatedPayloadLabels{}), // OPTIONAL
 				}),
 			}
 		},
@@ -1197,7 +1197,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				EventData: ogenclient.NewWorkflowCatalogUpdatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogUpdatedPayload{
 					WorkflowID: workflowID, // REQUIRED
 					UpdatedFields: ogenclient.WorkflowCatalogUpdatedFields{ // REQUIRED (at least one field updated)
-						Version:     ogenclient.NewOptString("v2.0.0"), // OPTIONAL (but provide at least one)
+						Version:     ogenclient.NewOptString("v2.0.0"),              // OPTIONAL (but provide at least one)
 						Description: ogenclient.NewOptString("Updated description"), // OPTIONAL
 					},
 				}),
@@ -1266,8 +1266,8 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(ogenclient.AIAnalysisHolmesGPTCallPayload{
 					Endpoint:       "/api/v1/analyze", // REQUIRED
-					HTTPStatusCode: 200,                // REQUIRED
-					DurationMs:     150,                // REQUIRED
+					HTTPStatusCode: 200,               // REQUIRED
+					DurationMs:     150,               // REQUIRED
 				}),
 			}
 		},
@@ -1386,7 +1386,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 					auditEvent := tc.CreateEvent()
 
 					// ACT: Send event using OpenAPI client (replaces raw HTTP POST)
-					resp, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+					resp, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
 					Expect(resp).ToNot(BeNil())
 
@@ -1415,7 +1415,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 						auditEvent := tc.CreateEvent()
 
 						// ⚠️ CRITICAL: Must send event BEFORE querying it!
-						_, err := dsClient.CreateAuditEvent(ctx, &auditEvent)
+						_, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 						Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
 
 						correlationID := auditEvent.CorrelationID

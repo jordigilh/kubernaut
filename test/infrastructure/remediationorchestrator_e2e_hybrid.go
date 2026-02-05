@@ -77,9 +77,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Build RemediationOrchestrator with coverage in parallel using consolidated API
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "remediationorchestrator-controller",
-			ImageName:        "kubernaut/remediationorchestrator-controller",
-			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",
+			ServiceName:      "remediationorchestrator",  // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/remediationorchestrator",
+			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",  // Dockerfile can have suffix
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
 		}
@@ -250,6 +250,38 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3.5: Create DataStorage RBAC (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	// Step 0: Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// Step 1: Create RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for DataStorage ServiceAccount (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "data-storage-service", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage ServiceAccount RoleBinding: %w", err)
+	}
+
+	// Step 2: Create RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)
+	// CRITICAL: RO controller needs this to emit audit events to DataStorage
+	// Authority: DD-AUTH-014 (Middleware-based SAR Authentication)
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for RemediationOrchestrator controller (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "remediationorchestrator-controller", writer); err != nil {
+		return fmt.Errorf("failed to create RemediationOrchestrator controller RoleBinding: %w", err)
+	}
+
+	// Step 3: Create RoleBinding for AuthWebhook (DD-AUTH-014)
+	// CRITICAL: AuthWebhook needs this to emit audit events to DataStorage (Gap #8)
+	// Per RCA (Jan 30, 2026): AuthWebhook was missing DataStorage RBAC, causing Gap #8 failure
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for AuthWebhook (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "authwebhook", writer); err != nil {
+		return fmt.Errorf("failed to create AuthWebhook RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	// NOTE: Using dynamically generated image names from consolidated API (BuildImageForKind)
@@ -277,10 +309,26 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
+		// DD-AUTH-014: Deploy client ClusterRole FIRST (required for SAR checks)
+		// This enables all services to pass SAR checks when calling DataStorage
+		_, _ = fmt.Fprintf(writer, "🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+		if clientRBACErr := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); clientRBACErr != nil {
+			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy client ClusterRole: %w", clientRBACErr)}
+			return
+		}
+		
 		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		dsImage := builtImages["DataStorage"]
-		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar (image from quay.io)
+		
+		// DD-AUTH-014: Deploy ServiceAccount and RBAC (required for pod creation)
+		_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
+		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
+			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy service RBAC: %w", rbacErr)}
+			return
+		}
+		
+		// DD-AUTH-014: Deploy DataStorage with middleware-based auth
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -440,19 +488,20 @@ data:
   remediationorchestrator.yaml: |
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
+    # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
     audit:
-      datastorage_url: http://datastorage:8080
+      dataStorageUrl: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
       timeout: 10s
       buffer:
-        buffer_size: 10000
-        batch_size: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
-        flush_interval: 100ms  # E2E: Fast flush for test visibility (0.1s)
-        max_retries: 3
+        bufferSize: 10000
+        batchSize: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
+        flushInterval: 100ms  # E2E: Fast flush for test visibility (0.1s)
+        maxRetries: 3
     controller:
-      metrics_addr: :9093
-      health_probe_addr: :8084
-      leader_election: false
-      leader_election_id: remediationorchestrator.kubernaut.ai
+      metricsAddr: :9093
+      healthProbeAddr: :8084
+      leaderElection: false
+      leaderElectionId: remediationorchestrator.kubernaut.ai
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -473,7 +522,7 @@ spec:
       containers:
       - name: controller
         image: %s
-        imagePullPolicy: Never
+        imagePullPolicy: %s
         args:
         - --config=/etc/config/remediationorchestrator.yaml
         ports:
@@ -586,7 +635,7 @@ subjects:
 - kind: ServiceAccount
   name: remediationorchestrator-controller
   namespace: kubernaut-system
-`, imageName, coverdataPath)
+`, imageName, GetImagePullPolicy(), coverdataPath)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewReader([]byte(manifest))

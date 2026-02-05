@@ -121,7 +121,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "OOMKilled",
 						Severity:    "critical",
 						Component:   "pod",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P0",
 					},
 					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
@@ -144,7 +144,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "OOMKilled",
 						Severity:    "critical",
 						Component:   "pod",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P0",
 					},
 					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
@@ -250,7 +250,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
 						Component:   "deployment",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P1",
 					},
 					CustomLabels: models.CustomLabels{
@@ -275,7 +275,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
 						Component:   "deployment",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P1",
 					},
 					CustomLabels: models.CustomLabels{
@@ -377,7 +377,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "DatabaseConnectionLeak",
 						Severity:    "critical",
 						Component:   "deployment",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P0",
 					},
 					CustomLabels: models.CustomLabels{
@@ -475,7 +475,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "CPUThrottling",
 						Severity:    "medium",
 						Component:   "pod",
-						Environment: "staging",
+						Environment: []string{"staging"},
 						Priority:    "P2",
 					},
 					CustomLabels: models.CustomLabels{
@@ -498,7 +498,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "CPUThrottling",
 						Severity:    "medium",
 						Component:   "pod",
-						Environment: "staging",
+						Environment: []string{"staging"},
 						Priority:    "P2",
 					},
 					CustomLabels: models.CustomLabels{
@@ -597,7 +597,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
 						Component:   "service",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P1",
 					},
 					CustomLabels: models.CustomLabels{
@@ -622,7 +622,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
 						Component:   "service",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P1",
 					},
 					CustomLabels: models.CustomLabels{
@@ -718,7 +718,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
 						Component:   "service",
-						Environment: "production",
+						Environment: []string{"production"},
 						Priority:    "P1",
 					},
 					CustomLabels: models.CustomLabels{

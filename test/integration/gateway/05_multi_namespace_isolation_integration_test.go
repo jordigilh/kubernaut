@@ -103,10 +103,11 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 
 		testLogger.Info("✅ Test namespaces ready")
 
-		// Initialize Gateway with shared K8s client
-		gwConfig := createGatewayConfig("http://mock-datastorage:8080")
+		// Initialize Gateway with shared K8s client AND shared audit store
+		// ADR-032: Audit is MANDATORY for P0 services (Gateway)
+		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 		var err error
-		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient)
+		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, sharedAuditStore)
 		Expect(err).ToNot(HaveOccurred())
 		testLogger.Info("✅ Gateway server initialized")
 	})

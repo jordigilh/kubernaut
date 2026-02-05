@@ -62,6 +62,8 @@ import (
 // - No shared resources that would require Serial execution
 
 var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Ordered, func() {
+	// NOTE: Using suite-level AuthHTTPClient for connection pool stress testing
+	// DD-AUTH-014: Authenticated HTTP client required for all API calls
 
 	Describe("Burst Traffic Handling", func() {
 		Context("when 100 concurrent writes exceed maxOpenConns (50)", func() {
@@ -98,39 +100,39 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						defer wg.Done()
 						defer GinkgoRecover()
 
-					requestStart := time.Now()
+						requestStart := time.Now()
 
 						// Create type-safe workflow execution payload
-					workflowPayload := ogenclient.WorkflowExecutionAuditPayload{
-						EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
-						ExecutionName:   fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
-						WorkflowID:      "pool-exhaustion-test-workflow",
-						WorkflowVersion: "v1.0.0",
-						ContainerImage:  "registry.io/test/pool-workflow@sha256:abc123def",
-						TargetResource:  "deployment/test-app",
-						Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
-					}
+						workflowPayload := ogenclient.WorkflowExecutionAuditPayload{
+							EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+							ExecutionName:   fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
+							WorkflowID:      "pool-exhaustion-test-workflow",
+							WorkflowVersion: "v1.0.0",
+							ContainerImage:  "registry.io/test/pool-workflow@sha256:abc123def",
+							TargetResource:  "deployment/test-app",
+							Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+						}
 
-					// Marshal event_data using ogen's jx.Encoder
-					var e jx.Encoder
-					workflowPayload.Encode(&e)
-					eventDataJSON := e.Bytes()
+						// Marshal event_data using ogen's jx.Encoder
+						var e jx.Encoder
+						workflowPayload.Encode(&e)
+						eventDataJSON := e.Bytes()
 
-					// Create audit event payload as map for proper JSON serialization
-					auditEvent := map[string]interface{}{
-						"version":         "1.0",
-						"event_type":      "workflowexecution.workflow.completed",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"event_category":  "workflowexecution",
-						"event_action":    "completed",
-						"event_outcome":   "success",
-						"actor_type":      "ServiceAccount",
-						"actor_id":        "system:serviceaccount:workflowexecution:workflowexecution-sa",
-						"resource_type":   "WorkflowExecution",
-						"resource_id":     fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
-						"correlation_id":  fmt.Sprintf("remediation-pool-test-%s-%d", testID, index),
-						"event_data":      json.RawMessage(eventDataJSON), // ✅ Required field added
-					}
+						// Create audit event payload as map for proper JSON serialization
+						auditEvent := map[string]interface{}{
+							"version":         "1.0",
+							"event_type":      "workflowexecution.workflow.completed",
+							"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+							"event_category":  "workflowexecution",
+							"event_action":    "completed",
+							"event_outcome":   "success",
+							"actor_type":      "ServiceAccount",
+							"actor_id":        "system:serviceaccount:workflowexecution:workflowexecution-sa",
+							"resource_type":   "WorkflowExecution",
+							"resource_id":     fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
+							"correlation_id":  fmt.Sprintf("remediation-pool-test-%s-%d", testID, index),
+							"event_data":      json.RawMessage(eventDataJSON), // ✅ Required field added
+						}
 
 						// Marshal to JSON
 						payloadBytes, err := json.Marshal(auditEvent)
@@ -140,11 +142,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						}
 
 						// POST to audit events endpoint
-						resp, err := http.Post(
-							dataStorageURL+"/api/v1/audit/events",
-							"application/json",
-							bytes.NewReader(payloadBytes),
-						)
+						req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+						req.Header.Set("Content-Type", "application/json")
+
+						resp, err := AuthHTTPClient.Do(req)
 
 						results[index].duration = time.Since(requestStart)
 						results[index].err = err
@@ -263,11 +265,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 					}
 
 					payloadBytes, _ := json.Marshal(auditEvent)
-					resp, err := http.Post(
-						dataStorageURL+"/api/v1/audit/events",
-						"application/json",
-						bytes.NewReader(payloadBytes),
-					)
+					req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+					req.Header.Set("Content-Type", "application/json")
+
+					resp, err := AuthHTTPClient.Do(req)
 					if err == nil {
 						_ = resp.Body.Close()
 					}
@@ -307,11 +309,12 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				}
 
 				normalStart := time.Now()
-				resp, err := http.Post(
-					dataStorageURL+"/api/v1/audit/events",
-					"application/json",
-					bytes.NewReader(payloadBytes),
-				)
+				req, _ := http.NewRequest("POST", dataStorageURL+"/api/v1/audit/events", bytes.NewBuffer(payloadBytes))
+
+				req.Header.Set("Content-Type", "application/json")
+
+				// Use authenticated HTTP client for baseline test (DD-AUTH-014)
+				resp, err := AuthHTTPClient.Do(req)
 				normalDuration = time.Since(normalStart)
 
 				if err != nil || resp == nil {
@@ -327,10 +330,10 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 					return false
 				}
 
-			normalResp = resp
-			return true
-		}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Connection pool MUST recover after burst - normal request should succeed quickly (<1s) [E2E timeout: 90s for Kind/Podman constraints]")
+				normalResp = resp
+				return true
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Connection pool MUST recover after burst - normal request should succeed quickly (<1s) [E2E timeout: 90s for Kind/Podman constraints]")
 
 			GinkgoWriter.Printf("✅ Connection pool recovered, normal request took %v\n", normalDuration)
 

@@ -119,55 +119,56 @@ execution:
 
 
 # Test Workflow Fixtures
+# MUST match Mock LLM server.py and AIAnalysis test_workflows.go
 TEST_WORKFLOWS = [
     WorkflowFixture(
-        workflow_name="oomkill-increase-memory-limits",
+        workflow_name="oomkill-increase-memory-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="OOMKill Remediation - Increase Memory Limits",
         description="Increases memory limits for pods experiencing OOMKilled events",
         signal_type="OOMKilled",
         severity="critical",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P0",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001"
     ),
     WorkflowFixture(
-        workflow_name="oomkill-scale-down-replicas",
+        workflow_name="memory-optimize-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="OOMKill Remediation - Scale Down Replicas",
         description="Reduces replica count for deployments experiencing OOMKilled",
         signal_type="OOMKilled",
         severity="high",
         component="deployment",
-        environment="staging",
+        environment=["staging"],
         priority="P1",
         risk_tolerance="medium",
         container_image="ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002"
     ),
     WorkflowFixture(
-        workflow_name="crashloop-fix-configuration",
+        workflow_name="crashloop-config-fix-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="CrashLoopBackOff - Fix Configuration",
         description="Identifies and fixes configuration issues causing CrashLoopBackOff",
         signal_type="CrashLoopBackOff",
         severity="high",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P1",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003"
     ),
     WorkflowFixture(
-        workflow_name="node-not-ready-drain-and-reboot",
+        workflow_name="node-drain-reboot-v1",  # Aligned with Mock LLM and AIAnalysis
         version="1.0.0",
         display_name="NodeNotReady - Drain and Reboot",
         description="Safely drains and reboots nodes in NotReady state",
         signal_type="NodeNotReady",
         severity="critical",
         component="node",
-        environment="production",
+        environment=["production"],
         priority="P0",
         risk_tolerance="low",
         container_image="ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004"
@@ -180,7 +181,7 @@ TEST_WORKFLOWS = [
         signal_type="ImagePullBackOff",
         severity="high",
         component="pod",
-        environment="production",
+        environment=["production"],
         priority="P1",
         risk_tolerance="medium",
         container_image="ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005"
@@ -193,14 +194,29 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     Bootstrap workflow test data into Data Storage.
 
     DD-API-001 COMPLIANCE: Uses OpenAPI generated client.
+    DD-AUTH-014: Uses shared pool manager with ServiceAccount token injection.
+    DD-TEST-011 v2.0: Captures workflow UUIDs for Mock LLM configuration.
 
     Args:
         data_storage_url: Data Storage service URL
         workflows: List of workflow fixtures (defaults to TEST_WORKFLOWS)
 
     Returns:
-        Dict with 'created', 'existing', 'failed' counts and workflow IDs
+        Dict with 'created', 'existing', 'failed' counts and workflow_id_map
+        {
+            "created": ["workflow1", ...],
+            "existing": ["workflow2", ...],
+            "failed": [...],
+            "total": N,
+            "workflow_id_map": {"workflow_name:environment": "uuid", ...}
+        }
     """
+    # DD-AUTH-014: Import pool manager for token injection
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
+    
     if workflows is None:
         workflows = TEST_WORKFLOWS
 
@@ -209,10 +225,14 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
         "created": [],
         "existing": [],
         "failed": [],
-        "total": len(workflows)
+        "total": len(workflows),
+        "workflow_id_map": {}  # DD-TEST-011: Map workflow_name:environment → UUID
     }
 
     with ApiClient(config) as api_client:
+        # DD-AUTH-014: Inject ServiceAccount token via shared pool manager
+        auth_pool = get_shared_datastorage_pool_manager()
+        api_client.rest_client.pool_manager = auth_pool
         api = WorkflowCatalogAPIApi(api_client)
 
         for workflow in workflows:
@@ -223,6 +243,15 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                     remediation_workflow=remediation_workflow,
                     _request_timeout=10
                 )
+                
+                # DD-TEST-011: Capture workflow_id from response
+                workflow_id = response.workflow_id if hasattr(response, 'workflow_id') else None
+                if workflow_id:
+                    # Use first environment from list for key
+                    env = workflow.environment[0] if isinstance(workflow.environment, list) else workflow.environment
+                    key = f"{workflow.workflow_name}:{env}"
+                    results["workflow_id_map"][key] = workflow_id
+                
                 results["created"].append(workflow.workflow_name)
 
             except Exception as e:
@@ -230,6 +259,22 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                 # 409 Conflict means workflow already exists (acceptable)
                 if "409" in error_msg or "already exists" in error_msg.lower():
                     results["existing"].append(workflow.workflow_name)
+                    
+                    # DD-TEST-011: Query for existing workflow UUID
+                    try:
+                        # Query by workflow_name to get UUID
+                        search_results = api.search_workflows(
+                            query=workflow.workflow_name,
+                            top_k=1,
+                            _request_timeout=5
+                        )
+                        if search_results and len(search_results) > 0:
+                            workflow_id = search_results[0].workflow_id
+                            env = workflow.environment[0] if isinstance(workflow.environment, list) else workflow.environment
+                            key = f"{workflow.workflow_name}:{env}"
+                            results["workflow_id_map"][key] = workflow_id
+                    except Exception as query_err:
+                        print(f"⚠️  Failed to query existing workflow UUID for {workflow.workflow_name}: {query_err}")
                 else:
                     results["failed"].append({
                         "workflow": workflow.workflow_name,

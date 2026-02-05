@@ -201,12 +201,20 @@ class TestParseInvestigationResultWarnings:
 
         result = _parse_investigation_result(investigation, request_data, owner_chain=None)
 
-        assert result["selected_workflow"] is None
+        # ADR-045 v1.2: selected_workflow field is only included when not None
+        # Parser no longer includes null fields (lines 790-791 of result_parser.py)
+        assert "selected_workflow" not in result or result.get("selected_workflow") is None
         assert "No workflows matched" in result["warnings"][0]
 
     def test_warning_when_low_confidence(self):
         """
-        Business Outcome: AIAnalysis warned for low confidence selections
+        Business Outcome: Low confidence workflows are returned without HAPI warnings
+        
+        BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's.
+        HAPI returns the workflow with confidence score; AIAnalysis decides approval requirements.
+        
+        BR-HAPI-212: If selected_workflow exists but affectedResource is missing, 
+        HAPI sets human_review_reason = "rca_incomplete" (not "low_confidence").
         """
         from src.extensions.incident import _parse_investigation_result
         from holmes.core.models import InvestigationResult
@@ -216,7 +224,8 @@ class TestParseInvestigationResultWarnings:
 {
     "root_cause_analysis": {
         "summary": "Unknown issue",
-        "severity": "medium"
+        "severity": "medium",
+        "affectedResource": {"kind": "Pod", "name": "test-pod", "namespace": "default"}
     },
     "selected_workflow": {
         "workflow_id": "wf-generic",
@@ -229,8 +238,13 @@ class TestParseInvestigationResultWarnings:
 
         result = _parse_investigation_result(investigation, request_data, owner_chain=None)
 
+        # BR-HAPI-197: HAPI returns low confidence workflows without warnings
+        # AIAnalysis will evaluate confidence and set approval requirements
         assert result["confidence"] == 0.55
-        assert any("Low confidence" in w for w in result["warnings"])
+        assert result.get("selected_workflow") is not None
+        assert result["selected_workflow"]["workflow_id"] == "wf-generic"
+        # No "Low confidence" warnings from HAPI - that's AIAnalysis's job
+        assert not any("Low confidence" in w for w in result.get("warnings", []))
 
     def test_no_warnings_when_all_valid(self):
         """

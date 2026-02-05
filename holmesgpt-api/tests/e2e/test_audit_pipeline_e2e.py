@@ -175,6 +175,7 @@ def query_audit_events(
     The incident_id is inside event_data JSONB.
 
     DD-API-001 COMPLIANCE: Uses OpenAPI generated client instead of direct HTTP.
+    DD-AUTH-014: Uses shared pool manager for ServiceAccount authentication (E2E).
 
     Args:
         data_storage_url: Data Storage service URL
@@ -184,9 +185,20 @@ def query_audit_events(
     Returns:
         List of audit events
     """
+    # DD-AUTH-014: Import shared pool manager for ServiceAccount token injection
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+    from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
+    
     # DD-API-001: Use OpenAPI generated client for Data Storage
     config = DSConfiguration(host=data_storage_url)
+    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
     with DSApiClient(config) as api_client:
+        # DD-AUTH-014: Inject ServiceAccount token via shared pool manager (same pattern as bootstrap_workflows)
+        auth_pool = get_shared_datastorage_pool_manager()
+        api_client.rest_client.pool_manager = auth_pool
+        
         api_instance = AuditWriteAPIApi(api_client)
         response = api_instance.query_audit_events(
             correlation_id=correlation_id,
@@ -209,6 +221,7 @@ def query_audit_events_with_retry(
 
     ADR-038: Buffered audit store flushes asynchronously (flush_interval_seconds).
     Tests must poll for events rather than assuming immediate availability.
+    DD-AUTH-014: Uses shared pool manager for ServiceAccount authentication (E2E).
 
     Pattern: Similar to Ginkgo's Eventually() - poll with timeout until events appear
 
@@ -268,33 +281,48 @@ def wait_for_audit_flush(seconds: float = 6.0):
 def call_hapi_incident_analyze(
     hapi_url: str,
     request_data: Dict[str, Any],
-    timeout: int = 30
+    timeout: float = 60.0,  # Increased from 30s to 60s (LLM calls can be slow, even Mock LLM)
+    auth_token: str = None
 ) -> Dict[str, Any]:
     """
     Call HAPI's incident analysis API using OpenAPI generated client.
 
     DD-API-001 COMPLIANCE: Uses OpenAPI generated client instead of direct HTTP.
+    DD-AUTH-014: Supports Bearer token authentication for E2E tests.
 
     Args:
         hapi_url: HAPI service URL
         request_data: IncidentRequest data as dictionary
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds (default: 60s to handle LLM processing delays)
+        auth_token: Optional Bearer token for authentication (DD-AUTH-014)
 
     Returns:
         IncidentResponse as dictionary
     """
     # DD-API-001: Use OpenAPI generated client for HAPI
     config = HAPIConfiguration(host=hapi_url)
+    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
+    
     with HAPIApiClient(config) as api_client:
+        # Set default timeout at pool manager level to prevent "read timeout=0" errors
+        # This ensures a timeout is always set even if _request_timeout is not provided
+        if hasattr(api_client.rest_client, 'pool_manager'):
+            import urllib3
+            api_client.rest_client.pool_manager.connection_pool_kw['timeout'] = urllib3.Timeout(connect=10.0, read=timeout)
+        
+        # DD-AUTH-014: Inject Bearer token via set_default_header (E2E tests)
+        if auth_token:
+            api_client.set_default_header('Authorization', f'Bearer {auth_token}')
+        
         api_instance = IncidentAnalysisApi(api_client)
 
         # Convert dict to IncidentRequest model
         incident_request = IncidentRequest(**request_data)
 
-        # Call the API
+        # Call the API with explicit float timeout (Pydantic requires StrictFloat)
         response = api_instance.incident_analyze_endpoint_api_v1_incident_analyze_post(
             incident_request=incident_request,
-            _request_timeout=timeout
+            _request_timeout=float(timeout)
         )
 
         # Convert response model to dict for easier assertions
@@ -322,6 +350,7 @@ class TestAuditPipelineE2E:
     def test_llm_request_event_persisted(
         self,
         data_storage_url,
+        hapi_auth_token,
         mock_llm_response_valid,
         mock_config,
         unique_incident_id,
@@ -337,6 +366,7 @@ class TestAuditPipelineE2E:
 
         NOTE: This test calls the REAL HAPI HTTP API (not direct function imports)
         HAPI service is configured with MOCK_LLM_MODE=true in E2E environment
+        DD-AUTH-014: Uses ServiceAccount token for authentication
         """
         hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:30120")
 
@@ -358,13 +388,15 @@ class TestAuditPipelineE2E:
         }
 
         # DD-API-001: Call HAPI using OpenAPI generated client
-        result = call_hapi_incident_analyze(hapi_url, request_data)
+        # DD-AUTH-014: Pass ServiceAccount token for authentication
+        result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Verify HAPI returned analysis
         assert "root_cause_analysis" in result or "selected_workflow" in result, \
             "HAPI response missing analysis fields"
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        # DD-AUTH-014: Uses ServiceAccount token via datastorage_pool_manager (mounted file)
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
@@ -393,6 +425,7 @@ class TestAuditPipelineE2E:
     def test_llm_response_event_persisted(
         self,
         data_storage_url,
+        hapi_auth_token,
         mock_llm_response_valid,
         mock_config,
         unique_incident_id,
@@ -423,7 +456,8 @@ class TestAuditPipelineE2E:
         }
 
         # DD-API-001: Call HAPI using OpenAPI generated client
-        result = call_hapi_incident_analyze(hapi_url, request_data)
+        # DD-AUTH-014: Pass ServiceAccount token for authentication
+        result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
         events = query_audit_events_with_retry(
@@ -458,6 +492,7 @@ class TestAuditPipelineE2E:
     def test_validation_attempt_event_persisted(
         self,
         data_storage_url,
+        hapi_auth_token,
         mock_llm_response_valid,
         mock_config,
         unique_incident_id,
@@ -488,7 +523,8 @@ class TestAuditPipelineE2E:
         }
 
         # DD-API-001: Call HAPI using OpenAPI generated client
-        result = call_hapi_incident_analyze(hapi_url, request_data)
+        # DD-AUTH-014: Pass ServiceAccount token for authentication
+        result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
         # Complete flow: llm_request + llm_response + workflow_validation_attempt
@@ -537,6 +573,7 @@ class TestAuditPipelineE2E:
     def test_complete_audit_trail_persisted(
         self,
         data_storage_url,
+        hapi_auth_token,
         mock_llm_response_valid,
         mock_config,
         unique_incident_id,
@@ -573,7 +610,8 @@ class TestAuditPipelineE2E:
         }
 
         # DD-API-001: Call HAPI using OpenAPI generated client
-        result = call_hapi_incident_analyze(hapi_url, request_data)
+        # DD-AUTH-014: Pass ServiceAccount token for authentication
+        result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
         events = query_audit_events_with_retry(

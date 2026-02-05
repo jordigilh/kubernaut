@@ -33,16 +33,6 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// 0. Create E2E file output directory (platform-specific)
-	e2eDir, err := GetE2EFileOutputDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get E2E file output directory: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
-	if err := os.MkdirAll(e2eDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create E2E file output directory: %w", err)
-	}
-
 	// ============================================================
 	// PHASE 1: Build images IN PARALLEL (BEFORE cluster creation)
 	// ============================================================
@@ -64,9 +54,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build Notification Controller in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "notification",
-			ImageName:        "kubernaut-notification",
-			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
+			ServiceName:      "notification", // Operator SDK convention: no -controller suffix in image name
+			ImageName:        "kubernaut/notification",
+			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
@@ -77,9 +67,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build AuthWebhook in parallel
 	go func() {
 		cfg := E2EImageConfig{
-		ServiceName:      "authwebhook",
-		ImageName:        "authwebhook",
-		DockerfilePath:   "docker/authwebhook.Dockerfile",
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
@@ -114,18 +104,13 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  • Cluster created AFTER build prevents idle timeout")
-	extraMounts := []ExtraMount{
-		{
-			HostPath:      e2eDir,
-			ContainerPath: "/tmp/e2e-notifications",
-			ReadOnly:      false,
-		},
-	}
+	// No extraMounts needed - tests use emptyDir volume and kubectl exec to read files
+	// This avoids hostPath permission issues in CI/CD (Linux)
 	if err := CreateKindClusterWithExtraMounts(
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
-		extraMounts,
+		nil, // No extraMounts - using emptyDir
 		writer,
 	); err != nil {
 		return "", fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -229,6 +214,13 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	if err := deployNotificationRBAC(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy RBAC: %w", err)
 	}
+
+	// 2b. Add DataStorage access for audit emission (DD-AUTH-014, same pattern as WE/AuthWebhook)
+	_, _ = fmt.Fprintf(writer, "🔐 Adding DataStorage access for notification-controller SA (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "notification-controller", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage access RoleBinding: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage access RoleBinding created\n")
 
 	// 3. Deploy ConfigMap (if needed for configuration)
 	_, _ = fmt.Fprintf(writer, "📄 Deploying ConfigMap...\n")
@@ -335,6 +327,21 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ Data Storage infrastructure deployed\n")
+
+	// 3.5. Deploy data-storage-client ClusterRole (DD-AUTH-014)
+	// CRITICAL: This must be deployed BEFORE RoleBindings that reference it
+	_, _ = fmt.Fprintf(writer, "\n🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...\n")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+	}
+
+	// 3.6. Create RoleBinding for Notification controller to access DataStorage
+	// DD-AUTH-011-E2E-RBAC-ISSUE: DataStorage is in SAME namespace as Notification in E2E
+	// Authority: DD-AUTH-011-E2E-RBAC-ISSUE.md
+	_, _ = fmt.Fprintf(writer, "🔐 Creating RoleBinding for Notification controller (DD-AUTH-014)...\n")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "notification-controller", writer); err != nil {
+		return fmt.Errorf("failed to create DataStorage access RoleBinding: %w", err)
+	}
 
 	// 4. Wait for DataStorage to be fully ready before tests emit audit events
 	// CRITICAL: DD-E2E-001 - Prevents connection reset by peer errors
@@ -523,6 +530,13 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
 		"localhost/kubernaut-notification:e2e-test",
 		notificationImageName)
+
+	// Replace hardcoded imagePullPolicy with dynamic value
+	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
+	// Local mode: Use Never (uses images loaded into Kind)
+	updatedContent = strings.ReplaceAll(updatedContent,
+		"imagePullPolicy: Never",
+		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Create temporary modified deployment file
 	tmpDeployment := filepath.Join(os.TempDir(), "notification-deployment-e2e.yaml")

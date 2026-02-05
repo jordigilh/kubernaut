@@ -120,7 +120,7 @@ class TestLLMAuditIntegration:
         assert "version" in event
         assert event["version"] == "1.0"
         assert "event_category" in event
-        assert event["event_category"] == "analysis"  # ADR-034 v1.2: HolmesGPT API is "analysis" service
+        assert event["event_category"] == "aiagent"  # ADR-034 v1.2: HolmesGPT API is "aiagent" service (AI Agent Provider)
         assert "event_type" in event
         assert event["event_type"] == "llm_request"
         assert "event_timestamp" in event

@@ -47,12 +47,30 @@ import sys
 import time
 import pytest
 import requests
+import yaml
+from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 # Import workflow fixtures (DD-API-001 compliant)
 from tests.fixtures import bootstrap_workflows, get_test_workflows
+
+
+def load_test_config():
+    """
+    Load test configuration from YAML file.
+    
+    Authority: ADR-030 Configuration Management Standard
+    
+    Returns:
+        dict: Test configuration
+    """
+    # ANTI-PATTERN EXCEPTION: CONFIG_FILE is the ONLY allowed env var (ADR-030)
+    # All other configuration MUST come from YAML files
+    config_file = os.getenv("CONFIG_FILE", str(Path(__file__).parent.parent / "test_config.yaml"))
+    with open(config_file, 'r') as f:
+        return yaml.safe_load(f)
 
 
 def pytest_configure(config):
@@ -80,11 +98,9 @@ def _check_go_infrastructure():
     Returns:
         tuple: (is_available, data_storage_url)
     """
-    # Check if using Go infrastructure (set by Makefile)
-    use_go_infra = os.environ.get("HAPI_USE_GO_INFRA", "").lower() == "true"
-
-    # NodePort URLs from Go infrastructure (kind-datastorage-config.yaml)
-    data_storage_url = os.environ.get("DATA_STORAGE_URL", "http://localhost:8081")
+    # Authority: ADR-030 - Load from YAML config (no env vars except CONFIG_FILE)
+    config = load_test_config()
+    data_storage_url = config.get('data_storage', {}).get('url', 'http://localhost:8081')
 
     try:
         # Check if Data Storage is responding
@@ -94,13 +110,6 @@ def _check_go_infrastructure():
             return True, data_storage_url
     except requests.exceptions.RequestException:
         pass
-
-    if use_go_infra:
-        # User explicitly requested Go infra but it's not available
-        pytest.fail(
-            f"HAPI_USE_GO_INFRA=true but Data Storage not available at {data_storage_url}.\n"
-            "Run 'make test-e2e-datastorage' first to set up infrastructure."
-        )
 
     return False, data_storage_url
 
@@ -158,10 +167,15 @@ def hapi_service_url():
     For E2E: http://localhost:30120 (Kind NodePort)
     For Integration: http://127.0.0.1:18120 (local server)
 
-    Fallback: HAPI_SERVICE_URL for backwards compatibility
-    Default: http://127.0.0.1:18120 (integration test port)
+    Authority: ADR-030 Configuration Management Standard
+    Loaded from test_config.yaml (no environment variables)
+
+    For E2E: http://localhost:30120 (Kind NodePort per DD-TEST-001)
+    For Integration: http://localhost:18120 (local server)
     """
-    url = os.environ.get("HAPI_BASE_URL") or os.environ.get("HAPI_SERVICE_URL", "http://127.0.0.1:18120")
+    config = load_test_config()
+    # E2E config should have hapi.url, fallback to default for local testing
+    url = config.get('hapi', {}).get('url', 'http://localhost:18120')
 
     # Verify HAPI is available
     try:
@@ -199,14 +213,7 @@ def setup_e2e_environment(data_storage_stack, mock_llm_service_e2e):
     - Uses standalone Mock LLM service deployed in Kind (ClusterIP)
     - LLM environment variables set by mock_llm_service_e2e fixture
     """
-    # LLM configuration now handled by mock_llm_service_e2e fixture
-    # This ensures tests use the standalone Mock LLM service in Kind
-    os.environ.setdefault("OPENAI_API_KEY", "mock-key-for-e2e")
-
-    # Data Storage is REAL (from Go-managed Kind cluster)
-    os.environ["DATA_STORAGE_URL"] = data_storage_stack
-    os.environ.setdefault("DATA_STORAGE_TIMEOUT", "30")
-
+    # E2E environment ready (all config from YAML per ADR-030)
     print(f"\n{'='*60}")
     print(f"E2E Environment Ready (V2.0 - Mock LLM Migration)")
     print(f"{'='*60}")
@@ -237,59 +244,26 @@ def mock_llm_service_e2e():
     """
     # Mock LLM service URL from Kind cluster (ClusterIP internal URL)
     # Used by HAPI (in-cluster), not by pytest directly
-    mock_llm_url = os.environ.get("LLM_ENDPOINT", "http://mock-llm:8080")
+    # Authority: ADR-030 - Load from YAML config
+    config = load_test_config()
+    mock_llm_url = config.get('llm', {}).get('endpoint', 'http://mock-llm:8080')
 
-    # Detect if running in Go-managed E2E environment
+    # Go infrastructure always manages E2E environment
     # Go infrastructure already waits for Mock LLM pod readiness via kubectl wait
-    # Check for DATA_STORAGE_URL which is set by Go infrastructure
-    go_managed = os.environ.get("DATA_STORAGE_URL") is not None
+    print(f"\n✅ Go infrastructure: Mock LLM at {mock_llm_url} (verified by kubectl wait)")
 
-    if go_managed:
-        print(f"\n✅ Go infrastructure detected: Mock LLM at {mock_llm_url} (already verified)")
-        print(f"   (Go infrastructure used kubectl wait --for=condition=ready)")
-        # Set environment for tests
-        os.environ["LLM_ENDPOINT"] = mock_llm_url
-        os.environ["LLM_MODEL"] = "mock-model"
-        os.environ["LLM_PROVIDER"] = "openai"
+    class MockLLMService:
+        def __init__(self, url):
+            self.url = url
 
-        class MockLLMService:
-            def __init__(self, url):
-                self.url = url
+    yield MockLLMService(mock_llm_url)
+    return
 
-        yield MockLLMService(mock_llm_url)
-        return
-
-    # Manual verification for standalone pytest runs (not Go-managed)
-    print(f"\n⏳ Verifying Mock LLM service at {mock_llm_url}...")
-
-    # Verify Mock LLM is available
-    max_retries = 30
-    for i in range(max_retries):
-        try:
-            response = requests.get(f"{mock_llm_url}/health", timeout=5)
-            if response.status_code == 200:
-                print(f"✅ Mock LLM service is ready")
-                # Set environment for tests
-                os.environ["LLM_ENDPOINT"] = mock_llm_url
-                os.environ["LLM_MODEL"] = "mock-model"
-                os.environ["LLM_PROVIDER"] = "openai"
-
-                # Return simple object with URL for compatibility
-                class MockLLMService:
-                    def __init__(self, url):
-                        self.url = url
-
-                yield MockLLMService(mock_llm_url)
-                return
-        except requests.exceptions.RequestException:
-            pass
-
-        if i == max_retries - 1:
-            pytest.fail(
-                f"Mock LLM service not ready at {mock_llm_url} after {max_retries} attempts.\n"
-                "Ensure Mock LLM is deployed: kubectl apply -k deploy/mock-llm/"
-            )
-        time.sleep(2)
+    # E2E REQUIRES Go infrastructure - no manual fallback
+    pytest.fail(
+        "Go-managed E2E infrastructure not available.\n"
+        "Run: make test-e2e-holmesgpt-api"
+    )
 
 
 @pytest.fixture
@@ -298,50 +272,46 @@ def mock_config():
     Fixture to provide mock configuration for tests.
     Prevents MagicMock serialization issues in audit events.
     """
+    config = load_test_config()
     return {
         "llm_provider": "mock",
         "llm_model": "mock-model",
-        "data_storage_url": os.environ.get("DATA_STORAGE_URL", "http://localhost:8081"),
+        "data_storage_url": config.get('data_storage', {}).get('url', 'http://localhost:8081'),
     }
 
 
 @pytest.fixture(scope="session")
 def test_workflows_bootstrapped(data_storage_stack):
     """
-    Auto-bootstrap test workflows for E2E tests.
-
-    DD-API-001 COMPLIANCE: Uses Python fixture with OpenAPI client instead of shell script.
-
-    Benefits over shell script:
-    - Type-safe with Pydantic models
-    - Reusable across test files
-    - DD-API-001 compliant (uses OpenAPI client)
-    - Easy to import and customize
-    - Better error handling
-
-    Usage in tests:
-        def test_workflow_search(test_workflows_bootstrapped, data_storage_stack):
-            # Workflows automatically available
-            ...
+    DD-TEST-011 v2.0: Workflows already seeded by Go suite setup.
+    
+    Pattern matches AA integration tests:
+    - Go: Seeds workflows in SynchronizedBeforeSuite Phase 1
+    - Python: Fixture is a no-op, workflows already exist
+    
+    This prevents pytest-xdist parallel workers from bootstrapping concurrently,
+    eliminating TokenReview rate limiting (BR-TEST-008).
+    
+    Migration from Python bootstrap (Feb 2, 2026):
+    - Previous: Python fixture bootstrapped 5 workflows per worker (race condition)
+    - Current: Go bootstraps ONCE before pytest starts (no race, faster)
+    - Benefit: 15s faster startup, consistent with AA pattern
+    
+    See: test/e2e/holmesgpt-api/test_workflows.go for Go bootstrap implementation
     """
     data_storage_url = data_storage_stack
-    print(f"\n🔧 Bootstrapping test workflows to {data_storage_url}...")
-
-    try:
-        results = bootstrap_workflows(data_storage_url)
-        print(f"  ✅ Created: {len(results['created'])}")
-        print(f"  ⚠️  Existing: {len(results['existing'])}")
-        print(f"  ❌ Failed: {len(results['failed'])}")
-
-        if results['failed']:
-            for failure in results['failed']:
-                print(f"    - {failure['workflow']}: {failure['error']}")
-
-        # Return results for test assertions if needed
-        return results
-
-    except Exception as e:
-        pytest.fail(f"Failed to bootstrap test workflows: {e}")
+    print(f"\n✅ DD-TEST-011 v2.0: Workflows already seeded by Go suite setup")
+    print(f"   Data Storage URL: {data_storage_url}")
+    print(f"   Pattern: Matches AIAnalysis integration tests")
+    
+    # Return empty results (workflows already seeded by Go before pytest started)
+    return {
+        "created": [],
+        "existing": [],
+        "failed": [],
+        "total": 0,
+        "seeded_by": "go_before_suite"
+    }
 
 
 @pytest.fixture
@@ -362,6 +332,26 @@ def crashloop_workflows():
 def all_test_workflows():
     """Get all test workflow fixtures"""
     return get_test_workflows()
+
+
+@pytest.fixture(scope="session")
+def hapi_auth_token():
+    """
+    ServiceAccount Bearer token for HAPI authentication (DD-AUTH-014).
+    
+    Auth/Authz is ALWAYS enabled in E2E and INT for ALL services.
+    Token loaded from standard K8s ServiceAccount mount path.
+    
+    Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
+    
+    Returns:
+        str: Bearer token for Authorization header
+    """
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    with open(token_path, 'r') as f:
+        token = f.read().strip()
+        print(f"\n🔐 ServiceAccount token loaded from {token_path} (DD-AUTH-014)")
+        return token
 
 
 @pytest.fixture

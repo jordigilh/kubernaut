@@ -280,6 +280,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "analysis":
 		return nil
+	case "aiagent":
+		return nil
 	case "signalprocessing":
 		return nil
 	case "workflow":
@@ -334,6 +336,11 @@ func (s AuditEventEventData) Validate() error {
 		return nil
 	case RemediationApprovalAuditPayloadAuditEventEventData:
 		if err := s.RemediationApprovalAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationApprovalDecisionPayloadAuditEventEventData:
+		if err := s.RemediationApprovalDecisionPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -563,6 +570,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "analysis":
 		return nil
+	case "aiagent":
+		return nil
 	case "signalprocessing":
 		return nil
 	case "workflow":
@@ -617,6 +626,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case RemediationApprovalAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationApprovalAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case RemediationApprovalDecisionPayloadAuditEventRequestEventData:
+		if err := s.RemediationApprovalDecisionPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -1750,6 +1764,42 @@ func (s *MandatoryLabels) Validate() error {
 		})
 	}
 	if err := func() error {
+		if s.Environment == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Environment)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Environment {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "environment",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Priority.Validate(); err != nil {
 			return err
 		}
@@ -1764,6 +1814,23 @@ func (s *MandatoryLabels) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s MandatoryLabelsEnvironmentItem) Validate() error {
+	switch s {
+	case "production":
+		return nil
+	case "staging":
+		return nil
+	case "development":
+		return nil
+	case "test":
+		return nil
+	case "*":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s MandatoryLabelsPriority) Validate() error {
@@ -2615,6 +2682,77 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 func (s RemediationApprovalAuditPayloadEventType) Validate() error {
 	switch s {
 	case "webhook.approval.decided":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationApprovalDecisionPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Decision.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "decision",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.Float{}).Validate(float64(s.Confidence)); err != nil {
+			return errors.Wrap(err, "float")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "confidence",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationApprovalDecisionPayloadDecision) Validate() error {
+	switch s {
+	case "approved":
+		return nil
+	case "rejected":
+		return nil
+	case "expired":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationApprovalDecisionPayloadEventType) Validate() error {
+	switch s {
+	case "approval.decision":
+		return nil
+	case "approval.request.created":
+		return nil
+	case "approval.timeout":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

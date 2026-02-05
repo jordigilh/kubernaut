@@ -9,9 +9,12 @@
 ## Architecture
 
 - **Type**: Internal stateless service (network policies handle access)
-- **Authentication**: Kubernetes ServiceAccount tokens only
-- **Authorization**: Kubernetes RBAC
+- **Authentication**: Kubernetes ServiceAccount tokens (via TokenReview API)
+- **Authorization**: Kubernetes RBAC (via SubjectAccessReview API)
 - **Runtime**: FastAPI + HolmesGPT Python SDK
+- **Auth Framework**: DD-AUTH-014 Middleware-based SAR authentication
+
+See [AUTH_RESPONSES.md](./AUTH_RESPONSES.md) for HTTP status codes and authentication flow details.
 
 ## API Endpoints
 

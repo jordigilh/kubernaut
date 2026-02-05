@@ -2,6 +2,10 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  # Upgraded to K8s 1.34.3 (latest z-stream) for CRD selectableFields support (requires 1.30+)
+  # Matches project's k8s.io/api v0.34.1, pinned with digest for reproducibility
+  image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48
+  
   # Expose Notification Controller metrics via NodePort to host machine
   # This eliminates kubectl port-forward instability for E2E tests
   # Using 8081 on host (gateway uses 8080) - proven port pattern
@@ -23,17 +27,34 @@ nodes:
     kind: ClusterConfiguration
     apiServer:
       extraArgs:
-        # Increase API server rate limits for parallel E2E testing
-        # Default max-requests-inflight: 400
-        # Default max-mutating-requests-inflight: 200
-        # With 4 parallel test processes × 100 concurrent notifications = 400 QPS
-        # These limits provide 2x headroom for test stability
-        max-requests-inflight: "800"
-        max-mutating-requests-inflight: "400"
+        # Tuned for 12 parallel E2E processes (matches DataStorage proven config)
+        # 
+        # Load calculation:
+        # - 12 parallel test processes
+        # - Each creates/updates NotificationRequests (CRD operations)
+        # - Peak: ~50 API calls/sec per process = 600 API calls/sec total
+        # - Burst scenarios: 12 processes × 20 concurrent ops = 240 concurrent API calls
+        #
+        # DataStorage proven values (3x default for stability):
+        max-requests-inflight: "1200"           # 3x default (400 → 1200)
+        max-mutating-requests-inflight: "600"   # 3x default (200 → 600)
+        
+        # Event rate limiting (prevent event spam from overwhelming etcd)
+        event-ttl: "1h"                         # Shorter event retention for E2E
+    
+    etcd:
+      local:
+        extraArgs:
+          # Increase etcd performance for high API server load
+          # DataStorage proven values (prevents cluster instability)
+          quota-backend-bytes: "8589934592"      # 8GB quota (default: 2GB)
+          snapshot-count: "100000"               # Snapshot every 100k ops (default: 10k)
+          heartbeat-interval: "500"              # 500ms heartbeat (default: 100ms, reduce overhead)
+          election-timeout: "5000"               # 5s election timeout (default: 1s)
+    
     controllerManager:
       extraArgs:
         # Increase controller manager QPS for CRD operations
-        # Default kube-api-qps: 20, kube-api-burst: 30
-        # Higher limits prevent CRD creation delays during parallel testing
+        # DataStorage proven values
         kube-api-qps: "100"
         kube-api-burst: "200"

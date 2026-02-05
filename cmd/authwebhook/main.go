@@ -41,7 +41,7 @@ func main() {
 	// CLI flags with production defaults
 	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server binds to.")
 	flag.StringVar(&certDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs", "The directory containing TLS certificates.")
-	flag.StringVar(&dataStorageURL, "data-storage-url", "http://datastorage-service:8080", "Data Storage service URL for audit events.")
+	flag.StringVar(&dataStorageURL, "data-storage-url", "http://data-storage-service:8080", "Data Storage service URL for audit events (DD-AUTH-011).")
 	flag.Parse()
 
 	// Allow environment variable overrides

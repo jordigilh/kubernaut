@@ -104,10 +104,13 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
   - **Audit Flow Enhancements**: AIAnalysis controller automatic audit event generation
   - **Integration Test Stability**: "Wait for Processing First" pattern for controller-aware testing
   - Plans: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md)
-- 📋 **Next V1.0 Features** (3 PRs):
-  - **Envoy SAR Validation**: HAPI + DataStorage endpoint authorization (ADR-036)
-  - **Resource Scope Management**: `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053)
+- 📋 **Next V1.0 Features** (2 PRs):
+  - **Resource Scope Management**: `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053) - **NEXT PRIORITY**
   - **Segmented E2E Scenarios**: Progressive integration validation across all services
+- ✅ **Recently Completed** (February 2026):
+  - **Middleware-Based SAR Authentication**: All stateless services (DD-AUTH-014)
+  - **RAR Audit Trail**: SOC2-compliant approval workflow auditing (BR-AUDIT-006)
+  - **CI/CD Coverage Infrastructure**: Automated test coverage reporting
 - 🎉 **V1.0 Core Services Complete**: All 9 services production-ready (8 core + Must-Gather)
 - ✅ **Gateway v1.0**: 339 tests (221U+22I+96E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), HTTP anti-pattern refactoring complete (Jan 10, 2026)
 - ✅ **Signal Processing v1.0**: SOC2-compliant audit traces (original_payload, signal_labels, signal_annotations)
@@ -128,7 +131,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 ### Prerequisites
 
 - **Go 1.24.6+** for building services
-- **Kubernetes cluster** (Kind recommended for development, v1.24+)
+- **Kubernetes cluster** (Kind recommended for development, v1.30+)
+  - **Note**: v1.30+ required for CRD selectableFields support (field selectors on spec fields)
 - **PostgreSQL** (for Data Storage service)
 - **kubectl** with cluster access
 
@@ -277,7 +281,7 @@ Complete onboarding guide for contributors:
 - **Extending existing services** → Feature implementation patterns
 - **Development environment setup** → Prerequisites, tools, IDE configuration
 - **Testing strategy** → Defense-in-depth pyramid (Unit 70%+ / Integration >50% / E2E <10%)
-- **Deployment** → Kustomize manifests for Kubernetes (v1.24+)
+- **Deployment** → Kustomize manifests for Kubernetes (v1.30+)
 
 ### **Quick Links for Developers**
 
@@ -294,12 +298,33 @@ Complete onboarding guide for contributors:
 
 ## 📚 Documentation
 
+### **📖 Documentation Structure Guide** ⭐ **NEW**
+
+**[docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md](docs/DOCS_DIRECTORY_STRUCTURE_GUIDE.md)** - Complete guide to Kubernaut's documentation organization
+
+**Quick Reference**:
+- **Design Decisions (DD-*)**: `docs/architecture/decisions/` - Permanent architectural choices
+- **Session Handoffs**: `docs/handoff/` - AI session summaries and implementation status (~2,776 documents)
+- **Development Guides**: `docs/development/` - Methodology, testing, standards
+- **Test Documentation**: `docs/testing/` - Test plans and strategies
+- **Planning**: `docs/plans/` - Implementation plans and roadmaps
+
+**Examples**:
+```
+Session summary → docs/handoff/DS_E2E_COMPLETE_JAN_26_2026.md
+Design decision → docs/architecture/decisions/DD-AUTH-013-http-status-codes.md
+Test plan → docs/development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md
+```
+
+---
+
 ### Architecture Documentation
 
 - **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)**: Service boundaries and V1/V2 roadmap
 - **[Multi-CRD Reconciliation Architecture](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**: CRD communication patterns
 - **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)**: Authoritative CRD field definitions
 - **[Tekton Execution Architecture](docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md)**: Workflow orchestration with Tekton
+- **[Design Decisions](docs/architecture/decisions/)**: All DD-* and ADR-* architectural decisions
 
 ### Service Documentation
 
@@ -310,7 +335,7 @@ Complete onboarding guide for contributors:
 
 - **[Testing Strategy](.cursor/rules/03-testing-strategy.mdc)**: Defense-in-depth testing pyramid
 - **[CRD Controller Templates](docs/templates/crd-controller-gap-remediation/)**: Production-ready scaffolding (saves 40-60% development time)
-- **[Design Decisions](docs/architecture/DESIGN_DECISIONS.md)**: All architectural decisions with alternatives
+- **[Development Methodology](docs/development/methodology/)**: APDC framework, TDD workflow
 
 ---
 
@@ -401,7 +426,7 @@ Apache License 2.0
 
 **V1.0 Status**: All 9 services production-ready (100%) ✅ | SOC2 compliance completed ✅ | 3 PRs remaining for V1.0 | 1 deferred to V1.1 (DD-017) | **V1.0 Pre-release**: February 2026
 
-**Current Sprint**: ✅ SOC2 Compliance Complete (RR reconstruction + operator attribution + hash chain integrity) → 🚧 Next: Envoy SAR validation → Resource scope management (BR-SCOPE-001, ADR-053) → Segmented E2E scenarios → Pre-release + feedback solicitation.
+**Current Sprint**: ✅ SAR Middleware + RAR Audit Complete (DD-AUTH-014, BR-AUDIT-006) → 🚧 Next: Resource Scope Management (BR-SCOPE-001, ADR-053) → Segmented E2E scenarios → V1.0 Pre-release + feedback solicitation.
 
 ---
 

@@ -170,7 +170,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 
 			// Test #11: Investigating phase - no action
@@ -185,7 +185,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 
 			// Test #12: Analyzing phase - no action
@@ -200,7 +200,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 			})
 		})
 
@@ -220,7 +220,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify RR status was updated
 				updatedRR := &remediationv1.RemediationRequest{}
@@ -247,7 +247,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify notification was created
 				nrList := &notificationv1.NotificationRequestList{}
@@ -274,7 +274,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify manual review notification was created
 				nrList := &notificationv1.NotificationRequestList{}
@@ -388,7 +388,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify manual review notification was created
 				nrList := &notificationv1.NotificationRequestList{}
@@ -416,7 +416,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify NO notification was created
 				nrList := &notificationv1.NotificationRequestList{}
@@ -444,7 +444,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify notification was created (BR-HAPI-197 path, not BR-ORCH-036)
 				nrList := &notificationv1.NotificationRequestList{}
@@ -511,7 +511,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 					result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 					Expect(err).ToNot(HaveOccurred(), "Should handle reason: "+reason)
-					Expect(result.Requeue).To(BeFalse())
+					Expect(result.RequeueAfter).To(BeZero())
 
 					// Verify notification was created for this reason
 					nrList := &notificationv1.NotificationRequestList{}

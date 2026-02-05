@@ -35,8 +35,10 @@ package remediationorchestrator
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +62,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
 	"github.com/google/uuid"
 )
@@ -85,10 +88,14 @@ var (
 	kubeconfigPath string
 
 	k8sClient client.Client
+	apiReader client.Reader // Direct API reader to bypass client cache for Eventually() blocks
 
 	// DataStorage audit client for Gap #8 webhook audit event queries
-	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
+	// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 	auditClient *ogenclient.Client
+
+	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
+	e2eAuthToken string
 
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
@@ -130,6 +137,19 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred())
 
+		// DD-AUTH-014: Create E2E ServiceAccount for DataStorage authentication
+		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
+		e2eSAName := "remediationorchestrator-e2e-sa"
+		namespace := "kubernaut-system"
+		
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, tempKubeconfigPath, e2eSAName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
+		
+		// Get ServiceAccount token for Bearer authentication
+		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, tempKubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		By("✅ E2E ServiceAccount token retrieved for authenticated DataStorage access")
+
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
@@ -137,14 +157,19 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("✅ E2E test environment ready (Process 1)")
 		GinkgoWriter.Printf("   Cluster: %s\n", clusterName)
 		GinkgoWriter.Printf("   Kubeconfig: %s\n", tempKubeconfigPath)
-		GinkgoWriter.Println("   Process 1 will now share kubeconfig with other processes")
+		GinkgoWriter.Println("   Process 1 will now share kubeconfig + auth token with other processes")
 
-		// Return kubeconfig path to all processes
-		return []byte(tempKubeconfigPath)
+		// Return kubeconfig path and auth token to all processes
+		return []byte(fmt.Sprintf("%s|%s", tempKubeconfigPath, token))
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
 	func(data []byte) {
-		kubeconfigPath = string(data)
+		// Parse data: "kubeconfig|authToken"
+		parts := strings.Split(string(data), "|")
+		kubeconfigPath = parts[0]
+		if len(parts) > 1 {
+			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		}
 
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.TODO())
@@ -171,19 +196,30 @@ var _ = SynchronizedBeforeSuite(
 		err = notificationv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Creating Kubernetes client from isolated kubeconfig")
-		cfg, err := config.GetConfig()
-		Expect(err).ToNot(HaveOccurred())
+	By("Creating Kubernetes client from isolated kubeconfig")
+	cfg, err := config.GetConfig()
+	Expect(err).ToNot(HaveOccurred())
 
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-		Expect(err).ToNot(HaveOccurred())
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up DataStorage audit client for Gap #8 webhook tests")
-		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage NodePort
-		dataStorageURL := "http://localhost:8081"
-		auditClient, err = ogenclient.NewClient(dataStorageURL)
+	// Create direct API reader for Eventually() blocks to bypass client cache
+	// This ensures fresh reads from API server for status polling
+	apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
+
+	By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
+		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
+		// Per DD-AUTH-014: Use ServiceAccount token for authentication
+		dataStorageURL := "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
+		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		httpClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: saTransport,
+		}
+		auditClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred())
-		GinkgoWriter.Printf("✅ DataStorage audit client configured: %s\n", dataStorageURL)
+		GinkgoWriter.Printf("✅ Authenticated DataStorage audit client configured: %s\n", dataStorageURL)
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Printf("Setup Complete - Process %d ready to run tests\n", GinkgoParallelProcess())
@@ -250,20 +286,23 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
-		// Remove service image built for this test run
-		imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
-		if imageTag != "" {
-			imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
+	By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
+	// Remove service image built for this test run
+	// Skip in CI/CD mode - image is in GHCR registry, not stored locally
+	imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
+	if imageTag != "" && !infrastructure.IsRunningInCICD() {
+		imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
 
-			pruneCmd := exec.Command("podman", "rmi", imageName)
-			pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-			if pruneErr != nil {
-				GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
-			} else {
-				GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
-			}
+		pruneCmd := exec.Command("podman", "rmi", imageName)
+		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+		if pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
+		} else {
+			GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
 		}
+	} else if infrastructure.IsRunningInCICD() {
+		GinkgoWriter.Println("⏭️  Skipping service image cleanup (CI/CD registry mode)")
+	}
 
 		By("Pruning dangling images from Kind builds (DD-TEST-001 v1.1)")
 		// Prune any dangling images left from failed builds

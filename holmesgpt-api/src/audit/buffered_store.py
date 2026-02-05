@@ -155,7 +155,9 @@ class BufferedAuditStore:
 
         # Initialize Data Storage OpenAPI client with auth session (Phase 2b + DD-AUTH-005)
         # Replaces manual requests.post() for type safety and contract validation
-        auth_pool = ServiceAccountAuthPoolManager()
+        # Performance Fix: Use singleton pool manager to reuse HTTP connections across all audit writes
+        from datastorage_pool_manager import get_shared_datastorage_pool_manager
+        auth_pool = get_shared_datastorage_pool_manager()
         api_config = Configuration(host=data_storage_url)
         self._api_client = ApiClient(configuration=api_config)
         self._api_client.rest_client.pool_manager = auth_pool  # ← ServiceAccount token injection

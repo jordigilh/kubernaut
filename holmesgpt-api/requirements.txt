@@ -11,7 +11,7 @@
 # Solution: We constrain supabase to compatible version range.
 #
 # HolmesGPT SDK Dependencies (auto-installed, from pyproject.toml):
-# - pydantic = "^2.7"
+# - pydantic = "^2.7" (WE OVERRIDE TO >=2.8.0 for min_length validation fix)
 # - fastapi = "^0.116"
 # - uvicorn = "^0.30"
 # - supabase = "^2.5" (WE CONSTRAIN TO <2.9 for postgrest 0.16.8 compatibility)
@@ -44,8 +44,16 @@ urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 # These are only for holmesgpt-api service functionality
 
 # Web framework dependencies (should come from HolmesGPT SDK but explicitly added for safety)
+# Pydantic: Require >=2.8.0 for min_length validation fix (empty string handling)
+# See: https://github.com/pydantic/pydantic/issues/9622 (fixed in 2.8.0)
+pydantic>=2.8.0
 fastapi>=0.116
 uvicorn[standard]>=0.30
+
+# Kubernetes Python client for TokenReview and SAR APIs (DD-AUTH-014)
+# Note: HolmesGPT SDK includes kubernetes client, but we explicitly specify
+# it here for clarity and to ensure the correct version for TokenReview/SAR
+kubernetes>=29.0.0
 
 # HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
 aiohttp>=3.9.1

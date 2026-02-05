@@ -1,12 +1,34 @@
 # ADR-036: Authentication and Authorization Strategy for All Services
 
 ## Status
-**✅ APPROVED**
-**Version**: 1.0
+**✅ APPROVED** (with Gateway exception - see below)
+**Version**: 1.1
 **Decision Date**: November 9, 2025
-**Last Reviewed**: November 9, 2025
+**Last Reviewed**: January 29, 2026
 **Confidence**: 95%
 **Authority Level**: **ARCHITECTURAL** - Applies to all services
+
+---
+
+## ⚠️ **IMPORTANT UPDATE (January 29, 2026)**
+
+**Gateway Service Exception**: Gateway now **requires SAR authentication** per [DD-AUTH-014 V2.0](./DD-AUTH-014-middleware-based-sar-authentication.md).
+
+**Rationale**:
+- Gateway is **external-facing** (AlertManager, K8s Event forwarders) - different threat model
+- **Zero-trust architecture**: Network Policies alone insufficient for external-facing services
+- **SOC2 compliance**: Operator attribution required (CC8.1)
+- **Proven pattern**: DataStorage/HAPI SAR implementation successful
+
+**Updated Service Status**:
+- **Gateway**: ✅ **SAR Auth Required** (DD-AUTH-014 V2.0) - Exception to ADR-036
+- **DataStorage**: ✅ **SAR Auth Required** (DD-AUTH-014 V1.0)
+- **HolmesGPT API**: ✅ **SAR Auth Required** (DD-AUTH-014 V1.0)
+- **Others**: Network Policies + TLS (per this ADR)
+
+**See**: BR-GATEWAY-182, BR-GATEWAY-183 for Gateway auth requirements
+
+---
 
 ---
 
@@ -294,15 +316,17 @@ For each service with authentication middleware:
 
 ## Services Affected
 
-| Service | Status | Action Required |
-|---------|--------|-----------------|
-| **Gateway** | ✅ Completed | Auth middleware already removed per DD-GATEWAY-006 |
-| **Context API** | ✅ No Auth | Never had auth middleware |
-| **Data Storage** | ✅ No Auth | Never had auth middleware (ADR-032) |
-| **Dynamic Toolset** | 🔄 In Progress | Remove auth middleware (this PR) |
-| **HolmesGPT API** | ✅ No Auth | Python service, never had auth middleware |
-| **Notification Service** | ✅ No Auth | CRD controller, uses K8s RBAC only |
-| **Future Services** | 📋 Planned | Follow this ADR from inception |
+| Service | Status | Action Required | Notes |
+|---------|--------|-----------------|-------|
+| **Gateway** | ⚠️ **Exception** | **SAR Auth Required** (DD-AUTH-014 V2.0) | External-facing - requires app-level auth |
+| **Data Storage** | ⚠️ **Exception** | **SAR Auth Complete** (DD-AUTH-014 V1.0) | Internal REST API - SAR for audit compliance |
+| **HolmesGPT API** | ⚠️ **Exception** | **SAR Auth Complete** (DD-AUTH-014 V1.0) | Internal REST API - SAR for audit compliance |
+| **Context API** | ✅ Follows ADR | Network Policies + TLS | - |
+| **Notification Service** | ✅ Follows ADR | CRD controller, K8s RBAC only | - |
+| **Dynamic Toolset** | ✅ Follows ADR | Network Policies + TLS | - |
+| **Future Services** | 📋 Planned | Evaluate threat model per service | Internal: ADR-036, External: DD-AUTH-014 |
+
+**Note**: ADR-036 applies to **internal-only services**. External-facing services require SAR authentication per DD-AUTH-014.
 
 ---
 

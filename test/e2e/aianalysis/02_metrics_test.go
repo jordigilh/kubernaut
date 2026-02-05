@@ -74,12 +74,13 @@ func seedMetricsWithAnalysis() {
 	Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 	// Wait for analysis to complete
+	// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 			return false
 		}
 		return analysis.Status.Phase == "Completed" || analysis.Status.Phase == "Failed"
-	}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Metrics seeding (success) analysis should complete")
+	}).Should(BeTrue(), "Metrics seeding (success) analysis should complete")
 
 	// Create failed analysis to populate failure metrics
 	// BR-HAPI-197: Ensure aianalysis_failures_total metric is populated
@@ -115,12 +116,13 @@ func seedMetricsWithAnalysis() {
 	Expect(k8sClient.Create(ctx, failedAnalysis)).To(Succeed())
 
 	// Wait for failed analysis to reach Failed phase
+	// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
 	Eventually(func() bool {
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(failedAnalysis), failedAnalysis); err != nil {
 			return false
 		}
 		return failedAnalysis.Status.Phase == "Failed" || failedAnalysis.Status.Phase == "Completed"
-	}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Metrics seeding (failed) analysis should reach terminal state")
+	}).Should(BeTrue(), "Metrics seeding (failed) analysis should reach terminal state")
 
 	// Metrics are immediately available in Prometheus - no sleep needed
 }

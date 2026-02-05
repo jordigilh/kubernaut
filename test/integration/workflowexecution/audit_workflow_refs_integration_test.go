@@ -103,9 +103,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 	}
 	Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
-		// Data Storage client (use shared infrastructure port from suite_test.go)
-		dsClient, err = ogenclient.NewClient(dataStorageBaseURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage ogen client")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	AfterEach(func() {

@@ -121,6 +121,8 @@ def _get_holmes_config(
         logger.info(f"Registering MCP servers: {list(mcp_servers_config.keys())}")
 
     # Create HolmesGPT SDK Config
+    # NOTE: api_key is obtained from OPENAI_API_KEY environment variable via SDK's model registry
+    # Do NOT pass api_key to Config() - it's not a valid field and will cause Pydantic validation error
     config_data = {
         "model": model_name,
         "api_base": os.getenv("LLM_ENDPOINT"),
@@ -162,17 +164,31 @@ def _get_holmes_config(
         )
 
 
-async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[AppConfig] = None) -> Dict[str, Any]:
+async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[AppConfig] = None, metrics=None) -> Dict[str, Any]:
     """
-    Core recovery analysis logic
+    Core recovery analysis logic.
 
-    Business Requirements: BR-HAPI-001 to 050
+    Business Requirements:
+    - BR-HAPI-001 to 050 (Recovery analysis)
+    - BR-HAPI-011 (Investigation metrics)
+    - BR-HAPI-301 (LLM metrics)
+    
     Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
 
     Uses HolmesGPT SDK for AI-powered recovery analysis.
     Workflow search is handled by WorkflowCatalogToolset registered with the SDK.
     LLM endpoint is configured via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER).
+    
+    Args:
+        request_data: Recovery request data dict
+        app_config: Optional application configuration
+        metrics: Optional HAMetrics instance (injected by caller, uses global if None)
     """
+    import time
+    
+    # Start timing for BR-HAPI-011 (Investigation metrics)
+    start_time = time.time()
+    
     incident_id = request_data.get("incident_id")
     is_recovery = request_data.get("is_recovery_attempt", False)
 
@@ -524,6 +540,10 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             "confidence": result.get("analysis_confidence"),
             "analysis_length": len(investigation_result.analysis) if investigation_result.analysis else 0
         })
+        
+        # Record metrics (BR-HAPI-011: Investigation metrics)
+        if metrics:
+            metrics.record_investigation_complete(start_time, "success")
 
         return result
 
@@ -536,6 +556,11 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             "error": str(e),
             "failed_action": failed_action.get("type")
         })
+        
+        # Record error metrics (BR-HAPI-011)
+        if metrics:
+            metrics.record_investigation_complete(start_time, "error")
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Configuration error: {str(e)}"

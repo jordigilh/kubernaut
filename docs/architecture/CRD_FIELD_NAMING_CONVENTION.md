@@ -1,9 +1,40 @@
-# CRD Field Naming Convention - Kubernaut V1
+# Kubernaut YAML Naming Convention - Universal Standard
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
+**Version**: 1.1
+**Last Updated**: January 30, 2026
 **Status**: ✅ Authoritative Standard
-**Scope**: All 5 Kubernaut CRDs
+**Scope**: All YAML configurations (CRDs, service configs, Kubernetes manifests)
+
+---
+
+## 📋 Changelog
+
+### Version 1.1 - January 30, 2026
+
+**Scope Expansion**: Extended from CRD-only to **ALL YAML configurations**
+
+**Changes**:
+- ✅ **Universal Application**: camelCase now MANDATORY for ALL YAML files:
+  - CRD specs (existing scope)
+  - Service configuration files (ADR-030 configs)
+  - Kubernetes manifests
+  - Test configurations
+  - Production configs
+- ✅ **ADR-030 Integration**: Service configuration management now references this standard
+- ✅ **Consistency**: Single naming convention across entire platform
+
+**Rationale**: 
+Inconsistent naming (snake_case in service configs, camelCase in CRDs) caused confusion and maintenance burden. Standardizing to camelCase provides:
+- Clean serialization for both JSON and YAML
+- Consistency with Kubernetes ecosystem
+- Alignment with Go struct field naming (PascalCase → camelCase in YAML)
+- Single authoritative standard for all YAML files
+
+**Authority**: This document is now the **SOLE** naming authority for all YAML configurations in Kubernaut.
+
+### Version 1.0 - October 6, 2025
+
+**Initial Release**: CRD field naming conventions established
 
 ---
 
@@ -23,22 +54,41 @@
 
 ### Purpose
 
-This document establishes standard naming conventions for Custom Resource Definition (CRD) fields across all Kubernaut services, ensuring:
-- ✅ **Consistency**: Uniform naming across all CRDs
+This document establishes **universal** naming conventions for ALL YAML configurations in Kubernaut, ensuring:
+- ✅ **Consistency**: Uniform naming across entire platform
 - ✅ **Clarity**: Self-documenting field names
 - ✅ **Go Conventions**: Alignment with Go and Kubernetes standards
-- ✅ **JSON Compatibility**: Clean JSON/YAML serialization
+- ✅ **JSON/YAML Compatibility**: Clean serialization for both formats
+
+**MANDATE**: ALL YAML files MUST use camelCase for field names (no exceptions).
 
 ---
 
-### Scope
+### Scope (V1.1 - Expanded)
 
-**5 Kubernaut CRDs**:
-1. RemediationRequest (Gateway Service)
-2. RemediationProcessing (Remediation Processor)
-3. AIAnalysis (AI Analysis Controller)
-4. WorkflowExecution (Workflow Execution Controller)
-5. KubernetesExecution (Kubernetes Executor)
+**ALL YAML Configurations**:
+1. **Custom Resource Definitions (CRDs)** - All 5 Kubernaut CRDs:
+   - RemediationRequest (Gateway Service)
+   - RemediationProcessing (Remediation Processor)
+   - AIAnalysis (AI Analysis Controller)
+   - WorkflowExecution (Workflow Execution Controller)
+   - KubernetesExecution (Kubernetes Executor)
+
+2. **Service Configuration Files** (ADR-030):
+   - Gateway config (`pkg/gateway/config/`)
+   - DataStorage config (`pkg/datastorage/server/`)
+   - RemediationOrchestrator config (`internal/config/remediationorchestrator.go`)
+   - All other service configs
+
+3. **Kubernetes Manifests**:
+   - Deployments, Services, ConfigMaps
+   - E2E test manifests (`test/infrastructure/`, `test/e2e/`)
+   - Production manifests (`deploy/`)
+
+4. **Test Configurations**:
+   - Integration test configs
+   - E2E test configs
+   - Mock service configs
 
 ---
 

@@ -122,6 +122,34 @@ engine := NewEngine(validator, analyzer, mockLLMClient, mockK8sClient)
 
 ---
 
+### **ANTI-PATTERN 6: ENVIRONMENT VARIABLE CONFIGURATION (Python)**
+
+**Definition**: Using environment variables for configuration instead of YAML files (ADR-030)
+
+**Scope**: Python production code AND test code
+
+**Violations**:
+```python
+# ❌ Configuration via env vars
+url = os.getenv("DATA_STORAGE_URL")
+timeout = int(os.getenv("TIMEOUT", "30"))
+```
+
+**Correct Approach**:
+```python
+# ✅ YAML configuration
+import yaml
+with open(config_file, 'r') as f:
+    config = yaml.safe_load(f)
+url = config['data_storage']['url']
+```
+
+**ONLY Exception**: `CONFIG_FILE` env var to specify YAML file location
+
+**Detection**: `grep -r "os.getenv" holmesgpt-api/ --include="*.py" | grep -v "CONFIG_FILE"`
+
+---
+
 ## 🔧 **AUTOMATED DETECTION**
 
 ### **Run Anti-Pattern Detection**
@@ -275,6 +303,7 @@ Expect(result).ToNot(BeNil(),
 | **LIBRARY TESTING** | Testing `logrus`, `context` | Test business logic |
 | **IMPLEMENTATION** | Testing internal methods | Test public behavior |
 | **MOCK OVERUSE** | >3 mocks | Use real business components |
+| **ENV VAR CONFIG (Python)** | `os.getenv\|os.environ` | Use YAML config files |
 
 **Command**: `make lint-test-patterns`
 

@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse
 from .llm_integration import analyze_recovery
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
+from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,15 @@ router = APIRouter()
     "/recovery/analyze",
     status_code=status.HTTP_200_OK,
     response_model=RecoveryResponse,
-    response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    response_model_exclude_none=True,  # E2E-HAPI-023/024: Exclude None values (selected_workflow). Note: alternative_workflows always included per BR-AUDIT-005
+    responses={
+        200: {"description": "Successful Response - Recovery analyzed with workflow selection"},
+        400: {"description": "Bad Request - Invalid input format or missing required fields"},
+        401: {"description": "Unauthorized - Missing or invalid authentication token"},
+        403: {"description": "Forbidden - Insufficient permissions (SAR check failed)"},
+        422: {"description": "Validation Error - Request body validation failed"},
+        500: {"description": "Internal Server Error - LLM or workflow catalog failure"}
+    }
 )
 async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Request) -> RecoveryResponse:
     """
@@ -60,6 +69,15 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
         "purpose": "LLM cost tracking and audit trail"
     })
 
+    # BR-AI-080: Input validation (E2E-HAPI-018)
+    # Validate recovery_attempt_number >= 1 when is_recovery_attempt=true
+    if recovery_req.is_recovery_attempt and recovery_req.recovery_attempt_number is not None:
+        if recovery_req.recovery_attempt_number < 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"recovery_attempt_number must be >= 1, got {recovery_req.recovery_attempt_number}"
+            )
+
     # DEBUG: Log what we receive (BR-HAPI-197 investigation)
     logger.info(f"🔍 DEBUG: Recovery request received - signal_type={recovery_req.signal_type!r}")
 
@@ -73,7 +91,10 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
     # Get result from analyze_recovery (returns dict)
     # Pass app config for LLM configuration
     from src.main import config as app_config
-    result_dict = await analyze_recovery(request_data, app_config)
+    
+    # Inject global metrics (BR-HAPI-011, BR-HAPI-301)
+    metrics = get_global_metrics()
+    result_dict = await analyze_recovery(request_data, app_config, metrics=metrics)
 
     # Convert dict to Pydantic model for type safety and validation
     # This ensures all fields are validated per BR-HAPI-002 schema

@@ -27,7 +27,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/open-policy-agent/opa/rego"
+	rego "github.com/open-policy-agent/opa/v1/rego"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 )

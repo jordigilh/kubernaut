@@ -84,9 +84,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			_ = resp.Body.Close()
 		}
 
-		// ✅ DD-API-001: Use ogen OpenAPI client (MANDATORY)
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage ogen client")
+	// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+	// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+	dsClient = dsClients.OpenAPIClient
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {

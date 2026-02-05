@@ -76,11 +76,28 @@ if [ -d "${CLIENT_OUTPUT}" ]; then
     # Patch for urllib3 1.x compatibility (E2E environment constraint)
     # OpenAPI generator assumes urllib3 2.x, but prometrix (from HolmesGPT SDK) requires <2.0.0
     # Remove the ca_cert_data parameter which is urllib3 2.x specific
-    echo "   Patching rest.py for urllib3 1.x compatibility..."
+    echo "   Patching rest.py for urllib3 1.x compatibility and default timeout..."
     if [ -f "${CLIENT_OUTPUT}/rest.py" ]; then
         sed -i.bak '/"ca_cert_data": configuration.ca_cert_data,/d' "${CLIENT_OUTPUT}/rest.py"
         rm -f "${CLIENT_OUTPUT}/rest.py.bak"
         echo "   ✅ Patched rest.py (removed ca_cert_data for urllib3 1.x)"
+        
+        # CRITICAL FIX: Add default timeout to prevent "read timeout=0" errors
+        # Issue 1: PoolManager doesn't have default timeout
+        # Issue 2: request() method initializes timeout=None which overrides PoolManager default
+        # Fix both issues:
+        
+        # Fix 1: Add default timeout to PoolManager initialization
+        sed -i.bak '/pool_args = {$/a\
+            "timeout": urllib3.Timeout(connect=10.0, read=60.0),  # CRITICAL: Default timeout
+' "${CLIENT_OUTPUT}/rest.py"
+        rm -f "${CLIENT_OUTPUT}/rest.py.bak"
+        
+        # Fix 2: Change "timeout = None" to use default timeout when _request_timeout not provided
+        sed -i.bak 's/^        timeout = None$/        timeout = urllib3.Timeout(connect=10.0, read=60.0)  # CRITICAL: Default for requests without explicit timeout/' "${CLIENT_OUTPUT}/rest.py"
+        rm -f "${CLIENT_OUTPUT}/rest.py.bak"
+        
+        echo "   ✅ Patched rest.py (added default timeout to PoolManager AND request method)"
     fi
 
     echo "✅ Client generated successfully"

@@ -116,6 +116,26 @@ var _ = Describe("HolmesGPTClient", func() {
 			})
 		})
 
+		// BR-AI-009: Transient error handling (500)
+		Context("with 500 Internal Server Error", func() {
+			BeforeEach(func() {
+				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+				var err error
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should return transient error", func() {
+				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{})
+
+				Expect(err).To(HaveOccurred())
+				var apiErr *client.APIError
+				Expect(errors.As(err, &apiErr)).To(BeTrue())
+			})
+		})
+
 		// BR-AI-010: Permanent error handling (401)
 		Context("with 401 Unauthorized", func() {
 			BeforeEach(func() {

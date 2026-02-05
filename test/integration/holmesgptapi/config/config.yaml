@@ -4,29 +4,32 @@
 # This file is mounted into DataStorage container at /etc/datastorage/config.yaml
 # and referenced via CONFIG_PATH environment variable
 
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+
 server:
   port: 8080
   host: "0.0.0.0"
-  readTimeout: "30s"
-  writeTimeout: "30s"
-
-logging:
-  level: "debug"  # Debug level for integration tests
-  format: "json"
+  readTimeout: 30s
+  writeTimeout: 30s
 
 database:
   # PostgreSQL accessible via host.containers.internal (DD-TEST-001: port 15439)
   host: host.containers.internal
   port: 15439
-  name: "action_history"
-  user: "slm_user"
-  sslMode: "disable"
+  name: action_history
+  user: slm_user
+  sslMode: disable
   maxOpenConns: 25
   maxIdleConns: 5
-  connMaxLifetime: "5m"
-  connMaxIdleTime: "10m"
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   # ADR-030 Section 6: Secrets loaded from mounted files
-  secretsFile: "/etc/datastorage-secrets/database-credentials.yaml"
+  secretsFile: "/etc/datastorage/database-credentials.yaml"
+  usernameKey: "username"
   passwordKey: "password"
 
 redis:
@@ -34,10 +37,13 @@ redis:
   addr: host.containers.internal:16387
   db: 0
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
-  dlqStreamName: "audit:dlq:notification"
+  dlqStreamName: audit:dlq:notification
   dlqMaxLen: 10000
-  dlqConsumerGroup: "datastorage-dlq-consumers"
+  dlqConsumerGroup: datastorage-dlq-consumers
   # ADR-030 Section 6: Secrets loaded from mounted files
-  secretsFile: "/etc/datastorage-secrets/redis-credentials.yaml"
+  secretsFile: "/etc/datastorage/redis-credentials.yaml"
   passwordKey: "password"
 
+logging:
+  level: debug
+  format: json

@@ -294,6 +294,75 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			Expect(saved.Spec.Recipients[1].Slack).To(Equal("#channel2"))
 			Expect(saved.Spec.Recipients[2].Slack).To(Equal("#channel3"))
 		})
+
+		It("should preserve metadata fields in delivered message (BR-NOT-064)", func() {
+			// BUSINESS SCENARIO: Audit correlation with RemediationRequest context
+			// BR-NOT-064: Audit event correlation requires metadata preservation
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-metadata",
+					Namespace: "default",
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Subject: "Metadata Preservation Test",
+					Body:    "Testing metadata field preservation for audit correlation",
+					Metadata: map[string]string{
+						"severity":               "critical",
+						"remediationRequestName": "rr-pod-crash-abc123",
+						"cluster":                "production",
+						"environment":            "prod",
+					},
+				},
+			}
+
+			// BEHAVIOR: Deliver notification with metadata
+			err := fileService.Deliver(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Read file
+			files, _ := filepath.Glob(filepath.Join(tempDir, "notification-test-metadata-*.json"))
+			Expect(files).To(HaveLen(1), "Should create exactly one file")
+			data, _ := os.ReadFile(files[0])
+			var saved notificationv1alpha1.NotificationRequest
+			Expect(json.Unmarshal(data, &saved)).To(Succeed())
+
+			// CORRECTNESS: Metadata map preserved (BR-NOT-064)
+			Expect(saved.Spec.Metadata).ToNot(BeNil(), "Metadata map must not be nil when explicitly set")
+			Expect(saved.Spec.Metadata).To(HaveLen(4), "All metadata fields must be preserved")
+			Expect(saved.Spec.Metadata["severity"]).To(Equal("critical"), "severity field must be preserved")
+			Expect(saved.Spec.Metadata["remediationRequestName"]).To(Equal("rr-pod-crash-abc123"), "remediationRequestName field must be preserved for audit correlation")
+			Expect(saved.Spec.Metadata["cluster"]).To(Equal("production"), "cluster field must be preserved")
+			Expect(saved.Spec.Metadata["environment"]).To(Equal("prod"), "environment field must be preserved")
+		})
+
+		It("should handle nil metadata gracefully (optional field)", func() {
+			// BUSINESS SCENARIO: Standalone notifications without RemediationRequest context
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-no-metadata",
+					Namespace: "default",
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Subject:  "No Metadata Test",
+					Body:     "Testing nil metadata handling",
+					Metadata: nil, // Explicitly nil (optional field)
+				},
+			}
+
+			// BEHAVIOR: Deliver notification without metadata
+			err := fileService.Deliver(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Read file
+			files, _ := filepath.Glob(filepath.Join(tempDir, "notification-test-no-metadata-*.json"))
+			Expect(files).To(HaveLen(1))
+			data, _ := os.ReadFile(files[0])
+			var saved notificationv1alpha1.NotificationRequest
+			Expect(json.Unmarshal(data, &saved)).To(Succeed())
+
+			// CORRECTNESS: Nil metadata is acceptable (optional field per CRD definition)
+			// Note: omitempty means it may be omitted from JSON, but that's correct behavior
+		})
 	})
 
 	// ========================================

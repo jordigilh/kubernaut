@@ -115,15 +115,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		// Using HYBRID PARALLEL setup (Dec 25, 2025)
 		// Build images parallel → Create cluster → Load → Deploy
 		tempLogger.Info("Creating Kind cluster with hybrid parallel infrastructure setup...")
-		if tempCoverageMode {
-			// Use coverage-enabled HYBRID setup (DD-TEST-007)
-			// Hybrid approach: Build images in parallel → Create cluster when ready → Load → Deploy
-			// Benefits: Fast builds (parallel) + No cluster timeout (created after builds) + Reliable
-			err = infrastructure.SetupGatewayInfrastructureHybridWithCoverage(tempCtx, tempClusterName, tempKubeconfigPath, GinkgoWriter)
-		} else {
-			// Use standard parallel setup
-			err = infrastructure.SetupGatewayInfrastructureParallel(tempCtx, tempClusterName, tempKubeconfigPath, GinkgoWriter)
-		}
+		
+		// Unified setup function with coverage support (consolidated from gateway_e2e_hybrid.go)
+		err = infrastructure.SetupGatewayInfrastructureParallel(tempCtx, tempClusterName, tempKubeconfigPath, GinkgoWriter, tempCoverageMode)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Wait for Gateway HTTP endpoint to be ready
@@ -310,8 +304,15 @@ var _ = SynchronizedAfterSuite(
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind
 		logger.Info("🧹 Cleaning up service images built for Kind (DD-TEST-001 v1.1)...")
-		imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
-		if imageTag != "" {
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
+		imageTag := os.Getenv("IMAGE_TAG")
+		
+		// Skip cleanup when using registry images (CI/CD mode)
+		if imageRegistry != "" && imageTag != "" {
+			logger.Info("   ℹ️  Registry mode detected - skipping local image removal",
+				"registry", imageRegistry, "tag", imageTag)
+		} else if imageTag != "" {
+			// Local build mode: Remove locally built images
 			imageName := fmt.Sprintf("gateway:%s", imageTag)
 			pruneCmd := exec.Command("podman", "rmi", imageName)
 			pruneOutput, pruneErr := pruneCmd.CombinedOutput()

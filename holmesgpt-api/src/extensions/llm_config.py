@@ -204,7 +204,7 @@ def format_model_name_for_litellm(
     if provider == "vertex_ai":
         return f"vertex_ai/{model_name}"
 
-    # OpenAI provider with custom endpoint (e.g., Ollama, LM Studio, LocalAI)
+    # OpenAI provider with custom endpoint (e.g., Ollama, LM Studio, LocalAI, Mock LLM)
     # These are OpenAI-compatible endpoints that need the "openai/" prefix
     if provider == "openai" and llm_endpoint:
         # Check if it's NOT the official OpenAI endpoint

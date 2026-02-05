@@ -35,12 +35,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
@@ -77,12 +117,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Authentication failed - Invalid or missing Bearer token.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n**Source**: HAPI middleware (DD-AUTH-014)\n\n**Cause**: ServiceAccount lacks required SAR permissions.\n\n**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
                 }
               }
             }
@@ -192,7 +272,7 @@
           "rationale"
         ],
         "title": "AlternativeWorkflow",
-        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- ✅ Purpose: Help operator make an informed decision\n- ✅ Content: Pros/cons of alternative approaches\n- ❌ NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
       },
       "DetectedLabels": {
         "properties": {
@@ -299,7 +379,7 @@
               }
             ],
             "title": "Customlabels",
-            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
+            "description": "Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
           },
           "enrichmentQuality": {
             "type": "number",
@@ -312,7 +392,7 @@
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, and custom labels\nthat are used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, and custom labels\nthat are used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain → list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
       },
       "ExecutionFailure": {
         "properties": {
@@ -371,6 +451,55 @@
         ],
         "title": "ExecutionFailure",
         "description": "Structured failure information using Kubernetes reason codes.\n\nCRITICAL: The 'reason' field uses canonical Kubernetes reason codes as the API contract.\nThis is NOT natural language - it's a structured enum-like value.\n\nValid reason codes include:\n- Resource: OOMKilled, InsufficientCPU, InsufficientMemory, Evicted\n- Scheduling: FailedScheduling, Unschedulable\n- Image: ImagePullBackOff, ErrImagePull, InvalidImageName\n- Execution: DeadlineExceeded, BackoffLimitExceeded, Error\n- Permission: Unauthorized, Forbidden\n- Volume: FailedMount, FailedAttachVolume\n- Node: NodeNotReady, NodeUnreachable\n- Network: NetworkNotReady"
+      },
+      "HTTPError": {
+        "type": "object",
+        "description": "RFC 7807 Problem Details for HTTP APIs - Authentication/Authorization errors.\nSee: https://www.rfc-editor.org/rfc/rfc7807.html",
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "description": "URI reference identifying the problem type",
+            "example": "https://kubernaut.io/problems/authentication-failed"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short, human-readable summary of the problem type",
+            "example": "Authentication Failed"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTP status code for this occurrence",
+            "example": 401
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation specific to this occurrence",
+            "example": "Token cannot be empty"
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri",
+            "description": "URI reference identifying the specific occurrence of the problem"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Request tracing identifier (RFC 7807 extension member)"
+          }
+        }
       },
       "HTTPValidationError": {
         "properties": {
@@ -1191,6 +1320,14 @@
             ],
             "title": "Human Review Reason",
             "description": "Reason why human review is needed (BR-HAPI-197)"
+          },
+          "alternative_workflows": {
+            "items": {
+              "$ref": "#/components/schemas/AlternativeWorkflow"
+            },
+            "type": "array",
+            "title": "Alternative Workflows",
+            "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic execution. Helps operators understand AI reasoning and decision alternatives."
           }
         },
         "type": "object",

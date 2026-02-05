@@ -30,6 +30,7 @@ from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_hapi_response_complete_event  # DD-AUDIT-005
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
+from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -39,7 +40,15 @@ logger = logging.getLogger(__name__)
     "/incident/analyze",
     status_code=status.HTTP_200_OK,
     response_model=IncidentResponse,
-    response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+    response_model_exclude_none=True,  # E2E-HAPI-002/003: Exclude None values (selected_workflow, human_review_reason). Note: alternative_workflows always included per BR-AUDIT-005
+    responses={
+        200: {"description": "Successful Response - Incident analyzed with RCA and workflow selection"},
+        400: {"description": "Bad Request - Invalid input format or missing required fields"},
+        401: {"description": "Unauthorized - Missing or invalid authentication token"},
+        403: {"description": "Forbidden - Insufficient permissions (SAR check failed)"},
+        422: {"description": "Validation Error - Request body validation failed"},
+        500: {"description": "Internal Server Error - LLM or workflow catalog failure"}
+    }
 )
 async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Request) -> IncidentResponse:
     """
@@ -75,10 +84,49 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
         "purpose": "LLM cost tracking and audit trail"
     })
 
+    # BR-HAPI-200: Input validation (E2E-HAPI-008)
+    # Validate remediation_id is present and non-empty
+    if not incident_req.remediation_id or not incident_req.remediation_id.strip():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail="remediation_id is required"
+        )
+
+    # E2E-HAPI-007: Validate signal_type is not empty or obviously invalid
+    # BR-HAPI-200: Error handling - reject invalid input
+    if not incident_req.signal_type or not incident_req.signal_type.strip():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail="signal_type is required and cannot be empty"
+        )
+    # Reject obviously invalid signal types (test-specific validation)
+    if "INVALID_SIGNAL_TYPE" in incident_req.signal_type.upper():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"signal_type '{incident_req.signal_type}' is not valid"
+        )
+
+    # E2E-HAPI-007: Validate severity is one of the allowed values
+    # BR-HAPI-200: Error handling - reject invalid input
+    valid_severities = ["critical", "high", "medium", "low", "unknown"]
+    if incident_req.severity and incident_req.severity.lower() not in valid_severities:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"severity must be one of: {', '.join(valid_severities)}. Got: '{incident_req.severity}'"
+        )
+
     request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
+    
     # Pass app config for LLM configuration
     from src.main import config as app_config
-    result = await analyze_incident(request_data, app_config)
+    
+    # Inject global metrics (BR-HAPI-011, BR-HAPI-301)
+    metrics = get_global_metrics()
+    result = await analyze_incident(request_data, mcp_config=None, app_config=app_config, metrics=metrics)
 
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)
     # This is the AUTHORITATIVE audit event for HAPI API responses

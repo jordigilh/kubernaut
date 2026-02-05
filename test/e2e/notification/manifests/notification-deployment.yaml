@@ -25,14 +25,6 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      # Fix permissions on volume mount for non-root controller user (UID 1001)
-      initContainers:
-      - name: fix-permissions
-        image: quay.io/jordigilh/kubernaut-busybox:latest
-        command: ['sh', '-c', 'chmod 777 /tmp/notifications && chown -R 1001:0 /tmp/notifications']
-        volumeMounts:
-        - name: notification-output
-          mountPath: /tmp/notifications
       containers:
       - name: manager
         image: localhost/kubernaut-notification:e2e-test
@@ -72,10 +64,10 @@ spec:
           httpGet:
             path: /readyz
             port: 8081
-          initialDelaySeconds: 30
+          initialDelaySeconds: 15  # Aligned with AuthWebhook (no init container, fast startup)
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 6  # Total wait: 15 + (6 × 10) = 75s (same as AuthWebhook)
         resources:
           limits:
             cpu: 500m
@@ -96,10 +88,10 @@ spec:
       - name: config
         configMap:
           name: notification-controller-config
-      # DD-NOT-006: File delivery output (hostPath for E2E)
+      # DD-NOT-006: File delivery output (emptyDir for permission-free testing)
+      # Tests use kubectl exec to read files from pod (see file_validation_helpers_test.go)
+      # No hostPath needed - avoids permission issues entirely
       - name: notification-output
-        hostPath:
-          path: /tmp/e2e-notifications  # Mounted from host via Kind extraMounts
-          type: Directory
+        emptyDir: {}
       terminationGracePeriodSeconds: 10
 

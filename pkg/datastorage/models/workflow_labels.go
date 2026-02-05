@@ -48,10 +48,11 @@ type MandatoryLabels struct {
 	// Source: K8s Resource (auto-populated by Signal Processing)
 	Component string `json:"component" validate:"required"`
 
-	// Environment is the deployment environment (REQUIRED)
-	// Values: "production", "staging", "development", "test", "*" (wildcard)
-	// Source: Namespace Labels (derived by Signal Processing via Rego)
-	Environment string `json:"environment" validate:"required"`
+	// Environment is the deployment environment(s) this workflow targets (REQUIRED)
+	// Values: ["production"], ["staging", "production"], ["*"] (wildcard for all)
+	// Source: Workflow author declares target environments
+	// DD-WORKFLOW-001 v2.5: Array allows workflows to work in multiple environments
+	Environment []string `json:"environment" validate:"required,min=1"`
 
 	// Priority is the business priority level (REQUIRED)
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard)
@@ -198,7 +199,8 @@ type DetectedLabels struct {
 // ========================================
 
 // NewMandatoryLabels creates a new MandatoryLabels instance
-func NewMandatoryLabels(signalType, severity, component, environment, priority string) *MandatoryLabels {
+// DD-WORKFLOW-001 v2.5: environment is []string (workflow declares target environments)
+func NewMandatoryLabels(signalType, severity, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
 		SignalType:  signalType,
 		Severity:    severity,

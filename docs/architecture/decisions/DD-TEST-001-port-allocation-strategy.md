@@ -60,12 +60,14 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 |---------|-----------|----------|--------------|------------------|-------------|-----------------|---------------------|
 | **Gateway** | 8080 | 30080 | 9090 | 30090 | — | — | `test/infrastructure/kind-gateway-config.yaml` |
 | **Gateway → Data Storage** | 18091 | 30081 | — | — | — | — | `test/infrastructure/kind-gateway-config.yaml` (dependency) |
+| **Data Storage** | 8081 | 30081 | 9181 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Signal Processing** | 8082 | 30082 | 9182 | 30182 | — | — | `test/infrastructure/kind-signalprocessing-config.yaml` |
 | **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
+| **RO → Data Storage** | 8090 | 30081 | — | — | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` (dependency) |
 | **AIAnalysis** | 8084 | 30084 | 9184 | 30184 | 8184 | 30284 | `test/infrastructure/kind-aianalysis-config.yaml` |
 | **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` |
+| **WE → Data Storage** | 8092 | 30081 | — | — | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` (dependency) |
 | **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
-| **Data Storage** | 8081 | 30081 | 9181 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
 
@@ -816,6 +818,8 @@ var _ = SynchronizedBeforeSuite(
 | **Gateway** | N/A | 26380 | 28080 | Data Storage: 28091 |
 | **Effectiveness Monitor** | 25434 | N/A | 28100 | Data Storage: 28092 |
 | **Workflow Engine** | N/A | N/A | 28110 | Data Storage: 28093 |
+| **RemediationOrchestrator** | N/A | N/A | N/A | Data Storage: 8089 |
+| **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092 |
 | **Auth Webhook** | 25442 | 26386 | N/A | Data Storage: 28099 |
 
 ✅ **No Conflicts** - All services can run E2E tests in parallel
