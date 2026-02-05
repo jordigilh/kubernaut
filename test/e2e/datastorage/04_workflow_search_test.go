@@ -88,19 +88,15 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for service to be ready
-		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
-		Eventually(func() error {
-			resp, err := HTTPClient.Get(serviceURL + "/health/ready")
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("service not ready: status %d", resp.StatusCode)
-			}
-			return nil
-		}, "2m", "5s").Should(Succeed())
+	// Wait for service to be ready using typed OpenAPI client
+	testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
+	Eventually(func() error {
+		_, err := DSClient.ReadinessCheck(ctx)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, "2m", "5s").Should(Succeed())
 
 		testLogger.Info("✅ Data Storage Service is ready")
 
