@@ -78,6 +78,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#e2e-test"},
@@ -165,6 +166,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#security-alerts"},
@@ -435,6 +437,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Required for file validation test
 					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#e2e-error-test"},
