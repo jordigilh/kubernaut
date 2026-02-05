@@ -124,18 +124,18 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			deliveryTime := time.Since(startTime)
 			logger.Info("Critical notification delivered", "deliveryTime", deliveryTime.String())
 
-			By("Verifying both channels delivered successfully")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying both channels delivered successfully")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
-				"Both console and file channels should deliver successfully")
-			Expect(notification.Status.FailedDeliveries).To(Equal(0),
-				"Should have 0 failed deliveries")
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
+			"Both console and file channels should deliver successfully")
+		Expect(notification.Status.FailedDeliveries).To(Equal(0),
+			"Should have 0 failed deliveries")
 
 			By("Verifying file audit trail was created")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
@@ -353,20 +353,20 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			}, 20*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"High priority should be delivered to all channels")
 
-			By("Verifying all three channels delivered successfully")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying all three channels delivered successfully")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
-				"All three channels (console, file, log) should deliver successfully")
-			Expect(notification.Status.FailedDeliveries).To(Equal(0),
-				"Should have 0 failed deliveries")
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
+			"All three channels (console, file, log) should deliver successfully")
+		Expect(notification.Status.FailedDeliveries).To(Equal(0),
+			"Should have 0 failed deliveries")
 
-			By("Verifying file audit trail contains priority metadata")
+		By("Verifying file audit trail contains priority metadata")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
 			pattern := fmt.Sprintf("notification-%s-*.json", notification.Name)
 

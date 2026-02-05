@@ -114,21 +114,21 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"All channels should deliver successfully")
 
-			By("Verifying all three channels delivered (BR-NOT-053)")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying all three channels delivered (BR-NOT-053)")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Should have 3 successful deliveries (console + file + log)
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
-				"Should have 3 successful deliveries (console, file, log)")
+		// Should have 3 successful deliveries (console + file + log)
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(3),
+			"Should have 3 successful deliveries (console, file, log)")
 
-			// Should have 0 failed deliveries
-			Expect(notification.Status.FailedDeliveries).To(Equal(0),
-				"Should have 0 failed deliveries")
+		// Should have 0 failed deliveries
+		Expect(notification.Status.FailedDeliveries).To(Equal(0),
+			"Should have 0 failed deliveries")
 
 			By("Verifying file channel created audit file")
 			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
@@ -225,18 +225,18 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"Log channel should deliver successfully")
 
-			By("Verifying log channel delivery recorded")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
+		By("Verifying log channel delivery recorded")
+		// Refresh notification to get latest status (use apiReader to bypass cache - DD-STATUS-001)
+		err = apiReader.Get(ctx, client.ObjectKey{
+			Name:      notification.Name,
+			Namespace: notification.Namespace,
+		}, notification)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
-				"Log channel should deliver successfully")
-			Expect(notification.Status.DeliveryAttempts).To(HaveLen(1),
-				"Should record 1 delivery attempt for log channel")
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
+			"Log channel should deliver successfully")
+		Expect(notification.Status.DeliveryAttempts).To(HaveLen(1),
+			"Should record 1 delivery attempt for log channel")
 
 			// Verify delivery attempt details
 			logAttempt := notification.Status.DeliveryAttempts[0]
