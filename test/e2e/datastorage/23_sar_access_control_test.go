@@ -353,29 +353,33 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			// Verify audit event was created with user attribution
 			logger.Info("📋 Verifying audit event captured user attribution...")
 			
-			// Query audit events for workflow creation (use server-generated UUID)
+			// Query audit events for workflow creation (use all 3 filters for precision)
+			// CorrelationID = workflow_id (per pkg/datastorage/audit/workflow_catalog_event.go:56)
 			Eventually(func() bool {
 				auditResp, err := authorizedClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
-					EventType: dsgen.NewOptString("datastorage.workflow.created"),
-					Limit:     dsgen.NewOptInt(10),
+					CorrelationID: dsgen.NewOptString(generatedWorkflowID.String()),
+					EventCategory: dsgen.NewOptString("workflow"),
+					EventType:     dsgen.NewOptString("datastorage.workflow.created"),
+					Limit:         dsgen.NewOptInt(10),
 				})
 				if err != nil {
 					logger.Info("Audit query failed", "error", err)
 					return false
 				}
 
-				// Check if audit event exists for this workflow (using server-generated UUID)
-				for _, event := range auditResp.Data {
-					if event.ResourceID.IsSet() && event.ResourceID.Value == generatedWorkflowID.String() {
-						// Verify actor_id contains ServiceAccount name
-						logger.Info("✅ Audit event found with user attribution",
-							"actor_id", event.ActorID.Value,
-							"event_type", event.EventType,
-							"resource_id", event.ResourceID.Value)
-						return true
-					}
+				// With 3 filters, should return exactly 1 event (no pagination needed)
+				if len(auditResp.Data) == 0 {
+					logger.Info("No audit events found yet", "workflow_id", generatedWorkflowID)
+					return false
 				}
-				return false
+
+				event := auditResp.Data[0]
+				// Verify actor_id contains ServiceAccount name
+				logger.Info("✅ Audit event found with user attribution",
+					"actor_id", event.ActorID.Value,
+					"event_type", event.EventType,
+					"resource_id", event.ResourceID.Value)
+				return true
 			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Audit event with user attribution should be created")
 
 			logger.Info("✅ Workflow catalog operation captured user attribution correctly")

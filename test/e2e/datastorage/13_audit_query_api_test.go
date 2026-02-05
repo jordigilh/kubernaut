@@ -609,97 +609,74 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// WAIT: Allow events to be persisted (async buffering + flush)
-			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
-			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
-			// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
-			// Timeout increased to 60s with better error visibility
-			// - Parallel test execution (12 processes) - high contention
-			// - Database connection contention across processes
-			// - Audit store buffering (1s flush interval)
-			// - Schema isolation overhead in parallel mode
-			var response map[string]interface{}
-			Eventually(func() (float64, error) {
-				resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
-				if err != nil {
-					return 0, fmt.Errorf("HTTP GET failed: %w", err)
-				}
-				defer func() { _ = resp.Body.Close() }()
+		// WAIT: Allow events to be persisted (async buffering + flush)
+		// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
+		// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
+		// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
+		// Timeout increased to 60s with better error visibility
+		// - Parallel test execution (12 processes) - high contention
+		// - Database connection contention across processes
+		// - Audit store buffering (1s flush interval)
+		// - Schema isolation overhead in parallel mode
+		//
+		// Use typed OpenAPI client with all 3 filters for precision (DD-API-001)
+		var queryResp *ogenclient.AuditEventsQueryResponse
+		Eventually(func() (int, error) {
+			resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString("gateway"),
+				EventType:     ogenclient.NewOptString("gateway.signal.received"),
+				Limit:         ogenclient.NewOptInt(50),
+				Offset:        ogenclient.NewOptInt(0),
+			})
+			if err != nil {
+				return 0, fmt.Errorf("QueryAuditEvents failed: %w", err)
+			}
 
-				if resp.StatusCode != http.StatusOK {
-					return 0, fmt.Errorf("HTTP status: %d", resp.StatusCode)
-				}
+			queryResp = resp
+			total := int(resp.Pagination.Value.Total.Value)
 
-				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-					return 0, fmt.Errorf("JSON decode failed: %w", err)
-				}
+			if total < 75 {
+				return total, fmt.Errorf("still waiting: %d/75 events", total)
+			}
 
-				pagination, ok := response["pagination"].(map[string]interface{})
-				if !ok {
-					return 0, fmt.Errorf("no pagination field in response")
-				}
+			return total, nil
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+			"should have at least 75 events after write completes (10s = 10x buffer flush interval)")
 
-				total, ok := pagination["total"].(float64)
-				if !ok {
-					return 0, fmt.Errorf("pagination.total is not a number")
-				}
+		// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
+		// Already fetched in Eventually block above
+		
+		// ASSERT: Correct subset is returned
+		Expect(queryResp.Data).To(HaveLen(50), "should return 50 events (page 1)")
 
-				if total < 75 {
-					return total, fmt.Errorf("still waiting: %.0f/75 events", total)
-				}
+		// ASSERT: Pagination metadata is correct
+		Expect(queryResp.Pagination.Value.Limit.Value).To(BeNumerically("==", 50))
+		Expect(queryResp.Pagination.Value.Offset.Value).To(BeNumerically("==", 0))
+		Expect(queryResp.Pagination.Value.Total.Value).To(BeNumerically(">=", 75),
+			"should have at least 75 events for this correlation_id")
+		Expect(queryResp.Pagination.Value.HasMore.Value).To(BeTrue())
 
-				return total, nil
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-				"should have at least 75 events after write completes (10s = 10x buffer flush interval)")
+		// ACT: Query page 2 (limit=50, offset=50) - use typed OpenAPI client with 3 filters
+		queryResp2, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(correlationID),
+			EventCategory: ogenclient.NewOptString("gateway"),
+			EventType:     ogenclient.NewOptString("gateway.signal.received"),
+			Limit:         ogenclient.NewOptInt(50),
+			Offset:        ogenclient.NewOptInt(50),
+		})
+		Expect(err).ToNot(HaveOccurred())
 
-			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
-			resp, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+		// ASSERT: Page 2 returns remaining events (25 events = 75 total - 50 offset)
+		Expect(queryResp2.Data).To(HaveLen(25), "should return 25 remaining events (page 2)")
 
-			// ASSERT: Response is 200 OK
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp2.Pagination.Value.Offset.Value).To(BeNumerically("==", 50))
+		Expect(queryResp2.Pagination.Value.Total.Value).To(BeNumerically(">=", 75))
+		Expect(queryResp2.Pagination.Value.HasMore.Value).To(BeFalse(), "no more pages after 75 events (50 + 25 = 75)")
 
-			// ASSERT: Correct subset is returned
-			err = json.NewDecoder(resp.Body).Decode(&response)
-			Expect(err).ToNot(HaveOccurred())
-
-			data, ok := response["data"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(data).To(HaveLen(50), "should return 50 events (page 1)")
-
-			// ASSERT: Pagination metadata is correct
-			pagination, ok := response["pagination"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(pagination["limit"]).To(BeNumerically("==", 50))
-			Expect(pagination["offset"]).To(BeNumerically("==", 0))
-			Expect(pagination["total"]).To(BeNumerically(">=", 75),
-				"should have at least 75 events for this correlation_id")
-			Expect(pagination["has_more"]).To(BeTrue())
-
-			// ACT: Query page 2 (limit=50, offset=50)
-			resp2, err := HTTPClient.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=50", baseURL, correlationID))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp2.Body.Close() }()
-
-			// ASSERT: Page 2 returns remaining events (25 events = 75 total - 50 offset)
-			var response2 map[string]interface{}
-			err = json.NewDecoder(resp2.Body).Decode(&response2)
-			Expect(err).ToNot(HaveOccurred())
-
-			data2, ok := response2["data"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(data2).To(HaveLen(25), "should return 25 remaining events (page 2)")
-
-			pagination2, ok := response2["pagination"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(pagination2["offset"]).To(BeNumerically("==", 50))
-			Expect(pagination2["total"]).To(BeNumerically(">=", 75))
-			Expect(pagination2["has_more"]).To(BeFalse(), "no more pages after 75 events (50 + 25 = 75)")
-
-			// ASSERT: Total events retrieved across 2 pages
-			totalRetrieved := len(data) + len(data2)
-			Expect(totalRetrieved).To(Equal(75), "should retrieve exactly 75 events across 2 pages")
+		// ASSERT: Total events retrieved across 2 pages
+		totalRetrieved := len(queryResp.Data) + len(queryResp2.Data)
+		Expect(totalRetrieved).To(Equal(75), "should retrieve exactly 75 events across 2 pages")
 		})
 	})
 
