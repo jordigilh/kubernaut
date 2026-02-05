@@ -125,16 +125,26 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Complete Message Validation"))
 			Expect(savedNotification.Spec.Body).To(Equal("This is a comprehensive test message with multiple fields to validate complete delivery."))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(HaveLen(1))
-			Expect(savedNotification.Spec.Channels[0]).To(Equal(notificationv1alpha1.ChannelConsole))
+			Expect(savedNotification.Spec.Channels).To(HaveLen(2))
+			Expect(savedNotification.Spec.Channels).To(ContainElements(notificationv1alpha1.ChannelConsole, notificationv1alpha1.ChannelFile))
 			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 			Expect(savedNotification.Spec.Recipients[0].Slack).To(Equal("#e2e-test"))
 
 			By("Verifying status fields are present")
-			// Note: Status may be intermediate (Sending) when file is captured during reconciliation
-			// We validate successful delivery by checking SuccessfulDeliveries counter
+			// Note: File content is captured during delivery, so Status.SuccessfulDeliveries may be 0
+			// This is expected behavior - file is written mid-reconciliation
+			// Validate final status by reading live from API server instead
 			Expect(savedNotification.Status.Phase).ToNot(BeEmpty(), "Status phase should be set")
-			Expect(savedNotification.Status.SuccessfulDeliveries).To(BeNumerically(">=", 1), "Should have successful deliveries")
+			
+			// Validate live status from API server (not from file)
+			// Use apiReader to bypass client cache (DD-STATUS-001)
+			var liveNotification notificationv1alpha1.NotificationRequest
+			err = apiReader.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, &liveNotification)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(liveNotification.Status.SuccessfulDeliveries).To(BeNumerically(">=", 2), "Should have 2 successful deliveries (console + file)")
 		})
 	})
 
@@ -206,20 +216,20 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			By("Verifying sensitive patterns are sanitized (BR-NOT-054)")
 			sanitizedBody := savedNotification.Spec.Body
 
-			// Validate password is redacted (sanitizer uses ***REDACTED***)
-			Expect(sanitizedBody).To(ContainSubstring("password: ***REDACTED***"),
+			// Validate password is redacted (sanitizer uses [REDACTED])
+			Expect(sanitizedBody).To(ContainSubstring("password: [REDACTED]"),
 				"Password should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("mySecretPass123"),
 				"Raw password should not appear in file")
 
 			// Validate API key is redacted
-			Expect(sanitizedBody).To(ContainSubstring("api_key: ***REDACTED***"),
+			Expect(sanitizedBody).To(ContainSubstring("api_key: [REDACTED]"),
 				"API key should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("sk-1234567890abcdef"),
 				"Raw API key should not appear in file")
 
 			// Validate token is redacted
-			Expect(sanitizedBody).To(ContainSubstring("token: ***REDACTED***"),
+			Expect(sanitizedBody).To(ContainSubstring("token: [REDACTED]"),
 				"Token should be sanitized")
 			Expect(sanitizedBody).ToNot(ContainSubstring("ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"),
 				"Raw token should not appear in file")
