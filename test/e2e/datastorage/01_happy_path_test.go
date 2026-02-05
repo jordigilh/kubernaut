@@ -20,7 +20,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
 	"sort"
 	"time"
 
@@ -60,8 +59,8 @@ import (
 
 var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audit Trail (DD-AUDIT-003)", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
+		testCancel context.CancelFunc
+		testLogger logr.Logger
 		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
@@ -84,16 +83,16 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-	// Wait for Data Storage Service to be responsive using typed OpenAPI client
-	testLogger.Info("⏳ Waiting for Data Storage Service...")
-	Eventually(func() error {
-		_, err := DSClient.HealthCheck(ctx)
-		if err != nil {
-			testLogger.V(1).Info("Health check failed, retrying...", "error", err)
-			return err
-		}
-		return nil
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
+		// Wait for Data Storage Service to be responsive using typed OpenAPI client
+		testLogger.Info("⏳ Waiting for Data Storage Service...")
+		Eventually(func() error {
+			_, err := DSClient.HealthCheck(ctx)
+			if err != nil {
+				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
+				return err
+			}
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
 		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)

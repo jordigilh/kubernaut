@@ -173,9 +173,9 @@ var _ = SynchronizedBeforeSuite(
 
 		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")
-		httpClient := &http.Client{Timeout: 10 * time.Second}
+		tempClient := &http.Client{Timeout: 10 * time.Second}
 		Eventually(func() error {
-			resp, err := httpClient.Get("http://localhost:28090/health") // Per DD-TEST-001 (NodePort 30081 → host 28090)
+			resp, err := tempClient.Get("http://localhost:28090/health") // Per DD-TEST-001 (NodePort 30081 → host 28090)
 			if err != nil {
 				return err
 			}
@@ -213,13 +213,13 @@ var _ = SynchronizedBeforeSuite(
 
 		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated OpenAPI client for E2E tests...")
 		saTransport := testauth.NewServiceAccountTransport(e2eToken)
-		HTTPClient = &http.Client{
+		httpClient := &http.Client{
 			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware (API server tuned, see kind-datastorage-config.yaml)
 			Transport: saTransport,
 		}
 		DSClient, err = dsgen.NewClient(
 			"http://localhost:28090",
-			dsgen.WithClient(HTTPClient),
+			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",
@@ -369,13 +369,13 @@ var _ = SynchronizedBeforeSuite(
 		// DD-API-001 + DD-AUTH-014: Initialize shared authenticated OpenAPI client for this process
 		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated OpenAPI client for process", "process", processID)
 		saTransport := testauth.NewServiceAccountTransport(e2eToken)
-		HTTPClient = &http.Client{
+		httpClient := &http.Client{
 			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware
 			Transport: saTransport,
 		}
 		DSClient, err = dsgen.NewClient(
 			dataStorageURL,
-			dsgen.WithClient(HTTPClient),
+			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ Shared authenticated OpenAPI client created (DD-AUTH-014)",

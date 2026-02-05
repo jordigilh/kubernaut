@@ -17,12 +17,10 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"

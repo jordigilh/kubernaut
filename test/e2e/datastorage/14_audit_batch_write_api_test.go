@@ -17,10 +17,7 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"net/http"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"

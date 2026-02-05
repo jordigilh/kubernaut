@@ -773,6 +773,7 @@ func generateTestCorrelationID() string {
 	// Parallel Ginkgo tests running in the same second would otherwise get duplicate IDs
 	return fmt.Sprintf("soc2-e2e-%s", uuid.New().String()[:8])
 }
+
 // Helper function to create test audit events
 func createTestAuditEvents(ctx context.Context, correlationID string, count int) []string {
 	eventIDs := make([]string, count)
@@ -814,11 +815,13 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 
 	return eventIDs
 }
+
 // Helper function to verify base64 encoded signature
 func verifyBase64Signature(signature string) error {
 	_, err := base64.StdEncoding.DecodeString(signature)
 	return err
 }
+
 // WaitForPodsReady waits for pods matching a label selector to be ready
 func WaitForPodsReady(kubeconfigPath, namespace, labelSelector string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)

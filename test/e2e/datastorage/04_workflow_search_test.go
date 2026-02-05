@@ -61,8 +61,8 @@ import (
 
 var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring (Semantic + Label)", Label("e2e", "workflow-search", "p0"), Ordered, func() {
 	var (
-		testCancel    context.CancelFunc
-		testLogger    logr.Logger
+		testCancel context.CancelFunc
+		testLogger logr.Logger
 		// DD-AUTH-014: Use exported HTTPClient from suite setup
 		testNamespace string
 		serviceURL    string
@@ -88,15 +88,15 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-	// Wait for service to be ready using typed OpenAPI client
-	testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
-	Eventually(func() error {
-		_, err := DSClient.ReadinessCheck(ctx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, "2m", "5s").Should(Succeed())
+		// Wait for service to be ready using typed OpenAPI client
+		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
+		Eventually(func() error {
+			_, err := DSClient.ReadinessCheck(ctx)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, "2m", "5s").Should(Succeed())
 
 		testLogger.Info("✅ Data Storage Service is ready")
 
@@ -363,11 +363,11 @@ execution:
 					"Results should be ordered by confidence descending")
 			}
 
-		// Assertion 5: Search latency measurement (no assertion in E2E - performance tests only)
-		// Note: E2E validates functionality, not performance SLAs
-		// Performance benchmarks belong in separate load/performance test suite
-		// DD-AUTH-014: E2E environment has variable latency (Kind, SAR middleware, 12 parallel processes)
-		testLogger.Info("Search latency measured (no assertion)", "duration", searchDuration)
+			// Assertion 5: Search latency measurement (no assertion in E2E - performance tests only)
+			// Note: E2E validates functionality, not performance SLAs
+			// Performance benchmarks belong in separate load/performance test suite
+			// DD-AUTH-014: E2E environment has variable latency (Kind, SAR middleware, 12 parallel processes)
+			testLogger.Info("Search latency measured (no assertion)", "duration", searchDuration)
 
 			// Assertion 6: CrashLoopBackOff workflow should NOT be returned (different signal_type)
 			// DD-WORKFLOW-002 v3.0: WorkflowID is UUID, verify signal_type filtering works
@@ -385,11 +385,11 @@ execution:
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("Key Validations (DD-WORKFLOW-004 v1.5):")
 			testLogger.Info("  ✅ Mandatory label filtering enforced (signal_type, severity)")
-		testLogger.Info("  ✅ Confidence scores valid (0.0-1.0)")
-		testLogger.Info("  ✅ Results ordered by confidence descending")
-		testLogger.Info(fmt.Sprintf("  ℹ️  Search latency: %v (not asserted in E2E)", searchDuration))
-		testLogger.Info("  ✅ V1.0: Label-based scoring with boost/penalty (0.10, 0.05, 0.02)")
-		testLogger.Info("  ✅ V2.0+: Vector embeddings + label weights (hybrid semantic)")
+			testLogger.Info("  ✅ Confidence scores valid (0.0-1.0)")
+			testLogger.Info("  ✅ Results ordered by confidence descending")
+			testLogger.Info(fmt.Sprintf("  ℹ️  Search latency: %v (not asserted in E2E)", searchDuration))
+			testLogger.Info("  ✅ V1.0: Label-based scoring with boost/penalty (0.10, 0.05, 0.02)")
+			testLogger.Info("  ✅ V2.0+: Vector embeddings + label weights (hybrid semantic)")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		})
 	})

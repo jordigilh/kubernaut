@@ -18,9 +18,7 @@ package datastorage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -111,10 +109,7 @@ func createTestAuditEvent(baseURL, service, eventType, correlationID string) err
 }
 
 var _ = Describe("Audit Events Query API", func() {
-	var baseURL string
-
 	BeforeEach(func() {
-		baseURL = dataStorageURL + "/api/v1/audit/events"
 		// Note: No cleanup needed - schema-level isolation provides complete data isolation
 		// Each parallel process runs in its own schema (test_process_N)
 		// AfterSuite drops entire schema with DROP SCHEMA CASCADE
@@ -220,34 +215,34 @@ var _ = Describe("Audit Events Query API", func() {
 				time.Sleep(10 * time.Millisecond)
 			}
 
-		// ACT: Query by correlation_id using typed OpenAPI client
-		// Use Eventually() to wait for events to be visible (async buffer may delay persistence)
-		var queryResp *ogenclient.AuditEventsQueryResponse
-		Eventually(func() int {
-			resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
-			if err != nil {
-				return 0
+			// ACT: Query by correlation_id using typed OpenAPI client
+			// Use Eventually() to wait for events to be visible (async buffer may delay persistence)
+			var queryResp *ogenclient.AuditEventsQueryResponse
+			Eventually(func() int {
+				resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					return 0
+				}
+				queryResp = resp
+				return len(resp.Data)
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(4), "should return all 4 events")
+
+			// ASSERT: Events are in chronological order (DESC)
+			for i := 0; i < len(queryResp.Data)-1; i++ {
+				timestamp1 := queryResp.Data[i].EventTimestamp
+				timestamp2 := queryResp.Data[i+1].EventTimestamp
+				Expect(timestamp1.After(timestamp2) || timestamp1.Equal(timestamp2)).To(BeTrue(),
+					"events should be in chronological order (DESC)")
 			}
-			queryResp = resp
-			return len(resp.Data)
-		}, 5*time.Second, 100*time.Millisecond).Should(Equal(4), "should return all 4 events")
 
-		// ASSERT: Events are in chronological order (DESC)
-		for i := 0; i < len(queryResp.Data)-1; i++ {
-			timestamp1 := queryResp.Data[i].EventTimestamp
-			timestamp2 := queryResp.Data[i+1].EventTimestamp
-			Expect(timestamp1.After(timestamp2) || timestamp1.Equal(timestamp2)).To(BeTrue(),
-				"events should be in chronological order (DESC)")
-		}
-
-		// ASSERT: Pagination metadata is present
-		Expect(queryResp.Pagination.IsSet()).To(BeTrue(), "response should have pagination metadata")
-		Expect(queryResp.Pagination.Value.Limit.Value).To(BeNumerically("==", 50)) // Default limit per OpenAPI spec
-		Expect(queryResp.Pagination.Value.Offset.Value).To(BeNumerically("==", 0))
-		Expect(queryResp.Pagination.Value.Total.Value).To(BeNumerically("==", 4))
-		Expect(queryResp.Pagination.Value.HasMore.Value).To(BeFalse())
+			// ASSERT: Pagination metadata is present
+			Expect(queryResp.Pagination.IsSet()).To(BeTrue(), "response should have pagination metadata")
+			Expect(queryResp.Pagination.Value.Limit.Value).To(BeNumerically("==", 50)) // Default limit per OpenAPI spec
+			Expect(queryResp.Pagination.Value.Offset.Value).To(BeNumerically("==", 0))
+			Expect(queryResp.Pagination.Value.Total.Value).To(BeNumerically("==", 4))
+			Expect(queryResp.Pagination.Value.HasMore.Value).To(BeFalse())
 		})
 	})
 
@@ -337,20 +332,20 @@ var _ = Describe("Audit Events Query API", func() {
 				}
 			}
 
-		// ACT: Query by event_type using typed OpenAPI client
-		targetEventType := gateway.EventTypeSignalReceived
-		queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventType:     ogenclient.NewOptString(targetEventType),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// ACT: Query by event_type using typed OpenAPI client
+			targetEventType := gateway.EventTypeSignalReceived
+			queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventType:     ogenclient.NewOptString(targetEventType),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		// ASSERT: Only events with matching event_type are returned
-		Expect(queryResp.Data).To(HaveLen(3), "should return only 3 gateway.signal.received events")
+			// ASSERT: Only events with matching event_type are returned
+			Expect(queryResp.Data).To(HaveLen(3), "should return only 3 gateway.signal.received events")
 
-		for _, event := range queryResp.Data {
-			Expect(event.EventType).To(Equal(targetEventType))
-		}
+			for _, event := range queryResp.Data {
+				Expect(event.EventType).To(Equal(targetEventType))
+			}
 		})
 	})
 
@@ -373,21 +368,21 @@ var _ = Describe("Audit Events Query API", func() {
 				}
 			}
 
-		// ACT: Query by event_category using typed OpenAPI client (ADR-034)
-		targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
-		queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventCategory: ogenclient.NewOptString(targetService),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// ACT: Query by event_category using typed OpenAPI client (ADR-034)
+			targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
+			queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(targetService),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		// ASSERT: Only events from target service are returned
-		Expect(queryResp.Data).To(HaveLen(3), "should return only 3 analysis events")
+			// ASSERT: Only events from target service are returned
+			Expect(queryResp.Data).To(HaveLen(3), "should return only 3 analysis events")
 
-		for _, event := range queryResp.Data {
-			// ADR-034: Response uses event_category, not service
-			Expect(event.EventCategory).To(Equal(targetService))
-		}
+			for _, event := range queryResp.Data {
+				// ADR-034: Response uses event_category, not service
+				Expect(event.EventCategory).To(Equal(targetService))
+			}
 		})
 	})
 
@@ -406,21 +401,21 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// ACT: Query with since=24h using typed OpenAPI client
-		queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			Since:         ogenclient.NewOptString("24h"),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// ACT: Query with since=24h using typed OpenAPI client
+			queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				Since:         ogenclient.NewOptString("24h"),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		// ASSERT: All recent events are returned
-		Expect(queryResp.Data).To(HaveLen(5), "should return all 5 recent events")
+			// ASSERT: All recent events are returned
+			Expect(queryResp.Data).To(HaveLen(5), "should return all 5 recent events")
 
-		// ASSERT: All events are within last 24 hours
-		now := time.Now()
-		for _, event := range queryResp.Data {
-			Expect(now.Sub(event.EventTimestamp)).To(BeNumerically("<", 24*time.Hour))
-		}
+			// ASSERT: All events are within last 24 hours
+			now := time.Now()
+			for _, event := range queryResp.Data {
+				Expect(now.Sub(event.EventTimestamp)).To(BeNumerically("<", 24*time.Hour))
+			}
 		})
 
 		It("should return events within absolute time range (since/until)", func() {
@@ -433,19 +428,19 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// ACT: Query with absolute time range using typed OpenAPI client
-		now := time.Now()
-		since := now.Add(-1 * time.Hour).Format(time.RFC3339)
-		until := now.Add(1 * time.Hour).Format(time.RFC3339)
-		queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			Since:         ogenclient.NewOptString(since),
-			Until:         ogenclient.NewOptString(until),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// ACT: Query with absolute time range using typed OpenAPI client
+			now := time.Now()
+			since := now.Add(-1 * time.Hour).Format(time.RFC3339)
+			until := now.Add(1 * time.Hour).Format(time.RFC3339)
+			queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				Since:         ogenclient.NewOptString(since),
+				Until:         ogenclient.NewOptString(until),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		// ASSERT: Events within time range are returned
-		Expect(queryResp.Data).To(HaveLen(3))
+			// ASSERT: Events within time range are returned
+			Expect(queryResp.Data).To(HaveLen(3))
 		})
 	})
 
@@ -494,21 +489,21 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// ACT: Query with multiple filters using typed OpenAPI client (ADR-034 field names)
-		queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventCategory: ogenclient.NewOptString("gateway"),
-			EventOutcome:  ogenclient.NewOptQueryAuditEventsEventOutcome(ogenclient.QueryAuditEventsEventOutcomeFailure),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// ACT: Query with multiple filters using typed OpenAPI client (ADR-034 field names)
+			queryResp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString("gateway"),
+				EventOutcome:  ogenclient.NewOptQueryAuditEventsEventOutcome(ogenclient.QueryAuditEventsEventOutcomeFailure),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		// ASSERT: Only events matching ALL filters are returned
-		Expect(queryResp.Data).To(HaveLen(2), "should return only 2 failure events")
+			// ASSERT: Only events matching ALL filters are returned
+			Expect(queryResp.Data).To(HaveLen(2), "should return only 2 failure events")
 
-		for _, event := range queryResp.Data {
-			// ADR-034: Response uses event_category and event_outcome
-			Expect(event.EventCategory).To(Equal("gateway"))
-			Expect(event.EventOutcome).To(Equal("failure"))
+			for _, event := range queryResp.Data {
+				// ADR-034: Response uses event_category and event_outcome
+				Expect(event.EventCategory).To(Equal("gateway"))
+				Expect(event.EventOutcome).To(Equal("failure"))
 			}
 		})
 	})
@@ -542,74 +537,74 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// WAIT: Allow events to be persisted (async buffering + flush)
-		// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
-		// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
-		// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
-		// Timeout increased to 60s with better error visibility
-		// - Parallel test execution (12 processes) - high contention
-		// - Database connection contention across processes
-		// - Audit store buffering (1s flush interval)
-		// - Schema isolation overhead in parallel mode
-		//
-		// Use typed OpenAPI client with all 3 filters for precision (DD-API-001)
-		var queryResp *ogenclient.AuditEventsQueryResponse
-		Eventually(func() (int, error) {
-			resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			// WAIT: Allow events to be persisted (async buffering + flush)
+			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
+			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
+			// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
+			// Timeout increased to 60s with better error visibility
+			// - Parallel test execution (12 processes) - high contention
+			// - Database connection contention across processes
+			// - Audit store buffering (1s flush interval)
+			// - Schema isolation overhead in parallel mode
+			//
+			// Use typed OpenAPI client with all 3 filters for precision (DD-API-001)
+			var queryResp *ogenclient.AuditEventsQueryResponse
+			Eventually(func() (int, error) {
+				resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: ogenclient.NewOptString("gateway"),
+					EventType:     ogenclient.NewOptString("gateway.signal.received"),
+					Limit:         ogenclient.NewOptInt(50),
+					Offset:        ogenclient.NewOptInt(0),
+				})
+				if err != nil {
+					return 0, fmt.Errorf("QueryAuditEvents failed: %w", err)
+				}
+
+				queryResp = resp
+				total := int(resp.Pagination.Value.Total.Value)
+
+				if total < 75 {
+					return total, fmt.Errorf("still waiting: %d/75 events", total)
+				}
+
+				return total, nil
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+				"should have at least 75 events after write completes (10s = 10x buffer flush interval)")
+
+			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
+			// Already fetched in Eventually block above
+
+			// ASSERT: Correct subset is returned
+			Expect(queryResp.Data).To(HaveLen(50), "should return 50 events (page 1)")
+
+			// ASSERT: Pagination metadata is correct
+			Expect(queryResp.Pagination.Value.Limit.Value).To(BeNumerically("==", 50))
+			Expect(queryResp.Pagination.Value.Offset.Value).To(BeNumerically("==", 0))
+			Expect(queryResp.Pagination.Value.Total.Value).To(BeNumerically(">=", 75),
+				"should have at least 75 events for this correlation_id")
+			Expect(queryResp.Pagination.Value.HasMore.Value).To(BeTrue())
+
+			// ACT: Query page 2 (limit=50, offset=50) - use typed OpenAPI client with 3 filters
+			queryResp2, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventCategory: ogenclient.NewOptString("gateway"),
 				EventType:     ogenclient.NewOptString("gateway.signal.received"),
 				Limit:         ogenclient.NewOptInt(50),
-				Offset:        ogenclient.NewOptInt(0),
+				Offset:        ogenclient.NewOptInt(50),
 			})
-			if err != nil {
-				return 0, fmt.Errorf("QueryAuditEvents failed: %w", err)
-			}
+			Expect(err).ToNot(HaveOccurred())
 
-			queryResp = resp
-			total := int(resp.Pagination.Value.Total.Value)
+			// ASSERT: Page 2 returns remaining events (25 events = 75 total - 50 offset)
+			Expect(queryResp2.Data).To(HaveLen(25), "should return 25 remaining events (page 2)")
 
-			if total < 75 {
-				return total, fmt.Errorf("still waiting: %d/75 events", total)
-			}
+			Expect(queryResp2.Pagination.Value.Offset.Value).To(BeNumerically("==", 50))
+			Expect(queryResp2.Pagination.Value.Total.Value).To(BeNumerically(">=", 75))
+			Expect(queryResp2.Pagination.Value.HasMore.Value).To(BeFalse(), "no more pages after 75 events (50 + 25 = 75)")
 
-			return total, nil
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-			"should have at least 75 events after write completes (10s = 10x buffer flush interval)")
-
-		// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
-		// Already fetched in Eventually block above
-		
-		// ASSERT: Correct subset is returned
-		Expect(queryResp.Data).To(HaveLen(50), "should return 50 events (page 1)")
-
-		// ASSERT: Pagination metadata is correct
-		Expect(queryResp.Pagination.Value.Limit.Value).To(BeNumerically("==", 50))
-		Expect(queryResp.Pagination.Value.Offset.Value).To(BeNumerically("==", 0))
-		Expect(queryResp.Pagination.Value.Total.Value).To(BeNumerically(">=", 75),
-			"should have at least 75 events for this correlation_id")
-		Expect(queryResp.Pagination.Value.HasMore.Value).To(BeTrue())
-
-		// ACT: Query page 2 (limit=50, offset=50) - use typed OpenAPI client with 3 filters
-		queryResp2, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventCategory: ogenclient.NewOptString("gateway"),
-			EventType:     ogenclient.NewOptString("gateway.signal.received"),
-			Limit:         ogenclient.NewOptInt(50),
-			Offset:        ogenclient.NewOptInt(50),
-		})
-		Expect(err).ToNot(HaveOccurred())
-
-		// ASSERT: Page 2 returns remaining events (25 events = 75 total - 50 offset)
-		Expect(queryResp2.Data).To(HaveLen(25), "should return 25 remaining events (page 2)")
-
-		Expect(queryResp2.Pagination.Value.Offset.Value).To(BeNumerically("==", 50))
-		Expect(queryResp2.Pagination.Value.Total.Value).To(BeNumerically(">=", 75))
-		Expect(queryResp2.Pagination.Value.HasMore.Value).To(BeFalse(), "no more pages after 75 events (50 + 25 = 75)")
-
-		// ASSERT: Total events retrieved across 2 pages
-		totalRetrieved := len(queryResp.Data) + len(queryResp2.Data)
-		Expect(totalRetrieved).To(Equal(75), "should retrieve exactly 75 events across 2 pages")
+			// ASSERT: Total events retrieved across 2 pages
+			totalRetrieved := len(queryResp.Data) + len(queryResp2.Data)
+			Expect(totalRetrieved).To(Equal(75), "should retrieve exactly 75 events across 2 pages")
 		})
 	})
 
