@@ -1038,6 +1038,13 @@ jobs:
             echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service."
           fi
       
+      - name: Post coverage report to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          path: ${{ env.GITHUB_STEP_SUMMARY }}
+      
       - name: Test Suite Summary
         run: |
           echo "═══════════════════════════════════════════════════════════"
