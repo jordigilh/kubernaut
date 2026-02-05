@@ -39,7 +39,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 		return "", fmt.Errorf("failed to get E2E file output directory: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
-	if err := os.MkdirAll(e2eDir, 0755); err != nil {
+	// Use 0777 permissions to ensure container (uid 1000) can write
+	// hostPath volumes don't respect fsGroup, so world-writable is required
+	if err := os.MkdirAll(e2eDir, 0777); err != nil {
 		return "", fmt.Errorf("failed to create E2E file output directory: %w", err)
 	}
 
@@ -64,9 +66,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build Notification Controller in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "notification",  // Operator SDK convention: no -controller suffix in image name
+			ServiceName:      "notification", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/notification",
-			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",  // Dockerfile can have suffix
+			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
@@ -77,9 +79,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build AuthWebhook in parallel
 	go func() {
 		cfg := E2EImageConfig{
-		ServiceName:      "authwebhook",
-		ImageName:        "authwebhook",
-		DockerfilePath:   "docker/authwebhook.Dockerfile",
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
@@ -545,7 +547,7 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
 		"localhost/kubernaut-notification:e2e-test",
 		notificationImageName)
-	
+
 	// Replace hardcoded imagePullPolicy with dynamic value
 	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
 	// Local mode: Use Never (uses images loaded into Kind)
