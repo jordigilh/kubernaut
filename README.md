@@ -92,8 +92,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **All Services Production-Ready**: 9 of 9 services (100%) - 8 core services + Must-Gather diagnostic tool
 - 🚧 **Next Phase** (3 PRs remaining for V1.0):
   1. **Envoy SAR Validation**: HAPI + DataStorage endpoint authorization (3-5 days)
-  2. **Resource Scope Management**: kubernaut.ai/managed label-based opt-in (BR-SCOPE-001, ADR-053, 11-15 days)
-  3. **Segmented E2E Scenarios**: Progressive integration validation across all services (5-7 days)
+  2. **Resource Scope Management** (#38): kubernaut.ai/managed label-based opt-in (BR-SCOPE-001, ADR-053, 11-15 days)
+  3. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services (5-7 days)
 - ⏳ **Pre-Release**: February 2026 (feedback solicitation)
 
 **Recent Updates** (January 25, 2026):
@@ -105,8 +105,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
   - **Integration Test Stability**: "Wait for Processing First" pattern for controller-aware testing
   - Plans: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md)
 - 📋 **Next V1.0 Features** (2 PRs):
-  - **Resource Scope Management**: `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053) - **NEXT PRIORITY**
-  - **Segmented E2E Scenarios**: Progressive integration validation across all services
+  - **Resource Scope Management** (#38): `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053) - **NEXT PRIORITY**
+  - **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
 - ✅ **Recently Completed** (February 2026):
   - **Middleware-Based SAR Authentication**: All stateless services (DD-AUTH-014)
   - **RAR Audit Trail**: SOC2-compliant approval workflow auditing (BR-AUDIT-006)
