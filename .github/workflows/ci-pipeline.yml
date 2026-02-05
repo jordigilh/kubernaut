@@ -1038,16 +1038,22 @@ jobs:
             echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service."
           fi
       
-      - name: Copy summary for PR comment
+      - name: Read coverage summary for PR comment
         if: github.event_name == 'pull_request'
-        run: cp "$GITHUB_STEP_SUMMARY" coverage-report.md
+        id: read_summary
+        run: |
+          SUMMARY=$(cat "$GITHUB_STEP_SUMMARY")
+          # Use multiline string output for GitHub Actions
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: coverage-report
-          path: coverage-report.md
+          message: ${{ steps.read_summary.outputs.content }}
       
       - name: Test Suite Summary
         run: |
