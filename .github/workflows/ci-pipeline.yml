@@ -929,6 +929,79 @@ jobs:
           echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
+          # Add coverage interpretation documentation
+          echo "### 📚 Coverage Metrics Interpretation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Code Coverage**: Percentage of code lines executed during tests. This measures how much of the codebase is exercised by tests." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scenario Coverage**: Percentage of user scenarios and edge cases tested. This measures how comprehensively business requirements are validated." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Important**: 100% code coverage does NOT mean all scenarios are tested. It means all lines of code were executed at least once, but may not cover all edge cases, error paths, or business logic variations." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Coverage Targets** (per testing strategy):" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit Tests: 70%+ (95% for critical code)" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration Tests: >50% (CRD controllers)" >> $GITHUB_STEP_SUMMARY
+          echo "- E2E Tests: 10-15% (validates user journeys)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add coverage validation warnings
+          echo "### ⚠️ Coverage Validation Warnings" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          WARNINGS_COUNT=0
+          for service in "${services[@]}"; do
+            unit="${unit_cov[$service]:-N/A}"
+            integration="${integration_cov[$service]:-N/A}"
+            e2e="${e2e_cov[$service]:-N/A}"
+            
+            # Check each tier for suspicious values
+            for tier in "unit" "integration" "e2e"; do
+              case $tier in
+                unit) coverage="$unit" ;;
+                integration) coverage="$integration" ;;
+                e2e) coverage="$e2e" ;;
+              esac
+              
+              # Skip N/A or empty values (expected for some services)
+              if [ "$coverage" = "N/A" ] || [ -z "$coverage" ]; then
+                continue
+              fi
+              
+              # Extract numeric value (remove % and whitespace)
+              coverage_num=$(echo "$coverage" | tr -d '%' | tr -d '[:space:]')
+              
+              # Skip if extraction failed
+              if [ -z "$coverage_num" ]; then
+                continue
+              fi
+              
+              # Check for 0.0% coverage (suspicious if tests exist)
+              if [ "$coverage_num" = "0.0" ] || [ "$coverage_num" = "0" ]; then
+                echo "⚠️ **$service ($tier)**: 0.0% coverage detected. This may indicate:" >> $GITHUB_STEP_SUMMARY
+                echo "  - Tests exist but don't exercise service code (check test imports)" >> $GITHUB_STEP_SUMMARY
+                echo "  - Coverage configuration issue (verify \`--coverpkg\` flag in Makefile)" >> $GITHUB_STEP_SUMMARY
+                echo "  - Tests skipped or disabled (check test execution logs)" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                WARNINGS_COUNT=$((WARNINGS_COUNT + 1))
+              fi
+              
+              # Check for 100.0% coverage (unrealistic, likely code coverage not scenario coverage)
+              if [ "$coverage_num" = "100.0" ] || [ "$coverage_num" = "100" ]; then
+                echo "ℹ️ **$service ($tier)**: 100.0% code coverage detected. Remember:" >> $GITHUB_STEP_SUMMARY
+                echo "  - This measures code lines executed, not scenario coverage" >> $GITHUB_STEP_SUMMARY
+                echo "  - All code paths may be executed, but edge cases may still be untested" >> $GITHUB_STEP_SUMMARY
+                echo "  - Review test scenarios to ensure comprehensive business requirement coverage" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                WARNINGS_COUNT=$((WARNINGS_COUNT + 1))
+              fi
+            done
+          done
+          
+          if [ $WARNINGS_COUNT -eq 0 ]; then
+            echo "✅ No suspicious coverage values detected. All coverage metrics appear normal." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           # Verify table was written successfully
           if [ -f "$GITHUB_STEP_SUMMARY" ]; then
             echo "✅ Coverage table written to $GITHUB_STEP_SUMMARY"
