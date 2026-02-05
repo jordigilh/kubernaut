@@ -1037,23 +1037,28 @@ jobs:
             echo ""
             echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service."
           fi
-      
-      - name: Read coverage summary for PR comment
-        if: github.event_name == 'pull_request'
-        id: read_summary
-        run: |
-          SUMMARY=$(cat "$GITHUB_STEP_SUMMARY")
-          # Use multiline string output for GitHub Actions
-          echo "content<<EOF" >> $GITHUB_OUTPUT
-          echo "$SUMMARY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Write summary to file for PR comment (avoids empty message / multiline output issues)
+          if [ -f "$GITHUB_STEP_SUMMARY" ] && [ -s "$GITHUB_STEP_SUMMARY" ]; then
+            cp "$GITHUB_STEP_SUMMARY" coverage-summary.md
+            echo "✅ coverage-summary.md created for PR comment"
+          else
+            echo "## 📊 Code Coverage Report" > coverage-summary.md
+            echo "" >> coverage-summary.md
+            echo "| Service | Unit | Integration | E2E |" >> coverage-summary.md
+            echo "|---------|------|-------------|-----|" >> coverage-summary.md
+            echo "| (no data) | N/A | N/A | N/A |" >> coverage-summary.md
+            echo "" >> coverage-summary.md
+            echo "**Note**: Coverage data could not be collected for this run." >> coverage-summary.md
+            echo "⚠️  coverage-summary.md created with placeholder (step summary empty or missing)"
+          fi
       
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: coverage-report
-          message: ${{ steps.read_summary.outputs.content }}
+          path: coverage-summary.md
       
       - name: Test Suite Summary
         run: |
