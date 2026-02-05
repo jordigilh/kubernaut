@@ -208,19 +208,33 @@ jobs:
             # Python coverage from pytest output
             if [ -f coverage_unit_holmesgpt-api.txt ]; then
               COVERAGE=$(grep "TOTAL" coverage_unit_holmesgpt-api.txt | awk '{print $NF}' | tr -d '%')
-              echo "${{ matrix.service }},${COVERAGE}%" > coverage-reports/unit-${{ matrix.service }}.txt
-              echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}%"
+              # Validate COVERAGE is not empty before writing
+              if [ -z "$COVERAGE" ]; then
+                echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+                echo "⚠️  No coverage data found for ${{ matrix.service }} (file exists but TOTAL line missing or malformed)"
+              else
+                echo "${{ matrix.service }},${COVERAGE}%" > coverage-reports/unit-${{ matrix.service }}.txt
+                echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}%"
+              fi
             else
               echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+              echo "ℹ️  Coverage file not found for ${{ matrix.service }}"
             fi
           else
             # Go coverage
             if [ -f coverage_unit_${{ matrix.service }}.out ]; then
               COVERAGE=$(go tool cover -func=coverage_unit_${{ matrix.service }}.out | grep total | awk '{print $3}')
-              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/unit-${{ matrix.service }}.txt
-              echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              # Validate COVERAGE is not empty before writing
+              if [ -z "$COVERAGE" ]; then
+                echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+                echo "⚠️  No coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+              else
+                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/unit-${{ matrix.service }}.txt
+                echo "📊 Unit Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              fi
             else
               echo "${{ matrix.service }},N/A" > coverage-reports/unit-${{ matrix.service }}.txt
+              echo "ℹ️  Coverage file not found for ${{ matrix.service }}"
             fi
           fi
       
@@ -511,8 +525,14 @@ jobs:
           # Check for Go coverage file
           if [ -f coverage_integration_${{ matrix.service }}.out ]; then
             COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
-            echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
-            echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
+            # Validate COVERAGE is not empty before writing
+            if [ -z "$COVERAGE" ]; then
+              echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+              echo "⚠️  No integration coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+            else
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
+              echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
+            fi
           else
             echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
             echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
@@ -682,8 +702,14 @@ jobs:
           # Check for Go coverage file
           if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
             COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
-            echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
-            echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
+            # Validate COVERAGE is not empty before writing
+            if [ -z "$COVERAGE" ]; then
+              echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+              echo "⚠️  No E2E coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+            else
+              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
+              echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
+            fi
           else
             echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
             echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
@@ -800,6 +826,17 @@ jobs:
             touch "$GITHUB_STEP_SUMMARY"
           fi
           
+          # Debug: Verify GITHUB_STEP_SUMMARY file path and writability
+          echo "🔍 Debug: GITHUB_STEP_SUMMARY path: $GITHUB_STEP_SUMMARY"
+          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+            echo "✅ GITHUB_STEP_SUMMARY file exists"
+          elif [ -w "$(dirname "$GITHUB_STEP_SUMMARY")" ]; then
+            echo "✅ GITHUB_STEP_SUMMARY directory is writable, will create file"
+          else
+            echo "⚠️  GITHUB_STEP_SUMMARY path may not be writable"
+          fi
+          echo ""
+          
           # Debug: List all downloaded files
           echo "🔍 Debug: Listing downloaded coverage files..."
           if [ -d "coverage-reports" ]; then
@@ -891,6 +928,42 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Verify table was written successfully
+          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+            echo "✅ Coverage table written to $GITHUB_STEP_SUMMARY"
+            echo ""
+            echo "🔍 Debug: First 20 lines of step summary file:"
+            head -n 20 "$GITHUB_STEP_SUMMARY" | sed 's/^/  /'
+            echo ""
+            
+            # Verify markdown table format (check for header row and separator)
+            if grep -q "^| Service |" "$GITHUB_STEP_SUMMARY" && grep -q "^|---------|" "$GITHUB_STEP_SUMMARY"; then
+              echo "✅ Markdown table format validated (header and separator found)"
+            else
+              echo "⚠️  Warning: Markdown table format may be invalid (header/separator not found)"
+            fi
+            
+            # Count table rows (should be 9 services + header + separator = 11 lines minimum)
+            TABLE_ROWS=$(grep -c "^|" "$GITHUB_STEP_SUMMARY" || echo "0")
+            echo "📊 Table contains $TABLE_ROWS rows (expected: 11+ including header/separator/data)"
+          else
+            echo "❌ ERROR: Failed to write coverage table to $GITHUB_STEP_SUMMARY"
+            echo "📋 Fallback: Displaying table in job output:"
+            echo ""
+            echo "## 📊 Code Coverage Report"
+            echo ""
+            echo "| Service | Unit | Integration | E2E |"
+            echo "|---------|------|-------------|-----|"
+            for service in "${services[@]}"; do
+              unit="${unit_cov[$service]:-N/A}"
+              integration="${integration_cov[$service]:-N/A}"
+              e2e="${e2e_cov[$service]:-N/A}"
+              echo "| $service | $unit | $integration | $e2e |"
+            done
+            echo ""
+            echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service."
+          fi
       
       - name: Test Suite Summary
         run: |
