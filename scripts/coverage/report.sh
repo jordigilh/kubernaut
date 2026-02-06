@@ -97,9 +97,23 @@ calculate_go_service_coverage() {
     
     local covfile="coverage_${tier}_${service}.out"
     
-    if [[ ! -f "$covfile" ]] || [[ ! -s "$covfile" ]]; then
-        echo "-"
-        return
+    # The "all" tier handles its own file discovery (merging unit+integration+e2e);
+    # skip the single-file check so the all) case block runs.
+    if [[ "$tier" != "all" ]]; then
+        if [[ ! -f "$covfile" ]] || [[ ! -s "$covfile" ]]; then
+            # CI fallback: artifacts only have summary percentages stored in .pct files
+            local pctfile="coverage_${tier}_${service}.pct"
+            if [[ -f "$pctfile" ]]; then
+                local pct
+                pct=$(tr -d '[:space:]' < "$pctfile")
+                # Normalize: ensure % suffix (Go artifacts include %, Python may not)
+                [[ "$pct" != *% ]] && pct="${pct}%"
+                echo "$pct"
+                return
+            fi
+            echo "-"
+            return
+        fi
     fi
     
     # Get patterns from config
@@ -179,7 +193,26 @@ calculate_go_service_coverage() {
             [[ -f "coverage_e2e_${service}.out" ]] && [[ -s "coverage_e2e_${service}.out" ]] && files+=("coverage_e2e_${service}.out")
             
             if [[ ${#files[@]} -eq 0 ]]; then
-                echo "-"
+                # CI fallback: pick the highest percentage from .pct summary files
+                # (line-level merge isn't possible with summary-only data)
+                local max_pct=""
+                local max_val=0
+                for t in unit integration e2e; do
+                    local pf="coverage_${t}_${service}.pct"
+                    if [[ -f "$pf" ]]; then
+                        local raw
+                        raw=$(tr -d '%[:space:]' < "$pf")
+                        if awk "BEGIN{exit (!($raw > $max_val))}"; then
+                            max_val="$raw"
+                            max_pct="$raw"
+                        fi
+                    fi
+                done
+                if [[ -n "$max_pct" ]]; then
+                    echo "${max_pct}%"
+                else
+                    echo "-"
+                fi
             elif [[ ${#files[@]} -eq 1 ]]; then
                 # Only one file, just calculate from it
                 calculate_go_service_coverage "$service" "unit"
@@ -232,6 +265,15 @@ calculate_python_service_coverage() {
             # holmesgpt-api E2E is Go-based (Ginkgo tests)
             local covfile="coverage_e2e_holmesgpt-api.out"
             if [[ ! -f "$covfile" ]] || [[ ! -s "$covfile" ]]; then
+                # CI fallback: check for .pct summary percentage
+                local pctfile="coverage_e2e_holmesgpt-api.pct"
+                if [[ -f "$pctfile" ]]; then
+                    local pct
+                    pct=$(tr -d '[:space:]' < "$pctfile")
+                    [[ "$pct" != *% ]] && pct="${pct}%"
+                    echo "$pct"
+                    return
+                fi
                 echo "-"
                 return
             fi
