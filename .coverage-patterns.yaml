@@ -21,8 +21,10 @@ go_services:
   
   datastorage:
     pkg_pattern: "/pkg/datastorage/"
-    unit_exclude: "/(server|repository|dlq|ogen-client|mocks)/"
-    integration_include: "/(server|repository|dlq)/"
+    # NOTE: adapter/, query/service.go, reconstruction/query.go use *sql.DB directly (integration-testable)
+    #       File exclusions use .go: (Go coverage format), directory exclusions use /
+    unit_exclude: "/(server/|repository/|dlq/|ogen-client/|mocks/|adapter/|query/service\\.go:|reconstruction/query\\.go:)"
+    integration_include: "/(server/|repository/|dlq/|adapter/|query/service\\.go:|reconstruction/query\\.go:)"
   
   gateway:
     pkg_pattern: "/pkg/gateway/"
