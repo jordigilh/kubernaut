@@ -38,41 +38,49 @@ GENERATED_CODE_PATTERNS = ["/ogen-client/", "/mocks/", "/test/"]
 GO_SERVICE_CONFIG = {
     "aianalysis": {
         "pkg_pattern": "/pkg/aianalysis/",
+        "controller_pattern": "/internal/controller/aianalysis/",
         "unit_exclude": r"/(handler\.go:|audit/)",
         "int_include": r"/(handler\.go:|audit/)",
     },
     "authwebhook": {
         "pkg_pattern": "/pkg/authwebhook/",
+        # No controller_pattern — AW is a webhook, not a CRD controller
         "unit_exclude": r"/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\.go:",
         "int_include": r"/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\.go:",
     },
     "datastorage": {
         "pkg_pattern": "/pkg/datastorage/",
+        # No controller_pattern — DS is a standalone server
         "unit_exclude": r"/(server/|repository/|dlq/|ogen-client/|mocks/|adapter/|query/service\.go:|reconstruction/query\.go:)",
         "int_include": r"/(server/|repository/|dlq/|adapter/|query/service\.go:|reconstruction/query\.go:)",
     },
     "gateway": {
         "pkg_pattern": "/pkg/gateway/",
+        # No controller_pattern — GW is a standalone server
         "unit_exclude": r"/(server\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)",
         "int_include": r"/(server\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)",
     },
     "notification": {
         "pkg_pattern": "/pkg/notification/",
+        "controller_pattern": "/internal/controller/notification/",
         "unit_exclude": r"/(client\.go:|delivery/|phase/|status/)",
         "int_include": r"/(client\.go:|delivery/|phase/|status/)",
     },
     "remediationorchestrator": {
         "pkg_pattern": "/pkg/remediationorchestrator/",
+        "controller_pattern": "/internal/controller/remediationorchestrator/",
         "unit_exclude": r"/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/",
         "int_include": r"/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/",
     },
     "signalprocessing": {
         "pkg_pattern": "/pkg/signalprocessing/",
+        "controller_pattern": "/internal/controller/signalprocessing/",
         "unit_exclude": r"/(audit|cache|enricher|handler|status)/",
         "int_include": r"/(audit|cache|enricher|handler|status)/",
     },
     "workflowexecution": {
         "pkg_pattern": "/pkg/workflowexecution/",
+        "controller_pattern": "/internal/controller/workflowexecution/",
         "unit_exclude": r"/(audit|status)/",
         "int_include": r"/(audit|status)/",
     },
@@ -167,25 +175,53 @@ def calculate_coverage(entries: list[CoverageEntry]) -> str:
     return f"{(covered_stmts / total_stmts) * 100:.1f}%"
 
 
+def _matches_service_pkg(
+    key: str, pkg_pattern: str, controller_pattern: Optional[str] = None
+) -> bool:
+    """Check if a coverage entry key matches the service's package or controller patterns."""
+    if pkg_pattern in key:
+        return True
+    if controller_pattern and controller_pattern in key:
+        return True
+    return False
+
+
 def filter_go_entries(
     entries: list[CoverageEntry],
     pkg_pattern: str,
+    controller_pattern: Optional[str] = None,
     exclude_pattern: Optional[str] = None,
     include_pattern: Optional[str] = None,
 ) -> list[CoverageEntry]:
-    """Filter Go coverage entries by package and inclusion/exclusion patterns."""
+    """Filter Go coverage entries by package and inclusion/exclusion patterns.
+
+    For unit tests: only pkg_pattern entries are considered (controller code
+    requires k8s API and cannot be unit-tested).
+
+    For integration/E2E: both pkg_pattern and controller_pattern entries are
+    included. The exclude/include filters apply to pkg entries; controller
+    entries are always included (all controller code is integration-testable).
+    """
     filtered = []
     for e in entries:
-        # Must match package pattern
-        if pkg_pattern not in e.key:
-            continue
         # Skip generated code
         if is_generated_code(e.key):
             continue
-        # Apply exclude pattern (for unit-testable: exclude integration code)
+
+        is_pkg = pkg_pattern in e.key
+        is_controller = controller_pattern is not None and controller_pattern in e.key
+
+        if not is_pkg and not is_controller:
+            continue
+
+        # Controller entries: always include (no exclude/include filtering)
+        if is_controller:
+            filtered.append(e)
+            continue
+
+        # Package entries: apply exclude/include patterns
         if exclude_pattern and re.search(exclude_pattern, e.key):
             continue
-        # Apply include pattern (for integration-testable: only include integration code)
         if include_pattern and not re.search(include_pattern, e.key):
             continue
         filtered.append(e)
@@ -250,22 +286,27 @@ def calc_go_service_tier(service: str, tier: str) -> str:
         return pct if pct else "-"
 
     pkg_pattern = config["pkg_pattern"]
+    controller_pattern = config.get("controller_pattern")
 
     if tier == "unit":
+        # Unit tests: only pkg code — controllers need k8s API
         filtered = filter_go_entries(
             entries, pkg_pattern, exclude_pattern=config["unit_exclude"]
         )
         return calculate_coverage(filtered)
     elif tier == "integration":
+        # Integration tests: pkg integration code + ALL controller code
         filtered = filter_go_entries(
-            entries, pkg_pattern, include_pattern=config["int_include"]
+            entries, pkg_pattern, controller_pattern=controller_pattern,
+            include_pattern=config["int_include"]
         )
         return calculate_coverage(filtered)
     elif tier == "e2e":
-        # E2E uses full package coverage (no unit/integration filtering)
+        # E2E uses full service coverage (pkg + controller, no sub-tier filtering)
         filtered = [
             e for e in entries
-            if pkg_pattern in e.key and not is_generated_code(e.key)
+            if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+            and not is_generated_code(e.key)
         ]
         return calculate_coverage(filtered)
     return "-"
@@ -284,6 +325,7 @@ def calc_go_service_all_tiers(service: str) -> str:
         return "0.0%"
 
     pkg_pattern = config["pkg_pattern"]
+    controller_pattern = config.get("controller_pattern")
 
     # Collect entries from all available tiers
     all_entries = []
@@ -294,10 +336,11 @@ def calc_go_service_all_tiers(service: str) -> str:
         entries = parse_go_coverage_file(covfile)
         if entries:
             has_real_data = True
-            # Filter to service's package and exclude generated code
+            # Filter to service's package + controller and exclude generated code
             filtered = [
                 e for e in entries
-                if pkg_pattern in e.key and not is_generated_code(e.key)
+                if _matches_service_pkg(e.key, pkg_pattern, controller_pattern)
+                and not is_generated_code(e.key)
             ]
             all_entries.append(filtered)
 
