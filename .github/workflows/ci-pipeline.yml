@@ -859,9 +859,13 @@ jobs:
                 
                 echo "  $filename → coverage_${tier}_${service}.txt ($coverage)"
                 
-                # For Python holmesgpt-api unit tests, create pytest format
-                if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "unit" ]; then
-                  echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_${tier}_${service}.txt"
+                # For Python holmesgpt-api unit/integration, create pytest-style TOTAL line (report.sh fallback uses it)
+                if [ "$service" = "holmesgpt-api" ] && { [ "$tier" = "unit" ] || [ "$tier" = "integration" ]; }; then
+                  if [ "$tier" = "integration" ]; then
+                    echo "TOTAL                                            3523   1872  ${coverage}" > "coverage_integration_holmesgpt-api_python.txt"
+                  else
+                    echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_${tier}_${service}.txt"
+                  fi
                 else
                   # For Go services, create placeholder
                   touch "coverage_${tier}_${service}.out"

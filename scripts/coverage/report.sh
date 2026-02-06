@@ -194,6 +194,8 @@ calculate_go_service_coverage() {
 }
 
 # Calculate Python service coverage (holmesgpt-api)
+# When CI only has summary data it creates a file with a single TOTAL line; AWK returns 0.0%.
+# Fallback: if result is 0.0% and file has TOTAL line, use that percentage instead.
 calculate_python_service_coverage() {
     local tier="$1"  # unit, integration
     
@@ -204,7 +206,13 @@ calculate_python_service_coverage() {
                 echo "-"
                 return
             fi
-            awk -f "$SCRIPT_DIR/calculate_python_unit_testable.awk" "$covfile"
+            local result
+            result=$(awk -f "$SCRIPT_DIR/calculate_python_unit_testable.awk" "$covfile")
+            if [[ "$result" == "0.0%" ]] && grep -q "^TOTAL" "$covfile" 2>/dev/null; then
+                grep "^TOTAL" "$covfile" | head -1 | awk '{gsub(/%/, "", $NF); printf "%.1f%%", $NF}'
+            else
+                echo "$result"
+            fi
             ;;
         integration)
             local covfile="coverage_integration_holmesgpt-api_python.txt"
@@ -212,7 +220,13 @@ calculate_python_service_coverage() {
                 echo "-"
                 return
             fi
-            awk -f "$SCRIPT_DIR/calculate_python_integration_testable.awk" "$covfile"
+            local result
+            result=$(awk -f "$SCRIPT_DIR/calculate_python_integration_testable.awk" "$covfile")
+            if [[ "$result" == "0.0%" ]] && grep -q "^TOTAL" "$covfile" 2>/dev/null; then
+                grep "^TOTAL" "$covfile" | head -1 | awk '{gsub(/%/, "", $NF); printf "%.1f%%", $NF}'
+            else
+                echo "$result"
+            fi
             ;;
         e2e)
             # holmesgpt-api E2E is Go-based (Ginkgo tests)

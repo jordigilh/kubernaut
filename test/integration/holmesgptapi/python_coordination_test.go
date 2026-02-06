@@ -92,13 +92,13 @@ var _ = Describe("Python Test Coordination", func() {
 			// Coverage: COVERAGE_FILE=/tmp/.coverage to avoid permission errors on bind mount
 			//           Output redirected from outside container to avoid permission issues
 			pytestCmd := fmt.Sprintf(
-				"cd /workspace && "+
-					"pip install -q --break-system-packages dependencies/holmesgpt && "+
-					"cd holmesgpt-api && "+
-					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
-					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
-					"COVERAGE_FILE=/tmp/.coverage PYTHONUNBUFFERED=1 HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true "+
-					"pytest tests/integration/ -v --tb=short --cov=src --cov-report=term --cov-report=term-missing -o addopts='' && "+
+				"cd /workspace && " +
+					"pip install -q --break-system-packages dependencies/holmesgpt && " +
+					"cd holmesgpt-api && " +
+					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && " +
+					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && " +
+					"COVERAGE_FILE=/tmp/.coverage PYTHONUNBUFFERED=1 HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true " +
+					"pytest tests/integration/ -v --tb=short --cov=src --cov-report=term --cov-report=term-missing -o addopts='' && " +
 					"python -m coverage report --precision=2",
 			)
 
