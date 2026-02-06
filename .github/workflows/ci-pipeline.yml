@@ -832,7 +832,6 @@ jobs:
           merge-multiple: true
         continue-on-error: true
       
-      - name: Post coverage report to PR
       - name: Generate comprehensive coverage report
         if: always()
         run: |
