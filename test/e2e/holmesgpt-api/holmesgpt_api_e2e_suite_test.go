@@ -294,6 +294,22 @@ var _ = SynchronizedAfterSuite(
 		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
+		// DD-TEST-007: Collect Python E2E coverage BEFORE cluster deletion
+		if os.Getenv("E2E_COVERAGE") == "true" {
+			logger.Info("📊 DD-TEST-007: Collecting Python E2E coverage...")
+			if err := infrastructure.CollectE2EPythonCoverage(infrastructure.E2EPythonCoverageOptions{
+				ServiceName:        "holmesgpt-api",
+				ClusterName:        clusterName,
+				DeploymentName:     "holmesgpt-api",
+				Namespace:          sharedNamespace,
+				KubeconfigPath:     kubeconfigPath,
+				SourceDir:          "holmesgpt-api/src",
+				ContainerSourceDir: "/opt/app-root/src/src",
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect Python E2E coverage (non-fatal)")
+			}
+		}
+
 		if preserveCluster {
 			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("")

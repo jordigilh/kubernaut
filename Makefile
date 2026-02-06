@@ -503,7 +503,7 @@ test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ##
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go Ginkgo tests with Kind infrastructure)"
 	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD framework)"
-	@echo "📦 Coverage: Go client code in pkg/holmesgpt/"
+	@echo "📦 Coverage: Python service code via coverage.py (DD-TEST-007)"
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
@@ -511,12 +511,15 @@ test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ##
 	@echo "✅ Client generated successfully"
 	@echo ""
 	@echo "🧪 Step 2: Run E2E tests (Go Ginkgo tests in test/e2e/holmesgpt-api/)..."
-	@echo "   Coverage: pkg/holmesgpt/client, pkg/holmesgpt/config, pkg/holmesgpt/errors"
-	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --output-dir=../../.. --coverprofile=coverage_e2e_holmesgpt-api.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/holmesgpt/...
-	@if [ -f coverage_e2e_holmesgpt-api.out ]; then \
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m ./...
+	@# DD-TEST-007: Python E2E coverage is collected via coverage.py inside the container
+	@# The AfterSuite extracts .coverage from Kind node and generates a text report
+	@if [ -f coverage_e2e_holmesgpt-api_python.txt ]; then \
 		echo ""; \
-		echo "📊 Coverage report generated: coverage_e2e_holmesgpt-api.out"; \
-		go tool cover -func=coverage_e2e_holmesgpt-api.out | grep total || echo "No coverage data"; \
+		echo "📊 Python E2E coverage report: coverage_e2e_holmesgpt-api_python.txt"; \
+		grep "TOTAL" coverage_e2e_holmesgpt-api_python.txt || echo "No TOTAL line found"; \
+	else \
+		echo "ℹ️  No Python E2E coverage data (set E2E_COVERAGE=true to enable)"; \
 	fi
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"

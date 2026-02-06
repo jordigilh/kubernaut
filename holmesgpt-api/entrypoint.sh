@@ -55,4 +55,17 @@ echo "Listening on port: $API_PORT"
 # HAPI is 95% I/O-bound (HTTP calls to LLM/DataStorage/K8s API)
 # FastAPI's async/await handles concurrency within single process
 # Benefits: Resource efficiency (1 connection pool vs 4), singleton pattern works, 100+ concurrent requests
-exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+
+# DD-TEST-007: E2E Coverage Collection
+# When E2E_COVERAGE=true, wrap uvicorn with coverage.py to collect Python code coverage.
+# COVERAGE_FILE controls where the .coverage SQLite database is written.
+# On SIGTERM (pod scale-down), uvicorn shuts down gracefully and coverage flushes data.
+if [ "$E2E_COVERAGE" = "true" ]; then
+    echo "📊 DD-TEST-007: E2E Coverage mode ENABLED"
+    echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
+    echo "   Source: src/"
+    export COVERAGE_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
+    exec python3.12 -m coverage run --source=src -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+else
+    exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+fi

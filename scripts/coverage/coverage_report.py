@@ -480,18 +480,39 @@ def calc_python_service() -> ServiceCoverage:
         total = get_python_total_from_file(int_file)
         svc.integration = total if total else "-"
 
-    # E2E coverage (Go-based Ginkgo tests)
-    e2e_file = "coverage_e2e_holmesgpt-api.out"
-    e2e_entries = parse_go_coverage_file(e2e_file)
-    if e2e_entries:
-        svc.e2e = calculate_coverage(e2e_entries)
+    # E2E coverage (Python coverage.py - DD-TEST-007)
+    # The E2E test collects Python service coverage via coverage.py inside the container.
+    # The report is in standard `coverage report` text format (same as unit/integration).
+    e2e_file = "coverage_e2e_holmesgpt-api_python.txt"
+    e2e_modules = parse_python_coverage_file(e2e_file)
+    if e2e_modules:
+        svc.e2e = calc_python_coverage(e2e_modules)
     else:
-        pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
-        svc.e2e = pct if pct else "-"
+        # Fallback: try TOTAL line from the file
+        total = get_python_total_from_file(e2e_file)
+        if total:
+            svc.e2e = total
+        else:
+            # Legacy fallback: check .pct file
+            pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
+            svc.e2e = pct if pct else "-"
 
-    # All Tiers: Python unit total (can't line-merge Python + Go)
-    total = get_python_total_from_file(unit_file)
-    svc.all_tiers = total if total else svc.unit
+    # All Tiers: highest coverage across all tiers (can't line-merge Python tiers)
+    # Pick the best percentage from available tiers
+    best_pct = 0.0
+    for tier_val in [svc.unit, svc.integration, svc.e2e]:
+        if tier_val and tier_val != "-":
+            try:
+                val = float(tier_val.replace("%", ""))
+                if val > best_pct:
+                    best_pct = val
+            except ValueError:
+                pass
+    if best_pct > 0:
+        svc.all_tiers = f"{best_pct:.1f}%"
+    else:
+        total = get_python_total_from_file(unit_file)
+        svc.all_tiers = total if total else svc.unit
 
     return svc
 
