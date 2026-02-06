@@ -855,7 +855,7 @@ jobs:
               if [[ "$filename" =~ ^(unit|integration|e2e)-(.+)\.txt$ ]]; then
                 tier="${BASH_REMATCH[1]}"
                 service="${BASH_REMATCH[2]}"
-                coverage=$(cut -d',' -f2 "$artifact_file" | tr -d '[:space:]')
+                coverage=$(cut -d',' -f2 "$artifact_file" | head -1 | tr -d '[:space:]')
                 
                 echo "  $filename → coverage_${tier}_${service}.txt ($coverage)"
                 
