@@ -309,6 +309,19 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 	// Verify .coverage file exists
 	covFile := filepath.Join(coverDir, ".coverage")
 	if _, err := os.Stat(covFile); os.IsNotExist(err) {
+		// List all files in coverDir for debugging
+		files, listErr := os.ReadDir(coverDir)
+		if listErr == nil {
+			_, _ = fmt.Fprintf(writer, "📁 Files found in %s:\n", coverDir)
+			for _, f := range files {
+				info, _ := f.Info()
+				if info != nil {
+					_, _ = fmt.Fprintf(writer, "   - %s (%d bytes, dir=%v)\n", f.Name(), info.Size(), f.IsDir())
+				} else {
+					_, _ = fmt.Fprintf(writer, "   - %s (dir=%v)\n", f.Name(), f.IsDir())
+				}
+			}
+		}
 		return fmt.Errorf(".coverage file not found in extracted data: %s", covFile)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ Found .coverage file: %s\n", covFile)
