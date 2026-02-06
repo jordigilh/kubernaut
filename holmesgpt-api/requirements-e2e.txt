@@ -61,6 +61,10 @@ PyYAML>=6.0
 # File system watching for ConfigMap hot-reload (DD-HAPI-004, BR-HAPI-199)
 watchdog>=3.0.0,<4.0.0
 
+# Coverage collection for E2E tests (DD-TEST-007)
+# When E2E_COVERAGE=true, entrypoint.sh wraps uvicorn with `coverage run`
+coverage>=7.0
+
 # ========================================
 # CLOUD PROVIDER SDKs - REMOVED FOR E2E
 # ========================================

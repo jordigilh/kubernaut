@@ -758,20 +758,37 @@ jobs:
           # Create coverage summary file for this service
           mkdir -p coverage-reports
           
-          # Check for Go coverage file
-          if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
-            COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
-            # Validate COVERAGE is not empty before writing
-            if [ -z "$COVERAGE" ]; then
-              echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
-              echo "⚠️  No E2E coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
+            # DD-TEST-007: HAPI uses Python coverage.py (not Go coverage)
+            if [ -f coverage_e2e_holmesgpt-api_python.txt ]; then
+              COVERAGE=$(grep "TOTAL" coverage_e2e_holmesgpt-api_python.txt | awk '{print $NF}' | tr -d '%')
+              if [ -z "$COVERAGE" ]; then
+                echo "holmesgpt-api,N/A" > coverage-reports/e2e-holmesgpt-api.txt
+                echo "⚠️  Python E2E coverage file present but TOTAL line missing"
+              else
+                echo "holmesgpt-api,${COVERAGE}%" > coverage-reports/e2e-holmesgpt-api.txt
+                echo "📊 E2E Coverage for holmesgpt-api (Python): ${COVERAGE}%"
+              fi
             else
-              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
-              echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              echo "holmesgpt-api,N/A" > coverage-reports/e2e-holmesgpt-api.txt
+              echo "ℹ️  No Python E2E coverage data found for holmesgpt-api"
             fi
           else
-            echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
-            echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
+            # Go services: use Go coverage file
+            if [ -f coverage_e2e_${{ matrix.service }}.out ]; then
+              COVERAGE=$(go tool cover -func=coverage_e2e_${{ matrix.service }}.out | grep total | awk '{print $3}')
+              # Validate COVERAGE is not empty before writing
+              if [ -z "$COVERAGE" ]; then
+                echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+                echo "⚠️  No E2E coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+              else
+                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/e2e-${{ matrix.service }}.txt
+                echo "📊 E2E Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              fi
+            else
+              echo "${{ matrix.service }},N/A" > coverage-reports/e2e-${{ matrix.service }}.txt
+              echo "ℹ️  No E2E coverage data found for ${{ matrix.service }}"
+            fi
           fi
       
       - name: Upload E2E coverage report
@@ -787,7 +804,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
-          path: coverage_e2e_${{ matrix.service }}.out
+          path: |
+            coverage_e2e_${{ matrix.service }}.out
+            coverage_e2e_${{ matrix.service }}_python.txt
           retention-days: 1
           if-no-files-found: ignore
 
