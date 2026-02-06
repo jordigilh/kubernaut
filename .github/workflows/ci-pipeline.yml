@@ -870,8 +870,10 @@ jobs:
                     echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_${tier}_${service}.txt"
                   fi
                 else
-                  # For Go services, create placeholder
+                  # For Go services, create empty .out placeholder and a .pct summary
+                  # report.sh falls back to .pct when .out has no real Go coverage data
                   touch "coverage_${tier}_${service}.out"
+                  echo "${coverage}" > "coverage_${tier}_${service}.pct"
                 fi
               fi
             done
