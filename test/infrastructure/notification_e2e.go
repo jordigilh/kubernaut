@@ -104,13 +104,30 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  • Cluster created AFTER build prevents idle timeout")
-	// No extraMounts needed - tests use emptyDir volume and kubectl exec to read files
-	// This avoids hostPath permission issues in CI/CD (Linux)
+
+	// DD-TEST-007: Create coverdata directory for E2E coverage collection
+	var coverMounts []ExtraMount
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		projectRoot := getProjectRoot()
+		coverdataPath := filepath.Join(projectRoot, "coverdata")
+		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+			return "", fmt.Errorf("failed to create coverdata directory: %w", err)
+		}
+		coverMounts = []ExtraMount{
+			{
+				HostPath:      coverdataPath,
+				ContainerPath: "/coverdata",
+				ReadOnly:      false,
+			},
+		}
+	}
+
 	if err := CreateKindClusterWithExtraMounts(
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
-		nil, // No extraMounts - using emptyDir
+		coverMounts, // DD-TEST-007: Mount /coverdata for E2E binary coverage
 		writer,
 	); err != nil {
 		return "", fmt.Errorf("failed to create Kind cluster: %w", err)

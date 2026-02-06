@@ -148,7 +148,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		return "", "", fmt.Errorf("failed to find workspace root: %w", err)
 	}
 	coverdataPath := filepath.Join(workspaceRoot, "test", "e2e", "authwebhook", "coverdata")
-	if err := os.MkdirAll(coverdataPath, 0755); err != nil {
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection\n", coverdataPath)
@@ -349,7 +349,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
 	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
-	
+
 	// Replace hardcoded imagePullPolicy with dynamic value
 	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
 	// Local mode: Use Never (uses images loaded into Kind)
