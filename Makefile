@@ -541,7 +541,7 @@ test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (c
 		-w /workspace/holmesgpt-api \
 		-e PYTHONUNBUFFERED=1 \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing 2>&1 | tee /workspace/coverage_unit_holmesgpt-api.txt; python -m coverage report --precision=2 2>&1 | tee -a /workspace/coverage_unit_holmesgpt-api.txt"
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing 2>&1 | tee /tmp/coverage_unit_holmesgpt-api.txt; python -m coverage report --precision=2 2>&1 | tee -a /tmp/coverage_unit_holmesgpt-api.txt && cp /tmp/coverage_unit_holmesgpt-api.txt /workspace/coverage_unit_holmesgpt-api.txt"
 	@if [ -f $(CURDIR)/coverage_unit_holmesgpt-api.txt ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
