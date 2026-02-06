@@ -39,6 +39,49 @@ TEST_TIMEOUT_UNIT ?= 5m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 30m
 
+# Coverage Configuration: Exclude Generated Code
+# - DataStorage: Excludes pkg/datastorage/ogen-client (OpenAPI-generated) and mocks
+# - HolmesGPT: pkg/holmesgpt/client contains oas_*_gen.go (ogen-generated client)
+#
+# Why DataStorage unit coverage is ~27%: Unit tests (462 specs) cover builders, validation, config,
+# aggregation handlers (with mocks). The remaining ~349 functions at 0% are HTTP handlers, DLQ worker,
+# repository/DB adapter, server bootstrap—exercised in integration and E2E tests. Unit-only coverage
+# is intentionally lower; total coverage across all tiers is the complete picture.
+# Run: make test-all-datastorage then see coverage_*_datastorage.out
+
+# DataStorage coverage packages (hand-written only, excludes generated)
+DATASTORAGE_COVERPKG = \
+	github.com/jordigilh/kubernaut/pkg/datastorage/adapter/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/audit/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/config/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/dlq/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/metrics/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/models/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/query/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/repository/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/schema/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/scoring/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/server/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/server/response/..., \
+	github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
+
+# Unit-testable package patterns (pure logic: config, validators, builders, formatters, metrics, classifiers)
+# Integration-testable patterns (I/O-dependent: handlers, servers, DB adapters, K8s clients, workers)
+# NOTE: These patterns are used by scripts/coverage/ AWK scripts - see Phase 2 refactoring
+AIANALYSIS_UNIT_PATTERN = pkg/aianalysis/handlers/|pkg/aianalysis/metrics/|pkg/aianalysis/phase/|pkg/aianalysis/rego/|pkg/aianalysis/conditions
+AUTHWEBHOOK_UNIT_PATTERN = pkg/authwebhook/config/|pkg/authwebhook/validation/|pkg/authwebhook/types
+GATEWAY_UNIT_PATTERN = pkg/gateway/adapters/|pkg/gateway/config/|pkg/gateway/errors/|pkg/gateway/types/|pkg/gateway/processing/clock|pkg/gateway/processing/deduplication_types|pkg/gateway/processing/errors|pkg/gateway/processing/phase_checker|pkg/gateway/middleware/
+NOTIFICATION_UNIT_PATTERN = pkg/notification/config/|pkg/notification/formatting/|pkg/notification/metrics/|pkg/notification/retry/|pkg/notification/routing/|pkg/notification/types|pkg/notification/conditions
+REMEDIATIONORCHESTRATOR_UNIT_PATTERN = pkg/remediationorchestrator/audit/|pkg/remediationorchestrator/config/|pkg/remediationorchestrator/helpers/|pkg/remediationorchestrator/metrics/|pkg/remediationorchestrator/phase/|pkg/remediationorchestrator/routing/|pkg/remediationorchestrator/timeout/|pkg/remediationorchestrator/types|pkg/remediationorchestrator/handler/skip/|pkg/remediationorchestrator/interfaces
+SIGNALPROCESSING_UNIT_PATTERN = pkg/signalprocessing/classifier/|pkg/signalprocessing/config/|pkg/signalprocessing/detection/|pkg/signalprocessing/metrics/|pkg/signalprocessing/ownerchain/|pkg/signalprocessing/phase/|pkg/signalprocessing/rego/|pkg/signalprocessing/conditions
+WORKFLOWEXECUTION_UNIT_PATTERN = pkg/workflowexecution/config/|pkg/workflowexecution/metrics/|pkg/workflowexecution/phase/|pkg/workflowexecution/conditions
+
 ##@ General
 
 .PHONY: all
@@ -149,6 +192,19 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+# DataStorage unit tests: exclude generated code (ogen-client, mocks) from coverage
+.PHONY: test-unit-datastorage
+test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests (coverage excludes ogen-client)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 datastorage - Unit Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./test/unit/datastorage/...
+	@if [ -f coverage_unit_datastorage.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \
+		go tool cover -func=coverage_unit_datastorage.out | grep total || echo "No coverage data"; \
+	fi
+
 # Integration Tests
 .PHONY: test-integration-%
 test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run integration tests for specified service (e.g., make test-integration-gateway)
@@ -163,6 +219,19 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 		go tool cover -func=coverage_integration_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+# DataStorage integration tests: exclude generated code from coverage
+.PHONY: test-integration-datastorage
+test-integration-datastorage: generate ginkgo setup-envtest ensure-coverage-dirs ## Run datastorage integration tests (coverage excludes ogen-client)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 datastorage - Integration Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_datastorage.out --covermode=atomic --keep-going --coverpkg=$(DATASTORAGE_COVERPKG) ./test/integration/datastorage/...
+	@if [ -f coverage_integration_datastorage.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_datastorage.out"; \
+		go tool cover -func=coverage_integration_datastorage.out | grep total || echo "No coverage data"; \
+	fi
 
 # E2E Tests
 .PHONY: test-e2e-%
@@ -197,6 +266,25 @@ test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified 
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_e2e_$*.out"; \
 		go tool cover -func=coverage_e2e_$*.out | grep total || echo "No coverage data"; \
+	fi
+
+# DataStorage E2E tests: exclude generated code from coverage; keep client pre-generation step
+.PHONY: test-e2e-datastorage
+test-e2e-datastorage: generate ginkgo ensure-coverage-dirs ## Run datastorage E2E tests (coverage excludes ogen-client)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 datastorage - E2E Tests (Kind cluster, $(TEST_PROCS) procs) [coverage: hand-written code only]"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🔍 Pre-validating DataStorage OpenAPI client generation..."
+	@$(MAKE) generate-datastorage-client || { echo "❌ DataStorage client generation failed"; exit 1; }
+	@echo "✅ DataStorage client validated successfully"
+	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG)"; \
+	if [ -n "$(GINKGO_LABEL)" ]; then GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; fi; \
+	if [ -n "$(GINKGO_FOCUS)" ]; then GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; fi; \
+	if [ -n "$(GINKGO_SKIP)" ]; then GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; fi; \
+	eval "$$GINKGO_CMD ./test/e2e/datastorage/..."
+	@if [ -f coverage_e2e_datastorage.out ]; then \
+		echo ""; echo "📊 Coverage report generated: coverage_e2e_datastorage.out"; \
+		go tool cover -func=coverage_e2e_datastorage.out | grep total || echo "No coverage data"; \
 	fi
 
 # All Tests for Service
@@ -415,22 +503,22 @@ test-integration-holmesgpt-api: ginkgo setup-envtest clean-holmesgpt-test-ports 
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverage-dirs generate-holmesgpt-client ## Run holmesgpt-api E2E tests (Kind cluster + Go Ginkgo tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Containerized Python Tests)"
+	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Go Ginkgo Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped Kind infrastructure)"
-	@echo "🐍 Test Logic: Python pytest in container (Red Hat UBI9, same as unit tests)"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go Ginkgo tests with Kind infrastructure)"
+	@echo "🔧 Test Framework: Ginkgo/Gomega (Go BDD framework)"
+	@echo "📦 Coverage: Go client code in pkg/holmesgpt/"
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1
 	@echo "✅ Client generated successfully"
 	@echo ""
-	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests in UBI9 container)..."
-	@echo "   Container: registry.access.redhat.com/ubi9/python-312:latest"
-	@echo "   Network: host (access NodePort services: HAPI 30120, DS 30098)"
-	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --output-dir=../../.. --coverprofile=coverage_e2e_holmesgpt-api.out --covermode=atomic
+	@echo "🧪 Step 2: Run E2E tests (Go Ginkgo tests in test/e2e/holmesgpt-api/)..."
+	@echo "   Coverage: pkg/holmesgpt/client, pkg/holmesgpt/config, pkg/holmesgpt/errors"
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m --output-dir=../../.. --coverprofile=coverage_e2e_holmesgpt-api.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/holmesgpt/...
 	@if [ -f coverage_e2e_holmesgpt-api.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_e2e_holmesgpt-api.out"; \
@@ -450,15 +538,16 @@ test-unit-holmesgpt-api: ensure-coverage-dirs ## Run holmesgpt-api unit tests (c
 	@echo "🧪 Running holmesgpt-api unit tests (containerized with Red Hat UBI)..."
 	@podman run --rm \
 		-v $(CURDIR):/workspace:z \
-		-v /tmp:/tmp:z \
 		-w /workspace/holmesgpt-api \
+		-e PYTHONUNBUFFERED=1 \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing | tee /tmp/coverage_unit_holmesgpt-api.txt"
-	@if [ -f /tmp/coverage_unit_holmesgpt-api.txt ]; then \
-		cp /tmp/coverage_unit_holmesgpt-api.txt $(CURDIR)/coverage_unit_holmesgpt-api.txt; \
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --cov=src --cov-report=term --cov-report=term-missing 2>&1 | tee /workspace/coverage_unit_holmesgpt-api.txt; python -m coverage report --precision=2 2>&1 | tee -a /workspace/coverage_unit_holmesgpt-api.txt"
+	@if [ -f $(CURDIR)/coverage_unit_holmesgpt-api.txt ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_holmesgpt-api.txt"; \
-		grep "TOTAL" /tmp/coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+		grep "TOTAL" $(CURDIR)/coverage_unit_holmesgpt-api.txt || echo "No coverage data"; \
+	else \
+		echo "⚠️  Coverage file not found (tests may have failed)"; \
 	fi
 
 .PHONY: clean-holmesgpt-test-ports
@@ -484,7 +573,7 @@ test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic ./test/unit/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/unit/authwebhook/...
 	@if [ -f coverage_unit_authwebhook.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \
@@ -534,6 +623,27 @@ test-gateway: test-integration-gateway ## Legacy alias for Gateway integration t
 
 .PHONY: test
 test: test-tier-unit ## Legacy alias: Run all unit tests
+
+##@ Coverage Analysis
+
+.PHONY: coverage-report-unit-testable
+coverage-report-unit-testable: ## Show comprehensive coverage breakdown by test tier for all services
+	@./scripts/coverage/report.sh
+
+.PHONY: coverage-report-json
+coverage-report-json: ## Generate JSON coverage report for CI/CD integration
+	@./scripts/coverage/report.sh --format json
+
+.PHONY: coverage-report-markdown
+coverage-report-markdown: ## Generate markdown coverage report for GitHub PR comments
+	@./scripts/coverage/report.sh --format markdown
+
+.PHONY: coverage-report
+coverage-report: coverage-report-unit-testable ## Alias for coverage-report-unit-testable
+
+# REMOVED: Legacy 150-line embedded implementation
+# Replaced with modular scripts/coverage/report.sh (see Phase 1-3 refactoring)
+# If rollback needed, see git history before this commit
 
 ##@ Dependencies
 
