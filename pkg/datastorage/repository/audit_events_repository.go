@@ -523,15 +523,29 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 		}
 	}()
 
-	createdEvents := make([]*AuditEvent, 0, len(events))
+	// Pre-allocate result slice indexed by original position so the caller
+	// receives events in the same order as the input slice.  The SOC2 Gap #9
+	// hash-chain logic below groups events by correlation_id (using a map with
+	// non-deterministic iteration order), so we must track each event's
+	// original index and write results back into the correct slot.
+	// Fix: https://github.com/jordigilh/kubernaut/issues/42
+	type indexedEvent struct {
+		originalIndex int
+		event         *AuditEvent
+	}
+
+	createdEvents := make([]*AuditEvent, len(events))
 
 	// ========================================
 	// SOC2 Gap #9: Hash Chain Integration
 	// Group events by correlation_id to maintain hash chains
 	// ========================================
-	eventsByCorrelation := make(map[string][]*AuditEvent)
-	for _, event := range events {
-		eventsByCorrelation[event.CorrelationID] = append(eventsByCorrelation[event.CorrelationID], event)
+	eventsByCorrelation := make(map[string][]indexedEvent)
+	for i, event := range events {
+		eventsByCorrelation[event.CorrelationID] = append(
+			eventsByCorrelation[event.CorrelationID],
+			indexedEvent{originalIndex: i, event: event},
+		)
 	}
 
 	// Track last hash for each correlation_id within this batch
@@ -581,7 +595,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 		lastHashByCorrelation[correlationID] = previousHash
 
 		// Process events in this correlation sequentially
-		for _, event := range correlationEvents {
+		for _, ie := range correlationEvents {
+			event := ie.event
 			// Generate UUID if not provided
 			if event.EventID == uuid.Nil {
 				event.EventID = uuid.New()
@@ -689,7 +704,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			}
 
 			event.EventTimestamp = returnedTimestamp
-			createdEvents = append(createdEvents, event)
+			createdEvents[ie.originalIndex] = event
 		}
 	}
 
@@ -750,7 +765,7 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		var actorID, actorType, resourceType, resourceID sql.NullString
 		var severity, namespace, clusterName sql.NullString
 		var errorCode, errorMessage sql.NullString // DD-TESTING-001: Error fields
-		var durationMs sql.NullInt64                // DD-TESTING-001: Performance tracking (BR-SP-090)
+		var durationMs sql.NullInt64               // DD-TESTING-001: Performance tracking (BR-SP-090)
 
 		err := rows.Scan(
 			&event.EventID,
