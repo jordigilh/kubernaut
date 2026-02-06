@@ -23,7 +23,6 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -256,93 +255,16 @@ var _ = SynchronizedAfterSuite(
 			})
 		}
 
-		// DD-TEST-007: Extract E2E coverage if E2E_COVERAGE=true
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if os.Getenv("E2E_COVERAGE") == "true" {
-			logger.Info("📊 Extracting E2E coverage data...")
-
-			// 1. Scale down controller to flush coverage (graceful shutdown)
-			logger.Info("  Scaling down controller to flush coverage...")
-			scaleCmd := exec.Command("kubectl", "scale",
-				"-n", controllerNamespace,
-				"deployment/workflowexecution-controller",
-				"--replicas=0",
-				"--kubeconfig", kubeconfigPath)
-			scaleCmd.Stdout = GinkgoWriter
-			scaleCmd.Stderr = GinkgoWriter
-			if err := scaleCmd.Run(); err != nil {
-				logger.Error(err, "Failed to scale down controller")
-			} else {
-				// Wait for graceful shutdown to flush coverage
-				logger.Info("  Waiting 10s for graceful shutdown to flush coverage...")
-				time.Sleep(10 * time.Second)
-			}
-
-			// 2. Copy coverage data from Kind node
-			logger.Info("  Copying coverage data from Kind node...")
-			coverageDir := "test/e2e/workflowexecution/coverdata"
-			_ = os.RemoveAll(coverageDir) // Clean old coverage
-			_ = os.MkdirAll(coverageDir, 0755)
-
-			// Get Kind node container name
-			nodeListCmd := exec.Command("podman", "ps", "--filter",
-				fmt.Sprintf("name=%s-control-plane", clusterName),
-				"--format", "{{.Names}}")
-			nodeOutput, err := nodeListCmd.Output()
-			if err != nil {
-				logger.Error(err, "Failed to find Kind node container")
-			} else {
-				nodeName := strings.TrimSpace(string(nodeOutput))
-
-				// Copy /coverdata from Kind node to local
-				cpCmd := exec.Command("podman", "cp",
-					fmt.Sprintf("%s:/coverdata", nodeName),
-					coverageDir)
-				cpCmd.Stdout = GinkgoWriter
-				cpCmd.Stderr = GinkgoWriter
-				if err := cpCmd.Run(); err != nil {
-					logger.Error(err, "Failed to copy coverage data")
-				} else {
-					logger.Info("✅ Coverage data extracted", "dir", coverageDir)
-
-					// 3. Generate coverage reports
-					logger.Info("  Generating coverage reports...")
-
-					// Text report
-					textReportPath := "test/e2e/workflowexecution/e2e-coverage.txt"
-					textCmd := exec.Command("go", "tool", "covdata", "textfmt",
-						"-i="+coverageDir,
-						"-o="+textReportPath)
-					textCmd.Stdout = GinkgoWriter
-					textCmd.Stderr = GinkgoWriter
-					if err := textCmd.Run(); err != nil {
-						logger.Error(err, "Failed to generate text report")
-					} else {
-						logger.Info("✅ Text report", "file", textReportPath)
-					}
-
-					// HTML report
-					htmlReportPath := "test/e2e/workflowexecution/e2e-coverage.html"
-					htmlCmd := exec.Command("go", "tool", "cover",
-						"-html="+textReportPath,
-						"-o="+htmlReportPath)
-					htmlCmd.Stdout = GinkgoWriter
-					htmlCmd.Stderr = GinkgoWriter
-					if err := htmlCmd.Run(); err != nil {
-						logger.Error(err, "Failed to generate HTML report")
-					} else {
-						logger.Info("✅ HTML report", "file", htmlReportPath)
-					}
-
-					// Coverage percentage
-					percentCmd := exec.Command("go", "tool", "covdata", "percent",
-						"-i="+coverageDir)
-					percentOutput, err := percentCmd.CombinedOutput()
-					if err != nil {
-						logger.Error(err, "Failed to calculate coverage percentage")
-					} else {
-						logger.Info("📊 E2E Coverage Results:\n" + string(percentOutput))
-					}
-				}
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "workflowexecution",
+				ClusterName:    clusterName,
+				DeploymentName: "workflowexecution-controller",
+				Namespace:      controllerNamespace,
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
 		}
 
@@ -375,7 +297,7 @@ var _ = SynchronizedAfterSuite(
 		// This runs regardless of test success/failure to prevent image accumulation
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		if imageRegistry != "" && imageTag != "" {
 			logger.Info("ℹ️  Registry mode detected - skipping local image removal",

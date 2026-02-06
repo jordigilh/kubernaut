@@ -222,6 +222,8 @@ covmeta.*
 # Coverage files and directories (ANY file/directory starting with "coverage")
 coverage*
 **/coverage*
+# Exception: Go source files named coverage*.go (e.g., test/infrastructure/coverage.go)
+!**/coverage*.go
 
 # Coverage directories (all tiers)
 coverage-unit/

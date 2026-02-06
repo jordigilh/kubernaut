@@ -64,14 +64,14 @@ import (
 
 func TestAIAnalysisE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	
+
 	// Per RCA (Jan 31, 2026): Controller initialization takes ~45-50 seconds
 	// (pod start → watches ready). Tests timeout at 10s before controller processes resources.
 	// Solution: Increase default Eventually timeout to 30s to allow controller startup + processing.
 	// Investigation times are fast (1-2s), but need to account for controller readiness.
 	SetDefaultEventuallyTimeout(30 * time.Second)
 	SetDefaultEventuallyPollingInterval(500 * time.Millisecond)
-	
+
 	RunSpecs(t, "AIAnalysis E2E Test Suite")
 }
 
@@ -215,14 +215,14 @@ var _ = SynchronizedBeforeSuite(
 		// Wait for all services to be ready
 		// Per DD-TEST-002: Coverage-instrumented binaries take longer to start
 		// Increase timeout from 60s to 300s for coverage builds (5 min)
-	// Initial delay to allow HTTP servers to start accepting connections
-	healthTimeout := 60 * time.Second
-	if os.Getenv("E2E_COVERAGE") == "true" {
-		healthTimeout = 300 * time.Second // 5 minutes for coverage builds
-		initialDelay := 10 * time.Second  // Give servers 10s to start
-		logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
-		time.Sleep(initialDelay)
-	}
+		// Initial delay to allow HTTP servers to start accepting connections
+		healthTimeout := 60 * time.Second
+		if os.Getenv("E2E_COVERAGE") == "true" {
+			healthTimeout = 300 * time.Second // 5 minutes for coverage builds
+			initialDelay := 10 * time.Second  // Give servers 10s to start
+			logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
+			time.Sleep(initialDelay)
+		}
 		logger.Info("Waiting for services to be ready...")
 		Eventually(func() bool {
 			ready := checkServicesReady()
@@ -237,7 +237,7 @@ var _ = SynchronizedBeforeSuite(
 		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 		// All queries MUST use generated OpenAPI client for type safety
 		dataStorageURL := "http://localhost:8091" // DataStorage NodePort 30081
-		
+
 		// Create authenticated HTTP client with ServiceAccount token
 		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
 		httpClient := &http.Client{
@@ -322,6 +322,19 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "aianalysis",
+				ClusterName:    clusterName,
+				DeploymentName: "aianalysis-controller",
+				Namespace:      "kubernaut-system",
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
+			}
+		}
+
 		// Delete cluster (with must-gather log export on failure)
 		// Pass true for testsFailed if EITHER setup failed OR any test failed
 		anyFailure := setupFailed || anyTestFailed
@@ -335,7 +348,7 @@ var _ = SynchronizedAfterSuite(
 		// Remove service image built for this test run
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		// In registry mode, images are pulled (not built locally), so local removal fails
 		if imageRegistry != "" && imageTag != "" {

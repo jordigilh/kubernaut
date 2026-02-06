@@ -245,6 +245,12 @@ test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified 
 		echo "⏭️  Skipping: $(GINKGO_SKIP)"; \
 	fi; \
 	eval "$$GINKGO_CMD ./test/e2e/$*/..."
+	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage (deployed service instrumentation)
+	@# over Ginkgo --coverprofile (test runner coverage only)
+	@if [ -f coverage_e2e_$*_binary.out ]; then \
+		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
+		cp coverage_e2e_$*_binary.out coverage_e2e_$*.out; \
+	fi
 	@if [ -f coverage_e2e_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_e2e_$*.out"; \
@@ -265,6 +271,11 @@ test-e2e-datastorage: generate ginkgo ensure-coverage-dirs ## Run datastorage E2
 	if [ -n "$(GINKGO_FOCUS)" ]; then GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; fi; \
 	if [ -n "$(GINKGO_SKIP)" ]; then GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; fi; \
 	eval "$$GINKGO_CMD ./test/e2e/datastorage/..."
+	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage over Ginkgo --coverprofile
+	@if [ -f coverage_e2e_datastorage_binary.out ]; then \
+		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
+		cp coverage_e2e_datastorage_binary.out coverage_e2e_datastorage.out; \
+	fi
 	@if [ -f coverage_e2e_datastorage.out ]; then \
 		echo ""; echo "📊 Coverage report generated: coverage_e2e_datastorage.out"; \
 		go tool cover -func=coverage_e2e_datastorage.out | grep total || echo "No coverage data"; \
@@ -571,6 +582,11 @@ test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic ./test/e2e/authwebhook/...
+	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage over Ginkgo --coverprofile
+	@if [ -f coverage_e2e_authwebhook_binary.out ]; then \
+		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
+		cp coverage_e2e_authwebhook_binary.out coverage_e2e_authwebhook.out; \
+	fi
 	@if [ -f coverage_e2e_authwebhook.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_e2e_authwebhook.out"; \

@@ -93,7 +93,7 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up SignalProcessing E2E cluster (process 1 only)")
 
 		// Check for coverage mode (per E2E_COVERAGE_COLLECTION.md)
-		coverageMode = os.Getenv("COVERAGE_MODE") == "true"
+		coverageMode = os.Getenv("E2E_COVERAGE") == "true"
 		if coverageMode {
 			By("📊 E2E Coverage Mode ENABLED (per E2E_COVERAGE_COLLECTION.md)")
 		}
@@ -127,10 +127,10 @@ var _ = SynchronizedBeforeSuite(
 		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
 		e2eSAName := "signalprocessing-e2e-sa"
 		namespace := "kubernaut-system"
-		
+
 		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, e2eSAName, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-		
+
 		// Get ServiceAccount token for Bearer authentication
 		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
@@ -220,52 +220,16 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// E2E_COVERAGE_COLLECTION.md: Coverage Extraction (before cluster deletion)
-		// Coverage data is written when the controller binary exits gracefully.
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if coverageMode {
-			By("📊 E2E Coverage Mode: Extracting coverage data before cleanup")
-
-			// Get project root for coverage directory
-			projectRoot, err := infrastructure.GetProjectRoot()
-			if err == nil {
-				coverDir = filepath.Join(projectRoot, "coverdata")
-			}
-
-			// Step 1: Scale down controller to trigger graceful exit
-			By("Scaling down controller for graceful shutdown (coverage flush)")
-			scaleCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-				"scale", "deployment", "signalprocessing-controller",
-				"-n", "kubernaut-system", "--replicas=0")
-			scaleOutput, scaleErr := scaleCmd.CombinedOutput()
-			if scaleErr != nil {
-				GinkgoWriter.Printf("⚠️  Scale down failed: %v\n%s\n", scaleErr, scaleOutput)
-			}
-
-			// Step 2: Wait for pod termination using Eventually (NOT time.Sleep - anti-pattern)
-			By("Waiting for controller pod termination...")
-			Eventually(func() bool {
-				checkCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-					"get", "pods", "-n", "kubernaut-system",
-					"-l", "app=signalprocessing-controller", "-o", "name")
-				output, _ := checkCmd.Output()
-				return len(strings.TrimSpace(string(output))) == 0
-			}).WithTimeout(60*time.Second).WithPolling(2*time.Second).Should(BeTrue(),
-				"Controller pod should terminate for coverage flush")
-
-			// Step 3: Extract coverage from Kind node
-			By("Extracting coverage data from Kind worker node")
-			err = infrastructure.ExtractCoverageFromKind(clusterName, coverDir, GinkgoWriter)
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Coverage extraction failed: %v\n", err)
-			}
-
-			// Step 4: Generate coverage report
-			By("Generating coverage report")
-			err = infrastructure.GenerateCoverageReport(coverDir, GinkgoWriter)
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Coverage report generation failed: %v\n", err)
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "signalprocessing",
+				ClusterName:    clusterName,
+				DeploymentName: "signalprocessing-controller",
+				Namespace:      "kubernaut-system",
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to collect E2E binary coverage (non-fatal): %v\n", err)
 			}
 		}
 

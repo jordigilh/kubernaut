@@ -288,74 +288,17 @@ var _ = SynchronizedAfterSuite(
 		// Otherwise: export logs on failure, then always delete cluster
 		preserveCluster := keepCluster == "true"
 
-		// DD-TEST-007: E2E Coverage Capture Standard
-		// Extract coverage from Kind node before cluster deletion
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if coverageMode {
-			logger.Info("📊 DD-TEST-007: Extracting E2E coverage data from Kind node...")
-			logger.Info("   Step 1: Scaling down AuthWebhook for graceful shutdown (flushes coverage)...")
-
-			// Scale deployment to 0 to trigger graceful shutdown (writes coverage data)
-			scaleCmd := exec.Command("kubectl", "scale", "deployment", "authwebhook",
-				"--kubeconfig", kubeconfigPath,
-				"-n", sharedNamespace,
-				"--replicas=0")
-			if output, err := scaleCmd.CombinedOutput(); err != nil {
-				logger.Info("⚠️  Failed to scale down AuthWebhook", "error", err, "output", string(output))
-			} else {
-				logger.Info("   ✅ AuthWebhook scaled to 0")
-
-				// Wait for pod termination (coverage is written during graceful shutdown)
-				logger.Info("   Step 2: Waiting for graceful shutdown to complete...")
-				time.Sleep(10 * time.Second)
-
-				// DD-TEST-007: Extract coverage files from Kind node container
-				logger.Info("   Step 3: Extracting coverage files from Kind node container...")
-				kindNodeContainer := clusterName + "-worker"
-
-				// Use podman cp to copy coverage files from Kind node to host
-				cpCmd := exec.Command("podman", "cp",
-					kindNodeContainer+":/coverdata/.",
-					coverDir)
-				if cpOutput, cpErr := cpCmd.CombinedOutput(); cpErr != nil {
-					logger.Info("⚠️  Failed to extract coverage from Kind node",
-						"error", cpErr,
-						"output", string(cpOutput),
-						"container", kindNodeContainer)
-				} else {
-					logger.Info("   ✅ Coverage files extracted from Kind node", "destination", coverDir)
-
-					// Generate coverage report
-					logger.Info("   Step 4: Generating E2E coverage report...")
-					percentCmd := exec.Command("go", "tool", "covdata", "percent", "-i="+coverDir)
-					if percentOutput, percentErr := percentCmd.CombinedOutput(); percentErr == nil {
-						logger.Info("   ✅ E2E Coverage Report:")
-						logger.Info(string(percentOutput))
-
-						// Convert to text format for HTML report
-						textfmtCmd := exec.Command("go", "tool", "covdata", "textfmt",
-							"-i="+coverDir,
-							"-o=e2e-coverage.txt")
-						if _, textErr := textfmtCmd.CombinedOutput(); textErr == nil {
-							logger.Info("   ✅ Coverage report saved: e2e-coverage.txt")
-
-							// Generate HTML report
-							htmlCmd := exec.Command("go", "tool", "cover",
-								"-html=e2e-coverage.txt",
-								"-o=e2e-coverage.html")
-							if _, htmlErr := htmlCmd.CombinedOutput(); htmlErr == nil {
-								logger.Info("   ✅ HTML report saved: e2e-coverage.html")
-							}
-						}
-					} else {
-						logger.Info("⚠️  Failed to generate coverage report",
-							"error", percentErr,
-							"output", string(percentOutput))
-					}
-				}
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "authwebhook",
+				ClusterName:    clusterName,
+				DeploymentName: "authwebhook",
+				Namespace:      sharedNamespace,
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
-		} else {
-			logger.Info("📊 DD-TEST-007: Coverage extraction skipped (E2E_COVERAGE not enabled)")
-			logger.Info("   💡 To collect E2E coverage: make test-e2e-authwebhook-coverage")
 		}
 
 		if preserveCluster {
@@ -416,7 +359,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		if imageRegistry != "" && imageTag != "" {
 			logger.Info("ℹ️  Registry mode detected - skipping local image removal",

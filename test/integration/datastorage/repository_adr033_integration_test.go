@@ -313,9 +313,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				// Scope workflowID and incidentType to testID for proper test isolation.
 				// Previously hardcoded values ("test-memory-increase", "test-pod-oom") caused
 				// cross-contamination from parallel tests or incomplete cleanup of prior runs.
-				workflowID := fmt.Sprintf("test-memory-increase-%s", testID)
+				// NOTE: Prefixes kept short so scoped ID fits in workflow_id VARCHAR(64)
+				workflowID := fmt.Sprintf("wf05-%s", testID)
 				workflowVersion := "v1.0"
-				incidentType := fmt.Sprintf("test-pod-oom-%s", testID)
+				incidentType := fmt.Sprintf("it05-%s", testID)
 
 				// Setup: 7 successes, 3 failures = 70% success rate
 				for i := 0; i < 7; i++ {
