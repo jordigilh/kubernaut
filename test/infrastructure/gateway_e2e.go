@@ -720,6 +720,9 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 }
 
 func GatewayCoverageManifest(imageName string) string {
+	// Coverage manifest aligned with standard gateway-deployment.yaml
+	// Key differences from standard: GOCOVERDIR env, hostPath volume, root securityContext
+	// CRITICAL: Config keys MUST use camelCase to match Go struct YAML tags (pkg/gateway/config/config.go)
 
 	return fmt.Sprintf(`---
 # Gateway Service ConfigMap
@@ -731,34 +734,21 @@ metadata:
 data:
   config.yaml: |
     server:
-      listen_addr: ":8080"
-      read_timeout: 30s
-      write_timeout: 30s
-      idle_timeout: 120s
-
-    middleware:
-      rate_limit:
-        requests_per_minute: 100
-        burst: 10
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
 
     infrastructure:
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
-      # Service name: data-storage-service (matches production, required for SAR)
-      # Port 8080: DataStorage container port (DD-AUTH-014: Direct access, no proxy)
-      data_storage_url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      # DD-GATEWAY-012: Redis REMOVED - Gateway is 100%% Kubernetes-native
+      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 
     processing:
       deduplication:
-        ttl: 10s  # Minimum allowed TTL (production: 5m)
-
-      environment:
-        cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
-        configmap_namespace: "kubernaut-system"
-        configmap_name: "kubernaut-environment-overrides"
-
-      priority:
-        policy_path: "/etc/gateway-policy/priority-policy.rego"
+        ttl: 10s  # DEPRECATED (DD-GATEWAY-011): Parsed for compat, no effect
 
 ---
 # Gateway Service Rego Policy ConfigMap
@@ -835,6 +825,15 @@ spec:
           # E2E Coverage: Set GOCOVERDIR to enable coverage capture
           - name: GOCOVERDIR
             value: /coverdata
+          # ADR-052: Pod identity for distributed locking (multi-replica safety)
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
           ports:
             - name: http
               containerPort: 8080
@@ -948,6 +947,12 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch"]
+
+  # Lease resource permissions for distributed locking (DD-GATEWAY-013, BR-GATEWAY-190)
+  # CRITICAL: Required for K8s Lease-based distributed locking to prevent deduplication races
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
 
 ---
 # Gateway ClusterRoleBinding
