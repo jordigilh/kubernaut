@@ -252,6 +252,17 @@ jobs:
           path: coverage-reports/unit-${{ matrix.service }}.txt
           retention-days: 1
 
+      - name: Upload full coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile-unit-${{ matrix.service }}
+          path: |
+            coverage_unit_${{ matrix.service }}.out
+            coverage_unit_${{ matrix.service }}.txt
+          retention-days: 1
+          if-no-files-found: ignore
+
   # unit-tests-disabled:
   #   name: Unit Tests (${{ matrix.service }})
   #   runs-on: ubuntu-latest
@@ -582,6 +593,17 @@ jobs:
           name: coverage-integration-${{ matrix.service }}
           path: coverage-reports/integration-${{ matrix.service }}.txt
           retention-days: 1
+
+      - name: Upload full integration coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile-integration-${{ matrix.service }}
+          path: |
+            coverage_integration_${{ matrix.service }}.out
+            coverage_integration_${{ matrix.service }}_python.txt
+          retention-days: 1
+          if-no-files-found: ignore
       
       - name: Validate Data Storage OpenAPI spec (ADR-031)
         if: matrix.service == 'datastorage'
@@ -759,6 +781,16 @@ jobs:
           name: coverage-e2e-${{ matrix.service }}
           path: coverage-reports/e2e-${{ matrix.service }}.txt
           retention-days: 1
+
+      - name: Upload full E2E coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile-e2e-${{ matrix.service }}
+          path: coverage_e2e_${{ matrix.service }}.out
+          retention-days: 1
+          if-no-files-found: ignore
+
       - name: Collect must-gather logs on failure
         if: failure()
         run: |
@@ -837,7 +869,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download all coverage reports
+      - name: Download coverage summary reports
         if: always()
         uses: actions/download-artifact@v4
         with:
@@ -845,60 +877,90 @@ jobs:
           path: coverage-reports
           merge-multiple: true
         continue-on-error: true
+
+      - name: Download full coverage profiles
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-profile-*
+          path: coverage-profiles
+          merge-multiple: true
+        continue-on-error: true
       
       - name: Generate comprehensive coverage report
         if: always()
         run: |
-          echo "📊 Generating comprehensive coverage report (unit-testable, integration-testable, E2E, all-tiers)..."
+          echo "📊 Generating comprehensive coverage report (Python-based, line-by-line merging)..."
           echo ""
           
-          # Debug: Show available coverage files from artifacts
-          echo "🔍 Downloaded coverage artifacts:"
+          # Debug: Show available coverage artifacts
+          echo "🔍 Downloaded coverage summary artifacts:"
           find coverage-reports -name "*.txt" -type f 2>/dev/null | sort || echo "  ⚠️  No coverage-reports directory found"
           echo ""
+          echo "🔍 Downloaded full coverage profiles:"
+          find coverage-profiles -type f 2>/dev/null | sort || echo "  ⚠️  No coverage-profiles directory found"
+          echo ""
           
-          # Reconstruct coverage files from artifact summaries
-          echo "🔄 Reconstructing coverage files from artifacts..."
+          # Move full .out/.txt coverage profiles to repo root (where coverage_report.py expects them)
+          echo "🔄 Reconstructing coverage files..."
+          if [ -d "coverage-profiles" ]; then
+            for profile in coverage-profiles/coverage_*; do
+              [ ! -f "$profile" ] && continue
+              filename=$(basename "$profile")
+              if [ -s "$profile" ]; then
+                cp "$profile" "./$filename"
+                echo "  ✅ $filename ($(wc -l < "$profile") lines)"
+              else
+                echo "  ⏭️  $filename (empty, skipped)"
+              fi
+            done
+          fi
+          echo ""
+          
+          # For services/tiers where full .out profiles aren't available,
+          # create .pct fallback files from the summary artifacts
+          echo "🔄 Creating .pct fallbacks for missing profiles..."
           if [ -d "coverage-reports" ]; then
             for artifact_file in coverage-reports/*.txt; do
               [ ! -f "$artifact_file" ] && continue
-              
               filename=$(basename "$artifact_file")
               
-              # Extract service and tier (e.g., "unit-holmesgpt-api.txt")
               if [[ "$filename" =~ ^(unit|integration|e2e)-(.+)\.txt$ ]]; then
                 tier="${BASH_REMATCH[1]}"
                 service="${BASH_REMATCH[2]}"
                 coverage=$(cut -d',' -f2 "$artifact_file" | head -1 | tr -d '[:space:]')
                 
-                echo "  $filename → coverage_${tier}_${service}.txt ($coverage)"
-                
-                # For Python holmesgpt-api unit/integration, create pytest-style TOTAL line (report.sh fallback uses it)
-                if [ "$service" = "holmesgpt-api" ] && { [ "$tier" = "unit" ] || [ "$tier" = "integration" ]; }; then
-                  if [ "$tier" = "integration" ]; then
+                # Only create .pct if no real .out file exists
+                out_file="coverage_${tier}_${service}.out"
+                if [ ! -s "$out_file" ]; then
+                  echo "${coverage}" > "coverage_${tier}_${service}.pct"
+                  echo "  📝 coverage_${tier}_${service}.pct = $coverage (fallback)"
+                  
+                  # For Python holmesgpt-api, also create TOTAL line files
+                  if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "unit" ] && [ ! -s "coverage_unit_holmesgpt-api.txt" ]; then
+                    echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_unit_holmesgpt-api.txt"
+                  fi
+                  if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "integration" ] && [ ! -s "coverage_integration_holmesgpt-api_python.txt" ]; then
                     echo "TOTAL                                            3523   1872  ${coverage}" > "coverage_integration_holmesgpt-api_python.txt"
-                  else
-                    echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_${tier}_${service}.txt"
                   fi
                 else
-                  # For Go services, create empty .out placeholder and a .pct summary
-                  # report.sh falls back to .pct when .out has no real Go coverage data
-                  touch "coverage_${tier}_${service}.out"
-                  echo "${coverage}" > "coverage_${tier}_${service}.pct"
+                  echo "  ✅ $out_file exists ($(wc -l < "$out_file") lines), skip .pct"
                 fi
               fi
             done
           fi
           echo ""
           
-          # Prepare coverage scripts
-          chmod +x scripts/coverage/*.awk scripts/coverage/report.sh 2>/dev/null || true
+          # Debug: Show final coverage file state
+          echo "📋 Coverage files in workspace:"
+          ls -la coverage_*.out coverage_*.pct coverage_*.txt 2>/dev/null | head -30 || echo "  (none)"
+          echo ""
           
-          # Generate markdown report using modular scripts
-          if make coverage-report-markdown > coverage-summary.md 2>&1; then
+          # Generate markdown report using Python script (replaces bash+awk)
+          if python3 scripts/coverage/coverage_report.py --format markdown > coverage-summary.md 2>&1; then
             echo "✅ Coverage report generated successfully"
             echo ""
-            echo "📋 Preview (first 40 lines):"
+            echo "📋 Preview:"
             head -n 40 coverage-summary.md | sed 's/^/  /'
             echo ""
             

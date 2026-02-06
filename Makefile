@@ -628,15 +628,15 @@ test: test-tier-unit ## Legacy alias: Run all unit tests
 
 .PHONY: coverage-report-unit-testable
 coverage-report-unit-testable: ## Show comprehensive coverage breakdown by test tier for all services
-	@./scripts/coverage/report.sh
+	@python3 scripts/coverage/coverage_report.py
 
 .PHONY: coverage-report-json
 coverage-report-json: ## Generate JSON coverage report for CI/CD integration
-	@./scripts/coverage/report.sh --format json
+	@python3 scripts/coverage/coverage_report.py --format json
 
 .PHONY: coverage-report-markdown
 coverage-report-markdown: ## Generate markdown coverage report for GitHub PR comments
-	@./scripts/coverage/report.sh --format markdown
+	@python3 scripts/coverage/coverage_report.py --format markdown
 
 .PHONY: coverage-report
 coverage-report: coverage-report-unit-testable ## Alias for coverage-report-unit-testable
