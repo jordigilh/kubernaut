@@ -50,26 +50,9 @@ TEST_TIMEOUT_E2E ?= 30m
 # Run: make test-all-datastorage then see coverage_*_datastorage.out
 
 # DataStorage coverage packages (hand-written only, excludes generated)
-DATASTORAGE_COVERPKG = \
-	github.com/jordigilh/kubernaut/pkg/datastorage/adapter/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/audit/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/config/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/dlq/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/metrics/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/models/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/query/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/repository/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/schema/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/scoring/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/server/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/server/response/..., \
-	github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
+# DATASTORAGE_COVERPKG: Comma-separated list of packages for coverage instrumentation.
+# IMPORTANT: No spaces after commas — Go's --coverpkg treats spaces as part of the package name.
+DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/scoring/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
 
 # Unit-testable package patterns (pure logic: config, validators, builders, formatters, metrics, classifiers)
 # Integration-testable patterns (I/O-dependent: handlers, servers, DB adapters, K8s clients, workers)
