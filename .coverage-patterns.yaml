@@ -7,13 +7,17 @@
 go_services:
   aianalysis:
     pkg_pattern: "/pkg/aianalysis/"
-    unit_exclude: "/(handler\\.go|audit)/"
-    integration_include: "/(handler\\.go|audit)/"
+    # NOTE: File exclusions use .go: (colon after .go) because Go coverage format is file.go:line
+    #       Directory exclusions use trailing / (e.g., audit/) to match subdirectory paths
+    unit_exclude: "/(handler\\.go:|audit/)"
+    integration_include: "/(handler\\.go:|audit/)"
   
   authwebhook:
     pkg_pattern: "/pkg/authwebhook/"
-    unit_exclude: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
-    integration_include: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
+    # NOTE: All exclusions are file-level, so use .go: suffix (not .go/)
+    #       notificationrequest_validator implements webhook.CustomValidator (needs K8s admission context)
+    unit_exclude: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\\.go:"
+    integration_include: "/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\\.go:"
   
   datastorage:
     pkg_pattern: "/pkg/datastorage/"
@@ -22,13 +26,15 @@ go_services:
   
   gateway:
     pkg_pattern: "/pkg/gateway/"
-    unit_exclude: "/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
-    integration_include: "/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
+    # NOTE: server.go is a file (use .go:), k8s and processing/* are directories (use /)
+    unit_exclude: "/(server\\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)"
+    integration_include: "/(server\\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)"
   
   notification:
     pkg_pattern: "/pkg/notification/"
-    unit_exclude: "/(client\\.go|delivery|phase|status)/"
-    integration_include: "/(client\\.go|delivery|phase|status)/"
+    # NOTE: client.go is a file (use .go:), delivery/phase/status are directories (use /)
+    unit_exclude: "/(client\\.go:|delivery/|phase/|status/)"
+    integration_include: "/(client\\.go:|delivery/|phase/|status/)"
   
   remediationorchestrator:
     pkg_pattern: "/pkg/remediationorchestrator/"
