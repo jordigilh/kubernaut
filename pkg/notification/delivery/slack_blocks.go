@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/notification/formatting"
 	"github.com/slack-go/slack"
 )
 
@@ -48,11 +49,11 @@ func FormatSlackBlocks(notification *notificationv1alpha1.NotificationRequest) [
 			},
 		),
 
-		// Section block with message body (markdown supported)
+		// Section block with message body (markdown → mrkdwn converted per Issue #48)
 		slack.NewSectionBlock(
 			&slack.TextBlockObject{
 				Type: slack.MarkdownType,
-				Text: notification.Spec.Body,
+				Text: formatting.MarkdownToMrkdwn(notification.Spec.Body),
 			},
 			nil, // No fields
 			nil, // No accessory
