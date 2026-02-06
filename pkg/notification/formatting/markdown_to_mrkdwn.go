@@ -60,6 +60,7 @@ var (
 // Reference: https://docs.slack.dev/messaging/formatting-message-text/
 //
 // Business Requirements:
+//   - BR-NOT-083: Markdown to Slack mrkdwn conversion for notification body formatting
 //   - BR-NOT-051: Multi-channel delivery (Slack mrkdwn format)
 //   - Issue #48: Markdown to Slack mrkdwn converter
 func MarkdownToMrkdwn(input string) string {

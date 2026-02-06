@@ -23,9 +23,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/formatting"
 )
 
+// BR-NOT-083: Markdown to Slack mrkdwn conversion for notification body formatting
 // BR-NOT-051: Multi-channel delivery (Slack mrkdwn formatting)
 // Issue #48: Markdown to Slack mrkdwn converter
-var _ = Describe("BR-NOT-051: Markdown to Slack mrkdwn Converter", func() {
+var _ = Describe("BR-NOT-083: Markdown to Slack mrkdwn Converter", func() {
 
 	Describe("MarkdownToMrkdwn", func() {
 
