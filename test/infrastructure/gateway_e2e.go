@@ -325,8 +325,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// Deploy Gateway service (coverage-enabled or standard)
 	if enableCoverage {
 		// Use coverage manifest (DD-TEST-007)
-		_, _ = fmt.Fprintln(writer, "   Using coverage-enabled Gateway deployment...")
-		if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
+		// Pass the actual image name from BuildImageForKind (registry or local)
+		// to avoid image name mismatch when CI uses registry images
+		_, _ = fmt.Fprintf(writer, "   Using coverage-enabled Gateway deployment (image: %s)...\n", gatewayImageName)
+		if err := DeployGatewayCoverageManifest(kubeconfigPath, gatewayImageName, writer); err != nil {
 			return fmt.Errorf("failed to deploy Gateway with coverage: %w", err)
 		}
 	} else {
@@ -717,8 +719,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	return nil
 }
 
-func GatewayCoverageManifest() string {
-	imageName := GetGatewayCoverageFullImageName()
+func GatewayCoverageManifest(imageName string) string {
 
 	return fmt.Sprintf(`---
 # Gateway Service ConfigMap
@@ -965,8 +966,8 @@ subjects:
 `, imageName, GetImagePullPolicy())
 }
 
-func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) error {
-	manifest := GatewayCoverageManifest()
+func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
+	manifest := GatewayCoverageManifest(gatewayImageName)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
