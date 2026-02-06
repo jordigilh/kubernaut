@@ -58,7 +58,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "kubernaut/notification",
 			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
-			EnableCoverage:   false,
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "Notification", imageName: imageName, err: err}
@@ -71,7 +71,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   false,
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
@@ -537,6 +537,38 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	updatedContent = strings.ReplaceAll(updatedContent,
 		"imagePullPolicy: Never",
 		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
+
+	// DD-TEST-007: Inject GOCOVERDIR env var and /coverdata volume when E2E_COVERAGE=true
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		_, _ = fmt.Fprintf(writer, "   📊 DD-TEST-007: Injecting GOCOVERDIR=/coverdata for coverage\n")
+		// Add GOCOVERDIR env var after the existing env section
+		updatedContent = strings.Replace(updatedContent,
+			`- name: SLACK_WEBHOOK_URL`,
+			`- name: GOCOVERDIR
+          value: /coverdata
+        - name: SLACK_WEBHOOK_URL`,
+			1)
+		// Add coverdata volume mount after existing volumeMounts
+		updatedContent = strings.Replace(updatedContent,
+			`- name: notification-output
+          mountPath: /tmp/notifications`,
+			`- name: notification-output
+          mountPath: /tmp/notifications
+        - name: coverdata
+          mountPath: /coverdata`,
+			1)
+		// Add coverdata volume after existing volumes
+		updatedContent = strings.Replace(updatedContent,
+			`- name: notification-output
+        emptyDir: {}`,
+			`- name: notification-output
+        emptyDir: {}
+      - name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate`,
+			1)
+	}
 
 	// Create temporary modified deployment file
 	tmpDeployment := filepath.Join(os.TempDir(), "notification-deployment-e2e.yaml")

@@ -71,7 +71,7 @@ var _ = Describe("Python Test Coordination", func() {
 			GinkgoWriter.Printf("   Token length: %d chars\n", len(serviceAccountToken))
 			err = os.WriteFile(tokenFile, []byte(serviceAccountToken), 0644)
 			Expect(err).NotTo(HaveOccurred(), "Failed to write ServiceAccount token file")
-			
+
 			// Verify file exists
 			if _, err := os.Stat(tokenFile); err != nil {
 				Fail(fmt.Sprintf("Token file verification failed: %v", err))
@@ -85,29 +85,41 @@ var _ = Describe("Python Test Coordination", func() {
 			// Benefits: Simpler, no custom Dockerfile, consistent with E2E
 			// ========================================
 			GinkgoWriter.Println("🐍 Running Python tests in UBI9 container (runtime deps)...")
-			
-			// Build pytest command with dependency installation
+
+			// Build pytest command with dependency installation and Python coverage
 			// NOTE: Must install holmesgpt first to avoid httpx version conflicts
 			// Same pattern as custom Dockerfile (holmesgpt-api-integration-test.Dockerfile)
+			// Coverage: COVERAGE_FILE=/tmp/.coverage to avoid permission errors on bind mount
+			//           Output redirected from outside container to avoid permission issues
 			pytestCmd := fmt.Sprintf(
-				"cd /workspace && "+
-					"pip install -q --break-system-packages dependencies/holmesgpt && "+
-					"cd holmesgpt-api && "+
-					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
-					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
-					"HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true "+
-					"pytest tests/integration/ -v --tb=short --no-cov",
+				"cd /workspace && " +
+					"pip install -q --break-system-packages dependencies/holmesgpt && " +
+					"cd holmesgpt-api && " +
+					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && " +
+					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && " +
+					"COVERAGE_FILE=/tmp/.coverage PYTHONUNBUFFERED=1 HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true " +
+					"pytest tests/integration/ -v --tb=short --cov=src --cov-report=term --cov-report=term-missing -o addopts='' && " +
+					"python -m coverage report --precision=2",
 			)
 
 			// Run Python tests in container (same pattern as E2E)
 			// DD-AUTH-014: Mount ServiceAccount token at standard Kubernetes path
+			// Output redirected from outside container to workspace coverage file
 			GinkgoWriter.Printf("   Token: %s → /var/run/secrets/kubernetes.io/serviceaccount/token\n", tokenFile)
-			runCmd := exec.Command("podman", "run", "--rm",
-				"--network=host", // Access Go infrastructure (PostgreSQL 15439, Redis 16387, DS 18098)
-				"-v", fmt.Sprintf("%s:/workspace:z", workspaceRoot),
-				"-v", fmt.Sprintf("%s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro", tokenFile),
-				"registry.access.redhat.com/ubi9/python-312:latest", // Same as E2E/unit tests
-				"sh", "-c", pytestCmd,
+
+			coverageFile := filepath.Join(workspaceRoot, "coverage_integration_holmesgpt-api_python.txt")
+			runCmd := exec.Command("bash", "-c",
+				fmt.Sprintf("podman run --rm --network=host "+
+					"-v %s:/workspace:z "+
+					"-v %s:/var/run/secrets/kubernetes.io/serviceaccount/token:ro "+
+					"-e COVERAGE_FILE=/tmp/.coverage "+
+					"-e PYTHONUNBUFFERED=1 "+
+					"registry.access.redhat.com/ubi9/python-312:latest "+
+					"sh -c %q 2>&1 | tee %s",
+					workspaceRoot,
+					tokenFile,
+					pytestCmd,
+					coverageFile),
 			)
 			runCmd.Stdout = GinkgoWriter
 			runCmd.Stderr = GinkgoWriter

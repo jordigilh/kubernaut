@@ -362,6 +362,19 @@ var _ = SynchronizedAfterSuite(
 			return // Skip cluster deletion
 		}
 
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "notification",
+				ClusterName:    clusterName,
+				DeploymentName: "notification-controller",
+				Namespace:      "notification-e2e",
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
+			}
+		}
+
 		// Delete cluster (with must-gather log export on failure)
 		logger.Info("Deleting Kind cluster...")
 		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)

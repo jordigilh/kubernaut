@@ -97,29 +97,29 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				return false
 			}
 
-			// Verify all lifecycle conditions are present
-			hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
-			hasPipelineRunning := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
-			// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
-			// Test accepts both success and failure (line 73-74), so only check existence
-			hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
-			// AuditRecorded may be True or False depending on audit store availability
-			hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
+		// Verify final lifecycle conditions are present
+		// We only care about final state (Complete), not transient states (Running)
+		hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
+		// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
+		// Test accepts both success and failure (line 73-74), so only check existence
+		hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
+		// AuditRecorded may be True or False depending on audit store availability
+		hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
 
-			// DEBUG: Show current status of all conditions
-			GinkgoWriter.Printf("🔍 DEBUG: Condition status - PipelineCreated=%v, PipelineRunning=%v, PipelineComplete=%v, AuditRecorded=%v\n",
-				hasPipelineCreated, hasPipelineRunning, hasPipelineComplete, hasAuditRecorded)
-			if !hasAuditRecorded {
-				// Show all current conditions to understand what's missing
-				GinkgoWriter.Printf("🔍 DEBUG: Current conditions:\n")
-				for _, cond := range updated.Status.Conditions {
-					GinkgoWriter.Printf("  - %s: %s (reason: %s, message: %s)\n", cond.Type, cond.Status, cond.Reason, cond.Message)
-				}
+		// DEBUG: Show current status of final conditions
+		GinkgoWriter.Printf("🔍 DEBUG: Condition status - PipelineCreated=%v, PipelineComplete=%v, AuditRecorded=%v\n",
+			hasPipelineCreated, hasPipelineComplete, hasAuditRecorded)
+		if !hasAuditRecorded || !hasPipelineComplete {
+			// Show all current conditions to understand what's missing
+			GinkgoWriter.Printf("🔍 DEBUG: Current conditions:\n")
+			for _, cond := range updated.Status.Conditions {
+				GinkgoWriter.Printf("  - %s: %s (reason: %s, message: %s)\n", cond.Type, cond.Status, cond.Reason, cond.Message)
 			}
+		}
 
-			return hasPipelineCreated && hasPipelineRunning && hasPipelineComplete && hasAuditRecorded
-		}, 30*time.Second, 5*time.Second).Should(BeTrue(),
-			"All lifecycle conditions (TektonPipelineCreated, TektonPipelineRunning, TektonPipelineComplete, AuditRecorded) should be set")
+		return hasPipelineCreated && hasPipelineComplete && hasAuditRecorded
+	}, 30*time.Second, 5*time.Second).Should(BeTrue(),
+		"All final lifecycle conditions (TektonPipelineCreated, TektonPipelineComplete, AuditRecorded) should be set")
 
 			// Verify condition details
 			final, _ := getWFE(wfe.Name, wfe.Namespace)

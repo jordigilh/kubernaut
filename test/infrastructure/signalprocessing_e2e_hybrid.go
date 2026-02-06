@@ -1094,96 +1094,16 @@ func getSignalProcessingGitHash() string {
 	return strings.TrimSpace(string(output))
 }
 
+// GetProjectRoot returns the absolute path to the project root.
+// Deprecated: Use the shared getProjectRoot() from shared_integration_utils.go
+// and CollectE2EBinaryCoverage from coverage.go instead.
+// Kept temporarily for backward compatibility.
 func GetProjectRoot() (string, error) {
-	root := findSignalProcessingProjectRoot()
+	root := getProjectRoot()
 	if root == "" {
 		return "", fmt.Errorf("project root not found (go.mod not found)")
 	}
 	return root, nil
-}
-
-func ExtractCoverageFromKind(clusterName, coverDir string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "📦 Extracting coverage data from Kind node...")
-
-	// Get the worker node container name
-	workerNode := clusterName + "-worker"
-
-	// Create local coverage directory if not exists
-	if err := os.MkdirAll(coverDir, 0755); err != nil {
-		return fmt.Errorf("failed to create coverage directory: %w", err)
-	}
-
-	// Copy coverage files from Kind node to host
-	cmd := exec.Command("docker", "cp",
-		workerNode+":/coverdata/.",
-		coverDir)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		// Try with podman if docker fails
-		cmd = exec.Command("podman", "cp",
-			workerNode+":/coverdata/.",
-			coverDir)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to copy coverage data: %w", err)
-		}
-	}
-
-	// List extracted files
-	files, _ := os.ReadDir(coverDir)
-	if len(files) == 0 {
-		_, _ = fmt.Fprintln(writer, "⚠️  No coverage files found (controller may not have processed any requests)")
-	} else {
-		_, _ = fmt.Fprintf(writer, "✅ Extracted %d coverage files\n", len(files))
-	}
-
-	return nil
-}
-
-func GenerateCoverageReport(coverDir string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "📊 Generating E2E coverage report...")
-
-	// Check if coverage data exists
-	files, err := os.ReadDir(coverDir)
-	if err != nil || len(files) == 0 {
-		_, _ = fmt.Fprintln(writer, "⚠️  No coverage data to report")
-		return nil
-	}
-
-	// Generate percent summary
-	cmd := exec.Command("go", "tool", "covdata", "percent", "-i="+coverDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to generate coverage percent: %w\n%s", err, output)
-	}
-	_, _ = fmt.Fprintf(writer, "\n%s\n", output)
-
-	// Generate text format for HTML conversion
-	textFile := filepath.Join(coverDir, "e2e-coverage.txt")
-	cmd = exec.Command("go", "tool", "covdata", "textfmt",
-		"-i="+coverDir,
-		"-o="+textFile)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to generate text format: %w", err)
-	}
-
-	// Generate HTML report
-	htmlFile := filepath.Join(coverDir, "e2e-coverage.html")
-	cmd = exec.Command("go", "tool", "cover",
-		"-html="+textFile,
-		"-o="+htmlFile)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to generate HTML report: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "📄 Text report: %s\n", textFile)
-	_, _ = fmt.Fprintf(writer, "📄 HTML report: %s\n", htmlFile)
-	_, _ = fmt.Fprintln(writer, "✅ E2E coverage report generated")
-
-	return nil
 }
 
 func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, testsFailed bool, writer io.Writer) error {

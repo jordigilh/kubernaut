@@ -769,6 +769,8 @@ spec:
           value: http://holmesgpt-api:8080
         - name: DATASTORAGE_URL
           value: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
+        # DD-TEST-007: GOCOVERDIR for E2E binary coverage (added dynamically below)
+        %s
         volumeMounts:
         - name: config
           mountPath: /etc/aianalysis
@@ -776,6 +778,8 @@ spec:
         - name: rego-policies
           mountPath: /etc/aianalysis/policies
           readOnly: true
+        # DD-TEST-007: Coverage data mount (added dynamically below)
+        %s
       volumes:
       - name: config
         configMap:
@@ -783,6 +787,8 @@ spec:
       - name: rego-policies
         configMap:
           name: aianalysis-policies
+      # DD-TEST-007: Coverage data volume (added dynamically below)
+      %s
 ---
 apiVersion: v1
 kind: Service
@@ -806,7 +812,10 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: 30284
-`, imageName, GetImagePullPolicy())
+`, imageName, GetImagePullPolicy(),
+		coverageEnvYAML("aianalysis"),
+		coverageVolumeMountYAML(),
+		coverageVolumeYAML())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer

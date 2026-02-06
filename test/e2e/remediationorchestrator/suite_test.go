@@ -141,10 +141,10 @@ var _ = SynchronizedBeforeSuite(
 		By("🔐 Creating E2E ServiceAccount for DataStorage audit queries (DD-AUTH-014)")
 		e2eSAName := "remediationorchestrator-e2e-sa"
 		namespace := "kubernaut-system"
-		
+
 		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, tempKubeconfigPath, e2eSAName, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-		
+
 		// Get ServiceAccount token for Bearer authentication
 		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
@@ -196,19 +196,19 @@ var _ = SynchronizedBeforeSuite(
 		err = notificationv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
-	By("Creating Kubernetes client from isolated kubeconfig")
-	cfg, err := config.GetConfig()
-	Expect(err).ToNot(HaveOccurred())
+		By("Creating Kubernetes client from isolated kubeconfig")
+		cfg, err := config.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
 
-	// Create direct API reader for Eventually() blocks to bypass client cache
-	// This ensures fresh reads from API server for status polling
-	apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
+		// Create direct API reader for Eventually() blocks to bypass client cache
+		// This ensures fresh reads from API server for status polling
+		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
 
-	By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
+		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
 		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 		// Per DD-AUTH-014: Use ServiceAccount token for authentication
 		dataStorageURL := "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
@@ -267,6 +267,19 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "remediationorchestrator",
+				ClusterName:    clusterName,
+				DeploymentName: "remediationorchestrator-controller",
+				Namespace:      "kubernaut-system",
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to collect E2E binary coverage (non-fatal): %v\n", err)
+			}
+		}
+
 		By("Deleting KIND cluster (with must-gather log export on failure)")
 		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", anyFailure, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
@@ -286,23 +299,23 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-	By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
-	// Remove service image built for this test run
-	// Skip in CI/CD mode - image is in GHCR registry, not stored locally
-	imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
-	if imageTag != "" && !infrastructure.IsRunningInCICD() {
-		imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
+		By("Cleaning up service images built for Kind (DD-TEST-001 v1.1)")
+		// Remove service image built for this test run
+		// Skip in CI/CD mode - image is in GHCR registry, not stored locally
+		imageTag := os.Getenv("IMAGE_TAG") // Set by build/test infrastructure
+		if imageTag != "" && !infrastructure.IsRunningInCICD() {
+			imageName := fmt.Sprintf("remediationorchestrator:%s", imageTag)
 
-		pruneCmd := exec.Command("podman", "rmi", imageName)
-		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
-		} else {
-			GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
+			pruneCmd := exec.Command("podman", "rmi", imageName)
+			pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+			if pruneErr != nil {
+				GinkgoWriter.Printf("⚠️  Failed to remove service image: %v\n%s\n", pruneErr, pruneOutput)
+			} else {
+				GinkgoWriter.Printf("✅ Service image removed: %s\n", imageName)
+			}
+		} else if infrastructure.IsRunningInCICD() {
+			GinkgoWriter.Println("⏭️  Skipping service image cleanup (CI/CD registry mode)")
 		}
-	} else if infrastructure.IsRunningInCICD() {
-		GinkgoWriter.Println("⏭️  Skipping service image cleanup (CI/CD registry mode)")
-	}
 
 		By("Pruning dangling images from Kind builds (DD-TEST-001 v1.1)")
 		// Prune any dangling images left from failed builds
@@ -312,6 +325,7 @@ var _ = SynchronizedAfterSuite(
 		GinkgoWriter.Println("✅ E2E cleanup complete")
 	},
 )
+
 // ============================================================================
 // Test Namespace Helpers
 // ============================================================================
