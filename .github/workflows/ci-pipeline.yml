@@ -431,7 +431,18 @@ jobs:
           echo "   Dockerfile: ${{ matrix.dockerfile }}"
           echo "   Context: ${CONTEXT}"
           
+          # Go service images are built with coverage instrumentation (GOFLAGS=-cover)
+          # so E2E tests can collect real service coverage via GOCOVERDIR.
+          # Python (holmesgpt-api) and test fixtures (mock-llm) don't use GOFLAGS.
+          COVERAGE_ARG=""
+          case "${{ matrix.service }}" in
+            holmesgpt-api|mock-llm) ;;
+            *) COVERAGE_ARG="--build-arg GOFLAGS=-cover"
+               echo "   📊 Coverage instrumentation: enabled (GOFLAGS=-cover)" ;;
+          esac
+          
           docker build \
+            $COVERAGE_ARG \
             -t ${IMAGE_NAME}:${IMAGE_TAG} \
             -f ${{ matrix.dockerfile }} \
             ${CONTEXT}
