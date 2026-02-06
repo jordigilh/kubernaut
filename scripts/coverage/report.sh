@@ -231,7 +231,7 @@ calculate_python_service_coverage() {
                 echo "-"
                 return
             fi
-            grep "^TOTAL" "$covfile" 2>/dev/null | awk '{gsub(/%/, "", $NF); print $NF"%"}' || echo "-"
+            grep "^TOTAL" "$covfile" 2>/dev/null | head -1 | awk '{gsub(/%/, "", $NF); print $NF"%"}' || echo "-"
             ;;
     esac
 }
