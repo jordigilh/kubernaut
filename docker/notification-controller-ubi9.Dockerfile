@@ -25,17 +25,28 @@ COPY --chown=1001:0 go.mod go.sum ./
 # Copy entire codebase (notification controller depends on multiple pkg/* packages)
 COPY --chown=1001:0 . .
 
+# GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per E2E_COVERAGE_COLLECTION.md)
+ARG GOFLAGS=""
+
 # Build the notification controller binary
 # -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
 # CGO_ENABLED=0 for static linking (no C dependencies)
 # GOOS=linux for Linux targets
 # GOARCH will be set automatically by podman's --platform flag
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN if [ "${GOFLAGS}" = "-cover" ]; then \
+	echo "Building with coverage instrumentation (no symbol stripping)..."; \
+	CGO_ENABLED=0 GOOS=linux GOFLAGS="${GOFLAGS}" go build \
+	-mod=mod \
+	-o manager \
+	./cmd/notification/main.go; \
+    else \
+	CGO_ENABLED=0 GOOS=linux go build \
 	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o manager \
-	./cmd/notification/main.go
+	./cmd/notification/main.go; \
+    fi
 
 # Runtime stage - Red Hat UBI9 minimal runtime image
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
