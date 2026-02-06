@@ -277,7 +277,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		})
 
 		Context("when testing AI execution mode tracking", func() {
-			It("should track AI execution mode distribution correctly (TC-ADR033-04)", FlakeAttempts(3), func() {
+			It("should track AI execution mode distribution correctly (TC-ADR033-04)", func() {
 				incidentType := fmt.Sprintf("test-ai-execution-tracking-%s", testID)
 
 				// Setup: 10 catalog-selected, 5 chained, 2 manual escalation
@@ -309,16 +309,20 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 	Describe("GetSuccessRateByWorkflow - Integration", func() {
 		Context("when workflow has sufficient data", func() {
-			It("should calculate workflow success rate correctly (TC-ADR033-05)", FlakeAttempts(3), func() {
-				workflowID := "test-memory-increase"
+			It("should calculate workflow success rate correctly (TC-ADR033-05)", func() {
+				// Scope workflowID and incidentType to testID for proper test isolation.
+				// Previously hardcoded values ("test-memory-increase", "test-pod-oom") caused
+				// cross-contamination from parallel tests or incomplete cleanup of prior runs.
+				workflowID := fmt.Sprintf("test-memory-increase-%s", testID)
 				workflowVersion := "v1.0"
+				incidentType := fmt.Sprintf("test-pod-oom-%s", testID)
 
 				// Setup: 7 successes, 3 failures = 70% success rate
 				for i := 0; i < 7; i++ {
-					insertActionTrace("test-pod-oom", "completed", workflowID, workflowVersion, true, false)
+					insertActionTrace(incidentType, "completed", workflowID, workflowVersion, true, false)
 				}
 				for i := 0; i < 3; i++ {
-					insertActionTrace("test-pod-oom", "failed", workflowID, workflowVersion, true, false)
+					insertActionTrace(incidentType, "failed", workflowID, workflowVersion, true, false)
 				}
 
 				// Execute
@@ -343,8 +347,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 			})
 
-			It("should track workflow usage across multiple incident types (TC-ADR033-06)", FlakeAttempts(3), func() {
-				workflowID := "test-universal-recovery"
+			It("should track workflow usage across multiple incident types (TC-ADR033-06)", func() {
+				// Scope workflowID to testID for proper test isolation.
+				// Previously hardcoded "test-universal-recovery" caused cross-contamination.
+				workflowID := fmt.Sprintf("test-universal-recovery-%s", testID)
 				workflowVersion := "v1.0"
 
 				// Setup: Same workflow used for 3 different incident types
