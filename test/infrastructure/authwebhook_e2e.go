@@ -151,7 +151,14 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection\n", coverdataPath)
+	// CRITICAL: os.MkdirAll applies umask (0022), resulting in 0755 (rwxr-xr-x).
+	// Container processes (UID 1001) need write access to /coverdata via hostPath volume.
+	// os.Chmod bypasses umask, ensuring world-writable permissions propagate through
+	// the Kind bind mount → pod hostPath chain.
+	if err := os.Chmod(coverdataPath, 0777); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to chmod coverdata directory: %v\n", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection (mode=0777)\n", coverdataPath)
 
 	// Create Kind cluster with authwebhook-specific config
 	if err := createKindClusterWithConfig(clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {

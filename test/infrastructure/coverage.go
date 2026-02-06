@@ -154,6 +154,13 @@ func extractCoverageFromKindNode(clusterName, coverDir string, writer io.Writer)
 	for _, nodeName := range nodeNames {
 		// Try podman first (CI uses podman), then docker
 		for _, runtime := range []string{"podman", "docker"} {
+			// DD-TEST-007: List /coverdata contents before copy for diagnostics
+			listCmd := exec.Command(runtime, "exec", nodeName,
+				"sh", "-c", "echo '=== /coverdata contents ===' && ls -la /coverdata/ 2>&1 && echo '=== /coverdata permissions ===' && stat /coverdata/ 2>&1 || true")
+			if listOutput, listErr := listCmd.CombinedOutput(); listErr == nil {
+				_, _ = fmt.Fprintf(writer, "📋 Kind node %s (%s):\n%s\n", nodeName, runtime, listOutput)
+			}
+
 			cmd := exec.Command(runtime, "cp",
 				nodeName+":/coverdata/.",
 				coverDir)

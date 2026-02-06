@@ -59,8 +59,6 @@ echo "Listening on port: $API_PORT"
 # DD-TEST-007: E2E Coverage Collection
 # When E2E_COVERAGE=true, wrap uvicorn with coverage.py to collect Python code coverage.
 # COVERAGE_FILE controls where the .coverage SQLite database is written.
-# CRITICAL: coverage.py does NOT save data on SIGTERM by default.
-# Must opt-in with [run] sigterm = true so that pod scale-down flushes coverage.
 if [ "$E2E_COVERAGE" = "true" ]; then
     # Verify coverage module is available before attempting to use it.
     # The production Dockerfile does not include coverage; only Dockerfile.e2e does.
@@ -70,9 +68,19 @@ if [ "$E2E_COVERAGE" = "true" ]; then
         echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
         echo "   Source: src/"
 
+        # Verify /coverdata is writable (catches permission issues early)
+        COV_DIR="$(dirname "${COVERAGE_FILE:-/coverdata/.coverage}")"
+        if touch "${COV_DIR}/.write-test" 2>/dev/null; then
+            rm -f "${COV_DIR}/.write-test"
+            echo "   ✅ Coverage directory writable: ${COV_DIR}"
+        else
+            echo "   ⚠️  Coverage directory NOT writable: ${COV_DIR}"
+            echo "   Listing directory:"
+            ls -la "${COV_DIR}" 2>/dev/null || echo "   Directory not accessible"
+            echo "   Current user: $(id)"
+        fi
+
         # Create .coveragerc with SIGTERM handler enabled (coverage.py 6.4+)
-        # Without this, SIGTERM (from kubectl scale --replicas=0) kills the process
-        # without flushing coverage data, resulting in empty .coverage files.
         cat > /tmp/.coveragerc <<RCEOF
 [run]
 sigterm = true
@@ -81,7 +89,37 @@ data_file = ${COVERAGE_FILE:-/coverdata/.coverage}
 RCEOF
         echo "   Config: /tmp/.coveragerc (sigterm=true)"
 
-        exec python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+        # CRITICAL: Do NOT use 'exec' here.
+        # Using exec replaces bash (PID 1) with Python. Uvicorn registers its own
+        # SIGTERM handler that overrides coverage.py's handler. When Kubernetes sends
+        # SIGTERM (kubectl scale --replicas=0), uvicorn shuts down but coverage.py's
+        # atexit handler may never run, resulting in no .coverage file.
+        #
+        # Instead: run Python in background, trap SIGTERM in bash, and forward it.
+        # Python exits cleanly → coverage.py atexit handler flushes .coverage file.
+        python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1 &
+        PID=$!
+        echo "   Python PID: $PID"
+
+        # Forward signals to Python process
+        trap 'echo "📊 Received SIGTERM, forwarding to Python (PID $PID)..."; kill -TERM $PID 2>/dev/null' SIGTERM SIGINT
+
+        # Wait for Python to exit (must use wait in a loop for trap to fire)
+        wait $PID 2>/dev/null
+        EXIT_CODE=$?
+
+        # Verify coverage file was written
+        COV_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
+        if [ -f "$COV_FILE" ]; then
+            COV_SIZE=$(stat -c%s "$COV_FILE" 2>/dev/null || stat -f%z "$COV_FILE" 2>/dev/null || echo "unknown")
+            echo "📊 Coverage file written: $COV_FILE ($COV_SIZE bytes)"
+        else
+            echo "⚠️  Coverage file NOT found at $COV_FILE after Python exit (code=$EXIT_CODE)"
+            echo "   Listing ${COV_DIR}:"
+            ls -la "${COV_DIR}" 2>/dev/null || echo "   Directory not accessible"
+        fi
+
+        exit $EXIT_CODE
     else
         echo "⚠️  DD-TEST-007: E2E_COVERAGE=true but 'coverage' module not installed — falling back to plain uvicorn"
         exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
