@@ -77,10 +77,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Build RemediationOrchestrator with coverage in parallel using consolidated API
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "remediationorchestrator",  // Operator SDK convention: no -controller suffix in image name
+			ServiceName:      "remediationorchestrator", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/remediationorchestrator",
-			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile",  // Dockerfile can have suffix
-			BuildContextPath: "", // Will use project root
+			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile", // Dockerfile can have suffix
+			BuildContextPath: "",                                                     // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
 		}
 		roImage, err := BuildImageForKind(cfg, writer)
@@ -316,18 +316,18 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy client ClusterRole: %w", clientRBACErr)}
 			return
 		}
-		
+
 		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		dsImage := builtImages["DataStorage"]
-		
+
 		// DD-AUTH-014: Deploy ServiceAccount and RBAC (required for pod creation)
 		_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
 		if rbacErr := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
 			deployResults <- deployResult{"DataStorage", fmt.Errorf("failed to deploy service RBAC: %w", rbacErr)}
 			return
 		}
-		
+
 		// DD-AUTH-014: Deploy DataStorage with middleware-based auth
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
@@ -474,9 +474,6 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 // Per ADR-030: Mounts audit config file for E2E audit testing
 // Per consolidated API migration: Accepts dynamic image name as parameter
 func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer) error {
-	projectRoot := getProjectRoot()
-	coverdataPath := filepath.Join(projectRoot, "coverdata")
-
 	// Create manifest with coverage volume mount + audit config
 	manifest := fmt.Sprintf(`
 apiVersion: v1
@@ -556,7 +553,7 @@ spec:
       volumes:
       - name: coverdata
         hostPath:
-          path: %s
+          path: /coverdata
           type: DirectoryOrCreate
       - name: config
         configMap:
@@ -635,7 +632,7 @@ subjects:
 - kind: ServiceAccount
   name: remediationorchestrator-controller
   namespace: kubernaut-system
-`, imageName, GetImagePullPolicy(), coverdataPath)
+`, imageName, GetImagePullPolicy())
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = bytes.NewReader([]byte(manifest))
