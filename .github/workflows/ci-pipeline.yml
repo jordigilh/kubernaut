@@ -894,15 +894,13 @@ jobs:
             echo "📊 Report contains $SERVICE_COUNT services"
           else
             echo "❌ Coverage report generation failed"
-            cat > coverage-summary.md <<'INNEREOF'
-## 📊 Kubernaut Coverage Report
-
-⚠️ **Coverage data could not be generated.**
-
-Run locally: `make coverage-report-markdown`
-
-See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md).
-INNEREOF
+            echo "## 📊 Kubernaut Coverage Report" > coverage-summary.md
+            echo "" >> coverage-summary.md
+            echo "⚠️ **Coverage data could not be generated.**" >> coverage-summary.md
+            echo "" >> coverage-summary.md
+            echo "Run locally: \`make coverage-report-markdown\`" >> coverage-summary.md
+            echo "" >> coverage-summary.md
+            echo "See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md)." >> coverage-summary.md
             echo "⚠️  Fallback report created"
           fi
           
