@@ -71,7 +71,7 @@ var _ = Describe("Python Test Coordination", func() {
 			GinkgoWriter.Printf("   Token length: %d chars\n", len(serviceAccountToken))
 			err = os.WriteFile(tokenFile, []byte(serviceAccountToken), 0644)
 			Expect(err).NotTo(HaveOccurred(), "Failed to write ServiceAccount token file")
-			
+
 			// Verify file exists
 			if _, err := os.Stat(tokenFile); err != nil {
 				Fail(fmt.Sprintf("Token file verification failed: %v", err))
@@ -85,18 +85,20 @@ var _ = Describe("Python Test Coordination", func() {
 			// Benefits: Simpler, no custom Dockerfile, consistent with E2E
 			// ========================================
 			GinkgoWriter.Println("🐍 Running Python tests in UBI9 container (runtime deps)...")
-			
-			// Build pytest command with dependency installation
+
+			// Build pytest command with dependency installation and Python coverage
 			// NOTE: Must install holmesgpt first to avoid httpx version conflicts
 			// Same pattern as custom Dockerfile (holmesgpt-api-integration-test.Dockerfile)
+			// Coverage: --cov=src writes .coverage; then coverage report -m > /workspace/... for CI table
 			pytestCmd := fmt.Sprintf(
-				"cd /workspace && "+
-					"pip install -q --break-system-packages dependencies/holmesgpt && "+
-					"cd holmesgpt-api && "+
-					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && "+
-					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && "+
-					"HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true "+
-					"pytest tests/integration/ -v --tb=short --no-cov",
+				"cd /workspace && " +
+					"pip install -q --break-system-packages dependencies/holmesgpt && " +
+					"cd holmesgpt-api && " +
+					"grep -v '../dependencies/holmesgpt' requirements.txt > /tmp/requirements-filtered.txt && " +
+					"pip install -q --break-system-packages -r /tmp/requirements-filtered.txt -r requirements-test.txt && " +
+					"HAPI_URL=http://127.0.0.1:18120 DATA_STORAGE_URL=http://127.0.0.1:18098 MOCK_LLM_MODE=true " +
+					"pytest tests/integration/ -v --tb=short --cov=src --cov-report= && " +
+					"e=$?; coverage report -m > /workspace/coverage_integration_holmesgpt-api_python.txt; exit $e",
 			)
 
 			// Run Python tests in container (same pattern as E2E)
