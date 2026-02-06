@@ -301,7 +301,7 @@ Each CRD controller requires specific Kubernetes permissions. See [RBAC document
 
 - **Gateway Service**: Network-level security (NetworkPolicies + TLS)
 - **CRD Controllers**: Kubernetes ServiceAccount authentication
-- **Inter-service**: Service mesh (Istio/Linkerd) with mTLS
+- **Inter-service**: SubjectAccessReview middleware authentication (DD-AUTH-014, SAR-based)
 
 ---
 
