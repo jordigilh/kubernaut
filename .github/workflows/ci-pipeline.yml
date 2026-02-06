@@ -823,6 +823,9 @@ jobs:
       contents: read
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download all coverage reports
         if: always()
         uses: actions/download-artifact@v4
