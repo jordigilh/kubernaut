@@ -4,7 +4,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
 [![Go Version](https://img.shields.io/badge/Go-1.25.3-blue.svg)](https://golang.org/dl/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.34-blue.svg)](https://kubernetes.io/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.30+-blue.svg)](https://kubernetes.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
@@ -19,16 +19,16 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager and Kubernetes Events
 2. **AI Analysis**: Uses HolmesGPT for root cause analysis and remediation recommendations
 3. **Workflow Orchestration**: Executes OCI-containerized remediation workflows via Tekton Pipelines
-4. **Continuous Learning**: Tracks effectiveness of worfklow executions and successful remediations over time
+4. **Continuous Learning**: Tracks effectiveness of workflow executions and successful remediations over time
 
 ### Key Capabilities
 
 - **Multi-Source Signal Processing**: Prometheus alerts, Kubernetes events, with deduplication and storm detection
 - **AI-Powered Root Cause Analysis**: HolmesGPT integration for intelligent investigation
 - **Remediation Workflows**: OCI-containerized Tekton workflows with flexible single or multi-step execution
-- **Safety-First Execution**: Comprehensive validation, dry-run mode, and rollback capabilities
+- **Safety-First Execution**: Admission webhook validation, human-in-the-loop approval gates, and effectiveness tracking
 - **Continuous Learning**: Multi-dimensional effectiveness tracking (incident type, workflow, action)
-- **Production-Ready**: 3,589+ tests passing, SOC2-compliant audit traces, 9 of 9 V1.0 services ready
+- **Production-Ready**: Comprehensive CI coverage reporting, SOC2-compliant audit traces, 10 of 10 V1.0 services ready
 - **SOC2 Type II Compliance**: Full RemediationRequest reconstruction from audit traces, operator attribution via webhooks, hash chain integrity verification (DD-AUDIT-004, DD-WEBHOOK-001, ADR-034)
 - **Enterprise Diagnostics**: Must-gather diagnostic collection following OpenShift industry standard (BR-PLATFORM-001)
 
@@ -36,7 +36,7 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 
 ## 🏗️ Architecture
 
-Kubernaut follows a microservices architecture with 8 production-ready services (5 CRD controllers + 3 stateless services):
+Kubernaut follows a microservices architecture with 10 production-ready services (5 CRD controllers + 4 stateless services + 1 diagnostic tool):
 
 ![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
@@ -63,66 +63,32 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**V1.0 Release** (In Development): All Core Services + Must-Gather Production-Ready
-**Production-Ready Services**: 9 of 9 services (100%) ✅
-**SOC2 Compliance**: ✅ **COMPLETED** (January 2026 - RR reconstruction + operator attribution + hash chain integrity)
-**Timeline**: V1.0 Pre-release: February 2026
+**V1.0 Release** (In Development) | **Timeline**: Pre-release February 2026
+**Production-Ready Services**: 10 of 10 (100%) ✅ | **SOC2 Type II Compliance**: ✅ Completed
 
-| Service | Status | Purpose | BR Coverage |
-|---------|--------|---------|-------------|
-| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (395 tests: 240U+118I+37E2E) **100% P0** |
-| **Data Storage Service** | ✅ **v1.0 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (727 tests: 551U+163I+13E2E) E2E Cov: 70.8% main, 78.2% middleware, SOC2 RR reconstruction + hash chain integrity |
-| **HolmesGPT API** | ✅ **v3.10 PRODUCTION-READY** | AI investigation wrapper | 48 BRs (601 tests: 474U+77I+45E2E+5smoke) |
-| **Notification Service** | ✅ **v1.0 PRODUCTION-READY** | Multi-channel delivery | 17 BRs (358 tests: 225U+112I+21E2E) **100% pass** |
-| **Signal Processing Service** | ✅ **v1.0 PRODUCTION-READY** | Signal enrichment with K8s context | 456 tests (336U+96I+24E2E) |
-| **AI Analysis Service** | ✅ **v1.0 PRODUCTION-READY** | AI-powered analysis & recommendations | 309 tests (222U+53I+34E2E) |
-| **Workflow Execution** | ✅ **v1.0 PRODUCTION-READY** | Tekton workflow orchestration | 12 BRs (314 tests: 229U+70I+15E2E) |
-| **Remediation Orchestrator** | ✅ **v1.0 PRODUCTION-READY** | Cross-CRD lifecycle coordination | 490 tests (432U+39I+19E2E) SOC2-compliant audit traces, DD-TEST-PARALLELISM-003 race condition fixes |
-| **Must-Gather Diagnostic Tool** | ✅ **v1.0 PRODUCTION-READY** | Enterprise diagnostic collection | BR-PLATFORM-001 (45 containerized tests, multi-arch, CI pipeline) |
-| **~~Effectiveness Monitor~~** | ❌ **Deferred to V1.1** | Continuous improvement (DD-017) | 10 BRs (requires 8+ weeks of data) |
+| Service | Status | Purpose | All Tiers Coverage |
+|---------|--------|---------|-------------------|
+| **Signal Processing** | ✅ v1.0 | Signal enrichment with K8s context | 84.8% |
+| **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 81.8% |
+| **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 81.9% |
+| **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 80.1% |
+| **Workflow Execution** | ✅ v1.0 | Tekton workflow orchestration | 79.1% |
+| **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 76.0% |
+| **Notification** | ✅ v1.0 | Multi-channel delivery | 73.2% |
+| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 61.1% |
+| **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 54.5% |
+| **Must-Gather** | ✅ v1.0 | Enterprise diagnostic collection (BR-PLATFORM-001) | N/A (bats) |
+| ~~Effectiveness Monitor~~ | ❌ V1.1 | Continuous improvement (DD-017) | — |
 
-**V1.0 Completion** (In Development):
-- ✅ **SOC2 Compliance COMPLETED** (January 2026): 100% SOC2 Type II compliance achieved (enterprise-ready)
-  - **Completed Scope**: RR reconstruction + operator attribution + hash chain integrity verification
-  - **RR Reconstruction**: Full RemediationRequest lifecycle reconstruction from audit traces (DD-AUDIT-004)
-  - **Operator Attribution**: Webhook-based auditing of manual CRD changes (DD-WEBHOOK-001)
-  - **Hash Chain Verification**: DataStorage audit log integrity validation with SHA256
-  - **Test Stability**: DD-TEST-PARALLELISM-003 integration test race condition fixes
-  - **Authority**: ADR-034 (unified audit table), DD-AUDIT-004 (field mapping), DD-WEBHOOK-001 (operator attribution)
-- ✅ **All Services Production-Ready**: 9 of 9 services (100%) - 8 core services + Must-Gather diagnostic tool
-- 🚧 **Next Phase** (3 PRs remaining for V1.0):
-  1. **Envoy SAR Validation**: HAPI + DataStorage endpoint authorization (3-5 days)
-  2. **Resource Scope Management** (#38): kubernaut.ai/managed label-based opt-in (BR-SCOPE-001, ADR-053, 11-15 days)
-  3. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services (5-7 days)
-- ⏳ **Pre-Release**: February 2026 (feedback solicitation)
+> **Coverage** is the merged "All Tiers" metric: line-by-line deduplication across unit, integration, and E2E tiers. See the [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for per-tier breakdown. Coverage is reported automatically on every PR via CI.
 
-**Recent Updates** (January 25, 2026):
-- ✅ **SOC2 Compliance COMPLETED** (January 2026): Achieved 100% SOC2 Type II compliance
-  - **RR Reconstruction**: Full RemediationRequest lifecycle reconstruction from audit traces (DD-AUDIT-004)
-  - **Operator Attribution**: Webhook infrastructure for auditing manual CRD changes (DD-WEBHOOK-001, ADR-051)
-  - **Hash Chain Integrity**: DataStorage audit log verification with SHA256 (DD-TEST-PARALLELISM-003)
-  - **Audit Flow Enhancements**: AIAnalysis controller automatic audit event generation
-  - **Integration Test Stability**: "Wait for Processing First" pattern for controller-aware testing
-  - Plans: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md)
-- 📋 **Next V1.0 Features** (2 PRs):
-  - **Resource Scope Management** (#38): `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053) - **NEXT PRIORITY**
-  - **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
-- ✅ **Recently Completed** (February 2026):
-  - **Middleware-Based SAR Authentication**: All stateless services (DD-AUTH-014)
-  - **RAR Audit Trail**: SOC2-compliant approval workflow auditing (BR-AUDIT-006)
-  - **CI/CD Coverage Infrastructure**: Automated test coverage reporting
-- 🎉 **V1.0 Core Services Complete**: All 9 services production-ready (8 core + Must-Gather)
-- ✅ **Gateway v1.0**: 339 tests (221U+22I+96E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), HTTP anti-pattern refactoring complete (Jan 10, 2026)
-- ✅ **Signal Processing v1.0**: SOC2-compliant audit traces (original_payload, signal_labels, signal_annotations)
-- ✅ **AI Analysis v1.0**: SOC2-compliant audit traces (provider_data for RR reconstruction)
-- ✅ **Workflow Execution v1.0**: 314 tests (229U+70I+15E2E), DD-TEST-002 infrastructure migration, Redis port 16388 (DD-TEST-001 v1.9)
-- ✅ **Remediation Orchestrator v1.0**: 497 tests (439U+39I+19E2E), SOC2-compliant audit traces (timeout_config), cross-CRD coordination
-- ✅ **Data Storage v1.0**: 727 tests (551U+163I+13E2E), unified audit table (ADR-034), PostgreSQL access layer (ADR-032), SOC2 RR reconstruction from audit traces (DD-AUDIT-004), hash chain integrity verification
-- ✅ **HolmesGPT API v3.10**: 601 tests (474U+77I+45E2E+5smoke), ConfigMap hot-reload, LLM self-correction loop
-- ✅ **Notification Service v1.0**: 358 tests (225U+112I+21E2E), 100% pass rate, Kind-based E2E, multi-channel delivery, OpenAPI audit client integration
-- ✅ **Code Quality**: Go Report Card integration, gofmt compliance (297 files), comprehensive badge suite
-- ✅ **Must-Gather v1.0**: 45 containerized bats tests, multi-arch support (amd64/arm64), GDPR/CCPA sanitization, GitHub Actions CI, OpenShift-compatible (BR-PLATFORM-001)
-- 📊 **V1.0 Service Count**: 9 production-ready services (8 core + must-gather diagnostic tool)
+**V1.0 Completion**:
+- ✅ **SOC2 Type II Compliance** (January 2026): RR reconstruction (DD-AUDIT-004), operator attribution (DD-WEBHOOK-001), hash chain integrity (ADR-034)
+- ✅ **CI/CD Coverage Pipeline** (February 2026): Per-tier analysis with line-by-line merging, automated PR comments
+- ✅ **SAR Authentication**: Middleware-based SubjectAccessReview for all stateless services (DD-AUTH-014)
+- 🚧 **Remaining** (2 PRs):
+  1. **Resource Scope Management** (#38): `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053)
+  2. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
 
 ---
 
@@ -130,109 +96,70 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ### Prerequisites
 
-- **Go 1.24.6+** for building services
+- **Go 1.25+** for building services
 - **Kubernetes cluster** (Kind recommended for development, v1.30+)
   - **Note**: v1.30+ required for CRD selectableFields support (field selectors on spec fields)
 - **PostgreSQL** (for Data Storage service)
 - **kubectl** with cluster access
 
-### Build and Run
+### Build
 
 ```bash
-# Install CRDs
-make install
+# Build all services
+make build-all
 
-# Build all CRD controllers (single binary for development)
-make build
-# Creates: bin/manager (includes all CRD controllers)
-
-# Build individual services
-go build -o bin/gateway-service ./cmd/gateway
-go build -o bin/data-storage ./cmd/datastorage
+# Build a specific service (gateway, datastorage, notification, etc.)
+make build-gateway
+make build-datastorage
 ```
 
 ### Testing
 
 ```bash
-# Setup Kind cluster for testing
-make test-gateway-setup
+# Run unit tests for a specific service
+make test-unit-gateway
+make test-unit-signalprocessing
 
-# Run tests by tier
-make test                      # Unit tests (70%+ coverage)
-make test-integration          # Integration tests (>50% coverage)
-make test-e2e                  # End-to-end tests (<10% coverage)
+# Run all unit tests across all services
+make test-tier-unit
 
-# Clean up
-make test-gateway-teardown
+# Run integration/E2E tests for a specific service
+make test-integration-gateway
+make test-e2e-gateway
+
+# Run all test tiers for a single service
+make test-all-gateway
+
+# Generate coverage report (markdown, table, or JSON)
+make coverage-report-markdown
+make coverage-report
+make coverage-report-json
 ```
 
 ## 🚢 **Deployment**
 
 Kubernaut services use **Kustomize** for Kubernetes deployment.
 
-### **Available Services** (All V1.0 Production-Ready)
+### **Stateless Services** (Deployment Manifests Available)
 
-| Service | Status | Deployment Path |
+| Service | Deployment Path | Notes |
 |---|---|---|
-| **Gateway Service** | ✅ V1.0 Production-Ready | `deploy/gateway/` |
-| **Data Storage Service** | ✅ V1.0 Production-Ready | `deploy/data-storage/` |
-| **HolmesGPT API** | ✅ V3.10 Production-Ready | `deploy/holmesgpt-api/` |
-| **Notification Service** | ✅ V1.0 Production-Ready | `deploy/notification/` |
-| **Signal Processing** | ✅ V1.0 Production-Ready | CRD Controller (see `cmd/signalprocessing/`) |
-| **AI Analysis** | ✅ V1.0 Production-Ready | CRD Controller (see `cmd/aianalysis/`) |
-| **Workflow Execution** | ✅ V1.0 Production-Ready | CRD Controller (see `cmd/workflowexecution/`) |
-| **Remediation Orchestrator** | ✅ V1.0 Production-Ready | CRD Controller (see `cmd/remediationorchestrator/`) |
+| **Gateway** | `deploy/gateway/` | Kustomize with base/overlays |
+| **Data Storage** | `deploy/data-storage/` | Includes PostgreSQL infrastructure |
+| **HolmesGPT API** | `deploy/holmesgpt-api/` | Full manifest set |
+| **Notification** | `deploy/notification/` | Full manifest set |
+| **Auth Webhook** | `deploy/authwebhook/` | Includes webhook configurations |
 
-**Note**: Gateway uses Kubernetes-native state management (DD-GATEWAY-012). Redis was removed - deduplication and storm tracking now use RemediationRequest status fields.
+### **CRD Controllers** (Manifests Pending)
 
-### **Quick Deploy - Gateway Service**
-
-```bash
-# Deploy Gateway service to Kubernetes
-kubectl apply -k deploy/gateway/base/
-
-# Verify deployment
-kubectl get pods -n kubernaut-system -l app.kubernetes.io/component=gateway
-kubectl logs -n kubernaut-system -l app.kubernetes.io/component=gateway --tail=50
-
-# Check readiness
-kubectl exec -n kubernaut-system $(kubectl get pod -n kubernaut-system -l app.kubernetes.io/component=gateway -o jsonpath='{.items[0].metadata.name}') -- curl localhost:8080/ready
-```
-
-### **Quick Deploy - Data Storage Service**
-
-```bash
-# Deploy PostgreSQL + Data Storage service
-kubectl apply -k deploy/data-storage/
-
-# Verify deployment
-kubectl get pods -n kubernaut-system -l app.kubernetes.io/component=data-storage
-```
-
-### **Kustomize Structure**
-
-Each service follows this structure:
-
-```
-deploy/[service]/
-├── kustomization.yaml           # Service deployment manifest
-├── 00-namespace.yaml            # kubernaut-system namespace
-├── 01-rbac.yaml                 # ServiceAccount, Role, RoleBinding
-├── 02-configmap.yaml            # Service configuration
-├── 03-deployment.yaml           # Deployment spec
-├── 04-service.yaml              # Service (ClusterIP)
-├── 05-servicemonitor.yaml       # Prometheus metrics (if applicable)
-└── README.md                    # Service-specific deployment guide
-```
-
-**Note**: For V1.0, we provide standard Kubernetes manifests. Platform-specific overlays (OpenShift SCC, etc.) will be added in V1.1 based on user feedback.
+CRD controller deployment manifests (Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator) will be finalized after the **Resource Scope Management** task (#38), which introduces the `kubernaut.ai/managed` label required for resource scoping.
 
 ### **Deployment Guides**
 
 - **[Gateway Service](deploy/gateway/README.md)**: Signal ingestion with K8s-native state management (DD-GATEWAY-012)
 - **[Data Storage Service](deploy/data-storage/README.md)**: PostgreSQL-backed unified audit table (ADR-034)
 - **[HolmesGPT API](deploy/holmesgpt-api/README.md)**: AI-powered root cause analysis
-- **[Notification Service](deploy/notification/README.md)**: Multi-channel notifications (Slack, Email)
+- **[Auth Webhook](deploy/authwebhook/README.md)**: SOC2 operator attribution (DD-WEBHOOK-001)
 
 ---
 
@@ -341,28 +268,26 @@ Test plan → docs/development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.
 
 ## 🧪 Testing Strategy
 
-Kubernaut follows a **defense-in-depth testing pyramid**:
+Kubernaut follows a **defense-in-depth testing pyramid** with coverage tracked automatically via CI:
 
-- **Unit Tests**: **70%+ coverage** - Extensive business logic with external mocks only
-- **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
-- **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
+- **Unit-Testable**: ≥70% target — Pure business logic with external mocks only
+- **Integration-Testable**: ≥60% target — Cross-service coordination, CRD-based flows, DB adapters
+- **E2E**: Full end-to-end user journeys (Kind cluster)
+- **All Tiers**: ≥80% target — Line-by-line deduplication across all tiers
 
-**Current Test Status** (as of Jan 9, 2026): ~3,589 tests passing across all tiers
+| Service | Unit-Testable | Integration | E2E | All Tiers |
+|---------|---------------|-------------|-----|-----------|
+| **Signal Processing** | 82.1% | 60.7% | 56.8% | 84.8% |
+| **Remediation Orchestrator** | 75.8% | 56.6% | 44.5% | 81.8% |
+| **AI Analysis** | 71.7% | 72.0% | 56.0% | 81.9% |
+| **Gateway** | 65.2% | 41.7% | 58.6% | 80.1% |
+| **Workflow Execution** | 44.9% | 70.4% | 57.0% | 79.1% |
+| **HolmesGPT API** | 76.0% | 43.5% | — | 76.0% |
+| **Notification** | 78.8% | 57.9% | 49.4% | 73.2% |
+| **Data Storage** | 58.3% | 34.0% | 46.3% | 61.1% |
+| **Auth Webhook** | 50.0% | 48.4% | 0.0% | 54.5% |
 
-| Service | Unit Specs | Integration Specs | E2E Specs | Total |
-|---------|------------|-------------------|-----------|-------|
-| **Gateway v1.0** | 221 | 22 | 96 | **339** |
-| **Data Storage** | 434 | 153 | 84 | **671** |
-| **Signal Processing** | 336 | 96 | 24 | **456** |
-| **AI Analysis** | 222 | 53 | 34 | **309** |
-| **Notification Service** | 225 | 112 | 21 | **358** |
-| **HolmesGPT API v3.10** | 474 | 77 | 45 | **601** |
-| **Workflow Execution v1.0** | 229 | 70 | 15 | **314** |
-| **Remediation Orchestrator v1.0** | 432 | 39 | 19 | **490** |
-
-**Total**: ~2,573 unit specs + ~622 integration specs + ~338 E2E specs = **~3,533 test specs**
-
-*Note: Gateway v1.0 has 339 tests (221U+22I+96E2E) with 100% pass rate verified January 14, 2026 (HTTP anti-pattern refactoring complete Jan 10, 2026 - moved 74 integration tests to E2E tier, deleted 2 obsolete E2E tests per DD-GATEWAY-011/015). DataStorage v1.0 has 671 tests (434U+153I+84E2E) with E2E coverage 70.8% main/78.2% middleware. SignalProcessing v1.0 has 456 tests (336U+96I+24E2E). AI Analysis v1.0 has 309 tests (222U+53I+34E2E). Notification Service v1.0 has 358 tests (225U+112I+21E2E) with 100% pass rate verified December 28, 2025 (Kind-based E2E, OpenAPI audit client integration, ActorId filtering per DD-E2E-002). Workflow Execution v1.0 has 314 tests (229U+70I+15E2E) with 100% pass rate (311/311 passing, 3 pending for V1.1), DD-TEST-002 infrastructure migration complete, and parallel testing enabled (port 16388 per DD-TEST-001 v1.9). Remediation Orchestrator v1.0 has 490 tests (432U+39I+19E2E) with SOC2-compliant audit traces, cross-CRD coordination, and comprehensive timeout/blocking management (100% NULL-TESTING compliance per TESTING_GUIDELINES.md, verified December 28, 2025). See WE_FINAL_VALIDATION_DEC_25_2025.md for details.*
+> Coverage is reported on every PR via GitHub Actions. "All Tiers" uses line-by-line merging — a statement covered by any tier counts once. See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for methodology and patterns.
 
 ---
 
@@ -424,22 +349,7 @@ Apache License 2.0
 
 **Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
-**V1.0 Status**: All 9 services production-ready (100%) ✅ | SOC2 compliance completed ✅ | 3 PRs remaining for V1.0 | 1 deferred to V1.1 (DD-017) | **V1.0 Pre-release**: February 2026
+**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | 2 PRs remaining | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
 
-**Current Sprint**: ✅ SAR Middleware + RAR Audit Complete (DD-AUTH-014, BR-AUDIT-006) → 🚧 Next: Resource Scope Management (BR-SCOPE-001, ADR-053) → Segmented E2E scenarios → V1.0 Pre-release + feedback solicitation.
+**Current Sprint**: Resource Scope Management (#38, BR-SCOPE-001) → Segmented E2E (#39) → V1.0 Pre-release
 
----
-
-## 📋 Changelog
-
-**Version**: 1.1
-**Date**: 2025-11-15
-**Status**: Updated
-
-### Version 1.1 (2025-11-15)
-- **Service Naming Correction**: Replaced all instances of "Workflow Engine" with "Remediation Execution Engine" per ADR-035
-- **Terminology Alignment**: Updated to match authoritative naming convention (RemediationExecution CRD, Remediation Execution Engine architectural concept)
-- **Documentation Consistency**: Aligned with NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
-
-### Version 1.0 (Original)
-- Initial document creation

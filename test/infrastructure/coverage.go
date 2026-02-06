@@ -241,6 +241,159 @@ func generateHTMLReport(coverDir, profileFile string, writer io.Writer) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Python E2E Coverage Collection
+//
+// Python services (HAPI) use coverage.py instead of GOCOVERDIR.
+// The entrypoint wraps uvicorn with `coverage run` when E2E_COVERAGE=true,
+// writing a .coverage SQLite database to /coverdata/.coverage.
+//
+// This helper orchestrates:
+//  1. Scale down the deployment (SIGTERM causes coverage flush)
+//  2. Wait for pod termination
+//  3. Extract /coverdata/.coverage from the Kind node
+//  4. Generate text report via `python3 -m coverage report` with path remapping
+//  5. Produce coverage_e2e_{service}_python.txt (project root)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// E2EPythonCoverageOptions configures Python coverage collection for a service.
+type E2EPythonCoverageOptions struct {
+	// ServiceName is the short service name used in file naming (e.g., "holmesgpt-api").
+	ServiceName string
+	// ClusterName is the Kind cluster name.
+	ClusterName string
+	// DeploymentName is the Kubernetes Deployment to scale down.
+	DeploymentName string
+	// Namespace is the Kubernetes namespace containing the deployment.
+	Namespace string
+	// KubeconfigPath is the path to the kubeconfig for the Kind cluster.
+	KubeconfigPath string
+	// SourceDir is the path to Python source (relative to project root) for path remapping.
+	// e.g., "holmesgpt-api/src"
+	SourceDir string
+	// ContainerSourceDir is the source path inside the container.
+	// e.g., "/opt/app-root/src/src"
+	ContainerSourceDir string
+}
+
+// CollectE2EPythonCoverage orchestrates Python coverage extraction from a Kind cluster.
+// Designed for SynchronizedAfterSuite, BEFORE the Kind cluster is deleted.
+// Errors are non-fatal (coverage must never fail the test suite).
+func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "📊 Collecting Python E2E coverage for %s\n", opts.ServiceName)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// Step 1: Scale down the deployment to flush coverage (SIGTERM triggers write)
+	if err := scaleDownDeploymentForCoverage(E2ECoverageOptions{
+		ServiceName:    opts.ServiceName,
+		ClusterName:    opts.ClusterName,
+		DeploymentName: opts.DeploymentName,
+		Namespace:      opts.Namespace,
+		KubeconfigPath: opts.KubeconfigPath,
+	}, writer); err != nil {
+		return fmt.Errorf("scale-down failed: %w", err)
+	}
+
+	// Step 2: Determine local coverage directory
+	projectRoot := getProjectRoot()
+	if projectRoot == "" {
+		return fmt.Errorf("cannot determine project root (go.mod not found)")
+	}
+	coverDir := filepath.Join(projectRoot, "coverdata", opts.ServiceName)
+
+	// Step 3: Extract .coverage from Kind node
+	if err := extractCoverageFromKindNode(opts.ClusterName, coverDir, writer); err != nil {
+		return fmt.Errorf("extraction failed: %w", err)
+	}
+
+	// Verify .coverage file exists
+	covFile := filepath.Join(coverDir, ".coverage")
+	if _, err := os.Stat(covFile); os.IsNotExist(err) {
+		return fmt.Errorf(".coverage file not found in extracted data: %s", covFile)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ Found .coverage file: %s\n", covFile)
+
+	// Step 4: Generate text report via `python3 -m coverage report` with path remapping
+	outputFile := filepath.Join(projectRoot, fmt.Sprintf("coverage_e2e_%s_python.txt", opts.ServiceName))
+	if err := generatePythonCoverageReport(covFile, outputFile, opts, writer); err != nil {
+		return fmt.Errorf("report generation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Python coverage report written to %s\n", outputFile)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	return nil
+}
+
+// generatePythonCoverageReport runs `python3 -m coverage report` with path remapping
+// to produce a text report from the extracted .coverage database.
+func generatePythonCoverageReport(covFile, outputFile string, opts E2EPythonCoverageOptions, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "🔄 Generating Python coverage report with path remapping...")
+
+	projectRoot := getProjectRoot()
+
+	// Create a temporary .coveragerc with path remapping
+	// This maps container paths to local source paths
+	rcContent := fmt.Sprintf(`[paths]
+source =
+    %s
+    %s
+
+[report]
+show_missing = false
+skip_covered = false
+`, filepath.Join(projectRoot, opts.SourceDir)+"/", opts.ContainerSourceDir+"/")
+
+	rcFile := filepath.Join(projectRoot, ".coveragerc-e2e-"+opts.ServiceName)
+	if err := os.WriteFile(rcFile, []byte(rcContent), 0644); err != nil {
+		return fmt.Errorf("failed to write .coveragerc: %w", err)
+	}
+	defer os.Remove(rcFile) // Clean up temp file
+
+	// Copy .coverage to project root for coverage tool (it expects .coverage in cwd)
+	tempCovFile := filepath.Join(projectRoot, ".coverage")
+	input, err := os.ReadFile(covFile)
+	if err != nil {
+		return fmt.Errorf("failed to read .coverage: %w", err)
+	}
+	if err := os.WriteFile(tempCovFile, input, 0644); err != nil {
+		return fmt.Errorf("failed to copy .coverage: %w", err)
+	}
+	defer os.Remove(tempCovFile) // Clean up
+
+	// Run `coverage combine` to remap paths (reads .coveragerc [paths] section)
+	combineCmd := exec.Command("python3", "-m", "coverage", "combine",
+		"--rcfile="+rcFile)
+	combineCmd.Dir = projectRoot
+	combineOutput, err := combineCmd.CombinedOutput()
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  coverage combine output: %s\n", combineOutput)
+		// Non-fatal: coverage report might still work without combine
+	} else {
+		_, _ = fmt.Fprintf(writer, "✅ Paths remapped via coverage combine\n")
+	}
+
+	// Run `coverage report` to generate text output
+	reportCmd := exec.Command("python3", "-m", "coverage", "report",
+		"--rcfile="+rcFile,
+		"--include="+filepath.Join(projectRoot, opts.SourceDir, "*"))
+	reportCmd.Dir = projectRoot
+	reportOutput, err := reportCmd.CombinedOutput()
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  coverage report output: %s\n", reportOutput)
+		return fmt.Errorf("coverage report failed: %w", err)
+	}
+
+	// Write the report to the output file
+	if err := os.WriteFile(outputFile, reportOutput, 0644); err != nil {
+		return fmt.Errorf("failed to write report: %w", err)
+	}
+
+	// Log the report summary
+	_, _ = fmt.Fprintf(writer, "\n📊 Python coverage report:\n%s\n", reportOutput)
+	return nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // YAML Manifest Helpers for GOCOVERDIR instrumentation
 //
 // These functions return YAML snippets (or empty strings) that can be
