@@ -390,7 +390,7 @@ jobs:
             image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
           # Python Services (1)
           - service: holmesgpt-api
-            dockerfile: holmesgpt-api/Dockerfile
+            dockerfile: holmesgpt-api/Dockerfile.e2e
             image_name: holmesgpt-api
           # Test Fixtures (1)
           - service: mock-llm

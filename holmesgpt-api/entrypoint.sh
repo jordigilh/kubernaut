@@ -61,11 +61,19 @@ echo "Listening on port: $API_PORT"
 # COVERAGE_FILE controls where the .coverage SQLite database is written.
 # On SIGTERM (pod scale-down), uvicorn shuts down gracefully and coverage flushes data.
 if [ "$E2E_COVERAGE" = "true" ]; then
-    echo "📊 DD-TEST-007: E2E Coverage mode ENABLED"
-    echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
-    echo "   Source: src/"
-    export COVERAGE_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
-    exec python3.12 -m coverage run --source=src -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+    # Verify coverage module is available before attempting to use it.
+    # The production Dockerfile does not include coverage; only Dockerfile.e2e does.
+    # This guard prevents CrashLoopBackOff if the image was built without coverage.
+    if python3.12 -c "import coverage" 2>/dev/null; then
+        echo "📊 DD-TEST-007: E2E Coverage mode ENABLED"
+        echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
+        echo "   Source: src/"
+        export COVERAGE_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
+        exec python3.12 -m coverage run --source=src -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+    else
+        echo "⚠️  DD-TEST-007: E2E_COVERAGE=true but 'coverage' module not installed — falling back to plain uvicorn"
+        exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+    fi
 else
     exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
 fi
