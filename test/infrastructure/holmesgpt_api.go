@@ -388,6 +388,7 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 	coverageEnv := ""
 	coverageVolumeMount := ""
 	coverageVolume := ""
+	coverageSecurityContext := ""
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		coverageEnv = `- name: E2E_COVERAGE
           value: "true"
@@ -399,6 +400,11 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate`
+		// DD-TEST-007: Add fsGroup to ensure /coverdata volume is writable by non-root users
+		// Pattern matches Mock LLM deployment (holmesgpt_api.go:856) and other services
+		coverageSecurityContext = `
+      securityContext:
+        fsGroup: 1001`
 		_, _ = fmt.Fprintln(writer, "  📊 DD-TEST-007: Python E2E coverage instrumentation ENABLED")
 	}
 
@@ -471,7 +477,7 @@ spec:
       - name: config
         configMap:
           name: holmesgpt-api-config
-      %s
+      %s%s
 ---
 apiVersion: v1
 kind: Service
@@ -486,7 +492,7 @@ spec:
     nodePort: 30120
   selector:
     app: holmesgpt-api
-`, namespace, namespace, imageTag, GetImagePullPolicy(), coverageEnv, coverageVolumeMount, coverageVolume, namespace)
+`, namespace, namespace, imageTag, GetImagePullPolicy(), coverageEnv, coverageVolumeMount, coverageVolume, coverageSecurityContext, namespace)
 
 	// Apply manifest
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

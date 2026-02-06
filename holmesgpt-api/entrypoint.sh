@@ -59,7 +59,8 @@ echo "Listening on port: $API_PORT"
 # DD-TEST-007: E2E Coverage Collection
 # When E2E_COVERAGE=true, wrap uvicorn with coverage.py to collect Python code coverage.
 # COVERAGE_FILE controls where the .coverage SQLite database is written.
-# On SIGTERM (pod scale-down), uvicorn shuts down gracefully and coverage flushes data.
+# CRITICAL: coverage.py does NOT save data on SIGTERM by default.
+# Must opt-in with [run] sigterm = true so that pod scale-down flushes coverage.
 if [ "$E2E_COVERAGE" = "true" ]; then
     # Verify coverage module is available before attempting to use it.
     # The production Dockerfile does not include coverage; only Dockerfile.e2e does.
@@ -68,8 +69,19 @@ if [ "$E2E_COVERAGE" = "true" ]; then
         echo "📊 DD-TEST-007: E2E Coverage mode ENABLED"
         echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
         echo "   Source: src/"
-        export COVERAGE_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
-        exec python3.12 -m coverage run --source=src -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+
+        # Create .coveragerc with SIGTERM handler enabled (coverage.py 6.4+)
+        # Without this, SIGTERM (from kubectl scale --replicas=0) kills the process
+        # without flushing coverage data, resulting in empty .coverage files.
+        cat > /tmp/.coveragerc <<RCEOF
+[run]
+sigterm = true
+source = src
+data_file = ${COVERAGE_FILE:-/coverdata/.coverage}
+RCEOF
+        echo "   Config: /tmp/.coveragerc (sigterm=true)"
+
+        exec python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
     else
         echo "⚠️  DD-TEST-007: E2E_COVERAGE=true but 'coverage' module not installed — falling back to plain uvicorn"
         exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
