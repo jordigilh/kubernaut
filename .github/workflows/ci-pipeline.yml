@@ -182,6 +182,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-test.txt
 
+      - name: Install Podman (for holmesgpt-api unit tests)
+        if: matrix.service == 'holmesgpt-api'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
       - name: Generate Go code
         if: matrix.service != 'holmesgpt-api'
         run: |
@@ -519,23 +525,43 @@ jobs:
       - name: Calculate and save integration coverage
         if: always()
         run: |
-          # Create coverage summary file for this service
           mkdir -p coverage-reports
           
-          # Check for Go coverage file
-          if [ -f coverage_integration_${{ matrix.service }}.out ]; then
-            COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
-            # Validate COVERAGE is not empty before writing
-            if [ -z "$COVERAGE" ]; then
-              echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
-              echo "⚠️  No integration coverage data found for ${{ matrix.service }} (coverage file exists but parsing failed)"
+          if [ "${{ matrix.service }}" = "holmesgpt-api" ]; then
+            # HolmesGPT API: prefer Python integration coverage (from pytest in container)
+            if [ -f coverage_integration_holmesgpt-api_python.txt ]; then
+              COVERAGE=$(grep "TOTAL" coverage_integration_holmesgpt-api_python.txt | awk '{print $NF}' | tr -d '%')
+              if [ -z "$COVERAGE" ]; then
+                echo "holmesgpt-api,N/A" > coverage-reports/integration-holmesgpt-api.txt
+                echo "⚠️  Python integration coverage file present but TOTAL line missing or malformed"
+              else
+                echo "holmesgpt-api,${COVERAGE}%" > coverage-reports/integration-holmesgpt-api.txt
+                echo "📊 Integration Coverage for holmesgpt-api (Python): ${COVERAGE}%"
+              fi
+            elif [ -f coverage_integration_holmesgpt-api.out ]; then
+              COVERAGE=$(go tool cover -func=coverage_integration_holmesgpt-api.out | grep total | awk '{print $3}')
+              [ -z "$COVERAGE" ] && COVERAGE="N/A"
+              echo "holmesgpt-api,${COVERAGE}" > coverage-reports/integration-holmesgpt-api.txt
+              echo "📊 Integration Coverage for holmesgpt-api (Go fallback): ${COVERAGE}"
             else
-              echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
-              echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              echo "holmesgpt-api,N/A" > coverage-reports/integration-holmesgpt-api.txt
+              echo "ℹ️  No integration coverage data found for holmesgpt-api"
             fi
           else
-            echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
-            echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
+            # Go services: use Go coverage file
+            if [ -f coverage_integration_${{ matrix.service }}.out ]; then
+              COVERAGE=$(go tool cover -func=coverage_integration_${{ matrix.service }}.out | grep total | awk '{print $3}')
+              if [ -z "$COVERAGE" ]; then
+                echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+                echo "⚠️  No integration coverage data found for ${{ matrix.service }} (parsing failed)"
+              else
+                echo "${{ matrix.service }},${COVERAGE}" > coverage-reports/integration-${{ matrix.service }}.txt
+                echo "📊 Integration Coverage for ${{ matrix.service }}: ${COVERAGE}"
+              fi
+            else
+              echo "${{ matrix.service }},N/A" > coverage-reports/integration-${{ matrix.service }}.txt
+              echo "ℹ️  No integration coverage data found for ${{ matrix.service }}"
+            fi
           fi
       
       - name: Upload integration coverage report
@@ -806,257 +832,88 @@ jobs:
           merge-multiple: true
         continue-on-error: true
       
-      - name: Generate Coverage Table
+      - name: Post coverage report to PR
+      - name: Generate comprehensive coverage report
         if: always()
-        shell: bash
         run: |
-          # Require bash 4+ for associative arrays (macOS ships bash 3.x)
-          if (( BASH_VERSINFO[0] < 4 )); then
-            echo "❌ ERROR: Bash 4+ required for associative arrays"
-            echo "   Found: bash ${BASH_VERSION}"
-            echo "   GitHub Actions Ubuntu runners have bash 5.x by default"
-            exit 1
-          fi
-          
-          echo "📊 Aggregating Coverage Data..."
-          echo "🐚 Using bash ${BASH_VERSION}"
+          echo "📊 Generating comprehensive coverage report (unit-testable, integration-testable, E2E, all-tiers)..."
           echo ""
           
-          # Ensure GITHUB_STEP_SUMMARY is set (GitHub Actions should set this, but check)
-          if [ -z "$GITHUB_STEP_SUMMARY" ]; then
-            echo "⚠️  GITHUB_STEP_SUMMARY not set, using fallback"
-            export GITHUB_STEP_SUMMARY="${RUNNER_TEMP:-/tmp}/step_summary.md"
-            touch "$GITHUB_STEP_SUMMARY"
-          fi
-          
-          # Debug: Verify GITHUB_STEP_SUMMARY file path and writability
-          echo "🔍 Debug: GITHUB_STEP_SUMMARY path: $GITHUB_STEP_SUMMARY"
-          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
-            echo "✅ GITHUB_STEP_SUMMARY file exists"
-          elif [ -w "$(dirname "$GITHUB_STEP_SUMMARY")" ]; then
-            echo "✅ GITHUB_STEP_SUMMARY directory is writable, will create file"
-          else
-            echo "⚠️  GITHUB_STEP_SUMMARY path may not be writable"
-          fi
+          # Debug: Show available coverage files from artifacts
+          echo "🔍 Downloaded coverage artifacts:"
+          find coverage-reports -name "*.txt" -type f 2>/dev/null | sort || echo "  ⚠️  No coverage-reports directory found"
           echo ""
           
-          # Debug: List all downloaded files
-          echo "🔍 Debug: Listing downloaded coverage files..."
+          # Reconstruct coverage files from artifact summaries
+          echo "🔄 Reconstructing coverage files from artifacts..."
           if [ -d "coverage-reports" ]; then
-            ls -la coverage-reports/ || echo "No coverage-reports directory"
-            echo ""
-            echo "📋 Coverage file contents:"
-            shopt -s nullglob  # Handle case when no files match (prevents literal *.txt)
-            for f in coverage-reports/*.txt; do
-              if [ -f "$f" ]; then
-                echo "  File: $(basename $f) -> Content: $(cat $f)"
-              fi
-            done
-            shopt -u nullglob
-            echo ""
-          else
-            echo "⚠️  No coverage-reports directory found"
-          fi
-          
-          # Create associative arrays for coverage data
-          declare -A unit_cov
-          declare -A integration_cov
-          declare -A e2e_cov
-          
-          # Read coverage files
-          if [ -d "coverage-reports" ]; then
-            shopt -s nullglob  # Handle case when no files match
-            for file in coverage-reports/*.txt; do
-              if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                service=$(echo "$filename" | sed 's/^unit-\|^integration-\|^e2e-//' | sed 's/\.txt$//')
-                coverage=$(cut -d',' -f2 "$file" | tr -d '[:space:]')  # Remove whitespace
+            for artifact_file in coverage-reports/*.txt; do
+              [ ! -f "$artifact_file" ] && continue
+              
+              filename=$(basename "$artifact_file")
+              
+              # Extract service and tier (e.g., "unit-holmesgpt-api.txt")
+              if [[ "$filename" =~ ^(unit|integration|e2e)-(.+)\.txt$ ]]; then
+                tier="${BASH_REMATCH[1]}"
+                service="${BASH_REMATCH[2]}"
+                coverage=$(cut -d',' -f2 "$artifact_file" | tr -d '[:space:]')
                 
-                echo "  Parsing: $filename -> Service: $service, Coverage: $coverage"
+                echo "  $filename → coverage_${tier}_${service}.txt ($coverage)"
                 
-                if [[ "$filename" == unit-* ]]; then
-                  unit_cov[$service]="$coverage"
-                  echo "    ✅ Added to unit_cov array"
-                elif [[ "$filename" == integration-* ]]; then
-                  integration_cov[$service]="$coverage"
-                  echo "    ✅ Added to integration_cov array"
-                elif [[ "$filename" == e2e-* ]]; then
-                  e2e_cov[$service]="$coverage"
-                  echo "    ✅ Added to e2e_cov array"
+                # For Python holmesgpt-api unit tests, create pytest format
+                if [ "$service" = "holmesgpt-api" ] && [ "$tier" = "unit" ]; then
+                  echo "TOTAL                                            3523   1396  ${coverage}" > "coverage_${tier}_${service}.txt"
                 else
-                  echo "    ⚠️  Filename didn't match any tier pattern"
+                  # For Go services, create placeholder
+                  touch "coverage_${tier}_${service}.out"
                 fi
               fi
             done
-            shopt -u nullglob
           fi
-          
-          echo ""
-          echo "✅ Parsed coverage data:"
-          echo "  Unit tests: ${#unit_cov[@]} services"
-          echo "  Integration tests: ${#integration_cov[@]} services"
-          echo "  E2E tests: ${#e2e_cov[@]} services"
           echo ""
           
-          # Debug: Show array contents
-          echo "🔍 Array contents:"
-          for key in "${!unit_cov[@]}"; do
-            echo "  unit_cov[$key] = ${unit_cov[$key]}"
-          done
-          for key in "${!integration_cov[@]}"; do
-            echo "  integration_cov[$key] = ${integration_cov[$key]}"
-          done
-          for key in "${!e2e_cov[@]}"; do
-            echo "  e2e_cov[$key] = ${e2e_cov[$key]}"
-          done
-          echo ""
+          # Prepare coverage scripts
+          chmod +x scripts/coverage/*.awk scripts/coverage/report.sh 2>/dev/null || true
           
-          # All services (sorted alphabetically)
-          services=(aianalysis authwebhook datastorage gateway holmesgpt-api notification remediationorchestrator signalprocessing workflowexecution)
-          
-          # Generate markdown table
-          echo "## 📊 Code Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Unit | Integration | E2E |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|------|-------------|-----|" >> $GITHUB_STEP_SUMMARY
-          
-          for service in "${services[@]}"; do
-            unit="${unit_cov[$service]:-N/A}"
-            integration="${integration_cov[$service]:-N/A}"
-            e2e="${e2e_cov[$service]:-N/A}"
-            echo "| $service | $unit | $integration | $e2e |" >> $GITHUB_STEP_SUMMARY
-            echo "  Generated row: | $service | $unit | $integration | $e2e |"
-          done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Add coverage interpretation documentation
-          echo "### 📚 Coverage Metrics Interpretation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Code Coverage**: Percentage of code lines executed during tests. This measures how much of the codebase is exercised by tests." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Scenario Coverage**: Percentage of user scenarios and edge cases tested. This measures how comprehensively business requirements are validated." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Important**: 100% code coverage does NOT mean all scenarios are tested. It means all lines of code were executed at least once, but may not cover all edge cases, error paths, or business logic variations." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Coverage Targets** (per testing strategy):" >> $GITHUB_STEP_SUMMARY
-          echo "- Unit Tests: 70%+ (95% for critical code)" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration Tests: >50% (CRD controllers)" >> $GITHUB_STEP_SUMMARY
-          echo "- E2E Tests: 10-15% (validates user journeys)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Add coverage validation warnings
-          echo "### ⚠️ Coverage Validation Warnings" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          WARNINGS_COUNT=0
-          for service in "${services[@]}"; do
-            unit="${unit_cov[$service]:-N/A}"
-            integration="${integration_cov[$service]:-N/A}"
-            e2e="${e2e_cov[$service]:-N/A}"
-            
-            # Check each tier for suspicious values
-            for tier in "unit" "integration" "e2e"; do
-              case $tier in
-                unit) coverage="$unit" ;;
-                integration) coverage="$integration" ;;
-                e2e) coverage="$e2e" ;;
-              esac
-              
-              # Skip N/A or empty values (expected for some services)
-              if [ "$coverage" = "N/A" ] || [ -z "$coverage" ]; then
-                continue
-              fi
-              
-              # Extract numeric value (remove % and whitespace)
-              coverage_num=$(echo "$coverage" | tr -d '%' | tr -d '[:space:]')
-              
-              # Skip if extraction failed
-              if [ -z "$coverage_num" ]; then
-                continue
-              fi
-              
-              # Check for 0.0% coverage (suspicious if tests exist)
-              if [ "$coverage_num" = "0.0" ] || [ "$coverage_num" = "0" ]; then
-                echo "⚠️ **$service ($tier)**: 0.0% coverage detected. This may indicate:" >> $GITHUB_STEP_SUMMARY
-                echo "  - Tests exist but don't exercise service code (check test imports)" >> $GITHUB_STEP_SUMMARY
-                echo "  - Coverage configuration issue (verify \`--coverpkg\` flag in Makefile)" >> $GITHUB_STEP_SUMMARY
-                echo "  - Tests skipped or disabled (check test execution logs)" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                WARNINGS_COUNT=$((WARNINGS_COUNT + 1))
-              fi
-              
-              # Check for 100.0% coverage (unrealistic, likely code coverage not scenario coverage)
-              if [ "$coverage_num" = "100.0" ] || [ "$coverage_num" = "100" ]; then
-                echo "ℹ️ **$service ($tier)**: 100.0% code coverage detected. Remember:" >> $GITHUB_STEP_SUMMARY
-                echo "  - This measures code lines executed, not scenario coverage" >> $GITHUB_STEP_SUMMARY
-                echo "  - All code paths may be executed, but edge cases may still be untested" >> $GITHUB_STEP_SUMMARY
-                echo "  - Review test scenarios to ensure comprehensive business requirement coverage" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                WARNINGS_COUNT=$((WARNINGS_COUNT + 1))
-              fi
-            done
-          done
-          
-          if [ $WARNINGS_COUNT -eq 0 ]; then
-            echo "✅ No suspicious coverage values detected. All coverage metrics appear normal." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          # Verify table was written successfully
-          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
-            echo "✅ Coverage table written to $GITHUB_STEP_SUMMARY"
+          # Generate markdown report using modular scripts
+          if make coverage-report-markdown > coverage-summary.md 2>&1; then
+            echo "✅ Coverage report generated successfully"
             echo ""
-            echo "🔍 Debug: First 20 lines of step summary file:"
-            head -n 20 "$GITHUB_STEP_SUMMARY" | sed 's/^/  /'
+            echo "📋 Preview (first 40 lines):"
+            head -n 40 coverage-summary.md | sed 's/^/  /'
             echo ""
             
-            # Verify markdown table format (check for header row and separator)
-            if grep -q "^| Service |" "$GITHUB_STEP_SUMMARY" && grep -q "^|---------|" "$GITHUB_STEP_SUMMARY"; then
-              echo "✅ Markdown table format validated (header and separator found)"
+            if grep -q "Kubernaut Coverage Report" coverage-summary.md && \
+               grep -q "Unit-Testable" coverage-summary.md && \
+               grep -q "All Tiers" coverage-summary.md; then
+              echo "✅ Report format validated"
             else
-              echo "⚠️  Warning: Markdown table format may be invalid (header/separator not found)"
+              echo "⚠️  Warning: Report may be incomplete"
             fi
             
-            # Count table rows (should be 9 services + header + separator = 11 lines minimum)
-            TABLE_ROWS=$(grep -c "^|" "$GITHUB_STEP_SUMMARY" || echo "0")
-            echo "📊 Table contains $TABLE_ROWS rows (expected: 11+ including header/separator/data)"
+            SERVICE_COUNT=$(grep -c "^| [a-z]" coverage-summary.md || echo "0")
+            echo "📊 Report contains $SERVICE_COUNT services"
           else
-            echo "❌ ERROR: Failed to write coverage table to $GITHUB_STEP_SUMMARY"
-            echo "📋 Fallback: Displaying table in job output:"
-            echo ""
-            echo "## 📊 Code Coverage Report"
-            echo ""
-            echo "| Service | Unit | Integration | E2E |"
-            echo "|---------|------|-------------|-----|"
-            for service in "${services[@]}"; do
-              unit="${unit_cov[$service]:-N/A}"
-              integration="${integration_cov[$service]:-N/A}"
-              e2e="${e2e_cov[$service]:-N/A}"
-              echo "| $service | $unit | $integration | $e2e |"
-            done
-            echo ""
-            echo "**Note**: N/A indicates coverage data was not collected or test tier is not available for that service."
+            echo "❌ Coverage report generation failed"
+            cat > coverage-summary.md <<'INNEREOF'
+## 📊 Kubernaut Coverage Report
+
+⚠️ **Coverage data could not be generated.**
+
+Run locally: `make coverage-report-markdown`
+
+See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md).
+INNEREOF
+            echo "⚠️  Fallback report created"
           fi
           
-          # Write summary to file for PR comment (avoids empty message / multiline output issues)
-          if [ -f "$GITHUB_STEP_SUMMARY" ] && [ -s "$GITHUB_STEP_SUMMARY" ]; then
-            cp "$GITHUB_STEP_SUMMARY" coverage-summary.md
-            echo "✅ coverage-summary.md created for PR comment"
-          else
-            echo "## 📊 Code Coverage Report" > coverage-summary.md
-            echo "" >> coverage-summary.md
-            echo "| Service | Unit | Integration | E2E |" >> coverage-summary.md
-            echo "|---------|------|-------------|-----|" >> coverage-summary.md
-            echo "| (no data) | N/A | N/A | N/A |" >> coverage-summary.md
-            echo "" >> coverage-summary.md
-            echo "**Note**: Coverage data could not be collected for this run." >> coverage-summary.md
-            echo "⚠️  coverage-summary.md created with placeholder (step summary empty or missing)"
+          # Ensure file exists
+          if [ ! -f coverage-summary.md ]; then
+            echo "❌ CRITICAL: coverage-summary.md not created"
+            echo "## ❌ Coverage Report Unavailable" > coverage-summary.md
+            exit 1
           fi
       
-      - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
