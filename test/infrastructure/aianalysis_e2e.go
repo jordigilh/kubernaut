@@ -157,6 +157,17 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		}
 	}
 
+	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
+	// The Kind config extraMount uses ./coverdata relative to project root
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		projectRoot := getProjectRoot()
+		coverdataPath := filepath.Join(projectRoot, "coverdata")
+		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+			return fmt.Errorf("failed to create coverdata directory: %w", err)
+		}
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -426,6 +437,7 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		DeleteExisting:            false,
 		ReuseExisting:             true, // Original behavior: reuse if exists
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
+		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
 	}
 	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
 		return err

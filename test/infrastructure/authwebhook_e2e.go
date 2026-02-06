@@ -101,8 +101,8 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			ServiceName:      "authwebhook",
 			ImageName:        "authwebhook", // No repo prefix, just service name
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
-			BuildContextPath: "",    // Empty = project root
-			EnableCoverage:   false, // AuthWebhook doesn't support coverage yet
+			BuildContextPath: "", // Empty = project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
 		awImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
@@ -148,7 +148,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		return "", "", fmt.Errorf("failed to find workspace root: %w", err)
 	}
 	coverdataPath := filepath.Join(workspaceRoot, "test", "e2e", "authwebhook", "coverdata")
-	if err := os.MkdirAll(coverdataPath, 0755); err != nil {
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection\n", coverdataPath)
@@ -349,7 +349,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
 	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
-	
+
 	// Replace hardcoded imagePullPolicy with dynamic value
 	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
 	// Local mode: Use Never (uses images loaded into Kind)

@@ -352,6 +352,18 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 	// Authority: Aligns with RO, Gateway, and other E2E tests that successfully use Podman
 	// Fixes: Kind + Podman compatibility issues (exit status 126, /dev/mapper mount failures)
 
+	// DD-TEST-007: Create coverdata directory for E2E coverage collection
+	// The Kind config extraMount uses ./coverdata (relative to project root)
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		projectRoot := getProjectRoot()
+		coverdataPath := filepath.Join(projectRoot, "coverdata")
+		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create coverdata directory: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintf(writer, "  ✅ Created %s for Python coverage collection\n", coverdataPath)
+		}
+	}
+
 	// Use shared helper with Podman support (fixes Kind compatibility issues)
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
@@ -362,7 +374,7 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 		ReuseExisting:             false, // Original behavior
 		CleanupOrphanedContainers: true,  // Podman cleanup on macOS
 		UsePodman:                 true,  // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
-		ProjectRootAsWorkingDir:   false, // Not needed for HAPI (no coverage)
+		ProjectRootAsWorkingDir:   true,  // DD-TEST-007: Required for ./coverdata extraMount resolution
 	}
 	return CreateKindClusterWithConfig(opts, writer)
 }
@@ -372,6 +384,24 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 // deployHAPIOnly deploys HAPI service to Kind cluster
 // Per DD-TEST-001 v2.5: NodePort 30120
 func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+	// DD-TEST-007: Conditionally add Python coverage instrumentation
+	coverageEnv := ""
+	coverageVolumeMount := ""
+	coverageVolume := ""
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		coverageEnv = `- name: E2E_COVERAGE
+          value: "true"
+        - name: COVERAGE_FILE
+          value: "/coverdata/.coverage"`
+		coverageVolumeMount = `- name: coverdata
+          mountPath: /coverdata`
+		coverageVolume = `- name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate`
+		_, _ = fmt.Fprintln(writer, "  📊 DD-TEST-007: Python E2E coverage instrumentation ENABLED")
+	}
+
 	// ADR-030: Create HAPI ConfigMap with minimal config
 	deployment := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
@@ -431,14 +461,17 @@ spec:
           value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
         - name: LITELLM_LOG
           value: "DEBUG"  # Enable LiteLLM debug logging
+        %s
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
           readOnly: true
+        %s
       volumes:
       - name: config
         configMap:
           name: holmesgpt-api-config
+      %s
 ---
 apiVersion: v1
 kind: Service
@@ -453,7 +486,7 @@ spec:
     nodePort: 30120
   selector:
     app: holmesgpt-api
-`, namespace, namespace, imageTag, GetImagePullPolicy(), namespace)
+`, namespace, namespace, imageTag, GetImagePullPolicy(), coverageEnv, coverageVolumeMount, coverageVolume, namespace)
 
 	// Apply manifest
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
