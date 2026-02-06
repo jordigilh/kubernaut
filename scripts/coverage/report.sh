@@ -123,13 +123,15 @@ calculate_go_service_coverage() {
     case "$service" in
         aianalysis)
             pkg_pattern="/pkg/aianalysis/"
-            unit_exclude="/(handler\\.go|audit)/"
-            int_include="/(handler\\.go|audit)/"
+            # File exclusions use .go: (Go coverage format), directory exclusions use /
+            unit_exclude="/(handler\\.go:|audit/)"
+            int_include="/(handler\\.go:|audit/)"
             ;;
         authwebhook)
             pkg_pattern="/pkg/authwebhook/"
-            unit_exclude="/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
-            int_include="/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler)\\.go/"
+            # All file-level exclusions; notificationrequest_validator needs K8s admission context
+            unit_exclude="/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\\.go:"
+            int_include="/(notificationrequest_handler|remediationapprovalrequest_handler|remediationrequest_handler|workflowexecution_handler|notificationrequest_validator)\\.go:"
             ;;
         datastorage)
             pkg_pattern="/pkg/datastorage/"
@@ -138,13 +140,15 @@ calculate_go_service_coverage() {
             ;;
         gateway)
             pkg_pattern="/pkg/gateway/"
-            unit_exclude="/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
-            int_include="/(server\\.go|k8s|processing/(crd_creator|distributed_lock|status_updater))/"
+            # server.go is a file (use .go:), k8s and processing/* are directories (use /)
+            unit_exclude="/(server\\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)"
+            int_include="/(server\\.go:|k8s/|processing/(crd_creator|distributed_lock|status_updater)/)"
             ;;
         notification)
             pkg_pattern="/pkg/notification/"
-            unit_exclude="/(client\\.go|delivery|phase|status)/"
-            int_include="/(client\\.go|delivery|phase|status)/"
+            # client.go is a file (use .go:), delivery/phase/status are directories (use /)
+            unit_exclude="/(client\\.go:|delivery/|phase/|status/)"
+            int_include="/(client\\.go:|delivery/|phase/|status/)"
             ;;
         remediationorchestrator)
             pkg_pattern="/pkg/remediationorchestrator/"

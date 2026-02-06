@@ -1,12 +1,27 @@
+⚠️ **OBSOLETE** - February 6, 2026
+
+**Reason**: Kubernaut adopted middleware-based authentication approach (DD-AUTH-014) using Kubernetes TokenReview and SubjectAccessReview APIs instead of `oauth2-proxy`. See `holmesgpt-api/src/middleware/auth.py` for implementation.
+
+**Architectural Decision**: DD-AUTH-014 provides application-level authentication/authorization control without the need for sidecar proxies, simplifying deployment and improving performance.
+
+**Current Authentication Stack**:
+- **HAPI**: `holmesgpt-api/src/middleware/auth.py` (DD-AUTH-014)
+- **Gateway**: Kubernetes-native TokenReview + SAR
+- **DataStorage**: Direct service-to-service with ServiceAccount tokens
+
+This document is retained for historical context but should not be implemented.
+
+---
+
 # TD-E2E-001: OAuth2-Proxy E2E Testing Gap
 
 **Date Created**: January 21, 2026
 **Date Started**: January 21, 2026
 **Date Completed (Phase 1)**: January 21, 2026
-**Status**: ✅ PHASE 1 COMPLETE | 🟡 PHASE 2 DEFERRED (Post-BR-HAPI-197, Pre-BR-SCOPE-001)
-**Priority**: CRITICAL (SOC2 CC8.1 compliance)
-**Estimated Effort**: Phase 1: ✅ COMPLETE (2.5 hours) | Phase 2: 8-10 hours
-**Related**: DD-AUTH-007, DD-AUTH-004, BR-HAPI-197, BR-SCOPE-001, SOC2 CC8.1
+**Status**: ❌ OBSOLETE (Replaced by DD-AUTH-014 middleware approach)
+**Priority**: ~~CRITICAL~~ N/A (SOC2 CC8.1 compliance achieved via middleware)
+**Estimated Effort**: Phase 1: ✅ COMPLETE (2.5 hours) | Phase 2: ~~8-10 hours~~ NOT REQUIRED
+**Related**: DD-AUTH-007, DD-AUTH-004, BR-HAPI-197, BR-SCOPE-001, SOC2 CC8.1, **DD-AUTH-014 (replacement)**
 
 ---
 
