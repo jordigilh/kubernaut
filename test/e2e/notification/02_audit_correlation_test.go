@@ -171,20 +171,20 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
 		By("Waiting for controller to process all 3 notifications")
 
-	for _, notification := range notifications {
-		Eventually(func() notificationv1alpha1.NotificationPhase {
-			var updated notificationv1alpha1.NotificationRequest
-			err := apiReader.Get(testCtx, types.NamespacedName{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, &updated)
-			if err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-			"Controller should process notification %s and update phase to Sent", notification.Name)
-	}
+		for _, notification := range notifications {
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var updated notificationv1alpha1.NotificationRequest
+				err := apiReader.Get(testCtx, types.NamespacedName{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, &updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+				"Controller should process notification %s and update phase to Sent", notification.Name)
+		}
 
 		// ===== STEP 3: Wait for controller to emit audit events (side effect) =====
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
@@ -207,13 +207,17 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			"Controller should emit audit events for all 3 processed notifications")
 
 		// ===== STEP 4: Verify all events queryable by correlation_id =====
+		// Poll until all 6 controller-emitted events are available.
+		// The BufferedStore flushes asynchronously; under CI load the last
+		// 'acknowledged' event may still be in the flush pipeline when Step 3 completes.
 		By("Verifying all controller-emitted audit events queryable by correlation_id")
 
-		allEvents := queryAuditEvents(dsClient, correlationID)
-
-		// Filter to only controller-emitted events (ActorId "notification-controller")
-		events := filterEventsByActorId(allEvents, "notification-controller")
-		Expect(events).To(HaveLen(6),
+		var events []ogenclient.AuditEvent
+		Eventually(func() int {
+			allEvents := queryAuditEvents(dsClient, correlationID)
+			events = filterEventsByActorId(allEvents, "notification-controller")
+			return len(events)
+		}, 30*time.Second, 2*time.Second).Should(Equal(6),
 			"Should have exactly 6 controller-emitted audit events with same correlation_id:\n"+
 				"  - 3 'sent' events (1 per notification/channel from delivery orchestrator)\n"+
 				"  - 3 'acknowledged' events (1 per notification completion from transitionToSent)\n"+

@@ -120,7 +120,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	go func() {
 		cfg := E2EImageConfig{
 			ServiceName:      "gateway",
-			ImageName:        "gateway",  // No repo prefix, just service name
+			ImageName:        "gateway", // No repo prefix, just service name
 			DockerfilePath:   "docker/gateway-ubi9.Dockerfile",
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   enableCoverage,
@@ -138,7 +138,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			ServiceName:      "datastorage",
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "", // Empty = project root
+			BuildContextPath: "",             // Empty = project root
 			EnableCoverage:   enableCoverage, // Use parameter instead of env var
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
@@ -325,8 +325,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// Deploy Gateway service (coverage-enabled or standard)
 	if enableCoverage {
 		// Use coverage manifest (DD-TEST-007)
-		_, _ = fmt.Fprintln(writer, "   Using coverage-enabled Gateway deployment...")
-		if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
+		// Pass the actual image name from BuildImageForKind (registry or local)
+		// to avoid image name mismatch when CI uses registry images
+		_, _ = fmt.Fprintf(writer, "   Using coverage-enabled Gateway deployment (image: %s)...\n", gatewayImageName)
+		if err := DeployGatewayCoverageManifest(kubeconfigPath, gatewayImageName, writer); err != nil {
 			return fmt.Errorf("failed to deploy Gateway with coverage: %w", err)
 		}
 	} else {
@@ -367,7 +369,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 // 2. Deploys Gateway with GOCOVERDIR=/coverdata
 // 3. Uses hostPath volume for coverage data collection
 //
-// Usage: Set COVERAGE_MODE=true environment variable
+// Usage: Set E2E_COVERAGE=true environment variable
 func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Gateway E2E Cluster Setup")
@@ -494,8 +496,8 @@ func buildGatewayImageOnly(writer io.Writer) (string, error) {
 
 	// Build with podman (similar to BuildGatewayImageWithCoverage but without --build-arg GOFLAGS=-cover)
 	cmd := exec.Command("podman", "build",
-		"--no-cache",        // Force fresh build to include latest code changes
-		"--pull=always",     // Force pull fresh base image (clears Go build cache in base image)
+		"--no-cache",                                 // Force fresh build to include latest code changes
+		"--pull=always",                              // Force pull fresh base image (clears Go build cache in base image)
 		"--build-arg", "GOCACHE=/tmp/go-build-cache", // Force Go to not use cached build artifacts
 		"-t", imageName,
 		"-f", dockerfilePath,
@@ -556,6 +558,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   ✅ Gateway image built and loaded to Kind with unique tag")
 	return nil
 }
+
 // deployGatewayService deploys Gateway service to the cluster
 // DD-TEST-001: Uses unique image tag for multi-developer testing support
 //
@@ -583,7 +586,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
 		"localhost/kubernaut-gateway:e2e-test",
 		gatewayImageName)
-	
+
 	// Replace hardcoded imagePullPolicy with dynamic value
 	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
 	// Local mode: Use Never (uses images loaded into Kind)
@@ -716,8 +719,10 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	return nil
 }
 
-func GatewayCoverageManifest() string {
-	imageName := GetGatewayCoverageFullImageName()
+func GatewayCoverageManifest(imageName string) string {
+	// Coverage manifest aligned with standard gateway-deployment.yaml
+	// Key differences from standard: GOCOVERDIR env, hostPath volume, root securityContext
+	// CRITICAL: Config keys MUST use camelCase to match Go struct YAML tags (pkg/gateway/config/config.go)
 
 	return fmt.Sprintf(`---
 # Gateway Service ConfigMap
@@ -729,34 +734,21 @@ metadata:
 data:
   config.yaml: |
     server:
-      listen_addr: ":8080"
-      read_timeout: 30s
-      write_timeout: 30s
-      idle_timeout: 120s
-
-    middleware:
-      rate_limit:
-        requests_per_minute: 100
-        burst: 10
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
 
     infrastructure:
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
-      # Service name: data-storage-service (matches production, required for SAR)
-      # Port 8080: DataStorage container port (DD-AUTH-014: Direct access, no proxy)
-      data_storage_url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      # DD-GATEWAY-012: Redis REMOVED - Gateway is 100%% Kubernetes-native
+      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 
     processing:
       deduplication:
-        ttl: 10s  # Minimum allowed TTL (production: 5m)
-
-      environment:
-        cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
-        configmap_namespace: "kubernaut-system"
-        configmap_name: "kubernaut-environment-overrides"
-
-      priority:
-        policy_path: "/etc/gateway-policy/priority-policy.rego"
+        ttl: 10s  # DEPRECATED (DD-GATEWAY-011): Parsed for compat, no effect
 
 ---
 # Gateway Service Rego Policy ConfigMap
@@ -833,6 +825,15 @@ spec:
           # E2E Coverage: Set GOCOVERDIR to enable coverage capture
           - name: GOCOVERDIR
             value: /coverdata
+          # ADR-052: Pod identity for distributed locking (multi-replica safety)
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
           ports:
             - name: http
               containerPort: 8080
@@ -947,6 +948,12 @@ rules:
     resources: ["configmaps"]
     verbs: ["get", "list", "watch"]
 
+  # Lease resource permissions for distributed locking (DD-GATEWAY-013, BR-GATEWAY-190)
+  # CRITICAL: Required for K8s Lease-based distributed locking to prevent deduplication races
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+
 ---
 # Gateway ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -964,8 +971,8 @@ subjects:
 `, imageName, GetImagePullPolicy())
 }
 
-func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) error {
-	manifest := GatewayCoverageManifest()
+func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
+	manifest := GatewayCoverageManifest(gatewayImageName)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -989,33 +996,6 @@ func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.
 	return WaitForHTTPHealth(healthURL, timeout, writer)
 }
 
-func ScaleDownGatewayForCoverage(kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "📊 Scaling down Gateway for coverage flush...")
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"scale", "deployment", "gateway",
-		"-n", "kubernaut-system", "--replicas=0")
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to scale down Gateway: %w", err)
-	}
-
-	// Wait for pod to terminate using kubectl wait (blocks until pod is deleted)
-	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway pod to terminate...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"wait", "--for=delete", "pod",
-		"-l", "app=gateway",
-		"-n", "kubernaut-system",
-		"--timeout=60s")
-	waitCmd.Stdout = writer
-	waitCmd.Stderr = writer
-	_ = waitCmd.Run() // Ignore error if no pods exist
-
-	// Coverage data is written on SIGTERM before pod exits, no additional wait needed
-	// The kubectl wait --for=delete already blocks until pod is fully terminated
-
-	_, _ = fmt.Fprintln(writer, "✅ Gateway scaled down, coverage data should be flushed")
-	return nil
-}
+// ScaleDownGatewayForCoverage is deprecated.
+// Use CollectE2EBinaryCoverage from coverage.go instead, which handles
+// scale-down, extraction, and conversion in a single call.

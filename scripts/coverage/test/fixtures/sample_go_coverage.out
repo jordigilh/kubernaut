@@ -1,0 +1,10 @@
+mode: atomic
+github.com/jordigilh/kubernaut/pkg/testservice/config/config.go:10.15,12.2 1 5
+github.com/jordigilh/kubernaut/pkg/testservice/config/config.go:14.20,16.2 1 0
+github.com/jordigilh/kubernaut/pkg/testservice/handler/handler.go:20.25,22.2 1 3
+github.com/jordigilh/kubernaut/pkg/testservice/handler/handler.go:24.30,26.2 1 0
+github.com/jordigilh/kubernaut/pkg/testservice/validation/validator.go:30.35,32.2 1 10
+github.com/jordigilh/kubernaut/pkg/testservice/validation/validator.go:34.40,36.2 1 8
+github.com/jordigilh/kubernaut/pkg/testservice/ogen-client/generated.go:40.45,42.2 1 0
+github.com/jordigilh/kubernaut/pkg/testservice/mocks/mock.go:50.55,52.2 1 0
+github.com/jordigilh/kubernaut/test/unit/testservice/test.go:60.65,62.2 1 5
