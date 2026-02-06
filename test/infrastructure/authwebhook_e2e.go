@@ -477,12 +477,14 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 // Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
-		ClusterName:    clusterName,
-		KubeconfigPath: kubeconfigPath,
-		ConfigPath:     configPath,
-		WaitTimeout:    "60s",
-		DeleteExisting: true, // Original behavior: delete if exists
-		ReuseExisting:  false,
+		ClusterName:               clusterName,
+		KubeconfigPath:            kubeconfigPath,
+		ConfigPath:                configPath,
+		WaitTimeout:               "60s",
+		DeleteExisting:            true,  // Original behavior: delete if exists
+		ReuseExisting:             false,
+		CleanupOrphanedContainers: true,  // Podman cleanup on macOS
+		UsePodman:                 true,  // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
 	}
 	return CreateKindClusterWithConfig(opts, writer)
 }
