@@ -101,8 +101,8 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			ServiceName:      "authwebhook",
 			ImageName:        "authwebhook", // No repo prefix, just service name
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
-			BuildContextPath: "",    // Empty = project root
-			EnableCoverage:   false, // AuthWebhook doesn't support coverage yet
+			BuildContextPath: "", // Empty = project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
 		awImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {

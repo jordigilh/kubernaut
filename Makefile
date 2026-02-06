@@ -584,7 +584,7 @@ test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic ./test/e2e/authwebhook/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/e2e/authwebhook/...
 	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage over Ginkgo --coverprofile
 	@if [ -f coverage_e2e_authwebhook_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
