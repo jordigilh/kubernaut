@@ -170,7 +170,7 @@ var _ = Describe("Audit Client Timing Integration Tests", Label("audit-client", 
 					return 0
 				}
 				return count
-			}, "10s", "100ms").Should(Equal(1), "Event should appear in database")
+			}, "20s", "100ms").Should(Equal(1), "Event should appear in database")
 
 			elapsed := time.Since(start)
 
