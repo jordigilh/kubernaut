@@ -135,8 +135,9 @@ calculate_go_service_coverage() {
             ;;
         datastorage)
             pkg_pattern="/pkg/datastorage/"
-            unit_exclude="/(server|repository|dlq|ogen-client|mocks)/"
-            int_include="/(server|repository|dlq)/"
+            # adapter/, query/service.go, reconstruction/query.go use *sql.DB directly
+            unit_exclude="/(server/|repository/|dlq/|ogen-client/|mocks/|adapter/|query/service\\.go:|reconstruction/query\\.go:)"
+            int_include="/(server/|repository/|dlq/|adapter/|query/service\\.go:|reconstruction/query\\.go:)"
             ;;
         gateway)
             pkg_pattern="/pkg/gateway/"

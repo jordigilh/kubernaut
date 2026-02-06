@@ -351,7 +351,9 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 			It("should track workflow usage across multiple incident types (TC-ADR033-06)", func() {
 				// Scope workflowID to testID for proper test isolation.
 				// Previously hardcoded "test-universal-recovery" caused cross-contamination.
-				workflowID := fmt.Sprintf("test-universal-recovery-%s", testID)
+				// NOTE: workflow_id column is VARCHAR(64), so prefix must be short enough
+				// that prefix + testID (≈47 chars) fits. Max prefix: ~16 chars.
+				workflowID := fmt.Sprintf("wf-univ-%s", testID)
 				workflowVersion := "v1.0"
 
 				// Setup: Same workflow used for 3 different incident types
