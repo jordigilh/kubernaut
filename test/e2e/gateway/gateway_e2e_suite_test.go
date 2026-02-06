@@ -83,7 +83,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		})
 
 		// DD-TEST-007: Check for coverage mode
-		tempCoverageMode := os.Getenv("COVERAGE_MODE") == "true"
+		tempCoverageMode := os.Getenv("E2E_COVERAGE") == "true"
 
 		tempLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		tempLogger.Info("Gateway E2E Test Suite - Setup (Process 1)")
@@ -115,7 +115,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		// Using HYBRID PARALLEL setup (Dec 25, 2025)
 		// Build images parallel → Create cluster → Load → Deploy
 		tempLogger.Info("Creating Kind cluster with hybrid parallel infrastructure setup...")
-		
+
 		// Unified setup function with coverage support (consolidated from gateway_e2e_hybrid.go)
 		err = infrastructure.SetupGatewayInfrastructureParallel(tempCtx, tempClusterName, tempKubeconfigPath, GinkgoWriter, tempCoverageMode)
 		Expect(err).ToNot(HaveOccurred())
@@ -153,7 +153,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		kubeconfigPath = string(data)
 
 		// DD-TEST-007: Set coverage mode for all processes
-		coverageMode = os.Getenv("COVERAGE_MODE") == "true"
+		coverageMode = os.Getenv("E2E_COVERAGE") == "true"
 
 		// Initialize context (use simple WithCancel, will be managed by Ginkgo lifecycle)
 		// Per DD-E2E-PARALLEL: Context managed through entire suite execution
@@ -244,30 +244,17 @@ var _ = SynchronizedAfterSuite(
 		}
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// DD-TEST-007: Extract coverage data if in coverage mode
+		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if coverageMode {
-			logger.Info("📊 Extracting E2E coverage data (DD-TEST-007)...")
-
-			// Step 1: Scale down Gateway to trigger graceful shutdown and coverage flush
-			logger.Info("  Step 1: Scaling down Gateway for coverage flush...")
-			if err := infrastructure.ScaleDownGatewayForCoverage(kubeconfigPath, GinkgoWriter); err != nil {
-				logger.Error(err, "Failed to scale down Gateway for coverage")
+			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
+				ServiceName:    "gateway",
+				ClusterName:    clusterName,
+				DeploymentName: "gateway",
+				Namespace:      "kubernaut-system",
+				KubeconfigPath: kubeconfigPath,
+			}, GinkgoWriter); err != nil {
+				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
-
-			// Step 2: Extract coverage from Kind node
-			logger.Info("  Step 2: Extracting coverage from Kind node...")
-			coverDir := "coverdata"
-			if err := infrastructure.ExtractCoverageFromKind(clusterName, coverDir, GinkgoWriter); err != nil {
-				logger.Error(err, "Failed to extract coverage from Kind")
-			}
-
-			// Step 3: Generate coverage report
-			logger.Info("  Step 3: Generating coverage report...")
-			if err := infrastructure.GenerateCoverageReport(coverDir, GinkgoWriter); err != nil {
-				logger.Error(err, "Failed to generate coverage report")
-			}
-
-			logger.Info("✅ E2E coverage extraction complete")
 		}
 
 		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
@@ -306,7 +293,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("🧹 Cleaning up service images built for Kind (DD-TEST-001 v1.1)...")
 		imageRegistry := os.Getenv("IMAGE_REGISTRY")
 		imageTag := os.Getenv("IMAGE_TAG")
-		
+
 		// Skip cleanup when using registry images (CI/CD mode)
 		if imageRegistry != "" && imageTag != "" {
 			logger.Info("   ℹ️  Registry mode detected - skipping local image removal",
