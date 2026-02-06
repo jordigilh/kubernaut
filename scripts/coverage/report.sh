@@ -106,6 +106,13 @@ calculate_go_service_coverage() {
             if [[ -f "$pctfile" ]]; then
                 local pct
                 pct=$(tr -d '[:space:]' < "$pctfile")
+                # Skip non-numeric values (e.g., "N/A" from unavailable coverage tiers)
+                local pct_num
+                pct_num=$(echo "$pct" | tr -d '%')
+                if [[ ! "$pct_num" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+                    echo "-"
+                    return
+                fi
                 # Normalize: ensure % suffix (Go artifacts include %, Python may not)
                 [[ "$pct" != *% ]] && pct="${pct}%"
                 echo "$pct"
@@ -207,7 +214,9 @@ calculate_go_service_coverage() {
                     if [[ -f "$pf" ]]; then
                         local raw
                         raw=$(tr -d '%[:space:]' < "$pf")
-                        if awk "BEGIN{exit (!($raw > $max_val))}"; then
+                        # Skip non-numeric values (e.g., "N/A" from missing E2E coverage)
+                        # to avoid awk "division by zero" when N/A is parsed as N divided by A
+                        if [[ "$raw" =~ ^[0-9]+\.?[0-9]*$ ]] && awk "BEGIN{exit (!($raw > $max_val))}"; then
                             max_val="$raw"
                             max_pct="$raw"
                         fi
@@ -275,6 +284,13 @@ calculate_python_service_coverage() {
                 if [[ -f "$pctfile" ]]; then
                     local pct
                     pct=$(tr -d '[:space:]' < "$pctfile")
+                    # Skip non-numeric values (e.g., "N/A")
+                    local pct_num
+                    pct_num=$(echo "$pct" | tr -d '%')
+                    if [[ ! "$pct_num" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+                        echo "-"
+                        return
+                    fi
                     [[ "$pct" != *% ]] && pct="${pct}%"
                     echo "$pct"
                     return
