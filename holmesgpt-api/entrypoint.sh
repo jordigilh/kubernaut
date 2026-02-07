@@ -97,7 +97,11 @@ RCEOF
         #
         # Instead: run Python in background, trap SIGTERM in bash, and forward it.
         # Python exits cleanly → coverage.py atexit handler flushes .coverage file.
-        python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1 &
+        # CRITICAL: Use --loop asyncio to disable uvloop.
+        # uvloop overrides signal handling via loop.add_signal_handler(), which
+        # prevents coverage.py's SIGTERM handler from firing. The standard asyncio
+        # event loop has reliable signal delivery in container environments.
+        python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1 --loop asyncio &
         PID=$!
         echo "   Python PID: $PID"
 
