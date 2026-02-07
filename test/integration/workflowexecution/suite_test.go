@@ -327,6 +327,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
 		Client:                 k8sManager.GetClient(),
+		APIReader:              k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
 		Scheme:                 k8sManager.GetScheme(),
 		Recorder:               k8sManager.GetEventRecorderFor("workflowexecution-controller"),
 		ExecutionNamespace:     WorkflowExecutionNS,

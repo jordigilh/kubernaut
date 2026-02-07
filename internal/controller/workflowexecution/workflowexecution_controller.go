@@ -103,6 +103,12 @@ type WorkflowExecutionReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 
+	// DD-STATUS-001: APIReader bypasses informer cache for direct API server reads.
+	// Used in reconcilePending to prevent race conditions from stale cache data:
+	// - Prevents duplicate audit events (cache lag between concurrent reconciles)
+	// - Ensures PipelineRunRef is fresh for external deletion detection
+	APIReader client.Reader
+
 	// ========================================
 	// V1.0 MATURITY REQUIREMENTS (SERVICE_MATURITY_REQUIREMENTS.md)
 	// ========================================
@@ -310,6 +316,29 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling Pending phase")
 
+	// ========================================
+	// DD-STATUS-001: Re-read WFE from API server to bypass informer cache.
+	// Prevents race conditions where concurrent reconciles read stale data:
+	// - F1: PipelineRunRef not yet cached → misses external deletion detection
+	// - F2: Phase not yet cached → re-enters reconcilePending → duplicate audit events
+	// ========================================
+	freshWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(wfe), freshWFE); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil // WFE was deleted
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to re-read WFE from API server: %w", err)
+	}
+	// If the fresh WFE has already progressed past Pending, requeue to let the
+	// main Reconcile re-route based on the updated phase.
+	if freshWFE.Status.Phase != "" && freshWFE.Status.Phase != workflowexecutionv1alpha1.PhasePending {
+		logger.Info("WFE already progressed past Pending (informer cache was stale), requeueing",
+			"freshPhase", freshWFE.Status.Phase)
+		return ctrl.Result{Requeue: true}, nil
+	}
+	// Use fresh data for the remainder of this reconcile
+	*wfe = *freshWFE
+
 	// V1.0: No routing logic - RO makes ALL routing decisions before creating WFE
 	// If WFE exists, execute it. RO already checked routing.
 
@@ -355,11 +384,12 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// Provides visibility into which workflow was selected for execution
 	// IDEMPOTENCY: Only emit once - skip if PipelineRun already exists
 	// ========================================
-	// Check if PipelineRun already exists to ensure idempotency (prevent duplicate events on re-reconciliation)
+	// DD-STATUS-001: Use APIReader to bypass informer cache for PipelineRun existence check.
+	// Prevents duplicate audit events when concurrent reconciles don't yet see a recently-created PR in cache.
 	pr := r.BuildPipelineRun(wfe)
 	existingPR := &tektonv1.PipelineRun{}
 	prExists := false
-	prGetErr := r.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR)
+	prGetErr := r.APIReader.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR)
 	if prGetErr == nil {
 		prExists = true
 	} else if apierrors.IsNotFound(prGetErr) && wfe.Status.PipelineRunRef != nil {

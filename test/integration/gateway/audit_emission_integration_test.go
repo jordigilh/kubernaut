@@ -1316,19 +1316,88 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		// Test ID: GW-INT-AUD-018
 		// Scenario: Retry Attempt Audit Events
-		// BR: BR-GATEWAY-058
+		// BR: BR-GATEWAY-058, BR-GATEWAY-113
 		// Section: 1.4.3
 		Context("when retrying failed CRD creation (GW-INT-AUD-018, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
-				Skip("Deferred: Gateway ProcessSignal() audit enhancement needed - BR-GATEWAY-113 exists but intermediate retry events not audited")
-				// Implementation Note:
-				// - Gateway's ProcessSignal() currently fails immediately on K8s errors
-				// - No retry loop exists in the current implementation
-				// - Requires audit enhancement: BR-GATEWAY-113 exists (retry logic works), but intermediate retry events not audited
-				// - Once retry logic is added, this test will validate:
-				//   1. Each retry attempt emits a separate gateway.crd.failed event
-				//   2. Each event has unique EventID but same CorrelationID
-				//   3. ErrorDetails includes retry count or attempt number
+				By("1. Create signal and process with retryable (503) K8s client error")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert := createPrometheusAlert(testNamespace, "TestRetryAudit018", "critical", fingerprint, correlationID)
+
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Always-failing client with retryable 503 error
+				failingK8sClient := &ErrorInjectableK8sClient{
+					Client:     k8sClient,
+					failCreate: true,
+					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
+				}
+
+				// Configure retry: 3 attempts with minimal backoff for fast test
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gatewayConfig.Processing.Retry.MaxAttempts = 3
+				gatewayConfig.Processing.Retry.InitialBackoff = 1 * time.Millisecond
+				gatewayConfig.Processing.Retry.MaxBackoff = 2 * time.Millisecond
+
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = gwServer.ProcessSignal(ctx, signal)
+				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error after all retries exhausted")
+
+				By("2. Query gateway.crd.failed audit events (expecting 3: 2 intermediate + 1 final)")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.failed"
+				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
+					signal.AlertName,
+					signal.Namespace,
+					signal.Resource.Kind,
+					signal.Resource.Name,
+				)
+
+				var auditEvents []ogenclient.AuditEvent
+				Eventually(func() int {
+					events, _, queryErr := sharedhelpers.QueryAuditEvents(ctx, client, &readableCorrelationID, &eventType, nil)
+					if queryErr != nil {
+						return 0
+					}
+					auditEvents = events
+					return len(events)
+				}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
+					"BR-GATEWAY-058: Should emit 3 gateway.crd.failed audit events (2 intermediate retries + 1 final)")
+
+				By("3. Validate each event has unique EventID but same CorrelationID")
+				eventIDs := make(map[string]bool)
+				for _, event := range auditEvents {
+					Expect(event.EventType).To(Equal("gateway.crd.failed"))
+					Expect(event.CorrelationID).To(Equal(readableCorrelationID),
+						"BR-GATEWAY-058: All retry events share the same CorrelationID")
+					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+
+					eventIDStr := event.EventID.Value.String()
+					Expect(eventIDs).ToNot(HaveKey(eventIDStr),
+						"BR-GATEWAY-058: Each retry event must have a unique EventID")
+					eventIDs[eventIDStr] = true
+				}
+
+				By("4. Validate ErrorDetails present in each event")
+				for _, event := range auditEvents {
+					payload, ok := extractGatewayPayload(&event)
+					Expect(ok).To(BeTrue(), "BR-GATEWAY-058: Each retry event must have GatewayAuditPayload")
+
+					errorDetails, hasError := payload.ErrorDetails.Get()
+					Expect(hasError).To(BeTrue(), "BR-GATEWAY-058: Each retry event must include ErrorDetails")
+					Expect(errorDetails.Message).To(ContainSubstring("Service Unavailable"),
+						"BR-GATEWAY-058: Error message should describe the transient failure")
+				}
+
+				GinkgoWriter.Printf("✅ Retry audit validated: %d events, %d unique IDs, correlation_id=%s\n",
+					len(auditEvents), len(eventIDs), readableCorrelationID)
 			})
 		})
 

@@ -38,6 +38,13 @@ import (
 	// DD-GATEWAY-011: sharedtypes import removed (Spec.Deduplication no longer populated)
 )
 
+// RetryObserver is notified on each failed CRD creation retry attempt.
+// BR-GATEWAY-058: Every retry attempt MUST be observed for audit compliance.
+// BR-GATEWAY-113: Decouples retry observation from CRD creation logic.
+type RetryObserver interface {
+	OnRetryAttempt(ctx context.Context, signal *types.NormalizedSignal, attempt int, err error)
+}
+
 // CRDCreator converts NormalizedSignal to RemediationRequest CRD
 //
 // This component is responsible for:
@@ -58,23 +65,30 @@ type CRDCreator struct {
 	fallbackNamespace string                // Configurable fallback namespace for CRD creation
 	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
 	clock             Clock                 // Clock for time-dependent operations (enables fast testing)
+	retryObserver     RetryObserver         // BR-GATEWAY-058: Notified on each retry attempt
 }
 
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
+// BR-GATEWAY-058: Accepts RetryObserver for per-attempt audit compliance
 // DD-005: Uses logr.Logger for unified logging
-func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
-	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, fallbackNamespace, retryConfig, nil)
+func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, retryObserver RetryObserver) *CRDCreator {
+	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, fallbackNamespace, retryConfig, retryObserver, nil)
 }
 
 // NewCRDCreatorWithClock creates a new CRD creator with a custom clock
 // This variant enables testing with MockClock for time-dependent behavior
 //
 // TDD GREEN: Accepts ClientInterface to support circuit breaker (BR-GATEWAY-093)
-func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, clock Clock) *CRDCreator {
+func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, retryObserver RetryObserver, clock Clock) *CRDCreator {
 	// Metrics are mandatory for observability
 	if metricsInstance == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
+	}
+
+	// BR-GATEWAY-058: Retry observer is mandatory for audit compliance
+	if retryObserver == nil {
+		panic("retryObserver cannot be nil: retry observation is mandatory per BR-GATEWAY-058")
 	}
 
 	// Fallback namespace validation
@@ -100,6 +114,7 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 		fallbackNamespace: fallbackNamespace,
 		retryConfig:       retryConfig,
 		clock:             clock,
+		retryObserver:     retryObserver,
 	}
 }
 
@@ -130,7 +145,7 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 //   - BR-GATEWAY-113: Exponential Backoff with jitter (shared utility)
 //   - BR-GATEWAY-114: Retry Metrics
 // ========================================
-func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, signal *types.NormalizedSignal) error {
 	startTime := c.clock.Now()
 
 	for attempt := 0; attempt < c.retryConfig.MaxAttempts; attempt++ {
@@ -165,6 +180,12 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 				"namespace", rr.Namespace,
 				"error_type", errorType)
 			return err
+		}
+
+		// BR-GATEWAY-058: Notify observer for each intermediate retry attempt.
+		// The final attempt's audit event is emitted by the caller after this method returns.
+		if attempt < c.retryConfig.MaxAttempts-1 {
+			c.retryObserver.OnRetryAttempt(ctx, signal, attempt, err)
 		}
 
 		// Check if this was the last attempt
@@ -386,7 +407,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 	// Create CRD in Kubernetes with retry logic
 	// BR-GATEWAY-112: Retry logic for transient K8s API errors
-	if err := c.createCRDWithRetry(ctx, rr); err != nil {
+	if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
 		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
 		if strings.Contains(err.Error(), "already exists") {
@@ -465,7 +486,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Retry creation in fallback namespace with retry logic
 			// BR-GATEWAY-112: Retry logic for transient K8s API errors
-			if err := c.createCRDWithRetry(ctx, rr); err != nil {
+			if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fallback_failed").Inc()
 				// GAP-10: Wrap error with full context
 				return nil, NewCRDCreationError(

@@ -187,23 +187,27 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			}
 		})
 
-		It("should handle deletion during Pending phase gracefully", func() {
-			// Edge case: PipelineRun deleted before controller transitions to Running
-			// Controller should detect NotFound during Pending → Running transition
+		It("should handle deletion during early Running phase gracefully", func() {
+			// PipelineRun deleted shortly after controller transitions to Running.
+			// DD-STATUS-001: Wait for Running phase so PipelineRunRef is persisted,
+			// ensuring the controller's reconcileRunning correctly detects the external deletion.
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-pending-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("ext-del-pending", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for PipelineRun to be created (but not Running yet)")
-			// Don't wait for Running phase - catch it during Pending
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
+			By("Waiting for WFE to reach Running phase (PipelineRunRef persisted)")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "WFE should reach Running phase")
 
-			By("Deleting PipelineRun immediately (before Running)")
+			By("Fetching the PipelineRun for deletion")
+			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "PipelineRun should exist in Running phase")
+
+			By("Deleting PipelineRun immediately after Running")
 			Expect(k8sClient.Delete(ctx, pr)).To(Succeed())
-			GinkgoWriter.Printf("🗑️  PipelineRun %s deleted during Pending phase\n", pr.Name)
+			GinkgoWriter.Printf("🗑️  PipelineRun %s deleted during early Running phase\n", pr.Name)
 
 			By("Verifying WFE handles deletion gracefully")
 			// Controller should detect NotFound and mark as Failed
@@ -211,7 +215,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 				updated, err := getWFE(wfe.Name, wfe.Namespace)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed),
-					"WFE should transition to Failed when PR deleted during Pending")
+					"WFE should transition to Failed when PR deleted during early Running")
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			failedWFE, err := getWFE(wfe.Name, wfe.Namespace)
@@ -225,7 +229,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 				),
 				"Failure message should indicate external deletion")
 
-			GinkgoWriter.Printf("✅ BR-WE-007: External deletion during Pending handled gracefully\n")
+			GinkgoWriter.Printf("✅ BR-WE-007: External deletion during early Running handled gracefully\n")
 		})
 
 		It("should set PipelineRunRef to nil after detecting external deletion", func() {

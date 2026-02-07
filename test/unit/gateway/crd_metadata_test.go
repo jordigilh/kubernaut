@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // BR-GATEWAY-092: Notification Metadata Completeness
@@ -60,7 +61,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 		// Use isolated metrics registry per test to avoid collisions
 		testRegistry := prometheus.NewRegistry()
 		testMetrics := metrics.NewMetricsWithRegistry(testRegistry)
-		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, testMetrics, "default", &retryConfig)
+		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, testMetrics, "default", &retryConfig, &mocks.NoopRetryObserver{})
 	})
 
 	// BUSINESS CAPABILITY: Notification service needs complete context to alert humans
@@ -448,7 +449,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 		// Use isolated metrics registry per test to avoid collisions
 		testRegistry := prometheus.NewRegistry()
 		testMetrics := metrics.NewMetricsWithRegistry(testRegistry)
-		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, testMetrics, "default", &retryConfig)
+		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, testMetrics, "default", &retryConfig, &mocks.NoopRetryObserver{})
 	})
 
 	// BUSINESS CAPABILITY: V1.0 requires valid Kubernetes resource info for all signals
