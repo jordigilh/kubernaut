@@ -336,23 +336,31 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 		_, _ = fmt.Fprintf(writer, "%s\n", lsOutput)
 	}
 
-	// Step 3: Send SIGTERM directly to the Python/coverage process (NOT PID 1).
-	// The entrypoint.sh uses --loop asyncio to disable uvloop, ensuring the standard
-	// asyncio event loop handles signals reliably. coverage.py's sigterm=true handler
-	// saves .coverage data and re-raises the signal for clean shutdown.
-	_, _ = fmt.Fprintln(writer, "📤 Sending SIGTERM to Python process inside pod...")
+	// Step 3: Send SIGUSR1 to the Python/coverage launcher process.
+	// The run_with_coverage.py launcher registers a SIGUSR1 handler that calls
+	// cov.stop() + cov.save() and keeps the process running (so kubectl cp works).
+	// SIGUSR1 is used because uvicorn only intercepts SIGTERM and SIGINT —
+	// our handler survives uvicorn.run() startup.
+	_, _ = fmt.Fprintln(writer, "📤 Sending SIGUSR1 to Python process inside pod...")
 	killCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"exec", "-n", opts.Namespace, podName, "--",
 		"sh", "-c", `
-PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*coverage run' | awk '{print $1}' | head -1)
+PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*run_with_coverage' | awk '{print $1}' | head -1)
 if [ -n "$PYTHON_PID" ]; then
-    echo "Found Python/coverage process: PID $PYTHON_PID"
-    kill -TERM "$PYTHON_PID"
-    echo "SIGTERM sent to PID $PYTHON_PID (exit=$?)"
+    echo "Found Python/coverage launcher: PID $PYTHON_PID"
+    kill -USR1 "$PYTHON_PID"
+    echo "SIGUSR1 sent to PID $PYTHON_PID (exit=$?)"
 else
-    echo "No Python/coverage process found, sending SIGTERM to PID 1 as fallback"
-    kill -TERM 1
-    echo "SIGTERM sent to PID 1 (exit=$?)"
+    echo "No Python/coverage launcher found, trying fallback pattern..."
+    PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*uvicorn' | awk '{print $1}' | head -1)
+    if [ -n "$PYTHON_PID" ]; then
+        echo "Found Python/uvicorn process: PID $PYTHON_PID"
+        kill -USR1 "$PYTHON_PID"
+        echo "SIGUSR1 sent to PID $PYTHON_PID (exit=$?)"
+    else
+        echo "ERROR: No Python process found"
+        ps -eo pid,comm,args
+    fi
 fi
 `)
 	if killOutput, killErr := killCmd.CombinedOutput(); killErr == nil {
@@ -361,8 +369,8 @@ fi
 		_, _ = fmt.Fprintf(writer, "   Signal command failed: %s (err: %v)\n", killOutput, killErr)
 	}
 
-	// Step 4: Wait for coverage.py to flush .coverage file
-	// With --loop asyncio, SIGTERM triggers coverage.py's handler → saves .coverage.
+	// Step 4: Wait for the launcher's SIGUSR1 handler to flush .coverage file.
+	// The handler calls cov.stop() + cov.save() and keeps the process running.
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
 	covPath := "/coverdata/.coverage"
 	const maxPollIterations = 20

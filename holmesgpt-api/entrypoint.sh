@@ -80,48 +80,38 @@ if [ "$E2E_COVERAGE" = "true" ]; then
             echo "   Current user: $(id)"
         fi
 
-        # Create .coveragerc with SIGTERM handler enabled (coverage.py 6.4+)
-        cat > /tmp/.coveragerc <<RCEOF
-[run]
-sigterm = true
-source = src
-data_file = ${COVERAGE_FILE:-/coverdata/.coverage}
-RCEOF
-        echo "   Config: /tmp/.coveragerc (sigterm=true)"
-
-        # CRITICAL: Do NOT use 'exec' here.
-        # Using exec replaces bash (PID 1) with Python. Uvicorn registers its own
-        # SIGTERM handler that overrides coverage.py's handler. When Kubernetes sends
-        # SIGTERM (kubectl scale --replicas=0), uvicorn shuts down but coverage.py's
-        # atexit handler may never run, resulting in no .coverage file.
+        # DD-TEST-007: Use explicit Coverage launcher (run_with_coverage.py)
+        # instead of `coverage run -m uvicorn`.
         #
-        # Instead: run Python in background, trap SIGTERM in bash, and forward it.
-        # Python exits cleanly → coverage.py atexit handler flushes .coverage file.
-        # CRITICAL: Use --loop asyncio to disable uvloop.
-        # uvloop overrides signal handling via loop.add_signal_handler(), which
-        # prevents coverage.py's SIGTERM handler from firing. The standard asyncio
-        # event loop has reliable signal delivery in container environments.
-        python3.12 -m coverage run --rcfile=/tmp/.coveragerc -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1 --loop asyncio &
+        # Why: uvicorn's Server.startup() calls loop.add_signal_handler(SIGTERM, ...)
+        # which OVERWRITES coverage.py's built-in SIGTERM handler, making
+        # `coverage run --sigterm` ineffective regardless of event loop.
+        #
+        # The launcher creates its own Coverage object, registers a SIGUSR1 handler
+        # (which uvicorn does NOT intercept) to flush coverage on demand, and runs
+        # uvicorn programmatically via uvicorn.run().
+        #
+        # Signal flow:
+        #   1. Go E2E test sends SIGUSR1 → launcher flushes .coverage, keeps running
+        #   2. Go test extracts .coverage via kubectl cp (pod still alive)
+        #   3. Go test scales deployment to 0 → SIGTERM → normal container teardown
+        echo "   Launcher: run_with_coverage.py (SIGUSR1 → flush)"
+
+        python3.12 ./run_with_coverage.py &
         PID=$!
         echo "   Python PID: $PID"
 
-        # Forward signals to Python process
+        # Forward SIGTERM to Python for normal Kubernetes shutdown
         trap 'echo "📊 Received SIGTERM, forwarding to Python (PID $PID)..."; kill -TERM $PID 2>/dev/null' SIGTERM SIGINT
 
-        # Wait for Python to exit.
-        # CRITICAL: When SIGTERM arrives during `wait`, bash interrupts the wait
-        # and runs the trap handler. The first `wait` returns immediately (exit 143).
-        # The trap sends SIGTERM to Python, but Python needs time to flush .coverage.
-        # The second `wait` blocks until Python ACTUALLY exits (with coverage saved).
-        # Without the second wait, bash exits before Python flushes → container dies
-        # → .coverage never written (the root cause of HAPI coverage N/A).
+        # Wait for Python to exit
         set +e  # Disable errexit: wait returns 143 on signal interruption
         wait $PID 2>/dev/null
-        wait $PID 2>/dev/null  # Wait again for Python to actually finish
+        wait $PID 2>/dev/null  # Second wait in case trap interrupted first
         EXIT_CODE=$?
         set -e
 
-        # Verify coverage file was written
+        # Verify coverage file was written (diagnostic)
         COV_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
         if [ -f "$COV_FILE" ]; then
             COV_SIZE=$(stat -c%s "$COV_FILE" 2>/dev/null || stat -f%z "$COV_FILE" 2>/dev/null || echo "unknown")
