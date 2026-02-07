@@ -25,8 +25,6 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -77,23 +75,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-sig-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-sig")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-001
@@ -372,22 +361,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-crd-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-crd")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-006
@@ -643,22 +623,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-dedup-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-dedup")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-011
@@ -1087,23 +1058,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-unique-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-unique")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-AUD-020] should assign globally unique audit IDs to all events", func() {
@@ -1197,23 +1159,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-fail-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-fail")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-016
@@ -1238,9 +1191,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "API server unavailable",
 				}
 
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error when K8s fails")
@@ -1313,9 +1266,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
 				}
 
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred())
@@ -1395,9 +1348,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				}
 
 				By("2. Trip circuit breaker by making 10+ failed requests")
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
 				for i := 0; i < 10; i++ {

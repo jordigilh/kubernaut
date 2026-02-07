@@ -30,10 +30,6 @@ package gateway
 
 import (
 	"fmt"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,8 +37,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
-
-	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 21: CRD Lifecycle Operations (BR-GATEWAY-068, BR-GATEWAY-076, BR-GATEWAY-077)
@@ -67,22 +62,9 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		testLogger.Info("Test 21: CRD Lifecycle Operations - Setup (Integration)")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("crd-lifecycle-int-%d-%s", processID, uuid.New().String()[:8])
+		// Create test namespace using shared helper
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "crd-lifecycle-int")
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-
-		// Wait for namespace to be ready
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
-
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 
 		// Initialize Gateway with shared K8s client AND shared audit store
@@ -97,8 +79,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 	AfterAll(func() {
 		if !CurrentSpecReport().Failed() {
 			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		} else {
 			testLogger.Info("⚠️ Test failed - preserving namespace for debugging", "namespace", testNamespace)
 		}

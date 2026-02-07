@@ -33,6 +33,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // TDD RED Phase: RAR Audit Trail E2E Tests
@@ -69,16 +70,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 		BeforeEach(func() {
 			// Create unique namespace for E2E test isolation
-			testNamespace = GenerateUniqueNamespace()
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "ro-e2e",
+				helpers.WithLabels(map[string]string{
+					"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
+				}))
 
 			// Create authenticated DataStorage client (DD-AUTH-014)
 			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
@@ -157,8 +152,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("should emit complete audit trail for approval decision", func() {
@@ -332,16 +326,11 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 		BeforeEach(func() {
 			// Create unique namespace for E2E test isolation
-			testNamespace = GenerateUniqueNamespace()
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			// Use shared helper for E2E tests (waits for namespace to be Active)
+			testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "ro-e2e-persist",
+				helpers.WithLabels(map[string]string{
+					"kubernaut.ai/audit-enabled": "true", // Required for AuthWebhook to intercept status updates
+				}))
 
 			// Create authenticated DataStorage client
 			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
@@ -478,8 +467,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("should query audit events after RAR CRD is deleted", func() {

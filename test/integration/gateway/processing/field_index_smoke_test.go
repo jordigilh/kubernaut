@@ -22,11 +22,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // ============================================================================
@@ -67,14 +67,9 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		ctx := context.Background()
 
 		// Create temporary namespace for this test
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "field-index-smoke-",
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
+		testNamespace := helpers.CreateTestNamespace(ctx, k8sClient, "field-index-smoke")
 		defer func() {
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}()
 
 		// Generate valid 64-char hex fingerprint (DD-TEST-009 example uses repeated 'a')
@@ -85,7 +80,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		rr := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "smoke-test-",
-				Namespace:    ns.Name,
+				Namespace:    testNamespace,
 				Generation:   1, // Required for ObservedGeneration pattern
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
@@ -126,7 +121,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		Eventually(func() int {
 			rrList = &remediationv1alpha1.RemediationRequestList{}
 			err := k8sClient.List(ctx, rrList,
-				client.InNamespace(ns.Name),
+				client.InNamespace(testNamespace),
 				client.MatchingFields{"spec.signalFingerprint": fingerprint},
 			)
 
@@ -171,14 +166,9 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 	It("should validate field selector precision with multiple fingerprints", func() {
 		ctx := context.Background()
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "field-precision-",
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNamespace := helpers.CreateTestNamespace(ctx, k8sClient, "field-precision")
 		defer func() {
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}()
 
 		now := metav1.Now()
@@ -190,10 +180,10 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 
 		for i, fp := range []string{fingerprint1, fingerprint2, fingerprint3} {
 			rr := &remediationv1alpha1.RemediationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "precision-test-",
-					Namespace:    ns.Name,
-				},
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "precision-test-",
+				Namespace:    testNamespace,
+			},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
 					SignalFingerprint: fp,
 					SignalName:        "test-signal",
@@ -215,7 +205,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		// Wait for all to be created
 		Eventually(func() int {
 			list := &remediationv1alpha1.RemediationRequestList{}
-			_ = k8sClient.List(ctx, list, client.InNamespace(ns.Name))
+			_ = k8sClient.List(ctx, list, client.InNamespace(testNamespace))
 			return len(list.Items)
 		}, "10s", "500ms").Should(Equal(3))
 
@@ -225,7 +215,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		Eventually(func() int {
 			rrList = &remediationv1alpha1.RemediationRequestList{}
 			err := k8sClient.List(ctx, rrList,
-				client.InNamespace(ns.Name),
+				client.InNamespace(testNamespace),
 				client.MatchingFields{"spec.signalFingerprint": fingerprint2},
 			)
 			Expect(err).ToNot(HaveOccurred(),

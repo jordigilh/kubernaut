@@ -39,7 +39,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -75,6 +74,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
@@ -92,8 +92,8 @@ var (
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
-	auditStore audit.AuditStore   // Audit store for BR-SP-090 (write operations)
-	dsClient   *ogenclient.Client // DataStorage HTTP API client (query operations - correct service boundary)
+	auditStore audit.AuditStore                 // Audit store for BR-SP-090 (write operations)
+	dsClient   *ogenclient.Client               // DataStorage HTTP API client (query operations - correct service boundary)
 	dsInfra    *infrastructure.DSBootstrapInfra // DataStorage infrastructure (for must-gather diagnostics)
 	// metricsAddr removed - not needed since metrics server uses dynamic port (BindAddress: "0")
 
@@ -154,12 +154,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
 	Expect(sharedK8sConfig).ToNot(BeNil(), "K8s config should not be nil")
 	GinkgoWriter.Printf("✅ envtest started: %s\n", sharedK8sConfig.Host)
-	
+
 	// Write kubeconfig to temporary file for DataStorage container
 	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "signalprocessing-integration")
 	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
 	GinkgoWriter.Printf("✅ envtest kubeconfig written: %s\n", kubeconfigPath)
-	
+
 	// DD-AUTH-014: Create ServiceAccount with DataStorage access
 	GinkgoWriter.Println("🔐 Creating ServiceAccount for DataStorage authentication...")
 	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
@@ -170,7 +170,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create ServiceAccount")
 	GinkgoWriter.Println("✅ ServiceAccount created with Bearer token")
-	
+
 	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
 	// Per DD-TEST-001 v2.6: PostgreSQL=15436, Redis=16382, DS=18094
@@ -318,7 +318,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Uses centralized helper to ensure both clients use ServiceAccount authentication
 	saToken := string(data) // Extract token from Phase 1
 	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
-	
+
 	dsClients := integration.NewAuthenticatedDataStorageClients(
 		dataStorageURL,
 		saToken,
@@ -620,9 +620,9 @@ result := {}
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		AuditClient:        auditClient,        // Legacy audit client
-		AuditManager:       auditManager,       // Phase 3 refactoring - MANDATORY per ADR-032
-		Metrics:            sharedMetrics,      // DD-005: Observability
+		AuditClient:        auditClient,   // Legacy audit client
+		AuditManager:       auditManager,  // Phase 3 refactoring - MANDATORY per ADR-032
+		Metrics:            sharedMetrics, // DD-005: Observability
 		Recorder:           recorder,
 		StatusManager:      statusManager, // DD-PERF-001 + SP-CACHE-001
 		EnvClassifier:      envClassifier,
@@ -751,57 +751,29 @@ var _ = SynchronizedAfterSuite(
 		}
 	},
 )
+
 // ============================================================================
 // TEST HELPER FUNCTIONS (for parallel execution isolation)
 // ============================================================================
 
-// createTestNamespace creates a unique namespace for test isolation in parallel execution.
-// DD-TEST-002: Uses UUID-based namespace generation for parallel execution safety.
-// MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
+// createTestNamespace creates a managed test namespace for test isolation.
+// Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
+// DD-TEST-002: UUID-based naming for parallel execution safety (handled by shared helper).
 func createTestNamespace(prefix string) string {
-	// DD-TEST-002: UUID-based naming prevents collisions in parallel execution
-	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ns,
-		},
-	}
-	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
-	GinkgoWriter.Printf("✅ Created test namespace: %s\n", ns)
-	return ns
+	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 
-// createTestNamespaceWithLabels creates a unique namespace with custom labels.
-// DD-TEST-002: Uses UUID-based namespace generation for parallel execution safety.
+// createTestNamespaceWithLabels creates a managed test namespace with additional custom labels.
+// The kubernaut.ai/managed=true label is applied by default; custom labels are merged.
 // Used for testing environment classification from namespace labels (BR-SP-051).
 func createTestNamespaceWithLabels(prefix string, labels map[string]string) string {
-	// DD-TEST-002: UUID-based naming prevents collisions in parallel execution
-	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   ns,
-			Labels: labels,
-		},
-	}
-	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
-	GinkgoWriter.Printf("✅ Created test namespace with labels: %s (labels: %v)\n", ns, labels)
-	return ns
+	return helpers.CreateTestNamespace(ctx, k8sClient, prefix, helpers.WithLabels(labels))
 }
 
 // deleteTestNamespace cleans up a test namespace.
-// Called in defer to ensure cleanup even on test failure.
+// Delegates to shared helpers.DeleteTestNamespace.
 func deleteTestNamespace(ns string) {
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ns,
-		},
-	}
-	err := k8sClient.Delete(ctx, namespace)
-	if err != nil && !apierrors.IsNotFound(err) {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to delete namespace %s: %v\n", ns, err)
-	} else {
-		GinkgoWriter.Printf("✅ Deleted test namespace: %s\n", ns)
-	}
+	helpers.DeleteTestNamespace(ctx, k8sClient, ns)
 }
 
 // waitForPhase waits for a SignalProcessing CR to reach a specific phase.

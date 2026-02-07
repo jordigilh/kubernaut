@@ -52,6 +52,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "workflow", "signalprocessing"), func() {
@@ -64,20 +65,11 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		ctx = context.Background()
 
 		// ✅ PARALLEL-SAFE: Unique namespace per test execution
-		namespace = fmt.Sprintf("sp-severity-e2e-%d-%d",
-			GinkgoParallelProcess(), time.Now().Unix())
-
-		// Create test namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: namespace,
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		namespace = helpers.CreateTestNamespace(ctx, k8sClient, "sp-severity-e2e")
 
 		// ✅ CLEANUP: Defer namespace deletion for parallel safety
 		DeferCleanup(func() {
-			Expect(k8sClient.Delete(ctx, ns)).To(Succeed())
+			helpers.DeleteTestNamespace(ctx, k8sClient, namespace)
 		})
 	})
 

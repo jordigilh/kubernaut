@@ -31,10 +31,6 @@ package gateway
 
 import (
 	"fmt"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -43,6 +39,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -71,20 +68,8 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("fingerprint-int-%d-%s", processID, uuid.New().String()[:8])
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "fingerprint-int")
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-
-		// Wait for namespace to be ready
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 
@@ -108,8 +93,7 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 			return
 		}
 
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		_ = k8sClient.Delete(ctx, ns)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		testLogger.Info("✅ Test cleanup complete")
 	})
@@ -123,12 +107,12 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("Step 1: Send first signal")
 
 		signal1 := createNormalizedSignal(SignalBuilder{
-			AlertName: "FingerprintTest",
-			Namespace:  testNamespace,
+			AlertName:    "FingerprintTest",
+			Namespace:    testNamespace,
 			ResourceName: "fingerprint-pod-1",
-			Kind:       "Pod",
-			Severity:   "warning",
-			Source:     "prometheus",
+			Kind:         "Pod",
+			Severity:     "warning",
+			Source:       "prometheus",
 			Labels: map[string]string{
 				"container": "main",
 			},
@@ -143,12 +127,12 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("Step 2: Send identical signal again")
 
 		signal2 := createNormalizedSignal(SignalBuilder{
-			AlertName: "FingerprintTest",
-			Namespace:  testNamespace,
+			AlertName:    "FingerprintTest",
+			Namespace:    testNamespace,
 			ResourceName: "fingerprint-pod-1",
-			Kind:       "Pod",
-			Severity:   "warning",
-			Source:     "prometheus",
+			Kind:         "Pod",
+			Severity:     "warning",
+			Source:       "prometheus",
 			Labels: map[string]string{
 				"container": "main",
 			},
@@ -177,12 +161,12 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("Step 1: Send signal with label set A")
 
 		signalA := createNormalizedSignal(SignalBuilder{
-			AlertName: "FingerprintDifferenceTest",
-			Namespace:  testNamespace,
+			AlertName:    "FingerprintDifferenceTest",
+			Namespace:    testNamespace,
 			ResourceName: "diff-pod-1",
-			Kind:       "Pod",
-			Severity:   "warning",
-			Source:     "prometheus",
+			Kind:         "Pod",
+			Severity:     "warning",
+			Source:       "prometheus",
 			Labels: map[string]string{
 				"environment": "production",
 			},
@@ -197,12 +181,12 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("Step 2: Send signal with label set B")
 
 		signalB := createNormalizedSignal(SignalBuilder{
-			AlertName: "FingerprintDifferenceTest",
-			Namespace:  testNamespace,
+			AlertName:    "FingerprintDifferenceTest",
+			Namespace:    testNamespace,
 			ResourceName: "diff-pod-1",
-			Kind:       "Pod",
-			Severity:   "warning",
-			Source:     "prometheus",
+			Kind:         "Pod",
+			Severity:     "warning",
+			Source:       "prometheus",
 			Labels: map[string]string{
 				"environment": "staging", // Different value
 			},
@@ -235,12 +219,12 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 
 		for i := 0; i < 3; i++ {
 			signal := createNormalizedSignal(SignalBuilder{
-				AlertName: signalName,
-				Namespace:  testNamespace,
+				AlertName:    signalName,
+				Namespace:    testNamespace,
 				ResourceName: "dedup-fp-pod",
-				Kind:       "Pod",
-				Severity:   "critical",
-				Source:     "prometheus",
+				Kind:         "Pod",
+				Severity:     "critical",
+				Source:       "prometheus",
 				Labels: map[string]string{
 					"app": "dedup-test",
 				},

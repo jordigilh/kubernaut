@@ -145,14 +145,16 @@ var _ = BeforeSuite(func() {
 	// Create test namespaces
 	testNS := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "processing-test",
+			Name:   "processing-test",
+			Labels: map[string]string{"kubernaut.ai/managed": "true"},
 		},
 	}
 	Expect(k8sClient.Create(suiteCtx, testNS)).To(Succeed())
 
 	fallbackNS := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-system",
+			Name:   "kubernaut-system",
+			Labels: map[string]string{"kubernaut.ai/managed": "true"},
 		},
 	}
 	Expect(k8sClient.Create(suiteCtx, fallbackNS)).To(Succeed())
