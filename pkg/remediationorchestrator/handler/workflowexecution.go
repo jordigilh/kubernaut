@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -46,7 +47,7 @@ type WorkflowExecutionHandler struct {
 	client                client.Client
 	scheme                *runtime.Scheme
 	metrics               *metrics.Metrics
-	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
+	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
 	transitionToCompleted func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error)
 }
 
@@ -65,7 +66,7 @@ func NewWorkflowExecutionHandler(
 	c client.Client,
 	s *runtime.Scheme,
 	m *metrics.Metrics,
-	ttf func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error),
+	ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error),
 	ttc func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error),
 ) *WorkflowExecutionHandler {
 	return &WorkflowExecutionHandler{
@@ -124,7 +125,7 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 		// This handler focuses on phase transition logic only.
 
 		// Delegate to reconciler's transitionToFailed() for audit emission (DD-AUDIT-003)
-		return h.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution failed")
+		return h.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution failed"))
 
 	case "":
 		// Empty phase means WE was just created but controller hasn't set phase yet

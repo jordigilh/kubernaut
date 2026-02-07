@@ -1,6 +1,6 @@
 # WorkflowExecutionWebhookAuditPayload
 
-Type-safe audit event payload for WorkflowExecution webhooks (workflow.unblocked)
+Type-safe audit event payload for WorkflowExecution webhooks (block.cleared)
 
 ## Properties
 

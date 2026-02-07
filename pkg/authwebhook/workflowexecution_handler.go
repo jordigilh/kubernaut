@@ -112,7 +112,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	payload := api.WorkflowExecutionWebhookAuditPayload{
-		EventType:     "webhook.workflow.unblocked",
+		EventType:     api.WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared,
 		WorkflowName:  wfe.Name,
 		ClearReason:   wfe.Status.BlockClearance.ClearReason,
 		ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time,

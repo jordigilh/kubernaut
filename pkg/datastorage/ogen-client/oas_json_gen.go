@@ -1815,7 +1815,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData:
 			e.FieldStart("event_type")
@@ -1841,6 +1841,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.transitioned")
+		case AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.remediation.manual_review")
+		case AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.routing.blocked")
 		}
 		{
 			s := s.RemediationOrchestratorAuditPayload
@@ -2420,7 +2426,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		}
 	case WorkflowExecutionWebhookAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
-		e.Str("webhook.workflow.unblocked")
+		e.Str("workflowexecution.block.cleared")
 		{
 			s := s.WorkflowExecutionWebhookAuditPayload
 			{
@@ -2446,7 +2452,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		}
 	case RemediationApprovalAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
-		e.Str("webhook.approval.decided")
+		e.Str("webhook.remediationapprovalrequest.decided")
 		{
 			s := s.RemediationApprovalAuditPayload
 			{
@@ -3182,6 +3188,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "orchestrator.lifecycle.transitioned":
 					s.Type = AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData
 					found = true
+				case "orchestrator.remediation.manual_review":
+					s.Type = AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData
+					found = true
+				case "orchestrator.routing.blocked":
+					s.Type = AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData
+					found = true
 				case "signalprocessing.business.classified":
 					s.Type = AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData
 					found = true
@@ -3227,10 +3239,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "webhook.notification.cancelled":
 					s.Type = AuditEventEventDataWebhookNotificationCancelledAuditEventEventData
 					found = true
-				case "webhook.workflow.unblocked":
+				case "workflowexecution.block.cleared":
 					s.Type = WorkflowExecutionWebhookAuditPayloadAuditEventEventData
 					found = true
-				case "webhook.approval.decided":
+				case "webhook.remediationapprovalrequest.decided":
 					s.Type = RemediationApprovalAuditPayloadAuditEventEventData
 					found = true
 				case "RemediationApprovalDecisionPayload":
@@ -3308,7 +3320,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -3994,7 +4006,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -4020,6 +4032,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.transitioned")
+		case AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.remediation.manual_review")
+		case AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.routing.blocked")
 		}
 		{
 			s := s.RemediationOrchestratorAuditPayload
@@ -4599,7 +4617,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		}
 	case WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
-		e.Str("webhook.workflow.unblocked")
+		e.Str("workflowexecution.block.cleared")
 		{
 			s := s.WorkflowExecutionWebhookAuditPayload
 			{
@@ -4625,7 +4643,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		}
 	case RemediationApprovalAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
-		e.Str("webhook.approval.decided")
+		e.Str("webhook.remediationapprovalrequest.decided")
 		{
 			s := s.RemediationApprovalAuditPayload
 			{
@@ -5361,6 +5379,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "orchestrator.lifecycle.transitioned":
 					s.Type = AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData
 					found = true
+				case "orchestrator.remediation.manual_review":
+					s.Type = AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData
+					found = true
+				case "orchestrator.routing.blocked":
+					s.Type = AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData
+					found = true
 				case "signalprocessing.business.classified":
 					s.Type = AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData
 					found = true
@@ -5406,10 +5430,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "webhook.notification.cancelled":
 					s.Type = AuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData
 					found = true
-				case "webhook.workflow.unblocked":
+				case "workflowexecution.block.cleared":
 					s.Type = WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData
 					found = true
-				case "webhook.approval.decided":
+				case "webhook.remediationapprovalrequest.decided":
 					s.Type = RemediationApprovalAuditPayloadAuditEventRequestEventData
 					found = true
 				case "RemediationApprovalDecisionPayload":
@@ -5487,7 +5511,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -17945,8 +17969,8 @@ func (s *RemediationApprovalAuditPayloadEventType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch RemediationApprovalAuditPayloadEventType(v) {
-	case RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided:
-		*s = RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided
+	case RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided:
+		*s = RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided
 	default:
 		*s = RemediationApprovalAuditPayloadEventType(v)
 	}
@@ -18960,6 +18984,10 @@ func (s *RemediationOrchestratorAuditPayloadEventType) Decode(d *jx.Decoder) err
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked
 	default:
 		*s = RemediationOrchestratorAuditPayloadEventType(v)
 	}
@@ -23230,8 +23258,8 @@ func (s *WorkflowExecutionWebhookAuditPayloadEventType) Decode(d *jx.Decoder) er
 	}
 	// Try to use constant string.
 	switch WorkflowExecutionWebhookAuditPayloadEventType(v) {
-	case WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked:
-		*s = WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked
+	case WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared:
+		*s = WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared
 	default:
 		*s = WorkflowExecutionWebhookAuditPayloadEventType(v)
 	}

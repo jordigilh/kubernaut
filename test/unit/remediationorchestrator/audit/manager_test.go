@@ -18,11 +18,14 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -80,8 +83,10 @@ var _ = Describe("Audit Manager", func() {
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData:
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData
-			// Note: orchestrator.manual_review.requested and orchestrator.timeout.occurred
-			// event types not yet in OpenAPI spec - will be added in future
+			case ogenclient.AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData
 			default:
 				// Unknown or not-yet-implemented event type - skip EventData conversion
 				return event
@@ -299,12 +304,13 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	Describe("BuildFailureEvent", func() {
 		It("should build complete orchestrator.lifecycle.completed event with failure outcome", func() {
+			gr := schema.GroupResource{Group: "kubernaut.ai", Resource: "remediationrequests"}
 			event, err := manager.BuildFailureEvent(
 				"correlation-123",
 				"default",
 				"rr-test-001",
 				"workflow_execution",
-				"RBAC permission denied",
+				apierrors.NewForbidden(gr, "rr-test-001", fmt.Errorf("RBAC permission denied")),
 				5000,
 			)
 			Expect(err).ToNot(HaveOccurred())
@@ -318,11 +324,17 @@ var _ = Describe("Audit Manager", func() {
 				Namespace:     ptr.To("default"),
 				ResourceID:    ptr.To("rr-test-001"),
 				EventDataFields: map[string]interface{}{
-					"outcome":        "Failed",
-					"failure_phase":  "workflow_execution",
-					"failure_reason": "RBAC permission denied",
+					"outcome":       "Failed",
+					"failure_phase": "workflow_execution",
 				},
 			})
+
+			// Verify error_details.message contains the K8s error message
+			eventDataBytes, _ := json.Marshal(event.EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
+			errorDetails := eventData["error_details"].(map[string]interface{})
+			Expect(errorDetails["message"]).To(ContainSubstring("RBAC permission denied"))
 
 			Expect(event.DurationMs.IsSet()).To(BeTrue())
 			Expect(event.DurationMs.Value).To(Equal(5000))
@@ -335,7 +347,7 @@ var _ = Describe("Audit Manager", func() {
 				"production",
 				"rr-prod-002",
 				"signal_processing",
-				"timeout while enriching alert",
+				apierrors.NewTimeoutError("timeout while enriching alert", 30),
 				15000,
 			)
 			Expect(err).ToNot(HaveOccurred())
@@ -375,7 +387,7 @@ var _ = Describe("Audit Manager", func() {
 				"production",
 				"rr-prod-001",
 				"signal_processing",
-				"Enrichment timeout",
+				apierrors.NewTimeoutError("Enrichment timeout", 30),
 				10000,
 			)
 			Expect(err).ToNot(HaveOccurred())
@@ -389,11 +401,17 @@ var _ = Describe("Audit Manager", func() {
 				Namespace:     ptr.To("production"),
 				ResourceID:    ptr.To("rr-prod-001"),
 				EventDataFields: map[string]interface{}{
-					"outcome":        "Failed",
-					"failure_phase":  "signal_processing",
-					"failure_reason": "Enrichment timeout",
+					"outcome":       "Failed",
+					"failure_phase": "signal_processing",
 				},
 			})
+
+			// Verify error_details.message contains the timeout error message
+			eventDataBytes, _ := json.Marshal(event.EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
+			errorDetails := eventData["error_details"].(map[string]interface{})
+			Expect(errorDetails["message"]).To(ContainSubstring("Enrichment timeout"))
 
 			Expect(event.DurationMs.IsSet()).To(BeTrue())
 			Expect(event.DurationMs.Value).To(Equal(10000))
@@ -401,37 +419,38 @@ var _ = Describe("Audit Manager", func() {
 
 		// BR-AUDIT-005 Gap #7: Error Code Mapping Unit Tests
 		// Per DD-TEST-008: Error code mapping belongs in unit tests, not integration tests
+		// F-6: Error code mapping now uses typed errors via ClassifyError
 		Context("Gap #7: Error Code Mapping Logic", func() {
-			It("should map invalid config errors to ERR_INVALID_CONFIG", func() {
+			It("should map apierrors.IsInvalid to ERR_INVALID_CONFIG", func() {
+				gk := schema.GroupKind{Group: "kubernaut.ai", Kind: "RemediationRequest"}
 				event, err := manager.BuildFailureEvent(
 					"correlation-001",
 					"default",
 					"rr-test",
 					"configuration",
-					"invalid workflow selector",
+					apierrors.NewInvalid(gk, "rr-test", nil),
 					1000,
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Validate error_details
 				eventDataBytes, _ := json.Marshal(event.EventData)
 				var eventData map[string]interface{}
 				_ = json.Unmarshal(eventDataBytes, &eventData)
 
 				errorDetails := eventData["error_details"].(map[string]interface{})
-				Expect(errorDetails["code"]).To(Equal("ERR_INVALID_CONFIG"), "Invalid config should map to ERR_INVALID_CONFIG")
+				Expect(errorDetails["code"]).To(Equal("ERR_INVALID_CONFIG"), "Invalid K8s input should map to ERR_INVALID_CONFIG")
 				Expect(errorDetails["retry_possible"]).To(BeFalse(), "Invalid config is permanent error")
 				Expect(errorDetails["component"]).To(Equal("remediationorchestrator"))
-				Expect(errorDetails["message"]).To(ContainSubstring("invalid workflow selector"))
 			})
 
-			It("should map K8s creation errors to ERR_K8S_CREATE_FAILED", func() {
+			It("should map apierrors.IsForbidden to ERR_K8S_FORBIDDEN", func() {
+				gr := schema.GroupResource{Group: "kubernaut.ai", Resource: "signalprocessings"}
 				event, err := manager.BuildFailureEvent(
 					"correlation-002",
 					"default",
 					"rr-test",
 					"signal_processing",
-					"failed to create SignalProcessing: forbidden",
+					apierrors.NewForbidden(gr, "sp-test", fmt.Errorf("RBAC denied")),
 					1000,
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -441,9 +460,8 @@ var _ = Describe("Audit Manager", func() {
 				_ = json.Unmarshal(eventDataBytes, &eventData)
 
 				errorDetails := eventData["error_details"].(map[string]interface{})
-				Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "K8s creation errors should map to ERR_K8S_CREATE_FAILED")
-				Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s errors are transient")
-				Expect(errorDetails["message"]).To(ContainSubstring("forbidden"))
+				Expect(errorDetails["code"]).To(Equal("ERR_K8S_FORBIDDEN"), "K8s forbidden should map to ERR_K8S_FORBIDDEN")
+				Expect(errorDetails["retry_possible"]).To(BeFalse(), "RBAC errors are permanent")
 			})
 
 			It("should map unknown errors to ERR_INTERNAL_ORCHESTRATION", func() {
@@ -452,7 +470,7 @@ var _ = Describe("Audit Manager", func() {
 					"default",
 					"rr-test",
 					"unknown",
-					"unexpected panic in reconciler",
+					fmt.Errorf("unexpected panic in reconciler"),
 					1000,
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -467,13 +485,14 @@ var _ = Describe("Audit Manager", func() {
 				Expect(errorDetails["message"]).To(ContainSubstring("unexpected panic"))
 			})
 
-			It("should map 'not found' errors to ERR_K8S_CREATE_FAILED", func() {
+			It("should map apierrors.IsNotFound to ERR_K8S_NOT_FOUND", func() {
+				gr := schema.GroupResource{Group: "kubernaut.ai", Resource: "workflowexecutions"}
 				event, err := manager.BuildFailureEvent(
 					"correlation-004",
 					"default",
 					"rr-test",
 					"workflow_execution",
-					"WorkflowExecution not found after creation",
+					apierrors.NewNotFound(gr, "wfe-test"),
 					1000,
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -483,8 +502,8 @@ var _ = Describe("Audit Manager", func() {
 				_ = json.Unmarshal(eventDataBytes, &eventData)
 
 				errorDetails := eventData["error_details"].(map[string]interface{})
-				Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "'not found' should map to ERR_K8S_CREATE_FAILED")
-				Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s not found errors are transient")
+				Expect(errorDetails["code"]).To(Equal("ERR_K8S_NOT_FOUND"), "K8s not found should map to ERR_K8S_NOT_FOUND")
+				Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s not found errors are retryable")
 				Expect(errorDetails["message"]).To(ContainSubstring("not found"))
 			})
 		})
@@ -681,6 +700,81 @@ var _ = Describe("Audit Manager", func() {
 	})
 
 	// ========================================
+	// BuildRoutingBlockedEvent Tests
+	// Per DD-RO-002: Routing Engine blocking conditions
+	// F-3 SOC2 Fix: event_type consistency validation
+	// ========================================
+	Describe("BuildRoutingBlockedEvent", func() {
+		DescribeTable("should set correct audit event fields",
+			func(fieldName string, validate func(event *ogenclient.AuditEventRequest)) {
+				blockData := &prodaudit.RoutingBlockedData{
+					BlockReason:    "CooldownActive",
+					BlockMessage:   "Cooldown period active for this resource",
+					FromPhase:      "Pending",
+					ToPhase:        "Blocked",
+					TargetResource: "deployment/nginx",
+				}
+				event, err := manager.BuildRoutingBlockedEvent(
+					"corr-routing-001",
+					"production",
+					"rr-blocked-001",
+					"Pending",
+					blockData,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				validate(event)
+			},
+			Entry("event_type = orchestrator.routing.blocked",
+				"event_type",
+				func(event *ogenclient.AuditEventRequest) {
+					Expect(event.EventType).To(Equal("orchestrator.routing.blocked"))
+				},
+			),
+			Entry("event_category = orchestration",
+				"event_category",
+				func(event *ogenclient.AuditEventRequest) {
+					Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategory("orchestration")))
+				},
+			),
+			Entry("event_outcome = pending",
+				"event_outcome",
+				func(event *ogenclient.AuditEventRequest) {
+					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("pending")))
+				},
+			),
+			Entry("correlation_id set correctly",
+				"correlation_id",
+				func(event *ogenclient.AuditEventRequest) {
+					Expect(event.CorrelationID).To(Equal("corr-routing-001"))
+				},
+			),
+			Entry("namespace set correctly",
+				"namespace",
+				func(event *ogenclient.AuditEventRequest) {
+					namespace, hasNamespace := event.Namespace.Get()
+					Expect(hasNamespace).To(BeTrue())
+					Expect(namespace).To(Equal("production"))
+				},
+			),
+			Entry("resource_id set to RR name",
+				"resource_id",
+				func(event *ogenclient.AuditEventRequest) {
+					resourceID, hasResourceID := event.ResourceID.Get()
+					Expect(hasResourceID).To(BeTrue())
+					Expect(resourceID).To(Equal("rr-blocked-001"))
+				},
+			),
+			Entry("F-3 consistency: outer event_type matches EventData discriminator",
+				"consistency",
+				func(event *ogenclient.AuditEventRequest) {
+					Expect(event.EventType).To(Equal(string(event.EventData.Type)),
+						"F-3 SOC2 Fix: outer event_type must match EventData discriminator")
+				},
+			),
+		)
+	})
+
+	// ========================================
 	// Event Validation Tests
 	// Per DD-AUDIT-002: All events must pass validation
 	// ========================================
@@ -730,7 +824,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "Failure",
 					build: func() error {
-						_, err := manager.BuildFailureEvent("corr", "ns", "rr", "phase", "reason", 1000)
+						_, err := manager.BuildFailureEvent("corr", "ns", "rr", "phase", fmt.Errorf("reason"), 1000)
 						if err != nil {
 							return err
 						}
@@ -772,6 +866,22 @@ var _ = Describe("Audit Manager", func() {
 						}
 						// NOTE: OpenAPI types don't have Validate() method (DD-AUDIT-002 V2.0.1)
 						// Validation is done through OpenAPI schema validation in pkg/audit
+						return nil
+					},
+				},
+				{
+					name: "RoutingBlocked",
+					build: func() error {
+						blockData := &prodaudit.RoutingBlockedData{
+							BlockReason:  "CooldownActive",
+							BlockMessage: "Cooldown period active",
+							FromPhase:    "Pending",
+							ToPhase:      "Blocked",
+						}
+						_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
+						if err != nil {
+							return err
+						}
 						return nil
 					},
 				},
