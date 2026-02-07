@@ -2,7 +2,7 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint & Unit Tests (parallel: 2 lint + 9 unit test jobs) ~2 min
+# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~2 min
 # Stage 2: Build & Push Images (parallel matrix: 10 images) ~5 min
 # Stage 3: Integration Tests (parallel matrix: 9 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 8 services, when enabled) ~30 min each
@@ -16,7 +16,7 @@ name: CI Pipeline
 #
 # Smart Path Detection:
 #   - Lint: Runs in parallel (Go and Python separately)
-#   - Unit Tests: Matrix runs ALL services always (~2 min total)
+#   - Unit Tests: Matrix runs ALL services + shared-packages always (~2 min total)
 #   - Build & Push: Matrix builds ALL images always (~5 min, includes compilation)
 #   - Integration Tests: Matrix runs ALL services always (~15 min total)
 #     * Design Decision: No path filtering at integration level
@@ -153,6 +153,7 @@ jobs:
           - signalprocessing
           - workflowexecution
           - holmesgpt-api
+          - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1028,7 +1029,7 @@ jobs:
           echo "STAGE 1 - Lint & Unit Tests (All Parallel):"
           echo "  Lint (Go):       ${{ needs.lint-go.result }}"
           echo "  Lint (Python):   ${{ needs.lint-python.result }}"
-          echo "  Unit Tests (9):  ${{ needs.unit-tests.result }}"
+          echo "  Unit Tests (10): ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
           echo "  All Images (10 services): ${{ needs.build-and-push-images.result }}"

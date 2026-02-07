@@ -237,88 +237,64 @@ var _ = Describe("Backoff Utility", func() {
 	// Scenario 5: Edge Cases
 	// =================================================================
 	Describe("Calculate - Edge Cases", func() {
-		Context("with zero or negative attempts", func() {
-			It("should return BasePeriod for zero attempts", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					Multiplier:    2.0,
-					JitterPercent: 0,
-				}
-				Expect(config.Calculate(0)).To(Equal(30 * time.Second))
-			})
+		// Deterministic boundary conditions: config → attempt → expected duration.
+		// All entries use JitterPercent=0 for deterministic assertions.
+		// DescribeTable consolidates 12 identical-structure edge-case tests.
+		DescribeTable("deterministic boundary conditions",
+			func(config backoff.Config, attempt int, expected time.Duration) {
+				Expect(config.Calculate(int32(attempt))).To(Equal(expected))
+			},
+			// Zero/negative attempts → always returns BasePeriod
+			Entry("zero attempts → BasePeriod",
+				backoff.Config{BasePeriod: 30 * time.Second, Multiplier: 2.0},
+				0, 30*time.Second),
+			Entry("negative attempt (-1) → BasePeriod",
+				backoff.Config{BasePeriod: 30 * time.Second, Multiplier: 2.0},
+				-1, 30*time.Second),
+			Entry("negative attempt (-100) → BasePeriod",
+				backoff.Config{BasePeriod: 30 * time.Second, Multiplier: 2.0},
+				-100, 30*time.Second),
 
-			It("should return BasePeriod for negative attempts", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					Multiplier:    2.0,
-					JitterPercent: 0,
-				}
-				Expect(config.Calculate(-1)).To(Equal(30 * time.Second))
-				Expect(config.Calculate(-100)).To(Equal(30 * time.Second))
-			})
-		})
+			// Zero base period → zero duration regardless of attempt
+			Entry("zero base period, attempt 1 → zero",
+				backoff.Config{BasePeriod: 0, Multiplier: 2.0},
+				1, time.Duration(0)),
+			Entry("zero base period, attempt 5 → zero",
+				backoff.Config{BasePeriod: 0, Multiplier: 2.0},
+				5, time.Duration(0)),
 
-		Context("with zero base period", func() {
-			It("should return zero duration", func() {
-				config := backoff.Config{
-					BasePeriod:    0,
-					Multiplier:    2.0,
-					JitterPercent: 0,
-				}
-				Expect(config.Calculate(1)).To(Equal(0 * time.Second))
-				Expect(config.Calculate(5)).To(Equal(0 * time.Second))
-			})
-		})
+			// Zero multiplier → defaults to standard (2.0)
+			Entry("zero multiplier, attempt 1 → 30s (defaults to 2.0)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 0},
+				1, 30*time.Second),
+			Entry("zero multiplier, attempt 2 → 60s (defaults to 2.0)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 0},
+				2, 60*time.Second),
+			Entry("zero multiplier, attempt 3 → 120s (defaults to 2.0)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 0},
+				3, 120*time.Second),
 
-		Context("with zero multiplier", func() {
-			It("should default to 2.0 (standard exponential)", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					MaxPeriod:     300 * time.Second,
-					Multiplier:    0, // Should default to 2.0
-					JitterPercent: 0,
-				}
+			// Very high multiplier → capped at MaxPeriod without overflow
+			Entry("multiplier=10, attempt 1 → 30s (below cap)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 10.0},
+				1, 30*time.Second),
+			Entry("multiplier=10, attempt 2 → 300s (capped at MaxPeriod)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 10.0},
+				2, 300*time.Second),
+			Entry("multiplier=10, attempt 3 → 300s (remains capped)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 10.0},
+				3, 300*time.Second),
+			Entry("multiplier=10, attempt 100 → 300s (no overflow)",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 300 * time.Second, Multiplier: 10.0},
+				100, 300*time.Second),
 
-				// Should behave as multiplier=2.0
-				Expect(config.Calculate(1)).To(Equal(30 * time.Second))
-				Expect(config.Calculate(2)).To(Equal(60 * time.Second))
-				Expect(config.Calculate(3)).To(Equal(120 * time.Second))
-			})
-		})
+			// No max period → unlimited exponential growth
+			Entry("no max period, attempt 10 → 30s × 2^9 = 15360s",
+				backoff.Config{BasePeriod: 30 * time.Second, MaxPeriod: 0, Multiplier: 2.0},
+				10, 30*512*time.Second),
+		)
 
-		Context("with very high multiplier (overflow prevention)", func() {
-			It("should cap at MaxPeriod without overflow", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					MaxPeriod:     300 * time.Second,
-					Multiplier:    10.0, // Very aggressive
-					JitterPercent: 0,
-				}
-
-				// 30s * 10^100 would overflow, should cap at MaxPeriod
-				Expect(config.Calculate(100)).To(Equal(300 * time.Second))
-
-				// Even first few attempts should hit cap quickly
-				Expect(config.Calculate(1)).To(Equal(30 * time.Second))  // 30 * 10^0
-				Expect(config.Calculate(2)).To(Equal(300 * time.Second)) // 30 * 10^1 = 300s (at cap)
-				Expect(config.Calculate(3)).To(Equal(300 * time.Second)) // Would be 3000s, capped
-			})
-		})
-
-		Context("with no max period (unlimited backoff)", func() {
-			It("should allow unlimited exponential growth", func() {
-				config := backoff.Config{
-					BasePeriod:    30 * time.Second,
-					MaxPeriod:     0, // No cap
-					Multiplier:    2.0,
-					JitterPercent: 0,
-				}
-
-				// Should grow without limit
-				Expect(config.Calculate(10)).To(Equal(30 * 512 * time.Second)) // 2^9 = 512
-			})
-		})
-
+		// Jitter-at-bounds tests require statistical loops — not table-driven.
 		Context("with jitter at bounds", func() {
 			It("should never reduce below BasePeriod even with jitter", func() {
 				config := backoff.Config{

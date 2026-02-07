@@ -31,6 +31,12 @@ func TestConditions(t *testing.T) {
 	RunSpecs(t, "Shared Conditions Suite")
 }
 
+// statusPtr returns a pointer to the given ConditionStatus.
+// Used by DescribeTable entries where nil means "condition not set".
+func statusPtr(s metav1.ConditionStatus) *metav1.ConditionStatus {
+	return &s
+}
+
 var _ = Describe("Shared Conditions Utilities", func() {
 	var conditionsList []metav1.Condition
 
@@ -105,77 +111,44 @@ var _ = Describe("Shared Conditions Utilities", func() {
 		})
 	})
 
-	Describe("IsTrue", func() {
-		It("should return true when condition exists and is True", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionTrue, "ValidationSucceeded", "Validation passed")
-
-			Expect(conditions.IsTrue(conditionsList, "ValidationComplete")).To(BeTrue())
-		})
-
-		It("should return false when condition exists but is False", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionFalse, "ValidationFailed", "Validation failed")
-
-			Expect(conditions.IsTrue(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition exists but is Unknown", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionUnknown, "ValidationInProgress", "Validating")
-
-			Expect(conditions.IsTrue(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition does not exist", func() {
-			Expect(conditions.IsTrue(conditionsList, "EnrichmentComplete")).To(BeFalse())
-		})
-	})
-
-	Describe("IsFalse", func() {
-		It("should return true when condition exists and is False", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionFalse, "ValidationFailed", "Validation failed")
-
-			Expect(conditions.IsFalse(conditionsList, "ValidationComplete")).To(BeTrue())
-		})
-
-		It("should return false when condition exists but is True", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionTrue, "ValidationSucceeded", "Validation passed")
-
-			Expect(conditions.IsFalse(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition exists but is Unknown", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionUnknown, "ValidationInProgress", "Validating")
-
-			Expect(conditions.IsFalse(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition does not exist", func() {
-			Expect(conditions.IsFalse(conditionsList, "EnrichmentComplete")).To(BeFalse())
-		})
-	})
-
-	Describe("IsUnknown", func() {
-		It("should return true when condition exists and is Unknown", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionUnknown, "ValidationInProgress", "Validating")
-
-			Expect(conditions.IsUnknown(conditionsList, "ValidationComplete")).To(BeTrue())
-		})
-
-		It("should return false when condition exists but is True", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionTrue, "ValidationSucceeded", "Validation passed")
-
-			Expect(conditions.IsUnknown(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition exists but is False", func() {
-			conditions.Set(&conditionsList, "ValidationComplete", metav1.ConditionFalse, "ValidationFailed", "Validation failed")
-
-			Expect(conditions.IsUnknown(conditionsList, "ValidationComplete")).To(BeFalse())
-		})
-
-		It("should return false when condition does not exist", func() {
-			Expect(conditions.IsUnknown(conditionsList, "EnrichmentComplete")).To(BeFalse())
-		})
-	})
+	// Status check functions: IsTrue, IsFalse, IsUnknown
+	// Each follows the same contract: set a condition (or not) → query status → verify result.
+	// DescribeTable consolidates 12 identical-structure tests into one table.
+	DescribeTable("status check functions (IsTrue, IsFalse, IsUnknown)",
+		func(checkFn func([]metav1.Condition, string) bool, status *metav1.ConditionStatus, expected bool) {
+			if status != nil {
+				conditions.Set(&conditionsList, "TestCondition", *status, "TestReason", "Test message")
+			}
+			Expect(checkFn(conditionsList, "TestCondition")).To(Equal(expected))
+		},
+		// --- IsTrue ---
+		Entry("IsTrue: condition is True → true",
+			conditions.IsTrue, statusPtr(metav1.ConditionTrue), true),
+		Entry("IsTrue: condition is False → false",
+			conditions.IsTrue, statusPtr(metav1.ConditionFalse), false),
+		Entry("IsTrue: condition is Unknown → false",
+			conditions.IsTrue, statusPtr(metav1.ConditionUnknown), false),
+		Entry("IsTrue: condition not set → false",
+			conditions.IsTrue, (*metav1.ConditionStatus)(nil), false),
+		// --- IsFalse ---
+		Entry("IsFalse: condition is False → true",
+			conditions.IsFalse, statusPtr(metav1.ConditionFalse), true),
+		Entry("IsFalse: condition is True → false",
+			conditions.IsFalse, statusPtr(metav1.ConditionTrue), false),
+		Entry("IsFalse: condition is Unknown → false",
+			conditions.IsFalse, statusPtr(metav1.ConditionUnknown), false),
+		Entry("IsFalse: condition not set → false",
+			conditions.IsFalse, (*metav1.ConditionStatus)(nil), false),
+		// --- IsUnknown ---
+		Entry("IsUnknown: condition is Unknown → true",
+			conditions.IsUnknown, statusPtr(metav1.ConditionUnknown), true),
+		Entry("IsUnknown: condition is True → false",
+			conditions.IsUnknown, statusPtr(metav1.ConditionTrue), false),
+		Entry("IsUnknown: condition is False → false",
+			conditions.IsUnknown, statusPtr(metav1.ConditionFalse), false),
+		Entry("IsUnknown: condition not set → false",
+			conditions.IsUnknown, (*metav1.ConditionStatus)(nil), false),
+	)
 
 	Describe("Integration Scenarios", func() {
 		It("should handle typical lifecycle transitions", func() {
