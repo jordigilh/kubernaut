@@ -385,7 +385,15 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 
 	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created successfully")
 
-	// 10. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
+	// 10. Ensure /coverdata is world-writable inside Kind node (DD-TEST-007)
+	// Defense-in-depth: even if the host directory is 0777, DirectoryOrCreate may
+	// create a root-owned 0755 directory inside the Kind node. This ensures the
+	// container user (UID 1001) can always write coverage data.
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		ensureCoverdataWritableInKindNode(opts.ClusterName, writer)
+	}
+
+	// 11. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
 	return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
 }
 
@@ -405,4 +413,26 @@ func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writ
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig exported to %s\n", kubeconfigPath)
 	return nil
+}
+
+// ensureCoverdataWritableInKindNode ensures /coverdata inside the Kind node is
+// world-writable (0777) so that any container user (e.g. UID 1001) can write
+// coverage data. This is a defense-in-depth measure: if the hostPath volume's
+// DirectoryOrCreate creates a root-owned directory, the container user would
+// be unable to write without this fix.
+func ensureCoverdataWritableInKindNode(clusterName string, writer io.Writer) {
+	nodeName := clusterName + "-control-plane"
+
+	// Try both runtimes (podman for local, docker for CI)
+	for _, runtime := range []string{"podman", "docker"} {
+		cmd := exec.Command(runtime, "exec", nodeName,
+			"sh", "-c", "mkdir -p /coverdata && chmod 777 /coverdata")
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			_, _ = fmt.Fprintf(writer, "  ✅ /coverdata set to 0777 inside Kind node via %s\n", runtime)
+			return
+		}
+		_ = output // Suppress unused variable
+	}
+	_, _ = fmt.Fprintln(writer, "  ⚠️  Could not chmod /coverdata inside Kind node (non-fatal)")
 }

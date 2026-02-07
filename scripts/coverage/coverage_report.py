@@ -395,10 +395,10 @@ def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
     with open(path) as f:
         for line in f:
             line = line.strip()
-            # Skip headers, separators, summary
+            # Skip headers, separators, summary, and blank lines
             if (line.startswith("Name") or line.startswith("---") or
                     line.startswith("==") or line.startswith("TOTAL") or
-                    not line.startswith("src/")):
+                    not line):
                 continue
 
             parts = line.split()
@@ -407,11 +407,22 @@ def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
                     name = parts[0]
                     total_stmts = int(parts[1])
                     missed_stmts = int(parts[2])
-                    modules.append(PythonModuleCoverage(
-                        name=name, total_stmts=total_stmts, missed_stmts=missed_stmts
-                    ))
                 except (ValueError, IndexError):
                     continue
+
+                # Normalize path: E2E coverage.py reports use
+                # "holmesgpt-api/src/..." while unit/integration pytest
+                # reports use "src/...". Normalize to "src/" prefix.
+                if name.startswith("holmesgpt-api/"):
+                    name = name[len("holmesgpt-api/"):]
+
+                # Only include Python source modules
+                if not name.startswith("src/"):
+                    continue
+
+                modules.append(PythonModuleCoverage(
+                    name=name, total_stmts=total_stmts, missed_stmts=missed_stmts
+                ))
     return modules
 
 
@@ -497,22 +508,61 @@ def calc_python_service() -> ServiceCoverage:
             pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
             svc.e2e = pct if pct else "-"
 
-    # All Tiers: highest coverage across all tiers (can't line-merge Python tiers)
-    # Pick the best percentage from available tiers
-    best_pct = 0.0
-    for tier_val in [svc.unit, svc.integration, svc.e2e]:
-        if tier_val and tier_val != "-":
-            try:
-                val = float(tier_val.replace("%", ""))
-                if val > best_pct:
-                    best_pct = val
-            except ValueError:
-                pass
-    if best_pct > 0:
-        svc.all_tiers = f"{best_pct:.1f}%"
+    # All Tiers: module-level merge across all tier files.
+    # For each Python module, take the best (lowest miss count) across tiers.
+    # This is the Python equivalent of Go's line-by-line merging.
+    #
+    # NOTE: We do NOT apply unit/integration pattern filters here — All Tiers
+    # considers ALL modules. Each tier's per-module data may cover different
+    # modules; merging gives us the best coverage per module from any tier.
+    all_tier_files = [
+        unit_file,
+        int_file,
+        e2e_file,
+    ]
+    merged_modules: dict[str, PythonModuleCoverage] = {}
+    has_module_data = False
+    for tf in all_tier_files:
+        modules = parse_python_coverage_file(tf)
+        if modules:
+            has_module_data = True
+            for m in modules:
+                if m.name in merged_modules:
+                    existing = merged_modules[m.name]
+                    # Same module: take the tier with fewer missed statements
+                    # (= more coverage). total_stmts should be the same across
+                    # tiers for the same module, but use max as a safety net.
+                    if m.missed_stmts < existing.missed_stmts:
+                        merged_modules[m.name] = PythonModuleCoverage(
+                            name=m.name,
+                            total_stmts=max(m.total_stmts, existing.total_stmts),
+                            missed_stmts=m.missed_stmts,
+                        )
+                else:
+                    merged_modules[m.name] = PythonModuleCoverage(
+                        name=m.name,
+                        total_stmts=m.total_stmts,
+                        missed_stmts=m.missed_stmts,
+                    )
+
+    if has_module_data and merged_modules:
+        svc.all_tiers = calc_python_coverage(list(merged_modules.values()))
     else:
-        total = get_python_total_from_file(unit_file)
-        svc.all_tiers = total if total else svc.unit
+        # Fallback: use best percentage if no module data available
+        best_pct = 0.0
+        for tier_val in [svc.unit, svc.integration, svc.e2e]:
+            if tier_val and tier_val != "-":
+                try:
+                    val = float(tier_val.replace("%", ""))
+                    if val > best_pct:
+                        best_pct = val
+                except ValueError:
+                    pass
+        if best_pct > 0:
+            svc.all_tiers = f"{best_pct:.1f}%"
+        else:
+            total = get_python_total_from_file(unit_file)
+            svc.all_tiers = total if total else svc.unit
 
     return svc
 

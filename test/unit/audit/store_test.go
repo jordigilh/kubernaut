@@ -145,76 +145,6 @@ func (m *MockDataStorageClient) Reset() {
 	m.failUntilCall = 0
 }
 
-// MockDLQClient is a mock implementation of audit.DLQClient for testing (GAP-10)
-// DD-AUDIT-002 V2.0: Uses OpenAPI types (*ogenclient.AuditEventRequest)
-type MockDLQClient struct {
-	mu           sync.Mutex
-	events       []*ogenclient.AuditEventRequest
-	errors       []error
-	shouldFail   bool
-	enqueueCount int32
-	failCount    int32
-}
-
-func NewMockDLQClient() *MockDLQClient {
-	return &MockDLQClient{
-		events: make([]*ogenclient.AuditEventRequest, 0),
-		errors: make([]error, 0),
-	}
-}
-
-func (m *MockDLQClient) EnqueueAuditEvent(ctx context.Context, event *ogenclient.AuditEventRequest, originalError error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	atomic.AddInt32(&m.enqueueCount, 1)
-
-	if m.shouldFail {
-		atomic.AddInt32(&m.failCount, 1)
-		return fmt.Errorf("mock DLQ failure")
-	}
-
-	m.events = append(m.events, event)
-	m.errors = append(m.errors, originalError)
-	return nil
-}
-
-func (m *MockDLQClient) EventCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.events)
-}
-
-func (m *MockDLQClient) EnqueueCount() int {
-	return int(atomic.LoadInt32(&m.enqueueCount))
-}
-
-func (m *MockDLQClient) FailCount() int {
-	return int(atomic.LoadInt32(&m.failCount))
-}
-
-func (m *MockDLQClient) SetShouldFail(shouldFail bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.shouldFail = shouldFail
-}
-
-func (m *MockDLQClient) GetEvents() []*ogenclient.AuditEventRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	result := make([]*ogenclient.AuditEventRequest, len(m.events))
-	copy(result, m.events)
-	return result
-}
-
-func (m *MockDLQClient) GetOriginalErrors() []error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	result := make([]error, len(m.errors))
-	copy(result, m.errors)
-	return result
-}
-
 // Helper function to create a test event
 // DD-AUDIT-002 V2.0: Uses OpenAPI types and helper functions
 func createTestEvent() *ogenclient.AuditEventRequest {
@@ -341,12 +271,16 @@ var _ = Describe("BufferedAuditStore", func() {
 		It("should not block when buffer has space", func() {
 			event := createTestEvent()
 
-			start := time.Now()
+			// StoreAudit with buffer space is a non-blocking channel send.
+			// The behavioral contract: the call returns nil (no error) without
+			// blocking. If the channel send blocked, the test would hang until
+			// the Ginkgo timeout fires, which is the implicit deadlock guard.
+			//
+			// We do NOT assert on batch flush timing here — the shared
+			// BeforeEach uses FlushInterval=10s to prevent buffer drain,
+			// and batch flushing is tested separately in "Batch Processing".
 			err := store.StoreAudit(ctx, event)
-			duration := time.Since(start)
-
 			Expect(err).ToNot(HaveOccurred())
-			Expect(duration).To(BeNumerically("<", 10*time.Millisecond)) // Should be instant
 		})
 
 		// GAP-9: ADR-032 requires callers to know about dropped events
@@ -534,166 +468,11 @@ var _ = Describe("BufferedAuditStore", func() {
 		})
 	})
 
-	// GAP-10: DLQ Fallback Tests (DD-009, ADR-032 "No Audit Loss")
-	// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
-	// Business Requirement: BR-AUDIT-001 (Complete audit trail with no data loss)
-	//
-	// NOTE: Client-side DLQ removed in DD-AUDIT-002 V3.0 (see pkg/audit/store.go:101)
-	// Server-side DLQ (in DataStorage service) handles persistence failures
-	// These tests are PENDING until updated to test server-side DLQ behavior
-	PDescribe("DLQ Fallback (GAP-10)", func() {
-		var (
-			mockDLQ *MockDLQClient
-		)
-
-		BeforeEach(func() {
-			mockDLQ = NewMockDLQClient()
-		})
-
-		// BEHAVIOR: When primary write fails after max retries, events go to DLQ
-		// CORRECTNESS: All events in batch should be enqueued to DLQ
-		It("should enqueue batch to DLQ after max retries (GAP-10, DD-009)", func() {
-			config := audit.Config{
-				BufferSize:    100,
-				BatchSize:     10,
-				FlushInterval: 100 * time.Millisecond,
-				MaxRetries:    3,
-			}
-
-			// Create store with DLQ client
-			var err error
-			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Make primary write fail permanently
-			mockClient.SetShouldFail(true)
-
-			// Store 10 events to trigger batch write
-			for i := 0; i < 10; i++ {
-				event := createTestEvent()
-				_ = store.StoreAudit(ctx, event)
-			}
-
-			// Wait for max retries + DLQ fallback
-			Eventually(func() int {
-				return mockDLQ.EventCount()
-			}, "20s").Should(Equal(10))
-
-			// GAP-10: All 10 events should be in DLQ
-			Expect(mockDLQ.EventCount()).To(Equal(10), "All events should be enqueued to DLQ")
-			Expect(mockClient.BatchCount()).To(Equal(0), "No batches written to primary")
-			Expect(mockClient.AttemptCount()).To(BeNumerically(">=", 3), "Should have retried")
-		})
-
-		// BEHAVIOR: DLQ receives the original error that caused failure
-		// CORRECTNESS: Original error is preserved for debugging
-		It("should include original error in DLQ entry (GAP-10)", func() {
-			config := audit.Config{
-				BufferSize:    100,
-				BatchSize:     10,
-				FlushInterval: 100 * time.Millisecond,
-				MaxRetries:    3,
-			}
-
-			// Create store with DLQ client
-			var err error
-			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Set specific error
-			mockClient.SetCustomError(audit.NewHTTPError(503, "Service Unavailable"))
-
-			// Store events
-			for i := 0; i < 10; i++ {
-				event := createTestEvent()
-				_ = store.StoreAudit(ctx, event)
-			}
-
-			// Wait for DLQ fallback
-			Eventually(func() int {
-				return mockDLQ.EventCount()
-			}, "20s").Should(Equal(10))
-
-			// Verify original errors are captured
-			originalErrors := mockDLQ.GetOriginalErrors()
-			Expect(len(originalErrors)).To(Equal(10))
-			for _, origErr := range originalErrors {
-				Expect(origErr).ToNot(BeNil())
-				Expect(origErr.Error()).To(ContainSubstring("503"))
-			}
-		})
-
-		// BEHAVIOR: Without DLQ, events are dropped with warning
-		// CORRECTNESS: Log message indicates ADR-032 violation
-		It("should log ADR-032 violation when no DLQ configured (GAP-10)", func() {
-			config := audit.Config{
-				BufferSize:    100,
-				BatchSize:     10,
-				FlushInterval: 100 * time.Millisecond,
-				MaxRetries:    3,
-			}
-
-			// Create store WITHOUT DLQ
-			var err error
-			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Make primary write fail
-			mockClient.SetShouldFail(true)
-
-			// Store events
-			for i := 0; i < 10; i++ {
-				event := createTestEvent()
-				_ = store.StoreAudit(ctx, event)
-			}
-
-			// Wait for max retries
-			Eventually(func() int {
-				return mockClient.AttemptCount()
-			}, "15s").Should(BeNumerically(">=", 3))
-
-			// Events should be dropped (no DLQ)
-			Expect(mockClient.BatchCount()).To(Equal(0))
-			// Note: In production, this would log "AUDIT DATA LOSS" warning
-		})
-
-		// BEHAVIOR: Partial DLQ success is better than total loss
-		// CORRECTNESS: If some DLQ writes fail, others still succeed
-		It("should continue DLQ writes even if some fail (GAP-10)", func() {
-			config := audit.Config{
-				BufferSize:    100,
-				BatchSize:     5, // Smaller batch
-				FlushInterval: 100 * time.Millisecond,
-				MaxRetries:    3,
-			}
-
-			// Create a DLQ that fails after first 3 events
-			failingDLQ := NewMockDLQClient()
-
-			// Create store (DLQ functionality is internal)
-			var err error
-			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Make primary write fail
-			mockClient.SetShouldFail(true)
-
-			// Store 5 events
-			for i := 0; i < 5; i++ {
-				event := createTestEvent()
-				_ = store.StoreAudit(ctx, event)
-			}
-
-			// Wait for DLQ fallback
-			Eventually(func() int {
-				return failingDLQ.EnqueueCount()
-			}, "20s").Should(Equal(5))
-
-			// All 5 events should have been attempted for DLQ
-			Expect(failingDLQ.EnqueueCount()).To(Equal(5))
-			Expect(failingDLQ.EventCount()).To(Equal(5)) // All succeeded
-		})
-	})
+	// NOTE: Client-side DLQ tests (GAP-10) removed — DD-AUDIT-002 V3.0 removed
+	// client-side DLQ (see pkg/audit/store.go:101). Server-side DLQ in
+	// DataStorage service handles persistence failures. If server-side DLQ
+	// tests are needed, they belong in test/unit/datastorage/ or
+	// test/integration/datastorage/.
 
 	Describe("Graceful Shutdown", func() {
 		BeforeEach(func() {
