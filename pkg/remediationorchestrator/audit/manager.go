@@ -26,7 +26,6 @@ package audit
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -299,45 +298,33 @@ func (m *Manager) BuildCompletionEvent(
 // Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
 // BR-AUDIT-005 Gap #7: Now includes standardized error_details for SOC2 compliance
+//
+// F-6 SOC2 Audit Fix: Changed failureErr from string to error type.
+// Uses ClassifyError for typed error classification instead of string matching.
 func (m *Manager) BuildFailureEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
 	failurePhase string,
-	failureReason string,
+	failureErr error,
 	durationMs int64,
 ) (*ogenclient.AuditEventRequest, error) {
+	// F-6: Use typed error classification instead of strings.Contains
+	classification := ClassifyError(failureErr)
+
+	failureReason := ""
+	if failureErr != nil {
+		failureReason = failureErr.Error()
+	}
+
 	// BR-AUDIT-005 Gap #7: Build standardized error_details
 	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
 
-	// Determine error code and retry guidance based on failure phase/reason
-	// BR-AUDIT-005 Gap #7: Check most specific errors first (invalid config before general timeout)
-	var errorCode string
-	var retryPossible bool
-
-	switch {
-	case strings.Contains(failureReason, "ERR_INVALID_TIMEOUT_CONFIG"):
-		errorCode = "ERR_INVALID_TIMEOUT_CONFIG" // Specific invalid timeout config error
-		retryPossible = false                    // Invalid config is permanent
-	case strings.Contains(failureReason, "invalid") || strings.Contains(failureReason, "configuration"):
-		errorCode = "ERR_INVALID_CONFIG"
-		retryPossible = false // Invalid config is permanent
-	case strings.Contains(failureReason, "timeout"):
-		errorCode = "ERR_TIMEOUT_REMEDIATION"
-		retryPossible = true // Timeouts are transient
-	case strings.Contains(failureReason, "not found") || strings.Contains(failureReason, "create"):
-		errorCode = "ERR_K8S_CREATE_FAILED"
-		retryPossible = true // K8s creation may be transient
-	default:
-		errorCode = "ERR_INTERNAL_ORCHESTRATION"
-		retryPossible = true // Default to retryable
-	}
-
 	errorDetails := sharedaudit.NewErrorDetails(
 		"remediationorchestrator",
-		errorCode,
+		classification.Code,
 		errorMessage,
-		retryPossible,
+		classification.RetryPossible,
 	)
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -507,15 +494,16 @@ func (m *Manager) BuildManualReviewEvent(
 	audit.SetSeverity(event, "warning")
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
+	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType:        api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		EventType:        api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview,
 		RrName:           rrName,
 		Namespace:        namespace,
 		Reason:           api.OptString{Value: reason, Set: true},
 		SubReason:        api.OptString{Value: subReason, Set: true},
 		NotificationName: api.OptString{Value: notificationName, Set: true},
 	}
-	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -563,16 +551,13 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	// All optional fields are handled by omitempty JSON tags in RoutingBlockedData
-	// Use ogen union constructor (OGEN-MIGRATION)
-	// Note: RoutingBlockedData doesn't have RrName/Namespace, they come from function params
+	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
 		RrName:    rrName,
 		Namespace: namespace,
 	}
-	// TODO: Add blocking-specific fields to OpenAPI schema (BlockReason, BlockMessage, etc.)
-	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData(payload)
 
 	return event, nil
 }

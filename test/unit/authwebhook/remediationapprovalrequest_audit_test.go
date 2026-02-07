@@ -430,7 +430,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 			Expect(payload.Decision).To(Equal(ogenclient.RemediationApprovalAuditPayloadDecisionApproved))
 			Expect(payload.DecisionMessage).To(Equal("Approved for production deployment"))
 			Expect(payload.AiAnalysisRef).To(Equal("ai-analysis-789"))
-			Expect(string(payload.EventType)).To(Equal("webhook.approval.decided"))
+			Expect(string(payload.EventType)).To(Equal("webhook.remediationapprovalrequest.decided"))
 		})
 	})
 })

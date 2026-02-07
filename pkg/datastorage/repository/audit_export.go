@@ -343,35 +343,16 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	return result, nil
 }
 
-// calculateEventHashForVerification computes the expected SHA256 hash for verification
-// Must match the calculateEventHash logic in audit_events_repository.go
+// calculateEventHashForVerification computes the expected SHA256 hash for verification.
+// Uses PrepareEventForHashing to ensure identical field-clearing logic as write-time.
 func calculateEventHashForVerification(previousHash string, event *AuditEvent) (string, error) {
-	// CRITICAL: Clear fields to match INSERT-time state
-	// This MUST match the logic in calculateEventHash() in audit_events_repository.go
-	// 1. EventHash/PreviousEventHash: Not yet calculated during INSERT
-	// 2. EventDate: Derived from EventTimestamp (not stored separately in hash)
-	// 3. LegalHold fields: Can change AFTER event creation (not part of immutable event)
-	// Note: EventTimestamp IS included in hash (set before calculation during INSERT)
-	eventCopy := *event
-	eventCopy.EventHash = ""
-	eventCopy.PreviousEventHash = ""
-	eventCopy.EventDate = DateOnly{} // Clear derived field only
+	eventCopy := PrepareEventForHashing(event)
 
-	// SOC2 Gap #8: Legal hold fields can change after event creation
-	// They are NOT part of the immutable audit event hash
-	eventCopy.LegalHold = false
-	eventCopy.LegalHoldReason = ""
-	eventCopy.LegalHoldPlacedBy = ""
-	eventCopy.LegalHoldPlacedAt = nil
-
-	// Serialize event to JSON (canonical form for consistent hashing)
-	// CRITICAL: Must match audit_events_repository.go - pass by value, not pointer
 	eventJSON, err := json.Marshal(eventCopy)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
 	}
 
-	// Compute hash: SHA256(previous_hash + event_json)
 	hasher := sha256.New()
 	hasher.Write([]byte(previousHash))
 	hasher.Write(eventJSON)

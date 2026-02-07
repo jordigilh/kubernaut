@@ -150,7 +150,8 @@ func (m *MockDataStorageClient) Reset() {
 func createTestEvent() *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "test.event.created")
+	// F-3 SOC2 Fix: event_type must match EventData discriminator
+	audit.SetEventType(event, "gateway.crd.created")
 	audit.SetEventCategory(event, "gateway") // DD-TESTING-001: Use valid event_category from OpenAPI enum
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)

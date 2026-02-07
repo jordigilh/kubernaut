@@ -375,7 +375,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
 	if err := r.validateTimeoutConfig(ctx, rr); err != nil {
 		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
-		return r.transitionToFailed(ctx, rr, "configuration", err.Error())
+		return r.transitionToFailed(ctx, rr, "configuration", err)
 	}
 
 	// ========================================
@@ -636,7 +636,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 	// First, check if we're in Processing but have no SP ref (corrupted state)
 	if rr.Status.SignalProcessingRef == nil {
 		logger.Error(nil, "Processing phase but no SignalProcessingRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing not found")
+		return r.transitionToFailed(ctx, rr, "signal_processing", fmt.Errorf("SignalProcessing not found"))
 	}
 
 	// Fetch SignalProcessing CRD
@@ -727,7 +727,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			logger.Error(err, "Failed to update SignalProcessingComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
+		return r.transitionToFailed(ctx, rr, "signal_processing", fmt.Errorf("SignalProcessing failed"))
 	}
 
 	// Delegate to SignalProcessingHandler for status-based transitions
@@ -1063,11 +1063,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		if rar.Status.DecisionMessage != "" {
 			reason = rar.Status.DecisionMessage
 		}
-		return r.transitionToFailed(ctx, rr, "approval", reason)
+		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("%s", reason))
 
 	case remediationv1.ApprovalDecisionExpired:
 		logger.Info("Approval expired (timeout)")
-		return r.transitionToFailed(ctx, rr, "approval", "Approval request expired (timeout)")
+		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
 
 	default:
 		// Still pending - check if deadline passed (V1.0 timeout handling)
@@ -1096,7 +1096,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to update RAR status to Expired")
 			}
-			return r.transitionToFailed(ctx, rr, "approval", "Approval request expired (timeout)")
+			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
 		}
 
 		// Still waiting for approval
@@ -1116,14 +1116,14 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 	// First, check if we're in Executing but have no WE ref (corrupted state)
 	if rr.Status.WorkflowExecutionRef == nil {
 		logger.Error(nil, "Executing phase but no WorkflowExecutionRef - corrupted state")
-		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found"))
 	}
 
 	// Check if child is missing (AllChildrenHealthy=false)
 	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
 		logger.Error(nil, "WorkflowExecution CRD not found",
 			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found"))
 	}
 
 	// Fetch WorkflowExecution CRD
@@ -1134,7 +1134,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 	}, we)
 	if err != nil {
 		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
-		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+		return r.transitionToFailed(ctx, rr, "workflow_execution", fmt.Errorf("WorkflowExecution not found: %w", err))
 	}
 
 	// Set WorkflowExecutionComplete condition before delegating to handler
@@ -1383,8 +1383,14 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 // BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
 // triggers consecutive failure blocking (≥3 consecutive failures for same fingerprint).
 // If blocking is triggered, transitions to non-terminal Blocked phase instead.
-func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string) (ctrl.Result, error) {
+func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// F-6: Derive string reason from error for status fields and logging
+	failureReason := ""
+	if failureErr != nil {
+		failureReason = failureErr.Error()
+	}
 
 	// BR-ORCH-042: Log consecutive failures for observability
 	// NOTE: This RR transitions to Failed (terminal state).
@@ -1467,7 +1473,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	// only the reconcile that successfully transitioned will emit the audit event
 	if oldPhaseBeforeTransition != phase.Failed {
 		durationMs := time.Since(startTime).Milliseconds()
-		r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
+		r.emitFailureAudit(ctx, rr, failurePhase, failureErr, durationMs)
 	}
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
@@ -1805,7 +1811,7 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
 // Per DD-AUDIT-003: orchestrator.lifecycle.failed (P1)
-func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string, durationMs int64) {
+func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error, durationMs int64) {
 	logger := log.FromContext(ctx)
 
 	// Per ADR-032 §2: Audit is MANDATORY - controller crashes at startup if nil.
@@ -1817,7 +1823,7 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 			"namespace", rr.Namespace,
 			"event", "lifecycle.failed",
 			"failurePhase", failurePhase,
-			"failureReason", failureReason,
+			"failureErr", failureErr,
 			"durationMs", durationMs)
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
@@ -1831,7 +1837,7 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		rr.Namespace,
 		rr.Name,
 		failurePhase,
-		failureReason,
+		failureErr,
 		durationMs,
 	)
 	if err != nil {

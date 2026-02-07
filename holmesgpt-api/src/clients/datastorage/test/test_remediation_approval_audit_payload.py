@@ -36,7 +36,7 @@ class TestRemediationApprovalAuditPayload(unittest.TestCase):
         model = RemediationApprovalAuditPayload()
         if include_optional:
             return RemediationApprovalAuditPayload(
-                event_type = 'webhook.approval.decided',
+                event_type = 'webhook.remediationapprovalrequest.decided',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decision = 'Approved',
                 decided_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
@@ -45,7 +45,7 @@ class TestRemediationApprovalAuditPayload(unittest.TestCase):
             )
         else:
             return RemediationApprovalAuditPayload(
-                event_type = 'webhook.approval.decided',
+                event_type = 'webhook.remediationapprovalrequest.decided',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decision = 'Approved',
                 decided_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
