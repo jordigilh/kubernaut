@@ -347,9 +347,14 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 	}
 
 	// Step 4: Wait for coverage.py to flush .coverage file
-	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 10s)...")
+	// The entrypoint.sh uses the double-wait pattern: after SIGTERM interrupts the first
+	// `wait`, bash sends SIGTERM to Python, then the second `wait` blocks until Python
+	// actually exits (with coverage data flushed). This typically takes 2-5s.
+	// We poll for 20s to give ample room for Python shutdown + coverage.py atexit flush.
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
 	covPath := "/coverdata/.coverage"
-	for i := 0; i < 10; i++ {
+	const maxPollIterations = 20
+	for i := 0; i < maxPollIterations; i++ {
 		time.Sleep(1 * time.Second)
 		checkCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
 			"exec", "-n", opts.Namespace, podName, "--",
@@ -357,7 +362,9 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 		checkOutput, checkErr := checkCmd.CombinedOutput()
 		result := string(checkOutput)
 		if checkErr != nil {
-			// Pod may have terminated - try kubectl cp directly
+			// Pod may have terminated (container restarted or deleted)
+			// This is expected: after double-wait, bash exits → container terminates.
+			// The .coverage file should be on the hostPath volume - try kubectl cp or fallback.
 			_, _ = fmt.Fprintf(writer, "   Pod no longer responding (iteration %d), proceeding to extract\n", i+1)
 			break
 		}
@@ -365,8 +372,15 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 			_, _ = fmt.Fprintf(writer, "   ✅ .coverage file detected (%s bytes) after %ds\n", strings.TrimSpace(result), i+1)
 			break
 		}
-		if i == 9 {
-			_, _ = fmt.Fprintln(writer, "   ⚠️  .coverage not detected after 10s")
+		if i == maxPollIterations-1 {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  .coverage not detected after %ds\n", maxPollIterations)
+			// Final diagnostic: check if Python process is still running
+			psCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+				"exec", "-n", opts.Namespace, podName, "--",
+				"sh", "-c", "ps aux 2>/dev/null || echo 'ps not available'")
+			if psOutput, psErr := psCmd.CombinedOutput(); psErr == nil {
+				_, _ = fmt.Fprintf(writer, "   Process state:\n%s\n", psOutput)
+			}
 		}
 	}
 

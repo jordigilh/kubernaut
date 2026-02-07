@@ -104,9 +104,18 @@ RCEOF
         # Forward signals to Python process
         trap 'echo "📊 Received SIGTERM, forwarding to Python (PID $PID)..."; kill -TERM $PID 2>/dev/null' SIGTERM SIGINT
 
-        # Wait for Python to exit (must use wait in a loop for trap to fire)
+        # Wait for Python to exit.
+        # CRITICAL: When SIGTERM arrives during `wait`, bash interrupts the wait
+        # and runs the trap handler. The first `wait` returns immediately (exit 143).
+        # The trap sends SIGTERM to Python, but Python needs time to flush .coverage.
+        # The second `wait` blocks until Python ACTUALLY exits (with coverage saved).
+        # Without the second wait, bash exits before Python flushes → container dies
+        # → .coverage never written (the root cause of HAPI coverage N/A).
+        set +e  # Disable errexit: wait returns 143 on signal interruption
         wait $PID 2>/dev/null
+        wait $PID 2>/dev/null  # Wait again for Python to actually finish
         EXIT_CODE=$?
+        set -e
 
         # Verify coverage file was written
         COV_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
