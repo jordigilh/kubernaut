@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ============================================================================
@@ -115,6 +116,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			metricsInstance,
 			fallbackNS,
 			retryConfig,
+			&mocks.NoopRetryObserver{},
 		)
 	})
 
@@ -239,6 +241,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				metricsInstance,
 				fallbackNS,
 				retryConfig,
+				&mocks.NoopRetryObserver{},
 				mockClock,
 			)
 
@@ -519,6 +522,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 			metricsInstance,
 			fallbackNS,
 			retryConfig,
+			&mocks.NoopRetryObserver{},
 		)
 	})
 
@@ -630,6 +634,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				metricsInstance,
 				"", // empty fallback namespace
 				nil,
+				&mocks.NoopRetryObserver{},
 			)
 
 			Expect(crdCreator).NotTo(BeNil(),
@@ -702,6 +707,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				metricsInstance,
 				fallbackNS,
 				retryConfig,
+				&mocks.NoopRetryObserver{},
 			)
 		})
 

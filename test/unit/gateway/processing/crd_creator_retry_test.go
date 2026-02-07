@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ADR-004: Fake Kubernetes Client for Unit Testing
@@ -50,6 +51,24 @@ import (
 // - Compile-time type safety
 // - Real K8s semantics with in-memory storage
 // - Error simulation via interceptor.Funcs
+
+// recordingRetryObserver satisfies processing.RetryObserver and delegates to a callback for test assertions.
+type recordingRetryObserver struct {
+	onRetry func(ctx context.Context, signal *types.NormalizedSignal, attempt int, err error)
+}
+
+func (r *recordingRetryObserver) OnRetryAttempt(ctx context.Context, signal *types.NormalizedSignal, attempt int, err error) {
+	if r.onRetry != nil {
+		r.onRetry(ctx, signal, attempt, err)
+	}
+}
+
+// buildScheme creates a runtime scheme with RemediationRequest CRD registered.
+func buildScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	return scheme
+}
 
 // newTestSignal creates a valid NormalizedSignal with required resource info for testing
 // V1.0 requires resource Kind and Name (per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
@@ -150,7 +169,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-429", "TestAlert429")
@@ -193,7 +212,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-503", "TestAlert503")
@@ -229,7 +248,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-503-fail", "TestAlert503Fail")
@@ -277,7 +296,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-504", "TestAlert504")
@@ -316,7 +335,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-timeout", "TestAlertTimeout")
@@ -352,7 +371,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-400", "TestAlert400")
@@ -391,7 +410,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-403", "TestAlert403")
@@ -430,7 +449,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-422", "TestAlert422")
@@ -470,7 +489,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-409", "TestAlert409")
@@ -511,7 +530,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-connrefused", "TestAlertConnRefused")
@@ -550,7 +569,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-connreset", "TestAlertConnReset")
@@ -596,7 +615,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-backoff-cap", "TestAlertBackoffCap")
@@ -641,7 +660,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-initial-backoff", "TestAlertInitialBackoff")
@@ -686,7 +705,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-ctx-cancel", "TestAlertCtxCancel")
@@ -726,7 +745,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-ctx-deadline", "TestAlertCtxDeadline")
@@ -768,7 +787,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with nil retry config (should use defaults)
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", nil)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", nil, &mocks.NoopRetryObserver{})
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-default-config", "TestAlertDefaultConfig")
@@ -825,4 +844,132 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 	// NOTE: Retry Toggles tests removed (Reliability-First Design)
 	// Retries are now ALWAYS enabled for transient errors (429, 503, 504, timeouts, network errors)
 	// This ensures maximum reliability without configuration complexity
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// Tests UT-GW-RETRY-OBS-001, UT-GW-RETRY-OBS-002, UT-GW-RETRY-OBS-003
+	// BR-GATEWAY-058: RetryObserver invocation per retry attempt
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	Context("BR-GATEWAY-058: RetryObserver", func() {
+		var (
+			ctx        context.Context
+			logger     logr.Logger
+			metricsInst *metrics.Metrics
+			retryConfig *config.RetrySettings
+			creator    *processing.CRDCreator
+		)
+
+		BeforeEach(func() {
+			ctx = context.Background()
+			logger = logr.Discard()
+			reg := prometheus.NewRegistry()
+			metricsInst = metrics.NewMetricsWithRegistry(reg)
+			retryConfig = &config.RetrySettings{
+				MaxAttempts:    3,
+				InitialBackoff: 1 * time.Millisecond,
+				MaxBackoff:     2 * time.Millisecond,
+			}
+		})
+
+		It("[UT-GW-RETRY-OBS-001] should invoke observer on each intermediate retry attempt for retryable errors", func() {
+			// Setup: Track observer invocations
+			var observedAttempts []int
+			var observedErrors []error
+			observer := &recordingRetryObserver{
+				onRetry: func(_ context.Context, _ *types.NormalizedSignal, attempt int, err error) {
+					observedAttempts = append(observedAttempts, attempt)
+					observedErrors = append(observedErrors, err)
+				},
+			}
+
+			// Setup: Always fail with 503 (retryable)
+			// Note: error message must contain "service unavailable" for classification by getErrorTypeString
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(buildScheme()).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.CreateOption) error {
+						return apierrors.NewServiceUnavailable("service unavailable")
+					},
+				}).
+				Build()
+			k8sClient := k8s.NewClient(fakeClient)
+
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, observer)
+
+			signal := newTestSignal("test-fingerprint-obs-001", "TestAlertObs001")
+			_, err := creator.CreateRemediationRequest(ctx, signal)
+
+			// Verify: Should fail after all retries exhausted
+			Expect(err).To(HaveOccurred())
+
+			// Verify: Observer invoked for intermediate attempts (0 and 1), NOT for final attempt (2)
+			Expect(observedAttempts).To(Equal([]int{0, 1}))
+			Expect(observedErrors).To(HaveLen(2))
+			for _, e := range observedErrors {
+				Expect(e.Error()).To(ContainSubstring("service unavailable"))
+			}
+		})
+
+		It("[UT-GW-RETRY-OBS-002] should not invoke observer for non-retryable errors", func() {
+			// Setup: Track observer invocations
+			var observerCalled bool
+			observer := &recordingRetryObserver{
+				onRetry: func(_ context.Context, _ *types.NormalizedSignal, _ int, _ error) {
+					observerCalled = true
+				},
+			}
+
+			// Setup: Fail with 403 (non-retryable)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(buildScheme()).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.CreateOption) error {
+						return apierrors.NewForbidden(
+							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							"test", errors.New("forbidden"))
+					},
+				}).
+				Build()
+			k8sClient := k8s.NewClient(fakeClient)
+
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, observer)
+
+			signal := newTestSignal("test-fingerprint-obs-002", "TestAlertObs002")
+			_, err := creator.CreateRemediationRequest(ctx, signal)
+
+			// Verify: Should fail immediately (non-retryable)
+			Expect(err).To(HaveOccurred())
+
+			// Verify: Observer never called (error is non-retryable, no retry loop)
+			Expect(observerCalled).To(BeFalse())
+		})
+
+		It("[UT-GW-RETRY-OBS-003] should not invoke observer when CRD creation succeeds on first attempt", func() {
+			// Setup: Track observer invocations
+			var observerCalled bool
+			observer := &recordingRetryObserver{
+				onRetry: func(_ context.Context, _ *types.NormalizedSignal, _ int, _ error) {
+					observerCalled = true
+				},
+			}
+
+			// Setup: Success on first attempt
+			scheme := buildScheme()
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+			k8sClient := k8s.NewClient(fakeClient)
+
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig, observer)
+
+			signal := newTestSignal("test-fingerprint-obs-003", "TestAlertObs003")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
+
+			// Verify: Success
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr).ToNot(BeNil())
+
+			// Verify: Observer never called (no retries needed)
+			Expect(observerCalled).To(BeFalse())
+		})
+	})
 })

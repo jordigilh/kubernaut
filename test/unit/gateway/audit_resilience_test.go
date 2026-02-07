@@ -132,7 +132,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 			}
 
 			var err error
-			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore)
+			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("3. Process signal (audit will fail internally)")
@@ -205,7 +205,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 			}
 
 			var err error
-			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore)
+			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("3. Process signal that causes audit failure")
@@ -259,7 +259,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 			}
 
 			var err error
-			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore)
+			gwServer, err = gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, mockAuditStore, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("3. Create initial signal")

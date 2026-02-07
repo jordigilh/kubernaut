@@ -64,7 +64,7 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 55%) thr
 - ✅ **Audit Emission**: 20/20 tests (100%) - All passing ✅
   - ✅ GW-INT-AUD-005: Moved to unit tier (GW-UNIT-AUD-005 complete)
   - ✅ GW-INT-AUD-004, 006, 007: Fixed (UTC timestamp issue resolved)
-  - 🟡 GW-INT-AUD-018: Deferred to V1.1+ (requires audit enhancement)
+  - ✅ GW-INT-AUD-018: Implemented (RetryObserver emits per-attempt audit events)
 - ✅ **Metrics Emission**: 15/15 tests (100%) - All passing ✅
   - ✅ GW-INT-MET-012: Fixed (deduplication rate custom collector)
 
@@ -106,7 +106,7 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 55%) thr
 | GW-INT-AUD-015 | Dedup Phase Rejection | Audit | 057 | P1 | ⏸️ Timeout | 1.3.5 |
 | GW-INT-AUD-016 | CRD Failed K8s API Error | Audit | 058 | P0 | ✅ Pass | 1.4.1 |
 | GW-INT-AUD-017 | CRD Failed Error Type | Audit | 058 | P0 | ✅ Pass | 1.4.2 |
-| GW-INT-AUD-018 | CRD Failed Retry Events | Audit | 058 | P1 | ⏳ Deferred | 1.4.3 |
+| GW-INT-AUD-018 | CRD Failed Retry Events | Audit | 058 | P1 | ✅ Pass | 1.4.3 |
 | GW-INT-AUD-019 | CRD Failed Circuit Breaker | Audit | 058 | P1 | ✅ Pass | 1.4.4 |
 | GW-INT-AUD-020 | Audit ID Uniqueness | Audit | 055 | P0 | ✅ Pass | 1.4.5 |
 | **Phase 1: Metrics Emission** (15/15 tests - 100%) |
@@ -3287,40 +3287,21 @@ serverCfg, err := config.LoadFromFile(*configPath)
 
 ---
 
-### **GW-INT-AUD-018: CRD Failed Retry Events** (⏳ Deferred to V1.1+)
-**Status**: ⏳ **Deferred** - Not V1.0 blocking
-**What This Test Requires**:
-- Gateway's CRD creation retry logic (**already implemented** as BR-GATEWAY-113 ✅)
-- **Missing**: Audit event emission for **each intermediate retry attempt**
-- **Current State**: Audit events emitted for final outcomes (`gateway.crd.created`, `gateway.crd.failed`) only
+### **GW-INT-AUD-018: CRD Failed Retry Events** (✅ Implemented)
+**Status**: ✅ **Pass** - Implemented via `RetryObserver` interface
 
-**Scope of Missing Work**:
-```go
-// Enhance pkg/gateway/processing/crd_creator.go
-for attempt := 1; attempt <= c.cfg.Retry.MaxAttempts; attempt++ {
-    err := c.k8sClient.Create(ctx, rr)
-    if err != nil && c.isRetryable(err) {
-        // ❌ MISSING: Emit gateway.crd.retry_attempt audit event
-        c.auditStore.StoreAudit(ctx, &AuditEvent{
-            EventType: "gateway.crd.retry_attempt",
-            Payload: {
-                RetryAttempt: attempt,
-                ErrorType: classifyError(err),
-                NextBackoff: calculateBackoff(attempt),
-            },
-        })
-        time.Sleep(calculateBackoff(attempt))
-        continue
-    }
-    return err
-}
-```
+**Implementation**:
+- `processing.RetryObserver` interface decouples retry observation from CRD creation logic
+- `retryAuditObserver` (server.go) emits `gateway.crd.failed` per intermediate retry attempt
+- `CRDCreator` invokes `RetryObserver.OnRetryAttempt()` for each failed intermediate attempt
+- Tests use `noopRetryObserver` (test layer only) to satisfy the interface without audit overhead
 
-**Deferral Rationale**:
-- **Priority**: P2 (Medium) - Audit enhancement, not core functionality
-- **V1.0 Coverage**: Retry logic works (BR-GATEWAY-113 ✅), metrics track retries (BR-GATEWAY-114 ✅), final outcomes audited ✅
-- **Business Impact**: Minimal - intermediate retry audits add observability but don't affect business outcomes
-- **Recommendation**: Defer to V1.1+ alongside BR-GATEWAY-115 (Async Retry Queue)
+**Test Validates**:
+1. Each retry attempt (3 total: 2 intermediate + 1 final) emits a separate `gateway.crd.failed` event
+2. Each event has a unique `EventID` but the same `CorrelationID`
+3. `ErrorDetails` present in each event with transient failure description
+
+**Unit Tests**: UT-GW-RETRY-OBS-001, UT-GW-RETRY-OBS-002, UT-GW-RETRY-OBS-003
 
 ---
 

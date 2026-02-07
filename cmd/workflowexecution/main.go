@@ -267,6 +267,7 @@ func main() {
 	// Setup WorkflowExecution controller
 	if err = (&workflowexecution.WorkflowExecutionReconciler{
 		Client:             mgr.GetClient(),
+		APIReader:          mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("workflowexecution-controller"),
 		Metrics:            weMetrics,     // DD-METRICS-001: Injected metrics (P0 requirement)
