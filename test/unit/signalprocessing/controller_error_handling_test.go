@@ -196,11 +196,12 @@ var _ = Describe("Controller Error Handling", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 			defer cancel()
 
-			// Wait for context to expire
-			time.Sleep(5 * time.Millisecond)
-
-			// Verify context is done
-			Expect(ctx.Err()).To(Equal(context.DeadlineExceeded))
+			// Use Eventually to poll until the context deadline fires.
+			// Avoids time.Sleep anti-pattern: Go's context timer goroutine may not
+			// be scheduled immediately on loaded CI runners, causing ctx.Err() to
+			// return nil even after wall-clock time exceeds the deadline.
+			Eventually(ctx.Err).WithTimeout(100 * time.Millisecond).WithPolling(1 * time.Millisecond).
+				Should(Equal(context.DeadlineExceeded))
 		})
 
 		// Test 12: Operation should check context before expensive operations

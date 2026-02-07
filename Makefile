@@ -175,6 +175,35 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+# Gateway unit tests: no internal/controller/gateway/ exists, use pkg-only coverpkg
+.PHONY: test-unit-gateway
+test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverpkg: pkg/gateway only)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 gateway - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./test/unit/gateway/...
+	@if [ -f coverage_unit_gateway.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_gateway.out"; \
+		go tool cover -func=coverage_unit_gateway.out | grep total || echo "No coverage data"; \
+	fi
+
+# Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
+# These packages are not standalone services (no cmd/ entry), so they have no service-level
+# test target. This consolidated target runs all shared infrastructure package tests.
+.PHONY: test-unit-shared-packages
+test-unit-shared-packages: ginkgo ensure-coverage-dirs ## Run unit tests for shared infrastructure packages (audit, cache, http, k8sutil, shared)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 shared-packages - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "   Packages: pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./test/unit/audit/... ./test/unit/cache/... ./test/unit/http/... ./test/unit/k8sutil/... ./test/unit/shared/...
+	@if [ -f coverage_unit_shared-packages.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_shared-packages.out"; \
+		go tool cover -func=coverage_unit_shared-packages.out | grep total || echo "No coverage data"; \
+	fi
+
 # DataStorage unit tests: exclude generated code (ogen-client, mocks) from coverage
 .PHONY: test-unit-datastorage
 test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests (coverage excludes ogen-client)
