@@ -43,8 +43,8 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 
 ### Success Criteria
 
-1. WorkflowExecution CRD accepts `spec.executionEngine` field with values `"tekton"` (default) and `"job"`
-2. Existing WorkflowExecution CRs without `executionEngine` continue using Tekton (backward-compatible)
+1. WorkflowExecution CRD requires `spec.executionEngine` field (mandatory) with values `"tekton"` or `"job"`
+2. CRD validation rejects WorkflowExecution resources that omit `executionEngine`
 3. When `executionEngine: "job"`, controller creates a `batchv1.Job` instead of a Tekton PipelineRun
 4. Job executor maps Job conditions (`Complete`/`Failed`) to WFE phases identically to Tekton mapping
 5. Resource locking (BR-WE-009), cooldown (BR-WE-010), and audit trail (BR-WE-005) apply regardless of backend
@@ -93,7 +93,7 @@ A complete end-to-end platform test (K8s Event -> Gateway -> SignalProcessing ->
 ```
 1. WorkflowExecution CRD created:
    spec:
-     executionEngine: "tekton"  # (or empty = default)
+     executionEngine: "tekton"  # Explicit, required field
      workflowRef:
        name: canary-deployment
        bundleRef: oci://registry.example.com/pipelines/canary:v2.0
@@ -131,16 +131,16 @@ type WorkflowExecutionSpec struct {
     // ... existing fields ...
 
     // ExecutionEngine specifies which backend to use for this execution.
-    // Supported values: "tekton" (default), "job" (Kubernetes Job).
-    // When empty or omitted, defaults to "tekton" for backward compatibility.
-    // +kubebuilder:default="tekton"
+    // Supported values: "tekton" (Tekton PipelineRun), "job" (Kubernetes Job).
+    // This field is REQUIRED -- the CRD creator (RemediationOrchestrator) MUST
+    // explicitly set the engine based on the workflow catalog entry.
+    // +kubebuilder:validation:Required
     // +kubebuilder:validation:Enum=tekton;job
-    // +optional
-    ExecutionEngine string `json:"executionEngine,omitempty"`
+    ExecutionEngine string `json:"executionEngine"`
 }
 ```
 
-**Backward Compatibility**: Empty/omitted `executionEngine` defaults to `"tekton"`. All existing CRs continue to use Tekton.
+**No backward compatibility**: This is a new mandatory field. Since WorkflowExecution CRDs are created programmatically by the RemediationOrchestrator (not by humans), there is no migration concern. The RO MUST populate this field from the workflow catalog's `execution_engine` column.
 
 ### TR-2: Executor Interface (Strategy Pattern)
 
@@ -188,12 +188,14 @@ type JobExecutor struct {
 ### TR-5: Controller Dispatch
 
 ```go
-func (r *WorkflowExecutionReconciler) getExecutor(wfe *v1alpha1.WorkflowExecution) executor.Executor {
+func (r *WorkflowExecutionReconciler) getExecutor(wfe *v1alpha1.WorkflowExecution) (executor.Executor, error) {
     switch wfe.Spec.ExecutionEngine {
+    case "tekton":
+        return r.tektonExecutor, nil
     case "job":
-        return r.jobExecutor
-    default: // "tekton" or empty
-        return r.tektonExecutor
+        return r.jobExecutor, nil
+    default:
+        return nil, fmt.Errorf("unsupported execution engine: %q (must be \"tekton\" or \"job\")", wfe.Spec.ExecutionEngine)
     }
 }
 ```
@@ -203,6 +205,21 @@ func (r *WorkflowExecutionReconciler) getExecutor(wfe *v1alpha1.WorkflowExecutio
 RemediationOrchestrator MUST propagate `execution_engine` from the workflow catalog to the WorkflowExecution CRD `spec.executionEngine` field when creating WFE resources.
 
 **Location**: `pkg/remediationorchestrator/creator/`
+
+**Propagation Chain Gap**: The current data flow is:
+
+```
+Catalog (has execution_engine) → HolmesGPT-API → AIAnalysis.Status.SelectedWorkflow → RO Creator → WFE CRD
+```
+
+The `SelectedWorkflow` struct (`api/aianalysis/v1alpha1/aianalysis_types.go`) currently does **not** include `ExecutionEngine`. The following changes are required to complete the propagation chain:
+
+1. **AIAnalysis CRD**: Add `ExecutionEngine string` field to `SelectedWorkflow` struct
+2. **HolmesGPT-API**: Ensure workflow selection response includes `execution_engine` from catalog
+3. **AIAnalysis response processor**: Extract and store `execution_engine` in `Status.SelectedWorkflow.ExecutionEngine`
+4. **RO Creator**: Read `ai.Status.SelectedWorkflow.ExecutionEngine` and set `wfe.Spec.ExecutionEngine`
+
+**Cross-service dependencies**: AIAnalysis (CRD + processor), HolmesGPT-API (response schema), RO (creator)
 
 ### TR-7: OCI Compliance
 
@@ -217,7 +234,9 @@ K8s Job executor uses the container image directly from `WorkflowRef.ContainerIm
 
 ### Resource Locking (BR-WE-009)
 
-Resource locking MUST apply regardless of execution backend. The lock check occurs BEFORE executor dispatch, so no changes needed.
+Resource locking MUST apply regardless of execution backend. The lock check occurs BEFORE executor dispatch. However, the **current implementation** checks for existing PipelineRuns to detect conflicts. When `executionEngine: "job"`, the lock check MUST also look for existing Jobs, or the lock will be bypassed.
+
+**Required change**: Update resource lock conflict detection to check both `PipelineRun` and `Job` existence for the same target resource.
 
 ### Cooldown (BR-WE-010)
 
@@ -225,11 +244,19 @@ Cooldown periods MUST apply regardless of execution backend. Cooldown check occu
 
 ### Audit Trail (BR-WE-005)
 
-Audit events MUST include `executionEngine` field to differentiate Job vs Tekton executions:
+**ALL** audit events across the WorkflowExecution lifecycle MUST include `execution_engine` field to differentiate Job vs Tekton executions. This applies to every event type:
+
+| Event Type | When Emitted |
+|------------|--------------|
+| `workflowexecution.selection.completed` | After workflow selection from spec |
+| `workflowexecution.execution.started` | After Job/PipelineRun creation |
+| `workflowexecution.workflow.started` | When execution begins running |
+| `workflowexecution.workflow.completed` | On successful completion |
+| `workflowexecution.workflow.failed` | On failure (includes error_details per Gap #7) |
 
 ```json
 {
-  "event_type": "workflowexecution.started",
+  "event_type": "workflowexecution.execution.started",
   "event_data": {
     "execution_engine": "job",
     "workflow_name": "restart-with-increased-memory",
@@ -269,28 +296,39 @@ Feature: Kubernetes Job Execution Backend
     And the Job container uses the specified image
     And parameters are injected as environment variables
     And the Job has an owner reference to the WorkflowExecution
+    And audit events include execution_engine: "job" at each lifecycle stage:
+      | workflowexecution.selection.completed | After workflow selection |
+      | workflowexecution.execution.started   | After Job creation      |
+      | workflowexecution.workflow.started    | When Job starts running  |
     When the Job completes successfully
     Then the WorkflowExecution phase transitions to Succeeded
-    And an audit event is emitted with execution_engine: "job"
+    And a workflowexecution.workflow.completed audit event is emitted with execution_engine: "job"
 
   Scenario: Job backend handles failure
     Given a WorkflowExecution CRD with executionEngine: "job"
     When the created Job fails
     Then the WorkflowExecution phase transitions to Failed
+    And a workflowexecution.workflow.failed audit event is emitted with execution_engine: "job"
     And failure details include Job failure reason
     And wasExecutionFailure is set to true
     And subsequent executions are blocked (BR-WE-012)
 
-  Scenario: Backward compatibility -- empty executionEngine defaults to Tekton
-    Given a WorkflowExecution CRD without executionEngine field
-    When the controller reconciles the WorkflowExecution
-    Then a Tekton PipelineRun is created (existing behavior)
-    And no batchv1.Job is created
-
-  Scenario: Backward compatibility -- explicit Tekton
+  Scenario: Tekton backend via explicit executionEngine
     Given a WorkflowExecution CRD with executionEngine: "tekton"
     When the controller reconciles the WorkflowExecution
     Then a Tekton PipelineRun is created (existing behavior)
+
+  Scenario: Missing executionEngine is rejected by CRD validation
+    Given a WorkflowExecution CRD without executionEngine field
+    When the CRD is submitted to the API server
+    Then the API server rejects the resource with a validation error
+    And no WorkflowExecution is created
+
+  Scenario: Invalid executionEngine is rejected by CRD validation
+    Given a WorkflowExecution CRD with executionEngine: "ansible"
+    When the CRD is submitted to the API server
+    Then the API server rejects the resource with an enum validation error
+    And no WorkflowExecution is created
 
   Scenario: Resource locking applies to Job backend
     Given a WorkflowExecution CRD with executionEngine: "job"
@@ -317,11 +355,90 @@ Feature: Kubernetes Job Execution Backend
 
 ---
 
+## Prerequisite Refactoring
+
+The following normalizations MUST be completed before or as part of this BR's implementation to ensure the codebase is execution-engine-agnostic.
+
+### PR-1: Normalize Condition Type Names (BR-WE-006 Update)
+
+Rename Tekton-specific Kubernetes condition types to generic names:
+
+| Current (Tekton-specific) | New (Engine-agnostic) |
+|---------------------------|-----------------------|
+| `ConditionTektonPipelineCreated` | `ConditionExecutionCreated` |
+| `ConditionTektonPipelineRunning` | `ConditionExecutionRunning` |
+| `ConditionTektonPipelineComplete` | `ConditionExecutionComplete` |
+| `SetTektonPipelineCreated()` | `SetExecutionCreated()` |
+| `SetTektonPipelineRunning()` | `SetExecutionRunning()` |
+| `SetTektonPipelineComplete()` | `SetExecutionComplete()` |
+
+**Impact**: ~200+ occurrences across ~35 files (constants, functions, controller, tests, docs).
+**Tool**: `gopls rename` for type-safe refactoring across codebase.
+
+### PR-2: Normalize CRD Status Fields
+
+Rename Tekton-specific status fields to generic names:
+
+| Current (Tekton-specific) | New (Engine-agnostic) |
+|---------------------------|-----------------------|
+| `PipelineRunRef` | `ExecutionRef` |
+| `PipelineRunStatus` | `ExecutionStatus` |
+| `PipelineRunStatusSummary` (type) | `ExecutionStatusSummary` |
+| `BuildPipelineRunStatusSummary()` | `BuildExecutionStatusSummary()` |
+
+**Impact**: ~100+ occurrences across ~40+ files (types, controller, audit, tests, OpenAPI schema, generated code).
+**Note**: Requires deepcopy regeneration, CRD YAML regeneration, and OpenAPI schema update for `pipelinerun_name` audit field.
+**Tool**: `gopls rename` + `controller-gen` + `make generate`.
+
+### PR-3: Normalize Prometheus Metric Names
+
+Rename Tekton-specific metric to generic name:
+
+| Current (Tekton-specific) | New (Engine-agnostic) |
+|---------------------------|-----------------------|
+| `workflowexecution_reconciler_pipelinerun_creations_total` | `workflowexecution_reconciler_execution_creations_total` |
+| `MetricNamePipelineRunCreations` | `MetricNameExecutionCreations` |
+| `PipelineRunCreations` (struct field) | `ExecutionCreations` |
+| `RecordPipelineRunCreation()` | `RecordExecutionCreation()` |
+
+**Impact**: ~20 occurrences across ~12 files (metrics, controller, tests, docs).
+**Tool**: `gopls rename` for Go symbols; manual update for metric name string.
+
+### PR-4: Add `execution_engine` to OpenAPI Audit Payload
+
+Add `execution_engine` field to `WorkflowExecutionAuditPayload` schema in `api/openapi/data-storage-v1.yaml`:
+
+```yaml
+execution_engine:
+  type: string
+  enum: [tekton, job]
+  description: "Execution backend used for this workflow execution"
+```
+
+**Impact**: Requires OpenAPI client regeneration (ogen).
+
+### PR-5: Add `ExecutionEngineJob` Constant
+
+Add `"job"` constant to `pkg/datastorage/models/workflow.go`:
+
+```go
+const (
+    ExecutionEngineTekton ExecutionEngine = "tekton"
+    ExecutionEngineJob    ExecutionEngine = "job"  // NEW
+)
+```
+
+### PR-6: Update ADR-043 Execution Engine Values
+
+Update ADR-043 to include `"job"` as a V1 execution engine value (currently only lists `"tekton"` for V1).
+
+---
+
 ## Implementation Scope
 
 | Area | Change | Scope | Risk |
 |------|--------|-------|------|
-| **CRD** | Add `executionEngine` field to `WorkflowExecutionSpec` | Small, additive | Low -- backward-compatible default |
+| **CRD** | Add required `executionEngine` field to `WorkflowExecutionSpec` | Small, additive | Low -- mandatory field, kubebuilder validation |
 | **Interface** | Create `Executor` interface in `pkg/workflowexecution/executor/` | New file | Low -- clean abstraction |
 | **Tekton backend** | Extract existing Tekton logic into `TektonExecutor` | Refactor | Medium -- must preserve all existing behavior |
 | **Job backend** | New `JobExecutor` implementing `Executor` | New file | Low -- well-defined K8s API |
@@ -333,28 +450,48 @@ Feature: Kubernetes Job Execution Backend
 
 ## Deliverables
 
-### Phase 1: Documentation (Before Implementation)
+### Phase 1: Documentation (Specs)
 
 - [ ] ADR: Multi-engine workflow execution (amend ADR-044 or new ADR)
 - [ ] DD: K8s Job executor design document
 - [ ] Updated CRD schema documentation
+- [ ] Test plans for unit, integration, and E2E tiers
 
-### Phase 2: Implementation
+### Phase 2: Testing (TDD RED -- Tests First)
 
-- [ ] `Executor` interface + `TektonExecutor` extraction (refactor)
+Following TDD RED-GREEN-REFACTOR, tests are written **before** implementation at each tier.
+
+#### 2a. Unit Tests (RED)
+
+- [ ] `Executor` interface contract tests (table-driven, both backends)
+- [ ] `JobExecutor` unit tests (Create, GetStatus, Delete)
+- [ ] `TektonExecutor` regression tests (post-extraction, same behavior)
+- [ ] Controller dispatch unit tests (mandatory field, enum validation)
+- [ ] Audit event `execution_engine` field tests
+
+#### 2b. Integration Tests (RED)
+
+- [ ] Job lifecycle integration tests (create -> running -> complete/failed)
+- [ ] Job status mapping to WFE phases
+- [ ] RO catalog -> CRD `executionEngine` propagation
+
+#### 2c. E2E Tests (RED)
+
+- [ ] E2E test for Job backend (single-step remediation)
+- [ ] Tekton E2E regression (existing behavior preserved)
+- [ ] Full platform E2E test (OOMKill scenario using Job backend)
+
+### Phase 3: Implementation (TDD GREEN + REFACTOR)
+
+Minimal implementation to pass each test tier, then refactor.
+
+- [ ] CRD field addition (required, enum-validated)
+- [ ] `Executor` interface + `TektonExecutor` extraction (refactor from existing code)
 - [ ] `JobExecutor` implementation
-- [ ] CRD field addition + defaulting webhook
 - [ ] Controller dispatch logic
 - [ ] RO catalog -> CRD propagation
 - [ ] Audit event `execution_engine` field
-
-### Phase 3: Testing
-
-- [ ] Unit tests (both backends, table-driven)
-- [ ] Integration tests (Job lifecycle, status mapping)
-- [ ] E2E tests for Job backend
-- [ ] Regression tests for Tekton backend (post-refactor)
-- [ ] Full platform E2E test (OOMKill scenario using Job backend)
+- [ ] REFACTOR: Clean up, reduce duplication, improve abstractions
 
 ---
 
@@ -363,9 +500,14 @@ Feature: Kubernetes Job Execution Backend
 | Dependency | Service | Status | Notes |
 |------------|---------|--------|-------|
 | Workflow catalog `execution_engine` field | DataStorage | Exists | ADR-043, `pkg/datastorage/models/workflow.go` |
+| `ExecutionEngineJob` constant | DataStorage | **New (PR-5)** | Add `"job"` constant alongside `"tekton"` |
+| `SelectedWorkflow.ExecutionEngine` field | AIAnalysis | **New (G1)** | Add to `api/aianalysis/v1alpha1/` CRD types |
+| HolmesGPT-API `execution_engine` in response | HolmesGPT-API | **New (G1)** | Include `execution_engine` from catalog in workflow selection response |
 | `batchv1` API | Kubernetes | Exists | Core API, no additional CRDs needed |
 | Tekton controllers | Tekton | Exists | Only needed when `executionEngine: "tekton"` |
 | WE controller RBAC | Kubernetes | Update needed | Add `batchv1/jobs` permissions |
+| OpenAPI `execution_engine` in audit payload | DataStorage | **New (PR-4)** | Add to `WorkflowExecutionAuditPayload` schema |
+| Condition/status/metric normalization | WE | **New (PR-1..3)** | Prerequisite refactoring for engine-agnostic code |
 
 ---
 
@@ -375,9 +517,10 @@ Feature: Kubernetes Job Execution Backend
 |-------|-------------|--------------|
 | BR-WE-002 | PipelineRun Creation | Tekton-specific; generalized by Executor interface |
 | BR-WE-003 | Status Monitoring | Generalized to monitor both Job and PipelineRun |
-| BR-WE-005 | Audit Events | Extended with `execution_engine` field |
-| BR-WE-008 | Prometheus Metrics | Extended with `execution_engine` label |
-| BR-WE-009 | Resource Locking | Engine-agnostic; applies to both backends |
+| BR-WE-005 | Audit Events | Extended with `execution_engine` field (PR-4) |
+| BR-WE-006 | Kubernetes Conditions | Condition types normalized to engine-agnostic names (PR-1) |
+| BR-WE-008 | Prometheus Metrics | Extended with `execution_engine` label; metric renamed (PR-3) |
+| BR-WE-009 | Resource Locking | Updated to check both PipelineRun and Job (G4) |
 | BR-WE-010 | Cooldown Period | Engine-agnostic; applies to both backends |
 | BR-WE-012 | Exponential Backoff | Engine-agnostic; applies to both backends |
 | BR-WE-013 | Block Clearing | Engine-agnostic; no changes needed |
@@ -399,10 +542,14 @@ Feature: Kubernetes Job Execution Backend
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | 2026-02-05 | **Major update**: Added prerequisite refactoring section (PR-1..6): normalize condition types, CRD status fields, metrics to engine-agnostic names; documented execution_engine propagation chain gap (G1: AIAnalysis → RO → WFE); updated resource locking to check both PipelineRun and Job (G4); added OpenAPI schema update (PR-4); added ExecutionEngineJob constant (PR-5); ADR-043 update for "job" engine (PR-6); expanded dependencies table with cross-service requirements |
+| 1.3 | 2026-02-05 | Audit trail: `execution_engine` required in ALL lifecycle events (selection, started, completed, failed), not just completion |
+| 1.2 | 2026-02-05 | Deliverables reordered to TDD methodology: Documentation (specs) -> Testing (RED) -> Implementation (GREEN + REFACTOR), phased by unit/integration/E2E tiers |
+| 1.1 | 2026-02-05 | `executionEngine` field changed from optional (default "tekton") to mandatory; removed backward-compatibility scenarios; added CRD validation rejection scenarios |
 | 1.0 | 2026-02-05 | Initial BR: K8s Job execution backend (Issue #44) |
 
 ---
 
 **Document Status**: Proposed -- Pending WE Team Review
-**Version**: 1.0
+**Version**: 2.0
 **File**: `docs/requirements/BR-WE-014-kubernetes-job-execution-backend.md`
