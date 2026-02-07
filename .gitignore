@@ -52,6 +52,7 @@ holmesgpt-api/venv-*-test/
 /.pytest_cache/
 /htmlcov/
 /coverdata/
+/_artifacts/
 # Python artifacts
 *.pyc
 __pycache__/

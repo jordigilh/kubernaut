@@ -68,15 +68,15 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 | Service | Status | Purpose | All Tiers Coverage |
 |---------|--------|---------|-------------------|
-| **Signal Processing** | ✅ v1.0 | Signal enrichment with K8s context | 84.8% |
+| **Signal Processing** | ✅ v1.0 | Signal enrichment with K8s context | 84.9% |
+| **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 82.4% |
 | **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 81.8% |
-| **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 81.9% |
 | **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 80.1% |
 | **Workflow Execution** | ✅ v1.0 | Tekton workflow orchestration | 79.1% |
 | **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 76.0% |
-| **Notification** | ✅ v1.0 | Multi-channel delivery | 73.2% |
-| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 61.1% |
-| **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 54.5% |
+| **Notification** | ✅ v1.0 | Multi-channel delivery | 72.7% |
+| **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 65.2% |
+| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 60.5% |
 | **Must-Gather** | ✅ v1.0 | Enterprise diagnostic collection (BR-PLATFORM-001) | N/A (bats) |
 | ~~Effectiveness Monitor~~ | ❌ V1.1 | Continuous improvement (DD-017) | — |
 
@@ -277,15 +277,15 @@ Kubernaut follows a **defense-in-depth testing pyramid** with coverage tracked a
 
 | Service | Unit-Testable | Integration | E2E | All Tiers |
 |---------|---------------|-------------|-----|-----------|
-| **Signal Processing** | 82.1% | 60.7% | 56.8% | 84.8% |
-| **Remediation Orchestrator** | 75.8% | 56.6% | 44.5% | 81.8% |
-| **AI Analysis** | 71.7% | 72.0% | 56.0% | 81.9% |
+| **Signal Processing** | 82.3% | 60.8% | 56.9% | 84.9% |
+| **AI Analysis** | 71.7% | 73.6% | 56.0% | 82.4% |
+| **Remediation Orchestrator** | 75.8% | 56.9% | 41.0% | 81.8% |
 | **Gateway** | 65.2% | 41.7% | 58.6% | 80.1% |
 | **Workflow Execution** | 44.9% | 70.4% | 57.0% | 79.1% |
-| **HolmesGPT API** | 76.0% | 43.5% | — | 76.0% |
-| **Notification** | 78.8% | 57.9% | 49.4% | 73.2% |
-| **Data Storage** | 58.3% | 34.0% | 46.3% | 61.1% |
-| **Auth Webhook** | 50.0% | 48.4% | 0.0% | 54.5% |
+| **HolmesGPT API** | 76.0% | 43.5% | 40.0% | 76.0% |
+| **Notification** | 75.3% | 58.2% | 48.5% | 72.7% |
+| **Auth Webhook** | 50.0% | 48.4% | 39.7% | 65.2% |
+| **Data Storage** | 58.3% | 34.0% | 44.8% | 60.5% |
 
 > Coverage is reported on every PR via GitHub Actions. "All Tiers" uses line-by-line merging — a statement covered by any tier counts once. See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for methodology and patterns.
 
@@ -301,7 +301,7 @@ Each CRD controller requires specific Kubernetes permissions. See [RBAC document
 
 - **Gateway Service**: Network-level security (NetworkPolicies + TLS)
 - **CRD Controllers**: Kubernetes ServiceAccount authentication
-- **Inter-service**: Service mesh (Istio/Linkerd) with mTLS
+- **Inter-service**: SubjectAccessReview middleware authentication (DD-AUTH-014, SAR-based)
 
 ---
 
