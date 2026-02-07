@@ -4,11 +4,15 @@
 **Date**: 2025-11-28
 **Deciders**: Architecture Team
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-011, DD-NAMING-001, ADR-041
-**Version**: 1.0
+**Version**: 1.1
 
 ---
 
 ## Changelog
+
+### Version 1.1 (2026-02-05)
+- Added `"job"` (Kubernetes Job) as a V1 execution engine value alongside `"tekton"`
+- Updated V1/V2 engine value tables to reflect BR-WE-014 (K8s Job execution backend)
 
 ### Version 1.0 (2025-11-28)
 - Initial ADR creation
@@ -175,8 +179,8 @@ labels:
 # ============================================
 execution:
   # Execution engine type
-  # V1 values: "tekton"
-  # V2 values: "tekton", "ansible", "lambda", "shell"
+  # V1 values: "tekton", "job" (Kubernetes Job - per BR-WE-014)
+  # V2 values: "tekton", "job", "ansible", "lambda", "shell"
   engine: string  # OPTIONAL (default: "tekton")
 
   # Container image or bundle reference
@@ -418,11 +422,13 @@ func ValidateParameterValue(param ParameterDef, value any) error {
 2. ⏳ Add JSON Schema generation for IDE support
 3. ⏳ Add `kubernaut workflow validate` CLI command
 
-### Phase 3: V2.0 (Multi-Engine)
+### Phase 3: V2.0 (Multi-Engine Expansion)
 
-1. ⏳ Add `execution.engine: ansible` support
+1. ⏳ Add `execution.engine: ansible` support (per Issue #45, BR-WE-014 future scope)
 2. ⏳ Add `execution.engine: lambda` support
 3. ⏳ Schema versioning (apiVersion: kubernaut.io/v2)
+
+**Note**: `execution.engine: "job"` (Kubernetes Job) was added to V1 per BR-WE-014.
 
 ---
 
@@ -464,6 +470,8 @@ func ValidateParameterValue(param ParameterDef, value any) error {
 - **DD-NAMING-001**: Workflow Terminology (naming conventions)
 - **ADR-041**: LLM Prompt/Response Contract (how LLM uses schema)
 - **DD-WORKFLOW-001**: Mandatory Label Schema (required labels)
+- **BR-WE-014**: Kubernetes Job Execution Backend (adds `"job"` to V1 engine values)
+- **Issue #44**: K8s Job execution backend proposal
 
 ---
 
