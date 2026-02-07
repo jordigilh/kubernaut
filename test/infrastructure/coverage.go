@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -154,6 +155,13 @@ func extractCoverageFromKindNode(clusterName, coverDir string, writer io.Writer)
 	for _, nodeName := range nodeNames {
 		// Try podman first (CI uses podman), then docker
 		for _, runtime := range []string{"podman", "docker"} {
+			// DD-TEST-007: List /coverdata contents before copy for diagnostics
+			listCmd := exec.Command(runtime, "exec", nodeName,
+				"sh", "-c", "echo '=== /coverdata contents ===' && ls -la /coverdata/ 2>&1 && echo '=== /coverdata permissions ===' && stat /coverdata/ 2>&1 || true")
+			if listOutput, listErr := listCmd.CombinedOutput(); listErr == nil {
+				_, _ = fmt.Fprintf(writer, "📋 Kind node %s (%s):\n%s\n", nodeName, runtime, listOutput)
+			}
+
 			cmd := exec.Command(runtime, "cp",
 				nodeName+":/coverdata/.",
 				coverDir)
@@ -278,12 +286,164 @@ type E2EPythonCoverageOptions struct {
 // CollectE2EPythonCoverage orchestrates Python coverage extraction from a Kind cluster.
 // Designed for SynchronizedAfterSuite, BEFORE the Kind cluster is deleted.
 // Errors are non-fatal (coverage must never fail the test suite).
+//
+// Strategy: Extract .coverage directly from the running pod via kubectl cp,
+// bypassing the Kind node hostPath mount chain (which is unreliable with Podman).
+// Steps:
+//  1. Find the running pod
+//  2. Send SIGTERM to Python inside the pod (triggers coverage.py atexit flush)
+//  3. Wait briefly for .coverage to be written
+//  4. kubectl cp the .coverage file from the pod
+//  5. Scale down the deployment
+//  6. Generate coverage report
 func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "📊 Collecting Python E2E coverage for %s\n", opts.ServiceName)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	// Step 1: Scale down the deployment to flush coverage (SIGTERM triggers write)
+	projectRoot := getProjectRoot()
+	if projectRoot == "" {
+		return fmt.Errorf("cannot determine project root (go.mod not found)")
+	}
+	coverDir := filepath.Join(projectRoot, "coverdata", opts.ServiceName)
+	if err := os.MkdirAll(coverDir, 0755); err != nil {
+		return fmt.Errorf("failed to create coverage directory: %w", err)
+	}
+
+	covFile := filepath.Join(coverDir, ".coverage")
+
+	// Step 1: Find the running pod name
+	_, _ = fmt.Fprintln(writer, "🔍 Finding running pod...")
+	getPodCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		"get", "pods", "-n", opts.Namespace,
+		"-l", fmt.Sprintf("app=%s", opts.DeploymentName),
+		"-o", "jsonpath={.items[0].metadata.name}",
+		"--field-selector=status.phase=Running")
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil || len(podNameBytes) == 0 {
+		_, _ = fmt.Fprintf(writer, "⚠️  No running pod found for app=%s, trying scale-down extraction fallback\n", opts.DeploymentName)
+		return collectPythonCoverageFallback(opts, coverDir, covFile, projectRoot, writer)
+	}
+	podName := string(podNameBytes)
+	_, _ = fmt.Fprintf(writer, "✅ Found pod: %s\n", podName)
+
+	// Step 2: Check if .coverage file exists before SIGTERM (diagnostic)
+	_, _ = fmt.Fprintln(writer, "📋 Checking /coverdata/ inside pod before SIGTERM...")
+	lsCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		"exec", "-n", opts.Namespace, podName, "--",
+		"sh", "-c", "ls -la /coverdata/ 2>&1; echo '---'; id; echo '---'; cat /tmp/.coveragerc 2>/dev/null || echo 'no .coveragerc'")
+	if lsOutput, lsErr := lsCmd.CombinedOutput(); lsErr == nil {
+		_, _ = fmt.Fprintf(writer, "%s\n", lsOutput)
+	}
+
+	// Step 3: Send SIGUSR1 to the Python/coverage launcher process.
+	// The run_with_coverage.py launcher registers a SIGUSR1 handler that calls
+	// cov.stop() + cov.save() and keeps the process running (so kubectl cp works).
+	// SIGUSR1 is used because uvicorn only intercepts SIGTERM and SIGINT —
+	// our handler survives uvicorn.run() startup.
+	_, _ = fmt.Fprintln(writer, "📤 Sending SIGUSR1 to Python process inside pod...")
+	killCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		"exec", "-n", opts.Namespace, podName, "--",
+		"sh", "-c", `
+PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*run_with_coverage' | awk '{print $1}' | head -1)
+if [ -n "$PYTHON_PID" ]; then
+    echo "Found Python/coverage launcher: PID $PYTHON_PID"
+    kill -USR1 "$PYTHON_PID"
+    echo "SIGUSR1 sent to PID $PYTHON_PID (exit=$?)"
+else
+    echo "No Python/coverage launcher found, trying fallback pattern..."
+    PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*uvicorn' | awk '{print $1}' | head -1)
+    if [ -n "$PYTHON_PID" ]; then
+        echo "Found Python/uvicorn process: PID $PYTHON_PID"
+        kill -USR1 "$PYTHON_PID"
+        echo "SIGUSR1 sent to PID $PYTHON_PID (exit=$?)"
+    else
+        echo "ERROR: No Python process found"
+        ps -eo pid,comm,args
+    fi
+fi
+`)
+	if killOutput, killErr := killCmd.CombinedOutput(); killErr == nil {
+		_, _ = fmt.Fprintf(writer, "   %s", killOutput)
+	} else {
+		_, _ = fmt.Fprintf(writer, "   Signal command failed: %s (err: %v)\n", killOutput, killErr)
+	}
+
+	// Step 4: Wait for the launcher's SIGUSR1 handler to flush .coverage file.
+	// The handler calls cov.stop() + cov.save() and keeps the process running.
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
+	covPath := "/coverdata/.coverage"
+	const maxPollIterations = 20
+	for i := 0; i < maxPollIterations; i++ {
+		time.Sleep(1 * time.Second)
+		checkCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+			"exec", "-n", opts.Namespace, podName, "--",
+			"sh", "-c", fmt.Sprintf("test -f %s && stat -c '%%s' %s 2>/dev/null || echo 'not_found'", covPath, covPath))
+		checkOutput, checkErr := checkCmd.CombinedOutput()
+		result := string(checkOutput)
+		if checkErr != nil {
+			// Pod may have terminated (container restarted or deleted)
+			// This is expected: after double-wait, bash exits → container terminates.
+			// The .coverage file should be on the hostPath volume - try kubectl cp or fallback.
+			_, _ = fmt.Fprintf(writer, "   Pod no longer responding (iteration %d), proceeding to extract\n", i+1)
+			break
+		}
+		if result != "" && result != "not_found\n" && result != "not_found" {
+			_, _ = fmt.Fprintf(writer, "   ✅ .coverage file detected (%s bytes) after %ds\n", strings.TrimSpace(result), i+1)
+			break
+		}
+		if i == maxPollIterations-1 {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  .coverage not detected after %ds\n", maxPollIterations)
+			// Final diagnostic: check if Python process is still running
+			psCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+				"exec", "-n", opts.Namespace, podName, "--",
+				"sh", "-c", "ps aux 2>/dev/null || echo 'ps not available'")
+			if psOutput, psErr := psCmd.CombinedOutput(); psErr == nil {
+				_, _ = fmt.Fprintf(writer, "   Process state:\n%s\n", psOutput)
+			}
+		}
+	}
+
+	// Step 5: kubectl cp the .coverage file from the pod
+	_, _ = fmt.Fprintln(writer, "📦 Extracting .coverage via kubectl cp...")
+	cpCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		"cp", fmt.Sprintf("%s/%s:%s", opts.Namespace, podName, covPath), covFile)
+	cpOutput, cpErr := cpCmd.CombinedOutput()
+	if cpErr != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  kubectl cp failed: %s (%v)\n", cpOutput, cpErr)
+		// Fallback: try extracting from Kind node
+		_, _ = fmt.Fprintln(writer, "🔄 Falling back to Kind node extraction...")
+		return collectPythonCoverageFallback(opts, coverDir, covFile, projectRoot, writer)
+	}
+
+	// Step 6: Scale down deployment (cleanup)
+	_, _ = fmt.Fprintln(writer, "🔽 Scaling down deployment...")
+	scaleCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		"scale", "deployment", opts.DeploymentName,
+		"-n", opts.Namespace, "--replicas=0")
+	_ = scaleCmd.Run()
+
+	// Step 7: Verify and generate report
+	if _, err := os.Stat(covFile); os.IsNotExist(err) {
+		return fmt.Errorf(".coverage file not found after extraction: %s", covFile)
+	}
+	fileInfo, _ := os.Stat(covFile)
+	_, _ = fmt.Fprintf(writer, "✅ .coverage extracted: %s (%d bytes)\n", covFile, fileInfo.Size())
+
+	// Step 8: Generate text report
+	outputFile := filepath.Join(projectRoot, fmt.Sprintf("coverage_e2e_%s_python.txt", opts.ServiceName))
+	if err := generatePythonCoverageReport(covFile, outputFile, opts, writer); err != nil {
+		return fmt.Errorf("report generation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Python coverage report written to %s\n", outputFile)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	return nil
+}
+
+// collectPythonCoverageFallback uses the original Kind node extraction as a fallback.
+func collectPythonCoverageFallback(opts E2EPythonCoverageOptions, coverDir, covFile, projectRoot string, writer io.Writer) error {
+	// Scale down to flush coverage
 	if err := scaleDownDeploymentForCoverage(E2ECoverageOptions{
 		ServiceName:    opts.ServiceName,
 		ClusterName:    opts.ClusterName,
@@ -294,26 +454,29 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 		return fmt.Errorf("scale-down failed: %w", err)
 	}
 
-	// Step 2: Determine local coverage directory
-	projectRoot := getProjectRoot()
-	if projectRoot == "" {
-		return fmt.Errorf("cannot determine project root (go.mod not found)")
-	}
-	coverDir := filepath.Join(projectRoot, "coverdata", opts.ServiceName)
-
-	// Step 3: Extract .coverage from Kind node
+	// Extract from Kind node
 	if err := extractCoverageFromKindNode(opts.ClusterName, coverDir, writer); err != nil {
 		return fmt.Errorf("extraction failed: %w", err)
 	}
 
-	// Verify .coverage file exists
-	covFile := filepath.Join(coverDir, ".coverage")
+	// Check for .coverage file
 	if _, err := os.Stat(covFile); os.IsNotExist(err) {
+		files, listErr := os.ReadDir(coverDir)
+		if listErr == nil {
+			_, _ = fmt.Fprintf(writer, "📁 Files found in %s:\n", coverDir)
+			for _, f := range files {
+				info, _ := f.Info()
+				if info != nil {
+					_, _ = fmt.Fprintf(writer, "   - %s (%d bytes, dir=%v)\n", f.Name(), info.Size(), f.IsDir())
+				} else {
+					_, _ = fmt.Fprintf(writer, "   - %s (dir=%v)\n", f.Name(), f.IsDir())
+				}
+			}
+		}
 		return fmt.Errorf(".coverage file not found in extracted data: %s", covFile)
 	}
-	_, _ = fmt.Fprintf(writer, "✅ Found .coverage file: %s\n", covFile)
 
-	// Step 4: Generate text report via `python3 -m coverage report` with path remapping
+	// Generate report
 	outputFile := filepath.Join(projectRoot, fmt.Sprintf("coverage_e2e_%s_python.txt", opts.ServiceName))
 	if err := generatePythonCoverageReport(covFile, outputFile, opts, writer); err != nil {
 		return fmt.Errorf("report generation failed: %w", err)

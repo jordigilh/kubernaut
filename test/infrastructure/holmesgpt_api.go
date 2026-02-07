@@ -360,7 +360,14 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create coverdata directory: %v\n", err)
 		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ Created %s for Python coverage collection\n", coverdataPath)
+			// CRITICAL: os.MkdirAll applies umask (0022), resulting in 0755 (rwxr-xr-x).
+			// Container processes (UID 1001) need write access to /coverdata via hostPath volume.
+			// os.Chmod bypasses umask, ensuring world-writable permissions propagate through
+			// the Kind bind mount → pod hostPath chain.
+			if err := os.Chmod(coverdataPath, 0777); err != nil {
+				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to chmod coverdata directory: %v\n", err)
+			}
+			_, _ = fmt.Fprintf(writer, "  ✅ Created %s for Python coverage collection (mode=0777)\n", coverdataPath)
 		}
 	}
 
@@ -399,6 +406,10 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate`
+		// NOTE: fsGroup removed — it has NO effect on hostPath volumes.
+		// Write permissions are ensured by:
+		// 1. os.Chmod(coverdataPath, 0777) on the host directory
+		// 2. ensureCoverdataWritableInKindNode() chmod 777 inside Kind node
 		_, _ = fmt.Fprintln(writer, "  📊 DD-TEST-007: Python E2E coverage instrumentation ENABLED")
 	}
 

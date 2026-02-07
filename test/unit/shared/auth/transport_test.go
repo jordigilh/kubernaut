@@ -92,13 +92,9 @@ var _ = Describe("AuthTransport", func() {
 	})
 
 	Describe("NewServiceAccountTransport", func() {
-		It("should read token from filesystem and inject Authorization header", func() {
-			Skip("ServiceAccount transport requires filesystem token - tested in integration tests")
-		})
-
-		It("should cache token for 5 minutes", func() {
-			Skip("Token caching tested in integration tests with real filesystem")
-		})
+		// NOTE: "should read token from filesystem" and "should cache token for
+		// 5 minutes" are tested in integration tests with a real filesystem/token.
+		// They do not belong at the unit test tier.
 
 		It("should not inject header if token file doesn't exist", func() {
 			// Create ServiceAccount transport pointing to non-existent file

@@ -78,6 +78,7 @@ spec:
   template:
     metadata:
       labels:
+        app: authwebhook  # DD-TEST-007: Required for kubectl wait -l app=authwebhook in coverage collection
         app.kubernetes.io/name: authwebhook
         app.kubernetes.io/component: admission-webhook
     spec:
