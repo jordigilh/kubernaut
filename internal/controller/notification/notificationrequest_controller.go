@@ -844,7 +844,15 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager, opts 
 // ========================================
 
 // handleInitialization initializes the NotificationRequest status if this is the first reconciliation.
-// Returns true if initialization was performed (caller should requeue).
+// Returns true if initialization was performed (caller should requeue), false if already initialized.
+//
+// Concurrency safety: multiple reconciles can fire for the same NotificationRequest
+// before the first status update is persisted (each sees Phase="" from the informer
+// cache). UpdatePhase refetches the latest state from the API server before validating
+// the transition. If a concurrent reconcile already set Phase=Pending, the refetch
+// turns the attempted "" → Pending into Pending → Pending, which the state machine
+// rejects. We detect this by inspecting the refetched Phase after the error and treat
+// it as a no-op.
 func (r *NotificationRequestReconciler) handleInitialization(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
@@ -869,6 +877,14 @@ func (r *NotificationRequestReconciler) handleInitialization(
 		"Initialized",
 		"Notification request received",
 	); err != nil {
+		// Concurrent initialization race: UpdatePhase refetches from the API server.
+		// If another reconcile already set Pending, the refetched notification reflects
+		// that and the transition is rejected as Pending → Pending. This is benign.
+		if notification.Status.Phase == notificationv1alpha1.NotificationPhasePending {
+			log.V(1).Info("Initialization already completed by concurrent reconcile",
+				"name", notification.Name)
+			return false, nil
+		}
 		log.Error(err, "Failed to initialize status")
 		return false, err
 	}
