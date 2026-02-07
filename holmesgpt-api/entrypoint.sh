@@ -59,7 +59,6 @@ echo "Listening on port: $API_PORT"
 # DD-TEST-007: E2E Coverage Collection
 # When E2E_COVERAGE=true, wrap uvicorn with coverage.py to collect Python code coverage.
 # COVERAGE_FILE controls where the .coverage SQLite database is written.
-# On SIGTERM (pod scale-down), uvicorn shuts down gracefully and coverage flushes data.
 if [ "$E2E_COVERAGE" = "true" ]; then
     # Verify coverage module is available before attempting to use it.
     # The production Dockerfile does not include coverage; only Dockerfile.e2e does.
@@ -68,8 +67,62 @@ if [ "$E2E_COVERAGE" = "true" ]; then
         echo "📊 DD-TEST-007: E2E Coverage mode ENABLED"
         echo "   Coverage data file: ${COVERAGE_FILE:-/coverdata/.coverage}"
         echo "   Source: src/"
-        export COVERAGE_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
-        exec python3.12 -m coverage run --source=src -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
+
+        # Verify /coverdata is writable (catches permission issues early)
+        COV_DIR="$(dirname "${COVERAGE_FILE:-/coverdata/.coverage}")"
+        if touch "${COV_DIR}/.write-test" 2>/dev/null; then
+            rm -f "${COV_DIR}/.write-test"
+            echo "   ✅ Coverage directory writable: ${COV_DIR}"
+        else
+            echo "   ⚠️  Coverage directory NOT writable: ${COV_DIR}"
+            echo "   Listing directory:"
+            ls -la "${COV_DIR}" 2>/dev/null || echo "   Directory not accessible"
+            echo "   Current user: $(id)"
+        fi
+
+        # DD-TEST-007: Use explicit Coverage launcher (run_with_coverage.py)
+        # instead of `coverage run -m uvicorn`.
+        #
+        # Why: uvicorn's Server.startup() calls loop.add_signal_handler(SIGTERM, ...)
+        # which OVERWRITES coverage.py's built-in SIGTERM handler, making
+        # `coverage run --sigterm` ineffective regardless of event loop.
+        #
+        # The launcher creates its own Coverage object, registers a SIGUSR1 handler
+        # (which uvicorn does NOT intercept) to flush coverage on demand, and runs
+        # uvicorn programmatically via uvicorn.run().
+        #
+        # Signal flow:
+        #   1. Go E2E test sends SIGUSR1 → launcher flushes .coverage, keeps running
+        #   2. Go test extracts .coverage via kubectl cp (pod still alive)
+        #   3. Go test scales deployment to 0 → SIGTERM → normal container teardown
+        echo "   Launcher: run_with_coverage.py (SIGUSR1 → flush)"
+
+        python3.12 ./run_with_coverage.py &
+        PID=$!
+        echo "   Python PID: $PID"
+
+        # Forward SIGTERM to Python for normal Kubernetes shutdown
+        trap 'echo "📊 Received SIGTERM, forwarding to Python (PID $PID)..."; kill -TERM $PID 2>/dev/null' SIGTERM SIGINT
+
+        # Wait for Python to exit
+        set +e  # Disable errexit: wait returns 143 on signal interruption
+        wait $PID 2>/dev/null
+        wait $PID 2>/dev/null  # Second wait in case trap interrupted first
+        EXIT_CODE=$?
+        set -e
+
+        # Verify coverage file was written (diagnostic)
+        COV_FILE="${COVERAGE_FILE:-/coverdata/.coverage}"
+        if [ -f "$COV_FILE" ]; then
+            COV_SIZE=$(stat -c%s "$COV_FILE" 2>/dev/null || stat -f%z "$COV_FILE" 2>/dev/null || echo "unknown")
+            echo "📊 Coverage file written: $COV_FILE ($COV_SIZE bytes)"
+        else
+            echo "⚠️  Coverage file NOT found at $COV_FILE after Python exit (code=$EXIT_CODE)"
+            echo "   Listing ${COV_DIR}:"
+            ls -la "${COV_DIR}" 2>/dev/null || echo "   Directory not accessible"
+        fi
+
+        exit $EXIT_CODE
     else
         echo "⚠️  DD-TEST-007: E2E_COVERAGE=true but 'coverage' module not installed — falling back to plain uvicorn"
         exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port "$API_PORT" --workers 1
