@@ -336,21 +336,35 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 		_, _ = fmt.Fprintf(writer, "%s\n", lsOutput)
 	}
 
-	// Step 3: Send SIGTERM to the Python/coverage process to trigger flush
-	// The entrypoint.sh traps SIGTERM and forwards to Python; coverage.py's atexit saves data
+	// Step 3: Send SIGTERM directly to the Python/coverage process (NOT PID 1)
+	// CRITICAL: Bash as PID 1 in containers has special signal semantics.
+	// The Linux kernel only delivers signals to PID 1 if it has registered a handler,
+	// but bash's trap handler doesn't always fire during `wait` in container runtimes.
+	// CI logs confirmed: `kill -TERM 1` left both bash AND Python running after 20s.
+	// Fix: find the Python process by name and signal it directly. This triggers
+	// coverage.py's atexit handler → .coverage file is written.
 	_, _ = fmt.Fprintln(writer, "📤 Sending SIGTERM to Python process inside pod...")
 	killCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"exec", "-n", opts.Namespace, podName, "--",
-		"sh", "-c", "kill -TERM 1 2>/dev/null; echo 'SIGTERM sent to PID 1'")
+		"sh", "-c", `
+PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*coverage run' | awk '{print $1}' | head -1)
+if [ -n "$PYTHON_PID" ]; then
+    echo "Found Python/coverage process: PID $PYTHON_PID"
+    kill -TERM "$PYTHON_PID" 2>/dev/null
+    echo "SIGTERM sent to PID $PYTHON_PID"
+else
+    echo "No Python/coverage process found, sending SIGTERM to PID 1 as fallback"
+    kill -TERM 1 2>/dev/null
+    echo "SIGTERM sent to PID 1 (fallback)"
+fi
+`)
 	if killOutput, killErr := killCmd.CombinedOutput(); killErr == nil {
 		_, _ = fmt.Fprintf(writer, "   %s", killOutput)
 	}
 
 	// Step 4: Wait for coverage.py to flush .coverage file
-	// The entrypoint.sh uses the double-wait pattern: after SIGTERM interrupts the first
-	// `wait`, bash sends SIGTERM to Python, then the second `wait` blocks until Python
-	// actually exits (with coverage data flushed). This typically takes 2-5s.
-	// We poll for 20s to give ample room for Python shutdown + coverage.py atexit flush.
+	// After SIGTERM, Python/uvicorn shuts down gracefully → coverage.py atexit fires
+	// → .coverage file is written. This typically takes 2-5s.
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage data flush (up to 20s)...")
 	covPath := "/coverdata/.coverage"
 	const maxPollIterations = 20
