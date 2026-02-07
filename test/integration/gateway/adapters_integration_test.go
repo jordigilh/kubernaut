@@ -23,7 +23,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +30,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -43,16 +43,16 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("gw-adapter-%d-%s", processID, uuid.New().String()[:8])
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-adapter")
 		logger = GinkgoLogr
 
-		// Create test namespace
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "Test namespace must be created")
-
 		// Create kubernaut-system fallback namespace (if not already exists)
-		fallbackNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"}}
+		fallbackNs := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "kubernaut-system",
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
+		}
 		_ = k8sClient.Create(ctx, fallbackNs) // Ignore error if already exists
 	})
 

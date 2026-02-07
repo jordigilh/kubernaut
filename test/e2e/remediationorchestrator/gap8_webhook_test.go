@@ -21,12 +21,10 @@ limitations under the License.
 package remediationorchestrator
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,20 +69,11 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 
 	BeforeEach(func() {
 		// Create test namespace with audit enabled
-		// Support parallel execution by including process ID
-		testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s",
-			GinkgoParallelProcess(),
-			time.Now().Format("150405"))
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-				Labels: map[string]string{
-					"kubernaut.ai/audit-enabled": "true", // REQUIRED for webhook to intercept
-				},
-			},
-		}
-		err := k8sClient.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred())
+		// Support parallel execution via shared helper
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gap8-webhook-test",
+			helpers.WithLabels(map[string]string{
+				"kubernaut.ai/audit-enabled": "true", // REQUIRED for webhook to intercept
+			}))
 
 		GinkgoWriter.Printf("📋 Created test namespace: %s (with audit enabled)\n", testNamespace)
 	})
@@ -99,11 +88,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 		}
 
 		// Cleanup: Delete namespace
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		err := k8sClient.Delete(ctx, ns)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to delete namespace: %v\n", err)
-		}
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		GinkgoWriter.Printf("🧹 Cleaned up namespace: %s\n", testNamespace)
 	})
@@ -154,38 +139,38 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					return false
 				}
 				return rr.Status.TimeoutConfig != nil &&
-				       rr.Status.TimeoutConfig.Global != nil
+					rr.Status.TimeoutConfig.Global != nil
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 				"RemediationOrchestrator controller should initialize default TimeoutConfig")
 
 			GinkgoWriter.Printf("✅ TimeoutConfig initialized by RO controller: Global=%s\n",
 				rr.Status.TimeoutConfig.Global.Duration)
 
-		// ========================================
-		// WHEN: Operator modifies TimeoutConfig (simulates kubectl edit)
-		// ========================================
-		// Re-fetch the latest RR to avoid conflicts with controller updates
-		err = k8sClient.Get(ctx, client.ObjectKey{
-			Namespace: testNamespace,
-			Name:      "rr-gap8-webhook",
-		}, rr)
-		Expect(err).ToNot(HaveOccurred())
+			// ========================================
+			// WHEN: Operator modifies TimeoutConfig (simulates kubectl edit)
+			// ========================================
+			// Re-fetch the latest RR to avoid conflicts with controller updates
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Namespace: testNamespace,
+				Name:      "rr-gap8-webhook",
+			}, rr)
+			Expect(err).ToNot(HaveOccurred())
 
-		rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
-			Global:     &metav1.Duration{Duration: 45 * time.Minute},
-			Processing: &metav1.Duration{Duration: 12 * time.Minute},
-			Analyzing:  &metav1.Duration{Duration: 8 * time.Minute},
-			Executing:  &metav1.Duration{Duration: 20 * time.Minute},
-		}
+			rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+				Global:     &metav1.Duration{Duration: 45 * time.Minute},
+				Processing: &metav1.Duration{Duration: 12 * time.Minute},
+				Analyzing:  &metav1.Duration{Duration: 8 * time.Minute},
+				Executing:  &metav1.Duration{Duration: 20 * time.Minute},
+			}
 
-		GinkgoWriter.Printf("📝 Operator modifying TimeoutConfig: Global=%s, Processing=%s, Analyzing=%s, Executing=%s\n",
-			rr.Status.TimeoutConfig.Global.Duration,
-			rr.Status.TimeoutConfig.Processing.Duration,
-			rr.Status.TimeoutConfig.Analyzing.Duration,
-			rr.Status.TimeoutConfig.Executing.Duration)
+			GinkgoWriter.Printf("📝 Operator modifying TimeoutConfig: Global=%s, Processing=%s, Analyzing=%s, Executing=%s\n",
+				rr.Status.TimeoutConfig.Global.Duration,
+				rr.Status.TimeoutConfig.Processing.Duration,
+				rr.Status.TimeoutConfig.Analyzing.Duration,
+				rr.Status.TimeoutConfig.Executing.Duration)
 
-		err = k8sClient.Status().Update(ctx, rr)
-		Expect(err).ToNot(HaveOccurred())
+			err = k8sClient.Status().Update(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
 
 			GinkgoWriter.Printf("✅ Status update submitted (webhook should intercept)\n")
 
@@ -195,17 +180,17 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// DIAGNOSTIC: First query for ALL events with this correlation ID
 			var allEvents []ogenclient.AuditEvent
 
-		Eventually(func() int {
-			// Query ALL audit events for this correlation ID (no event_type filter)
-			// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
-			eventCategory := roaudit.EventCategoryOrchestration
-			events, _, err := helpers.QueryAuditEvents(
-				ctx,
-				auditClient,
-				&correlationID,
-				nil, // event_type = nil (query ALL event types within category)
-				&eventCategory,
-			)
+			Eventually(func() int {
+				// Query ALL audit events for this correlation ID (no event_type filter)
+				// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
+				eventCategory := roaudit.EventCategoryOrchestration
+				events, _, err := helpers.QueryAuditEvents(
+					ctx,
+					auditClient,
+					&correlationID,
+					nil, // event_type = nil (query ALL event types within category)
+					&eventCategory,
+				)
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  Audit query error: %v\n", err)
 					return 0
@@ -215,64 +200,64 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 				"At least one audit event should exist for this correlation_id (diagnostic)")
 
-		// Log ALL events found for diagnostic purposes
-		GinkgoWriter.Printf("📊 DIAGNOSTIC: Found %d audit events for correlation_id=%s:\n", len(allEvents), correlationID)
-		for i, evt := range allEvents {
-			GinkgoWriter.Printf("  [%d] event_type=%s, event_category=%s, event_action=%s, outcome=%s\n",
-				i+1, evt.EventType, evt.EventCategory, evt.EventAction, evt.EventOutcome)
-		}
-
-		// Wait for webhook.remediationrequest.timeout_modified event to arrive
-		// NOTE: Webhook events take longer due to buffer flush interval + database write
-		// - AuthWebhook buffer flush: 5 seconds
-		// - Network + database write: 1-2 seconds
-		// - Total expected: ~7-8 seconds
-	webhookEvents := []ogenclient.AuditEvent{}
-	Eventually(func() int {
-		// Re-query ALL events to get fresh data including webhook events
-		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
-		eventCategory := roaudit.EventCategoryOrchestration
-		events, _, err := helpers.QueryAuditEvents(
-			ctx,
-			auditClient,
-			&correlationID,
-			nil, // event_type = nil (query ALL event types within category)
-			&eventCategory,
-		)
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Webhook event query error: %v\n", err)
-				return 0
+			// Log ALL events found for diagnostic purposes
+			GinkgoWriter.Printf("📊 DIAGNOSTIC: Found %d audit events for correlation_id=%s:\n", len(allEvents), correlationID)
+			for i, evt := range allEvents {
+				GinkgoWriter.Printf("  [%d] event_type=%s, event_category=%s, event_action=%s, outcome=%s\n",
+					i+1, evt.EventType, evt.EventCategory, evt.EventAction, evt.EventOutcome)
 			}
 
-			// Filter for webhook.remediationrequest.timeout_modified events
-			webhookEvents = []ogenclient.AuditEvent{}
-			for _, evt := range events {
-				if evt.EventType == "webhook.remediationrequest.timeout_modified" {
-					webhookEvents = append(webhookEvents, evt)
+			// Wait for webhook.remediationrequest.timeout_modified event to arrive
+			// NOTE: Webhook events take longer due to buffer flush interval + database write
+			// - AuthWebhook buffer flush: 5 seconds
+			// - Network + database write: 1-2 seconds
+			// - Total expected: ~7-8 seconds
+			webhookEvents := []ogenclient.AuditEvent{}
+			Eventually(func() int {
+				// Re-query ALL events to get fresh data including webhook events
+				// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
+				eventCategory := roaudit.EventCategoryOrchestration
+				events, _, err := helpers.QueryAuditEvents(
+					ctx,
+					auditClient,
+					&correlationID,
+					nil, // event_type = nil (query ALL event types within category)
+					&eventCategory,
+				)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  Webhook event query error: %v\n", err)
+					return 0
 				}
-			}
 
-			if len(webhookEvents) > 0 {
-				GinkgoWriter.Printf("✅ Found %d webhook events after %v\n", len(webhookEvents), time.Since(now.Time))
-			}
-			return len(webhookEvents)
-		}, 20*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"Should have at least 1 webhook.remediationrequest.timeout_modified event (controller init + operator modification)")
+				// Filter for webhook.remediationrequest.timeout_modified events
+				webhookEvents = []ogenclient.AuditEvent{}
+				for _, evt := range events {
+					if evt.EventType == "webhook.remediationrequest.timeout_modified" {
+						webhookEvents = append(webhookEvents, evt)
+					}
+				}
 
-		// Validate webhook event structure (ADR-034 compliance)
-		// NOTE: There may be 2 webhook events:
-		//   1. Controller initializes TimeoutConfig (nil → defaults)
-		//   2. Operator modifies TimeoutConfig (defaults → custom)
-		// We validate the LAST event (operator modification)
-		webhookEvent := webhookEvents[len(webhookEvents)-1]
-		Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
-		Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryOrchestration)) // Gap #8: Webhook is RR implementation detail
-		Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
-		Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
-		Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
+				if len(webhookEvents) > 0 {
+					GinkgoWriter.Printf("✅ Found %d webhook events after %v\n", len(webhookEvents), time.Since(now.Time))
+				}
+				return len(webhookEvents)
+			}, 20*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+				"Should have at least 1 webhook.remediationrequest.timeout_modified event (controller init + operator modification)")
 
-		GinkgoWriter.Printf("✅ Found %d webhook audit event(s), validating operator modification (event_id=%s)\n",
-			len(webhookEvents), webhookEvent.EventID)
+			// Validate webhook event structure (ADR-034 compliance)
+			// NOTE: There may be 2 webhook events:
+			//   1. Controller initializes TimeoutConfig (nil → defaults)
+			//   2. Operator modifies TimeoutConfig (defaults → custom)
+			// We validate the LAST event (operator modification)
+			webhookEvent := webhookEvents[len(webhookEvents)-1]
+			Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
+			Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryOrchestration)) // Gap #8: Webhook is RR implementation detail
+			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
+			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
+
+			GinkgoWriter.Printf("✅ Found %d webhook audit event(s), validating operator modification (event_id=%s)\n",
+				len(webhookEvents), webhookEvent.EventID)
 
 			// ========================================
 			// THEN: LastModifiedBy/LastModifiedAt populated by webhook

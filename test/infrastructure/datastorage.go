@@ -102,7 +102,7 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
 	// then delete cluster to free resources.
 	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
-	
+
 	if testsFailed {
 		if inCICD {
 			// ═══════════════════════════════════════════════════════════════════════
@@ -116,7 +116,7 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 			_, _ = fmt.Fprintf(writer, "✅ Cluster preserved for diagnostics\n")
 			return nil // Don't delete - let GitHub Actions handle it
 		}
-		
+
 		// ═══════════════════════════════════════════════════════════════════════
 		// LOCAL MODE: Export logs immediately (Must-Gather Style)
 		// ═══════════════════════════════════════════════════════════════════════
@@ -571,7 +571,8 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 			Labels: map[string]string{
-				"test": "datastorage-e2e",
+				"kubernaut.ai/managed": "true",
+				"test":                 "datastorage-e2e",
 			},
 		},
 	}

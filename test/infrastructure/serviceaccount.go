@@ -619,6 +619,9 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/managed": "true",
+			},
 		},
 	}
 	_, err = clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
@@ -787,7 +790,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	// DD-AUTH-014: MUST match pod deployment (datastorage.go:1139) and RBAC (client-rbac-v2.yaml:228)
 	datastorageSAName := "data-storage-sa"
 	_, _ = fmt.Fprintf(writer, "🔐 Creating DataStorage Service ServiceAccount: %s\n", datastorageSAName)
-	
+
 	datastorageSA := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      datastorageSAName,
@@ -912,7 +915,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token directory: %w", err)
 	}
-	
+
 	datastorageTokenPath := filepath.Join(kubeconfigDir, fmt.Sprintf("datastorage-service-token-%s", saName))
 	if err := os.WriteFile(datastorageTokenPath, []byte(datastorageToken), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write DataStorage service token file: %w", err)
@@ -1043,7 +1046,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 //	testEnv := &envtest.Environment{...}
 //	cfg, err := testEnv.Start()
 //	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(cfg, "gateway")
-//	
+//
 //	// Pass to DataStorage:
 //	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 //	    EnvtestKubeconfig: kubeconfigPath,
@@ -1085,7 +1088,7 @@ func WriteEnvtestKubeconfigToFile(cfg *rest.Config, serviceName string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	
+
 	kubeconfigDir := filepath.Join(homeDir, "tmp", "kubernaut-envtest")
 	err = os.MkdirAll(kubeconfigDir, 0755)
 	if err != nil {
@@ -1169,7 +1172,7 @@ func CreateServiceAccountForHTTPService(
 
 	// Reuse existing datastorage-tokenreview ClusterRole (it's generic)
 	// This ClusterRole grants: create on tokenreviews + subjectaccessreviews
-	
+
 	// Create ClusterRoleBinding for service ServiceAccount
 	bindingName := fmt.Sprintf("%s-tokenreview", saName)
 	_, _ = fmt.Fprintf(writer, "🔐 Creating ClusterRoleBinding: %s\n", bindingName)
@@ -1227,7 +1230,7 @@ func CreateServiceAccountForHTTPService(
 
 	// Generate kubeconfig for Podman container
 	_, _ = fmt.Fprintf(writer, "📄 Generating kubeconfig for Podman container...\n")
-	
+
 	// DD-AUTH-014: Network-mode-specific API server URL (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
 	// - Host network: Use localhost directly (container shares host network namespace)
 	// - Bridge network: Rewrite 127.0.0.1 → host.containers.internal (all platforms)
@@ -1276,7 +1279,7 @@ func CreateServiceAccountForHTTPService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to write kubeconfig file: %w", err)
 	}
-	
+
 	// Fix file permissions for Podman rootless (DD-AUTH-014)
 	// Container runs as non-root user and needs to read the mounted kubeconfig
 	err = os.Chmod(kubeconfigPath, 0644)

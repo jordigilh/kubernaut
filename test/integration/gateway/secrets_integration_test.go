@@ -18,11 +18,10 @@ package gateway
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -34,29 +33,17 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 	var (
 		ctx       context.Context
 		namespace string
-		processID int
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		processID = GinkgoParallelProcess()
 		// Use unique namespace per test run (DD-TEST-001: Parallel execution pattern)
-		// Format: gw-secrets-{processID}-{uuid} for zero collision risk
-		namespace = fmt.Sprintf("gw-secrets-%d-%s", processID, uuid.New().String()[:8])
-
-		// Create test namespace (naturally unique - no cleanup needed)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		namespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-secrets")
 	})
 
 	AfterEach(func() {
 		// Simple cleanup - namespace is unique per test
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		}
-		_ = k8sClient.Delete(ctx, ns)
+		helpers.DeleteTestNamespace(ctx, k8sClient, namespace)
 	})
 
 	// ========================================

@@ -49,12 +49,11 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // TODO: This test requires investigation of Gateway's deduplication behavior in integration tier
@@ -72,15 +71,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		testLogger = logger.WithValues("test", "status-dedup-integration")
 
 		// Create unique namespace per test for isolation
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("status-dedup-int-%d-%s", processID, uuid.New().String()[:8])
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "Failed to create test namespace")
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "status-dedup-int")
 
 		// Create Gateway server with shared K8s client
 		cfg := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
@@ -100,6 +91,8 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			for i := range crdList.Items {
 				_ = k8sClient.Delete(ctx, &crdList.Items[i])
 			}
+			// Cleanup namespace
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
 	})
 

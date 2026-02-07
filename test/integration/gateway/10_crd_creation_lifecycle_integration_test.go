@@ -21,9 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,6 +28,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -92,10 +90,6 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "crd-lifecycle-integration")
 
-		// Unique namespace for parallel execution
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("crd-lifecycle-int-%d-%s", processID, uuid.New().String()[:8])
-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 10: CRD Creation Lifecycle - Setup (INTEGRATION TEST)")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -104,8 +98,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		k8sClient = getKubernetesClient()
 
 		// Create test namespace
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
+		testNamespace = helpers.CreateTestNamespace(testCtx, k8sClient, "crd-lifecycle-int")
 
 		// NEW: Create Gateway with SHARED K8s client AND shared audit store
 		// This is the KEY DIFFERENCE from E2E tests: Gateway and test use the SAME client
@@ -128,8 +121,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 			}
 			return
 		}
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		_ = k8sClient.Delete(testCtx, ns)
+		helpers.DeleteTestNamespace(testCtx, k8sClient, testNamespace)
 		if testCancel != nil {
 			testCancel()
 		}

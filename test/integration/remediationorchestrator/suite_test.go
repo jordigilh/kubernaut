@@ -74,6 +74,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
 	// Real controller testing happens in:
@@ -148,13 +149,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// This is different from per-process envtest pattern because DataStorage
 	// container (started in Phase 1) needs to access envtest API server
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
-	
+
 	// DD-AUTH-014: Force envtest to bind to IPv4 by pre-setting SecureServing.Address
 	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
 	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
 	// Reference: docs/handoff/DD_AUTH_014_MACOS_PODMAN_LIMITATION.md
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
-	
+
 	sharedTestEnv := &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -172,7 +173,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	sharedCfg, err := sharedTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(sharedCfg).NotTo(BeNil())
-	
+
 	GinkgoWriter.Printf("✅ Shared envtest started\n")
 	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
 	GinkgoWriter.Printf("   ℹ️  Forced IPv4 binding (127.0.0.1), kubeconfig rewritten to host.containers.internal\n")
@@ -328,7 +329,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Centralized authentication via shared helper (all clients use same token)
 	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
 	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
-	
+
 	// DD-AUTH-014: Create authenticated DataStorage clients (audit + OpenAPI)
 	// This ensures ALL DataStorage requests (including audit background writes) use the ServiceAccount token
 	dsClients = integration.NewAuthenticatedDataStorageClients(
@@ -361,7 +362,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	routingEngine := routing.NewRoutingEngine(
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(), // Cache-bypassed reader for fresh routing decisions
-		"", // No namespace filter - all namespaces
+		"",                        // No namespace filter - all namespaces
 		routing.Config{
 			ConsecutiveFailureThreshold: 3,
 			ConsecutiveFailureCooldown:  3600, // 1 hour
@@ -549,44 +550,24 @@ var _ = SynchronizedAfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Cleanup complete - all per-process controllers stopped, shared infrastructure cleaned")
 })
+
 // ============================================================================
 // TEST HELPER FUNCTIONS (for parallel execution isolation)
 // ============================================================================
 
-// createTestNamespace creates a unique namespace for test isolation in parallel execution.
+// createTestNamespace creates a managed test namespace for test isolation.
+// Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
 // MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
-// Using UUID for guaranteed uniqueness in parallel execution (12 procs)
 func createTestNamespace(prefix string) string {
-	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:13])
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ns,
-		},
-	}
-	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
-	GinkgoWriter.Printf("✅ Created test namespace: %s\n", ns)
-	return ns
+	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 
-// deleteTestNamespace initiates namespace cleanup without blocking.
-// Namespace deletion happens asynchronously - no need to wait since:
-// 1. Each test uses unique namespace name (UUID-based)
-// 2. Cluster teardown (SynchronizedAfterSuite) handles final cleanup
-// 3. No cross-test namespace conflicts due to unique naming
+// deleteTestNamespace cleans up a test namespace.
+// Delegates to shared helpers.DeleteTestNamespace.
 func deleteTestNamespace(ns string) {
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ns,
-		},
-	}
-	err := k8sClient.Delete(ctx, namespace)
-	if err != nil && !apierrors.IsNotFound(err) {
-		GinkgoWriter.Printf("⚠️  Warning: Failed to initiate deletion for namespace %s: %v\n", ns, err)
-		return
-	}
-
-	GinkgoWriter.Printf("🗑️  Initiated async deletion for namespace: %s (cleanup continues in background)\n", ns)
+	helpers.DeleteTestNamespace(ctx, k8sClient, ns)
 }
+
 // createRemediationRequest creates a RemediationRequest for testing.
 func createRemediationRequest(namespace, name string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
@@ -603,10 +584,10 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 				h := sha256.Sum256([]byte(uuid.New().String()))
 				return hex.EncodeToString(h[:])
 			}(),
-			SignalName:        "TestHighMemoryAlert",
-			Severity:          "critical",
-			SignalType:        "prometheus",
-			TargetType:        "kubernetes",
+			SignalName: "TestHighMemoryAlert",
+			Severity:   "critical",
+			SignalType: "prometheus",
+			TargetType: "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Deployment",
 				Name:      "test-app",
@@ -625,6 +606,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s\n", namespace, name)
 	return rr
 }
+
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
@@ -663,6 +645,7 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 	return k8sClient.Status().Update(ctx, sp)
 }
+
 // GenerateTestFingerprint creates a unique 64-character fingerprint for tests.
 // This prevents test pollution where multiple tests using the same hardcoded fingerprint
 // cause the routing engine to see failures from other tests (BR-ORCH-042, DD-RO-002).

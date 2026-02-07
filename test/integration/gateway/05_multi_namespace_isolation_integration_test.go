@@ -31,10 +31,6 @@ package gateway
 
 import (
 	"fmt"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -43,6 +39,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -71,35 +68,12 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique namespaces
-		processID := GinkgoParallelProcess()
-		timestamp := uuid.New().String()[:8]
-		testNamespace1 = fmt.Sprintf("tenant-a-int-%d-%s", processID, timestamp)
-		testNamespace2 = fmt.Sprintf("tenant-b-int-%d-%s", processID, timestamp)
+		testNamespace1 = helpers.CreateTestNamespace(ctx, k8sClient, "tenant-a-int")
+		testNamespace2 = helpers.CreateTestNamespace(ctx, k8sClient, "tenant-b-int")
 
 		testLogger.Info("Creating test namespaces...",
 			"namespace1", testNamespace1,
 			"namespace2", testNamespace2)
-
-		// Create namespace 1
-		ns1 := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace1},
-		}
-		Expect(k8sClient.Create(ctx, ns1)).To(Succeed())
-
-		// Create namespace 2
-		ns2 := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace2},
-		}
-		Expect(k8sClient.Create(ctx, ns2)).To(Succeed())
-
-		// Wait for namespaces to be ready
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace1}, ns1)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
-
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace2}, ns2)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 		testLogger.Info("✅ Test namespaces ready")
 
@@ -125,10 +99,8 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 		}
 
 		// Cleanup namespaces
-		ns1 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace1}}
-		ns2 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace2}}
-		_ = k8sClient.Delete(ctx, ns1)
-		_ = k8sClient.Delete(ctx, ns2)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace1)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace2)
 
 		testLogger.Info("✅ Test cleanup complete")
 	})

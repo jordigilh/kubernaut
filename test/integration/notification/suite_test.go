@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -59,6 +58,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
@@ -183,7 +183,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Real Kubernetes authentication via envtest
 	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
 	// ======================================================================
-	
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -200,13 +200,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// DD-AUTH-014: Start shared envtest for DataStorage auth
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
-	
+
 	// DD-AUTH-014: Force envtest to bind to IPv4 (critical for macOS!)
 	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
 	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
 	// Reference: docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
-	
+
 	sharedTestEnv := &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -224,7 +224,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	sharedCfg, err := sharedTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(sharedCfg).NotTo(BeNil())
-	
+
 	GinkgoWriter.Printf("✅ Shared envtest started\n")
 	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
 	GinkgoWriter.Printf("   ℹ️  Forced IPv4 binding (127.0.0.1)\n")
@@ -312,10 +312,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating namespaces for testing")
 	// Create kubernaut-notifications namespace for controller
+	// Static namespace name - add managed label directly
 	testNamespace = "kubernaut-notifications"
 	notifNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNamespace,
+			Labels: map[string]string{
+				"kubernaut.ai/managed": "true",
+			},
 		},
 	}
 	err = k8sClient.Create(ctx, notifNs)
@@ -596,17 +600,8 @@ var _ = SynchronizedAfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
-	// Format: test-<8-char-uuid> for readability and uniqueness
-	testNamespace = fmt.Sprintf("test-%s", uuid.New().String()[:8])
-
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testNamespace,
-		},
-	}
-
-	Expect(k8sClient.Create(ctx, ns)).To(Succeed(),
-		"Should create unique test namespace for isolation (DD-TEST-002)")
+	// Use shared helper for integration tests (no wait needed for envtest)
+	testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "test")
 
 	GinkgoWriter.Printf("📦 Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
 })
@@ -615,18 +610,8 @@ var _ = AfterEach(func() {
 	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
 	// This is MUCH faster than deleting individual notifications
 	if testNamespace != "" {
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-
-		err := k8sClient.Delete(ctx, ns)
-		if err != nil && !apierrors.IsNotFound(err) {
-			GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", testNamespace, err)
-		} else {
-			GinkgoWriter.Printf("🗑️  Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
-		}
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+		GinkgoWriter.Printf("🗑️  Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
 	}
 
 	// NT-TEST-002 Fix: Reset mock Slack server state after each test

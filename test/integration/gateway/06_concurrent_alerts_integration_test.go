@@ -34,10 +34,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -46,6 +42,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -73,21 +70,9 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("concurrent-int-%d-%s", processID, uuid.New().String()[:8])
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "concurrent-int")
 
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-
-		// Wait for namespace to be ready
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 
@@ -111,10 +96,7 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 			return
 		}
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(ctx, ns)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		testLogger.Info("✅ Test cleanup complete")
 	})

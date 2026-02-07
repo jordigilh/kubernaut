@@ -1209,11 +1209,12 @@ func EnsureTestNamespace(ctx context.Context, k8sClient *K8sTestClient, namespac
 		}, "60s", "1s").Should(BeTrue(), "Namespace %s should be fully deleted", namespaceName)
 	}
 
-	// Create namespace with environment label (production environment for priority classification)
+	// Create namespace with environment label and managed label (BR-SCOPE-001)
 	ns := &corev1.Namespace{}
 	ns.Name = namespaceName
 	ns.Labels = map[string]string{
-		"environment": "production", // Tests simulate production environment
+		"kubernaut.ai/managed": "true",       // BR-SCOPE-001: Managed by Kubernaut
+		"environment":          "production", // Tests simulate production environment
 	}
 	err = k8sClient.Client.Create(ctx, ns)
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -1467,6 +1468,7 @@ func getGaugeValue(registry *prometheus.Registry, metricName string, labels map[
 
 	return 0
 }
+
 // getHistogramSampleCount retrieves the sample count of a Histogram metric
 func getHistogramSampleCount(registry *prometheus.Registry, metricName string, labels map[string]string) uint64 {
 	metricFamilies, err := registry.Gather()
