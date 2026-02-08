@@ -102,10 +102,9 @@ const (
 
 // Query operations - bounded set for cardinality protection
 const (
-	OperationList           = "list"
-	OperationGet            = "get"
-	OperationSemanticSearch = "semantic_search"
-	OperationFilter         = "filter"
+	OperationList   = "list"
+	OperationGet    = "get"
+	OperationFilter = "filter"
 )
 
 // SanitizeFailureReason ensures the failure reason is from a known bounded set.
@@ -217,7 +216,7 @@ func SanitizeStatus(status string) string {
 // Usage:
 //
 //	metrics.QueryDuration.WithLabelValues(
-//	    metrics.SanitizeQueryOperation("semantic_search"),
+//	    metrics.SanitizeQueryOperation("list"),
 //	).Observe(duration.Seconds())
 //
 // Returns:
@@ -225,10 +224,9 @@ func SanitizeStatus(status string) string {
 //   - OperationFilter if not recognized (catch-all)
 func SanitizeQueryOperation(operation string) string {
 	knownOperations := map[string]bool{
-		OperationList:           true,
-		OperationGet:            true,
-		OperationSemanticSearch: true,
-		OperationFilter:         true,
+		OperationList:   true,
+		OperationGet:    true,
+		OperationFilter: true,
 	}
 
 	if knownOperations[operation] {
@@ -250,7 +248,7 @@ func SanitizeQueryOperation(operation string) string {
 //   - Protected by: SanitizeTableName() + SanitizeStatus()
 //
 // Metric: datastorage_query_duration_seconds{operation}
-//   - Maximum cardinality: 4 values
+//   - Maximum cardinality: 3 values
 //   - Protected by: SanitizeQueryOperation()
 //
 // Total Maximum Cardinality: < 100 (SAFE for Prometheus)
