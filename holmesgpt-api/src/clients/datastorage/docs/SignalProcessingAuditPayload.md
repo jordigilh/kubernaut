@@ -32,6 +32,8 @@ Name | Type | Description | Notes
 **business_unit** | **str** | Owning business unit | [optional] 
 **from_phase** | **str** | Phase being transitioned from | [optional] 
 **to_phase** | **str** | Phase being transitioned to | [optional] 
+**signal_mode** | **str** | Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification. | [optional] 
+**original_signal_type** | **str** | Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation. | [optional] 
 **error** | **str** | Error message if processing failed | [optional] 
 
 ## Example
