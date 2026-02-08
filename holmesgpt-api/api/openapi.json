@@ -789,6 +789,20 @@
               }
             ],
             "description": "Enriched context from SignalProcessing"
+          },
+          "signal_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["reactive", "predictive"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Mode",
+            "description": "Signal mode: reactive (incident occurred) or predictive (incident predicted). BR-AI-084: Used by prompt builder to switch investigation strategy (RCA vs. predict & prevent). ADR-054: Predictive Signal Mode Classification.",
+            "default": null
           }
         },
         "type": "object",
@@ -809,7 +823,7 @@
           "cluster_name"
         ],
         "title": "IncidentRequest",
-        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-RECOVERY-003\n- enrichment_results contains DetectedLabels for workflow filtering"
+        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n- BR-AI-084: Predictive signal mode prompt strategy\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-RECOVERY-003\n- enrichment_results contains DetectedLabels for workflow filtering\n\nDesign Decision: ADR-054\n- signal_mode enables HAPI to switch prompt strategy for predictive signals"
       },
       "IncidentResponse": {
         "properties": {

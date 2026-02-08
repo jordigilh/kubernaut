@@ -132,6 +132,18 @@ func toSignalProcessingAuditPayloadPrioritySource(value string) api.SignalProces
 	}
 }
 
+// BR-SP-106: Signal mode conversion for audit payloads
+func toSignalProcessingAuditPayloadSignalMode(value string) api.SignalProcessingAuditPayloadSignalMode {
+	switch value {
+	case "reactive":
+		return api.SignalProcessingAuditPayloadSignalModeReactive
+	case "predictive":
+		return api.SignalProcessingAuditPayloadSignalModePredictive
+	default:
+		return api.SignalProcessingAuditPayloadSignalModeReactive // Default to reactive
+	}
+}
+
 func toSignalProcessingAuditPayloadCriticality(value string) api.SignalProcessingAuditPayloadCriticality {
 	switch value {
 	case "critical":

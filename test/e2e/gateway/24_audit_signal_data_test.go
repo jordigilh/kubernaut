@@ -243,18 +243,23 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}`, sharedNamespace)
 
 			// Send alert to Gateway webhook
-			resp, err := postToGateway(gatewayURL+"/api/v1/signals/prometheus", alertPayload)
-			Expect(err).ToNot(HaveOccurred(), "Failed to send Prometheus alert to Gateway")
-
-			// Debug: If not 201, read the error response
-			if resp.StatusCode != http.StatusCreated {
-				bodyBytes, _ := io.ReadAll(resp.Body)
-				GinkgoWriter.Printf("❌ Gateway returned %d: %s\n", resp.StatusCode, string(bodyBytes))
-				GinkgoWriter.Printf("📋 Alert payload sent:\n%s\n", alertPayload)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should create RR from Prometheus alert")
+			// BR-SCOPE-002: Wrap in Eventually to tolerate informer cache warm-up delays.
+			// The managed namespace label may not be visible to the Gateway's scope cache
+			// immediately after namespace creation (same pattern as Gap #4 test below).
+			var resp *http.Response
+			Eventually(func() int {
+				var postErr error
+				resp, postErr = postToGateway(gatewayURL+"/api/v1/signals/prometheus", alertPayload)
+				Expect(postErr).ToNot(HaveOccurred(), "Failed to send Prometheus alert to Gateway")
+				statusCode := resp.StatusCode
+				if statusCode != http.StatusCreated {
+					bodyBytes, _ := io.ReadAll(resp.Body)
+					GinkgoWriter.Printf("⚠️  Gateway returned %d (retrying for scope cache sync): %s\n", statusCode, string(bodyBytes))
+					_ = resp.Body.Close()
+				}
+				return statusCode
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"Gateway should create RR from Prometheus alert (may retry while scope cache syncs)")
 
 			// Extract correlation_id from response body
 			correlationID, err := extractCorrelationID(resp)

@@ -133,8 +133,17 @@ type SignalContextInput struct {
 	Severity string `json:"severity"`
 
 	// Signal type (e.g., OOMKilled, CrashLoopBackOff)
+	// Normalized by SignalProcessing: predictive types mapped to base types (BR-SP-106)
 	// +kubebuilder:validation:Required
 	SignalType string `json:"signalType"`
+
+	// SignalMode indicates whether this is a reactive or predictive signal.
+	// BR-AI-084: Predictive Signal Mode Prompt Strategy
+	// Copied from SignalProcessing status by RemediationOrchestrator.
+	// Used by HAPI to switch investigation prompt (RCA vs. predict & prevent).
+	// +kubebuilder:validation:Enum=reactive;predictive
+	// +optional
+	SignalMode string `json:"signalMode,omitempty"`
 
 	// Environment classification
 	// GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)

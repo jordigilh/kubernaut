@@ -38,9 +38,15 @@ SignalProcessing CRD status MUST include a `SignalMode` field with values:
 
 The field is **required** (not optional) — all signals MUST be classified.
 
-### R2: Signal Type Normalization
+### R2: Signal Type Normalization and Status Fields
 
-SignalProcessing MUST normalize predictive signal types to their base type so the agent can search the existing workflow catalog. The original signal type MUST be preserved in SP status for audit trail purposes.
+SignalProcessing MUST normalize predictive signal types to their base type so the agent can search the existing workflow catalog. Three new status fields are required:
+
+- **`SignalType`** (string, required): The normalized signal type. For predictive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal type** for all downstream consumers (RO, AA, HAPI).
+- **`OriginalSignalType`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for predictive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
+- **`SignalMode`** (string, required): See R1.
+
+> **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalType`. Downstream consumers (RO → AA → HAPI) MUST read from `Status.SignalType`, not from the spec.
 
 | Incoming Signal Type | Normalized Type | Signal Mode | Original (audit) |
 |---|---|---|---|
@@ -102,12 +108,15 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 ## Acceptance Criteria
 
 - [ ] CRD status field: `Status.SignalMode` (string: `reactive` | `predictive`) in `api/signalprocessing/v1alpha1/signalprocessing_types.go`
-- [ ] CRD status field: `Status.OriginalSignalType` (string) preserving the pre-normalization signal type
+- [ ] CRD status field: `Status.SignalType` (string) — normalized signal type (authoritative for downstream consumers)
+- [ ] CRD status field: `Status.OriginalSignalType` (string) — preserves pre-normalization signal type for audit
 - [ ] Signal type normalization: `PredictedOOMKill` → `OOMKilled` via configurable mapping
 - [ ] Config file: `predictive-signal-mappings.yaml` (hot-reloadable per BR-SP-072)
 - [ ] Default initial mappings: OOMKill, CPUThrottling, DiskPressure, NodeNotReady
 - [ ] Unmapped signal types: classify as `reactive`, log warning
 - [ ] Enrichment pipeline integration: set alongside severity, environment, priority
+- [ ] Audit payload: `signal_mode` and `original_signal_type` added to `SignalProcessingAuditPayload` in DataStorage OpenAPI spec
+- [ ] Audit events: `RecordClassificationDecision()` and `RecordSignalProcessed()` populate `signal_mode`
 - [ ] `make generate` regenerates deepcopy successfully
 
 ---
@@ -116,10 +125,13 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 | Component | File(s) | Change |
 |---|---|---|
-| SP CRD status | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `OriginalSignalType` fields |
-| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization during enrichment |
-| SP classifier | `pkg/signalprocessing/classifier/` (new file) | Signal mode classification + normalization mapping logic |
+| SP CRD status | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `SignalType`, `OriginalSignalType` fields |
+| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization in `reconcileClassifying()` |
+| SP classifier | `pkg/signalprocessing/classifier/signalmode.go` (new file) | Signal mode classification + normalization mapping logic |
 | SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive signal type → base type mapping config |
+| SP main | `cmd/signalprocessing/main.go` | Wire classifier, load config, start hot-reload |
+| SP audit | `pkg/signalprocessing/audit/client.go` | Populate `signal_mode` + `original_signal_type` in audit payloads |
+| DS OpenAPI | `api/openapi/data-storage-v1.yaml` | Add `signal_mode`, `original_signal_type` to `SignalProcessingAuditPayload` |
 | Deepcopy | `api/signalprocessing/v1alpha1/zz_generated.deepcopy.go` | `make generate` |
 
 ---
@@ -177,11 +189,18 @@ groups:
 
 ---
 
-## Audit Trail Integration
+## Audit Trail Integration (SOC2 CC7.4 Compliance)
 
-- Audit events MUST record `signalMode` to enable Effectiveness Monitor tracking
-- Enables answering: "How often did predictive remediations prevent actual incidents?"
-- Supports enterprise ROI proof requirements
+`signal_mode` and `original_signal_type` MUST be added to `SignalProcessingAuditPayload` in the DataStorage OpenAPI spec (`api/openapi/data-storage-v1.yaml`). This follows the existing pattern for classification metadata (`environment`, `priority`, `criticality`).
+
+**Events that MUST include `signal_mode`**:
+- `signalprocessing.classification.decision` — when signal mode is determined during enrichment
+- `signalprocessing.signal.processed` — completion event with full classification context
+
+**Rationale**:
+- No new audit event type is needed — `signal_mode` is classification metadata, not a new event category
+- Enables Effectiveness Monitor tracking: "How often did predictive remediations prevent actual incidents?"
+- Supports enterprise ROI proof requirements (SOC2 Type II, CC7.2 monitoring activities)
 
 ---
 

@@ -1,14 +1,19 @@
 # SignalProcessing E2E Test Plan
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Created**: 2025-12-21
-**Updated**: 2025-12-21
+**Updated**: 2026-02-05
 **Status**: ✅ **COMPLETE** - Comprehensive Coverage
 **Test Location**: `test/e2e/signalprocessing/`
 
 ---
 
 ## 📋 Changelog
+
+### Version 1.1.0 (2026-02-05)
+- **ADDED**: BR-SP-106 Predictive Signal Mode Classification E2E scenarios (2 tests)
+- **TESTS**: 22 E2E test scenarios (was 20)
+- **FILE**: `50_predictive_signal_mode_test.go`
 
 ### Version 1.0.0 (2025-12-21)
 - **INITIAL**: Created E2E test plan documenting existing comprehensive coverage
@@ -24,6 +29,7 @@
 | File | Purpose | BR Coverage | Status |
 |------|---------|-------------|--------|
 | `business_requirements_test.go` | Business value validation | BR-SP-001, 051, 070, 100, 101, 102 | ✅ Complete |
+| `50_predictive_signal_mode_test.go` | Predictive signal mode classification | BR-SP-106 | ✅ Complete |
 | `suite_test.go` | Kind cluster infrastructure | - | ✅ Complete |
 
 ### Test Count by Business Requirement
@@ -39,7 +45,8 @@
 | **BR-SP-090** | Audit Client Wired | 1 | ✅ |
 | **DD-METRICS** | Metrics Endpoint | 1 | ✅ |
 | **DD-007** | Graceful Shutdown | 1 | ✅ |
-| **Total** | | **20** | ✅ |
+| **BR-SP-106** | Predictive Signal Mode Classification | 2 | ✅ |
+| **Total** | | **22** | ✅ |
 
 ---
 
@@ -91,6 +98,17 @@
 | E2E-CUSTOM-01 | Constraint labels from Rego | `customLabels["constraint"]` populated |
 | E2E-CUSTOM-02 | Team labels from Rego | `customLabels["team"]` populated |
 
+### BR-SP-106: Predictive Signal Mode Classification (ADR-054)
+
+| Test ID | Scenario | Validation |
+|---------|----------|------------|
+| E2E-SP-106-001 | PredictedOOMKill classified as predictive, normalized to OOMKilled | `status.signalMode = "predictive"`, `status.signalType = "OOMKilled"`, `status.originalSignalType = "PredictedOOMKill"` |
+| E2E-SP-106-002 | Standard OOMKilled defaults to reactive mode | `status.signalMode = "reactive"`, `status.signalType = "OOMKilled"`, `status.originalSignalType = ""` |
+
+**Test File**: `50_predictive_signal_mode_test.go`
+**Status**: ✅ Passed
+**References**: [BR-SP-106](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md), [ADR-054](../../../architecture/decisions/ADR-054-predictive-signal-mode-classification.md)
+
 ### V1.0 Maturity: Controller Wiring
 
 | Test ID | Scenario | Validation |
@@ -121,6 +139,7 @@
 | `priority.rego` | Priority assignment policy |
 | `business.rego` | Business classification policy |
 | `customlabels.rego` | Custom label extraction |
+| `predictive-signal-mappings.yaml` | Predictive signal mode type mappings (BR-SP-106) |
 
 ---
 

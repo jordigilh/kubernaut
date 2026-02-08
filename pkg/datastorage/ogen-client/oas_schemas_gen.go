@@ -10328,6 +10328,52 @@ func (o OptSignalProcessingAuditPayloadSeverity) Or(d SignalProcessingAuditPaylo
 	return d
 }
 
+// NewOptSignalProcessingAuditPayloadSignalMode returns new OptSignalProcessingAuditPayloadSignalMode with value set to v.
+func NewOptSignalProcessingAuditPayloadSignalMode(v SignalProcessingAuditPayloadSignalMode) OptSignalProcessingAuditPayloadSignalMode {
+	return OptSignalProcessingAuditPayloadSignalMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSignalProcessingAuditPayloadSignalMode is optional SignalProcessingAuditPayloadSignalMode.
+type OptSignalProcessingAuditPayloadSignalMode struct {
+	Value SignalProcessingAuditPayloadSignalMode
+	Set   bool
+}
+
+// IsSet returns true if OptSignalProcessingAuditPayloadSignalMode was set.
+func (o OptSignalProcessingAuditPayloadSignalMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSignalProcessingAuditPayloadSignalMode) Reset() {
+	var v SignalProcessingAuditPayloadSignalMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSignalProcessingAuditPayloadSignalMode) SetTo(v SignalProcessingAuditPayloadSignalMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSignalProcessingAuditPayloadSignalMode) Get() (v SignalProcessingAuditPayloadSignalMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSignalProcessingAuditPayloadSignalMode) Or(d SignalProcessingAuditPayloadSignalMode) SignalProcessingAuditPayloadSignalMode {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -13110,6 +13156,12 @@ type SignalProcessingAuditPayload struct {
 	FromPhase OptString `json:"from_phase"`
 	// Phase being transitioned to.
 	ToPhase OptString `json:"to_phase"`
+	// Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106
+	// Predictive Signal Mode Classification.
+	SignalMode OptSignalProcessingAuditPayloadSignalMode `json:"signal_mode"`
+	// Original signal type before normalization. Only populated for predictive signals (e.g.,
+	// PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
+	OriginalSignalType OptString `json:"original_signal_type"`
 	// Error message if processing failed.
 	Error OptString `json:"error"`
 }
@@ -13242,6 +13294,16 @@ func (s *SignalProcessingAuditPayload) GetFromPhase() OptString {
 // GetToPhase returns the value of ToPhase.
 func (s *SignalProcessingAuditPayload) GetToPhase() OptString {
 	return s.ToPhase
+}
+
+// GetSignalMode returns the value of SignalMode.
+func (s *SignalProcessingAuditPayload) GetSignalMode() OptSignalProcessingAuditPayloadSignalMode {
+	return s.SignalMode
+}
+
+// GetOriginalSignalType returns the value of OriginalSignalType.
+func (s *SignalProcessingAuditPayload) GetOriginalSignalType() OptString {
+	return s.OriginalSignalType
 }
 
 // GetError returns the value of Error.
@@ -13377,6 +13439,16 @@ func (s *SignalProcessingAuditPayload) SetFromPhase(val OptString) {
 // SetToPhase sets the value of ToPhase.
 func (s *SignalProcessingAuditPayload) SetToPhase(val OptString) {
 	s.ToPhase = val
+}
+
+// SetSignalMode sets the value of SignalMode.
+func (s *SignalProcessingAuditPayload) SetSignalMode(val OptSignalProcessingAuditPayloadSignalMode) {
+	s.SignalMode = val
+}
+
+// SetOriginalSignalType sets the value of OriginalSignalType.
+func (s *SignalProcessingAuditPayload) SetOriginalSignalType(val OptString) {
+	s.OriginalSignalType = val
 }
 
 // SetError sets the value of Error.
@@ -13959,6 +14031,49 @@ func (s *SignalProcessingAuditPayloadSeverity) UnmarshalText(data []byte) error 
 		return nil
 	case SignalProcessingAuditPayloadSeverityUnknown:
 		*s = SignalProcessingAuditPayloadSeverityUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106
+// Predictive Signal Mode Classification.
+type SignalProcessingAuditPayloadSignalMode string
+
+const (
+	SignalProcessingAuditPayloadSignalModeReactive   SignalProcessingAuditPayloadSignalMode = "reactive"
+	SignalProcessingAuditPayloadSignalModePredictive SignalProcessingAuditPayloadSignalMode = "predictive"
+)
+
+// AllValues returns all SignalProcessingAuditPayloadSignalMode values.
+func (SignalProcessingAuditPayloadSignalMode) AllValues() []SignalProcessingAuditPayloadSignalMode {
+	return []SignalProcessingAuditPayloadSignalMode{
+		SignalProcessingAuditPayloadSignalModeReactive,
+		SignalProcessingAuditPayloadSignalModePredictive,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingAuditPayloadSignalMode) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingAuditPayloadSignalModeReactive:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadSignalModePredictive:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalText(data []byte) error {
+	switch SignalProcessingAuditPayloadSignalMode(data) {
+	case SignalProcessingAuditPayloadSignalModeReactive:
+		*s = SignalProcessingAuditPayloadSignalModeReactive
+		return nil
+	case SignalProcessingAuditPayloadSignalModePredictive:
+		*s = SignalProcessingAuditPayloadSignalModePredictive
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

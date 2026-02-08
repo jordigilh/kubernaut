@@ -1387,9 +1387,15 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 			s.EnrichmentResults.Encode(e)
 		}
 	}
+	{
+		if s.SignalMode.Set {
+			e.FieldStart("signal_mode")
+			s.SignalMode.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [29]string{
+var jsonFieldsNameOfIncidentRequest = [30]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_type",
@@ -1419,6 +1425,7 @@ var jsonFieldsNameOfIncidentRequest = [29]string{
 	26: "last_seen",
 	27: "signal_labels",
 	28: "enrichment_results",
+	29: "signal_mode",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -1749,6 +1756,16 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"enrichment_results\"")
 			}
+		case "signal_mode":
+			if err := func() error {
+				s.SignalMode.Reset()
+				if err := s.SignalMode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_mode\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -1860,6 +1877,46 @@ func (s IncidentRequestSignalLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentRequestSignalLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentRequestSignalMode as json.
+func (s IncidentRequestSignalMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes IncidentRequestSignalMode from json.
+func (s *IncidentRequestSignalMode) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentRequestSignalMode to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch IncidentRequestSignalMode(v) {
+	case IncidentRequestSignalModeReactive:
+		*s = IncidentRequestSignalModeReactive
+	case IncidentRequestSignalModePredictive:
+		*s = IncidentRequestSignalModePredictive
+	default:
+		*s = IncidentRequestSignalMode(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentRequestSignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentRequestSignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -2712,6 +2769,55 @@ func (s OptNilIncidentRequestSignalLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilIncidentRequestSignalLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentRequestSignalMode as json.
+func (o OptNilIncidentRequestSignalMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes IncidentRequestSignalMode from json.
+func (o *OptNilIncidentRequestSignalMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilIncidentRequestSignalMode to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v IncidentRequestSignalMode
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilIncidentRequestSignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilIncidentRequestSignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
