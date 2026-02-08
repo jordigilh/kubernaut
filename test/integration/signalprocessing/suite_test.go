@@ -561,10 +561,29 @@ determine_severity := "critical" if {
 	err = severityClassifier.StartHotReload(ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Schedule cleanup of business and severity policy files
+	// Create predictive signal mappings file for BR-SP-106, ADR-054
+	signalModeConfigFile, err := os.CreateTemp("", "predictive-signal-mappings-*.yaml")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = signalModeConfigFile.WriteString(`# BR-SP-106: Predictive Signal Mode Classification (integration test config)
+predictive_signal_mappings:
+  PredictedOOMKill: OOMKilled
+  PredictedCPUThrottling: CPUThrottling
+  PredictedDiskPressure: DiskPressure
+  PredictedNodeNotReady: NodeNotReady
+`)
+	Expect(err).NotTo(HaveOccurred())
+	_ = signalModeConfigFile.Close()
+
+	// Initialize SignalModeClassifier (BR-SP-106, ADR-054)
+	signalModeClassifier := classifier.NewSignalModeClassifier(logger)
+	err = signalModeClassifier.LoadConfig(signalModeConfigFile.Name())
+	Expect(err).NotTo(HaveOccurred())
+
+	// Schedule cleanup of business, severity, and signal mode config files
 	DeferCleanup(func() {
 		_ = os.Remove(businessPolicyFile.Name())
 		_ = os.Remove(severityPolicyFile.Name())
+		_ = os.Remove(signalModeConfigFile.Name())
 	})
 
 	// Initialize owner chain builder (Day 7 integration)
@@ -632,7 +651,8 @@ result := {}
 		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
 		LabelDetector:      labelDetector,      // BR-SP-101: Detected labels
 		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
-		OwnerChainBuilder:  ownerChainBuilder,  // BR-SP-100: Owner chain analysis
+		OwnerChainBuilder:    ownerChainBuilder,    // BR-SP-100: Owner chain analysis
+		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Predictive signal mode classification (ADR-054)
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

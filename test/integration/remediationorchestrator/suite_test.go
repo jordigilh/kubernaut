@@ -633,6 +633,11 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 			severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
 		}
 		sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
+		// BR-SP-106: Set signal mode defaults for downstream services (RO → AA)
+		// Default to "reactive" with type pass-through (backwards compatible)
+		// Tests that need predictive mode should use updateSPStatusPredictive()
+		sp.Status.SignalMode = "reactive"
+		sp.Status.SignalType = sp.Spec.Signal.Type // Pass-through for reactive signals
 		// Set environment classification for downstream use
 		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
@@ -648,6 +653,41 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 			Source:     "test",
 			AssignedAt: now, // REQUIRED per SP CRD schema
 		}
+	}
+
+	return k8sClient.Status().Update(ctx, sp)
+}
+
+// updateSPStatusPredictive updates the SignalProcessing status to simulate completion
+// with predictive signal mode classification (BR-SP-106, ADR-054).
+// This simulates what the SignalModeClassifier would do in production:
+// - signalMode = "predictive"
+// - signalType = normalizedType (base type for workflow catalog matching)
+// - originalSignalType = original predictive type (SOC2 audit trail)
+func updateSPStatusPredictive(namespace, name string, normalizedType, originalType, severity string) error {
+	sp := &signalprocessingv1.SignalProcessing{}
+	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
+		return err
+	}
+
+	now := metav1.Now()
+	sp.Status.Phase = signalprocessingv1.PhaseCompleted
+	sp.Status.CompletionTime = &now
+	sp.Status.Severity = severity
+	// BR-SP-106: Predictive signal mode fields
+	sp.Status.SignalMode = "predictive"
+	sp.Status.SignalType = normalizedType
+	sp.Status.OriginalSignalType = originalType
+	// Standard classification fields
+	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+		Environment:  "production",
+		Source:       "test",
+		ClassifiedAt: now,
+	}
+	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+		Priority:   "P1",
+		Source:     "test",
+		AssignedAt: now,
 	}
 
 	return k8sClient.Status().Update(ctx, sp)
