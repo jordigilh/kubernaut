@@ -290,6 +290,30 @@ func main() {
 	setupLog.Info("severity policy hot-reload started", "policyHash", severityClassifier.GetPolicyHash())
 
 	// ========================================
+	// SIGNAL MODE CLASSIFIER (OPTIONAL)
+	// ========================================
+	// BR-SP-106: Predictive Signal Mode Classification
+	// ADR-054: Uses YAML config (not Rego) — simple key-value lookup
+	// If config file is missing, all signals default to reactive mode (backwards compatible)
+	signalModeClassifier := classifier.NewSignalModeClassifier(
+		ctrl.Log.WithName("classifier.signalmode"),
+	)
+
+	signalModeConfigPath := "/etc/signalprocessing/predictive-signal-mappings.yaml"
+	if envPath := os.Getenv("SIGNAL_MODE_CONFIG_PATH"); envPath != "" {
+		signalModeConfigPath = envPath
+	}
+	if err := signalModeClassifier.LoadConfig(signalModeConfigPath); err != nil {
+		// Missing config is non-fatal: all signals default to reactive
+		setupLog.Info("signal mode config not found, all signals will default to reactive mode",
+			"configPath", signalModeConfigPath,
+			"error", err.Error())
+	} else {
+		setupLog.Info("signal mode classifier configured successfully",
+			"configPath", signalModeConfigPath)
+	}
+
+	// ========================================
 	// ENRICHMENT COMPONENTS SETUP
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
@@ -367,8 +391,9 @@ func main() {
 		EnvClassifier:      envClassifier,
 		PriorityAssigner:   priorityEngine,  // PriorityEngine implements PriorityAssigner interface
 		BusinessClassifier: businessClassifier,
-		SeverityClassifier: severityClassifier, // BR-SP-105: Severity determination (DD-SEVERITY-001)
-		RegoEngine:         regoEngine,
+		SeverityClassifier:   severityClassifier,   // BR-SP-105: Severity determination (DD-SEVERITY-001)
+		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Predictive signal mode (ADR-054)
+		RegoEngine:           regoEngine,
 		OwnerChainBuilder:  ownerChainBuilder,
 		LabelDetector:      labelDetector,
 		K8sEnricher:        k8sEnricher,

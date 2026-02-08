@@ -97,6 +97,14 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 		payload.Severity.SetTo(sev)
 	}
 
+	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
+	if sp.Status.SignalMode != "" {
+		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
+	}
+	if sp.Status.OriginalSignalType != "" {
+		payload.OriginalSignalType.SetTo(sp.Status.OriginalSignalType)
+	}
+
 	// Add environment classification if present
 	// Note: Confidence field removed per DD-SP-001 V1.1
 	if sp.Status.EnvironmentClassification != nil {
@@ -261,6 +269,14 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	// Add policy hash for audit trail and policy version tracking
 	if sp.Status.PolicyHash != "" {
 		payload.PolicyHash.SetTo(sp.Status.PolicyHash)
+	}
+
+	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
+	if sp.Status.SignalMode != "" {
+		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
+	}
+	if sp.Status.OriginalSignalType != "" {
+		payload.OriginalSignalType.SetTo(sp.Status.OriginalSignalType)
 	}
 
 	// Add all classification results
