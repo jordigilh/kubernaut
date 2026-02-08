@@ -206,7 +206,14 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func(
 					Expect(resourceID).To(Equal("wfe-uid-001"))
 				},
 			),
-			Entry("F-3 consistency: outer event_type matches EventData discriminator",
+			Entry("correlation_id uses parent RR name (DD-AUDIT-CORRELATION-001)",
+			"correlation_id",
+			func(event *ogenclient.AuditEventRequest) {
+				Expect(event.CorrelationID).To(Equal("rr-parent-wfe-field-test"),
+					"DD-AUDIT-CORRELATION-001: correlation_id must be parent RR name, not WFE name")
+			},
+		),
+		Entry("F-3 consistency: outer event_type matches EventData discriminator",
 				"consistency",
 				func(event *ogenclient.AuditEventRequest) {
 					Expect(event.EventType).To(Equal(string(event.EventData.Type)),

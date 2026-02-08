@@ -73,7 +73,7 @@ Kubernetes API interactions including Job creation, status monitoring, and clean
 4. Assert phase is Completed
 5. Assert CompletionTime is set
 6. Assert ExecutionCreated condition is True
-7. Assert TektonPipelineComplete condition exists (terminal condition)
+7. Assert ExecutionComplete condition exists (terminal condition)
 
 **Pass Criteria**: WFE reaches PhaseCompleted with conditions set.
 
@@ -90,7 +90,7 @@ Kubernetes API interactions including Job creation, status monitoring, and clean
 1. Create WFE with `executionEngine: "job"` and intentionally failing container image
 2. Wait for transition to Failed
 3. Assert FailureDetails is populated with non-empty Message
-4. Assert TektonPipelineComplete condition is False
+4. Assert ExecutionComplete condition is False
 
 **Pass Criteria**: WFE reaches PhaseFailed with failure details populated.
 

@@ -74,7 +74,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				Namespace: unmanagedNS,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
-				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2aaa",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
 				SignalType:        "prometheus",
@@ -134,7 +134,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				Namespace: managedNS,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
-				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3bbb",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
 				SignalType:        "prometheus",
@@ -197,7 +197,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				Namespace: ns,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
-				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4ccc",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
 				SignalType:        "prometheus",
