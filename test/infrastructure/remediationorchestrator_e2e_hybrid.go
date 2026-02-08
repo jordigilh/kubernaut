@@ -621,8 +621,9 @@ rules:
   verbs: ["create", "patch"]
 # Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-010)
 # RO uses controller-runtime metadata-only informers for scope label lookups.
+# Includes cluster-scoped resources (nodes, persistentvolumes) for opt-in label checks.
 - apiGroups: [""]
-  resources: ["pods", "services", "configmaps", "secrets", "namespaces", "persistentvolumes"]
+  resources: ["pods", "nodes", "services", "configmaps", "secrets", "namespaces", "persistentvolumes"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

@@ -45,6 +45,7 @@ package scope
 
 import (
 	"context"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,6 +53,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// scopeLookupTimeout is the maximum time to wait for a cached metadata lookup.
+// This prevents indefinite blocking when the informer cache cannot sync
+// (e.g., missing RBAC for the target resource kind). ADR-053 §Resilience.
+const scopeLookupTimeout = 5 * time.Second
 
 const (
 	// ManagedLabelKey is the canonical label key for Kubernaut resource scope management.
@@ -191,12 +197,19 @@ func (m *Manager) checkResourceLabel(ctx context.Context, namespace, kind, name 
 	obj := &metav1.PartialObjectMetadata{}
 	obj.SetGroupVersionKind(gvk)
 
+	// Defensive timeout: prevents indefinite blocking if the informer cache
+	// cannot sync for this resource kind (e.g., missing RBAC for list/watch).
+	// Controller-runtime's cached client blocks Get() until the cache is synced;
+	// without RBAC the sync never completes, hanging the request forever.
+	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
+	defer cancel()
+
 	key := client.ObjectKey{Namespace: namespace, Name: name}
-	if err := m.client.Get(ctx, key, obj); err != nil {
+	if err := m.client.Get(lookupCtx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, false, nil // resource not found — fall through
 		}
-		// Graceful degradation for non-NotFound errors (Forbidden, connection errors, etc.)
+		// Graceful degradation for non-NotFound errors (Forbidden, timeout, connection errors, etc.)
 		// Info-level (not V(1)) so operators notice RBAC/infra degradation in production
 		log.FromContext(ctx).WithName("scope").Info(
 			"Resource label check failed — falling through to namespace check. "+
@@ -215,8 +228,12 @@ func (m *Manager) checkNamespaceLabel(ctx context.Context, namespace string) (bo
 	obj := &metav1.PartialObjectMetadata{}
 	obj.SetGroupVersionKind(namespaceGVK)
 
+	// Same defensive timeout as checkResourceLabel — see scopeLookupTimeout docs.
+	lookupCtx, cancel := context.WithTimeout(ctx, scopeLookupTimeout)
+	defer cancel()
+
 	key := client.ObjectKey{Name: namespace}
-	if err := m.client.Get(ctx, key, obj); err != nil {
+	if err := m.client.Get(lookupCtx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, false, nil // namespace not found — fall through to default
 		}
