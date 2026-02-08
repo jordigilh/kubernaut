@@ -64,6 +64,13 @@ const (
 	EventCategoryNotification = "notification"
 )
 
+// Event action constants (L-3 SOC2 Fix: compile-time safety for event action strings)
+const (
+	ActionSent         = "sent"
+	ActionAcknowledged = "acknowledged"
+	ActionEscalated    = "escalated"
+)
+
 // Manager provides helper functions for creating notification audit events
 // following ADR-034 unified audit table format.
 //
@@ -151,7 +158,7 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageSent)
 	audit.SetEventCategory(event, EventCategoryNotification)
-	audit.SetEventAction(event, "sent")
+	audit.SetEventAction(event, ActionSent)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
@@ -222,7 +229,7 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageFailed)
 	audit.SetEventCategory(event, EventCategoryNotification)
-	audit.SetEventAction(event, "sent") // Action was "sent" (attempted), outcome is "failure"
+	audit.SetEventAction(event, ActionSent) // Action was "sent" (attempted), outcome is "failure"
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
@@ -281,7 +288,7 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageAcknowledged)
 	audit.SetEventCategory(event, EventCategoryNotification)
-	audit.SetEventAction(event, "acknowledged")
+	audit.SetEventAction(event, ActionAcknowledged)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)
@@ -341,7 +348,7 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageEscalated)
 	audit.SetEventCategory(event, EventCategoryNotification)
-	audit.SetEventAction(event, "escalated")
+	audit.SetEventAction(event, ActionEscalated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
 	audit.SetResource(event, "NotificationRequest", notification.Name)

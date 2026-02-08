@@ -17,7 +17,7 @@
 
 Kubernaut is reactive by design: it processes signals (Prometheus alerts, Kubernetes events) that represent incidents that have **already occurred**. However, enterprise environments need preemptive remediation for predicted incidents — e.g., Prometheus `predict_linear()` alerts that fire **before** resource exhaustion.
 
-The challenge is that predictive signals (e.g., `PredictedOOMKill`) don't match any workflow in the catalog, because workflows are registered under their base signal type (e.g., `OOMKilled`). Additionally, the downstream AI investigation must know whether to perform root cause analysis (reactive) or evaluate current environment for preemptive action (predictive).
+The challenge is twofold: (1) the workflow catalog may contain both reactive and predictive workflows, and the AI agent must know which type to search for based on the signal mode; and (2) the downstream AI investigation must know whether to perform root cause analysis (reactive) or evaluate current environment for preemptive action (predictive).
 
 ### Business Value
 
@@ -38,40 +38,38 @@ SignalProcessing CRD status MUST include a `SignalMode` field with values:
 
 The field is **required** (not optional) — all signals MUST be classified.
 
-### R2: Signal Type Normalization
+### R2: Signal Type Preservation (No Normalization)
 
-SignalProcessing MUST normalize predictive signal types to their base type for workflow catalog matching:
+SignalProcessing MUST **preserve the original signal type as-is**. The signal type is NOT normalized — the workflow catalog can contain both reactive and predictive workflows for the same underlying condition, and the agent must be able to search for both.
 
-| Incoming Signal Type | Normalized Type | Signal Mode |
+| Incoming Signal Type | Preserved Signal Type | Signal Mode |
 |---|---|---|
-| `PredictedOOMKill` | `OOMKilled` | `predictive` |
-| `PredictedCPUThrottling` | `CPUThrottling` | `predictive` |
-| `PredictedDiskPressure` | `DiskPressure` | `predictive` |
-| `PredictedNodeNotReady` | `NodeNotReady` | `predictive` |
+| `PredictedOOMKill` | `PredictedOOMKill` | `predictive` |
+| `PredictedCPUThrottling` | `PredictedCPUThrottling` | `predictive` |
+| `PredictedDiskPressure` | `PredictedDiskPressure` | `predictive` |
+| `PredictedNodeNotReady` | `PredictedNodeNotReady` | `predictive` |
 | `OOMKilled` | `OOMKilled` | `reactive` |
-| _(any unmapped type)_ | _(unchanged)_ | `reactive` |
+| _(any unmatched type)_ | _(unchanged)_ | `reactive` |
 
-The original signal type MUST be preserved in the SP status for audit trail purposes.
+### R3: Configurable Predictive Signal Patterns
 
-### R3: Configurable Signal Type Mappings
-
-The predictive-to-base signal type mappings MUST be loaded from an operator-configurable YAML file, supporting hot-reload (per BR-SP-072 pattern).
+The predictive signal detection patterns MUST be loaded from an operator-configurable YAML file, supporting hot-reload (per BR-SP-072 pattern).
 
 ```yaml
 # config/signalprocessing/predictive-signal-mappings.yaml
-predictive_signal_mappings:
-  PredictedOOMKill: OOMKilled
-  PredictedCPUThrottling: CPUThrottling
-  PredictedDiskPressure: DiskPressure
-  PredictedNodeNotReady: NodeNotReady
+predictive_signal_patterns:
+  - prefix: "Predicted"   # Matches PredictedOOMKill, PredictedDiskPressure, etc.
+  # Future: additional patterns for non-Prometheus predictive sources
+  # - prefix: "Forecasted"
+  # - regex: "^Early.*Warning$"
 ```
 
-### R4: Unknown Predictive Types
+### R4: Unmatched Signal Types
 
-If a signal type is not found in the mapping config:
+If a signal type does not match any configured predictive pattern:
 - Classify as `reactive` (default)
 - Preserve original signal type unchanged
-- Log a warning for operator visibility
+- No warning needed (reactive is the expected default for standard alerts)
 
 ### R5: Enrichment Pipeline Integration
 
@@ -83,11 +81,11 @@ If a signal type is not found in the mapping config:
 
 ```
 Prometheus predict_linear() alert
-  → Gateway (receives PredictedOOMKill)
-    → SignalProcessing (normalizes to OOMKilled + signalMode: predictive)
-      → RO (copies signalMode from SP status to AA spec)
-        → AIAnalysis (passes signalMode to HAPI)
-          → HAPI (switches prompt: RCA vs. environment evaluation)
+  → Gateway (receives PredictedOOMKill, passes through unchanged)
+    → SignalProcessing (classifies signalMode: predictive, preserves signalType: PredictedOOMKill)
+      → RO (copies signalMode + signalType from SP status to AA spec)
+        → AIAnalysis (passes signalMode + signalType to HAPI)
+          → HAPI (switches prompt strategy + agent searches for correct workflow type)
 ```
 
 ### Key Design Decision: No CRD Labels
@@ -99,11 +97,11 @@ Prometheus predict_linear() alert
 ## Acceptance Criteria
 
 - [ ] CRD status field: `Status.SignalMode` (string: `reactive` | `predictive`) in `api/signalprocessing/v1alpha1/signalprocessing_types.go`
-- [ ] Signal type normalization: configurable mapping applied during enrichment
-- [ ] Original signal type preserved in `Status.OriginalSignalType` for audit
+- [ ] Signal type preserved as-is (no normalization): `PredictedOOMKill` stays `PredictedOOMKill`
+- [ ] Pattern-based classification: configurable prefix/pattern matching applied during enrichment
 - [ ] Config file: `predictive-signal-mappings.yaml` (hot-reloadable per BR-SP-072)
-- [ ] Default initial mappings: OOMKill, CPUThrottling, DiskPressure, NodeNotReady
-- [ ] Unknown predictive types: classify as `reactive`, log warning
+- [ ] Default initial pattern: `Predicted` prefix (matching Prometheus convention)
+- [ ] Unmatched signal types: classify as `reactive` (safe default)
 - [ ] Enrichment pipeline integration: set alongside severity, environment, priority
 - [ ] `make generate` regenerates deepcopy successfully
 
@@ -113,10 +111,10 @@ Prometheus predict_linear() alert
 
 | Component | File(s) | Change |
 |---|---|---|
-| SP CRD status | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `OriginalSignalType` fields |
+| SP CRD status | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode` field |
 | SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Set `SignalMode` during enrichment |
-| SP classifier | `pkg/signalprocessing/classifier/` (new file) | Signal mode classification logic |
-| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Mapping config |
+| SP classifier | `pkg/signalprocessing/classifier/` (new file) | Signal mode pattern matching logic |
+| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive pattern config |
 | Deepcopy | `api/signalprocessing/v1alpha1/zz_generated.deepcopy.go` | `make generate` |
 
 ---
@@ -124,17 +122,18 @@ Prometheus predict_linear() alert
 ## Test Plan
 
 ### Unit Tests
-- Table-driven tests for signal type mapping (known types, unknown types, empty input)
-- Classification logic: predictive signals normalized correctly
+- Table-driven tests for pattern matching (prefix match, no match, empty input)
+- Classification logic: predictive signals correctly identified, signal type preserved
 - Config loading and hot-reload
-- Default reactive classification for unmapped types
+- Default reactive classification for unmatched patterns
 
 ### Integration Tests
 - Extend existing enrichment integration tests with predictive signal scenarios
 - Verify `SignalMode` set in SP status after enrichment completes
+- Verify signal type is preserved (not normalized)
 
 ### E2E Tests
-- Full pipeline: predictive alert → SP enrichment → verify normalized signal type + signalMode in status
+- Full pipeline: predictive alert → SP enrichment → verify signalType preserved + signalMode in status
 
 ---
 

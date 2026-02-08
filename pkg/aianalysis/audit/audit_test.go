@@ -127,7 +127,7 @@ var _ = Describe("AuditClient RecordError", func() {
 			event := mockStore.StoredEvents[0]
 
 			// Verify event metadata
-			Expect(event.EventType).To(Equal("aianalysis.error.occurred"),
+			Expect(event.EventType).To(Equal(audit.EventTypeError),
 				"Event type should be aianalysis.error.occurred")
 			Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryAnalysis),
 				"Event category should be 'analysis'")

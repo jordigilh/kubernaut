@@ -327,7 +327,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			By("6. Flush audit store and query DataStorage HTTP API for 'classification.decision' event")
 			flushAuditStoreAndWait()
 
-			eventType := "signalprocessing.classification.decision"
+			eventType := spaudit.EventTypeClassificationDecision
 
 			Eventually(func() int {
 				return countAuditEvents(eventType, correlationID)
@@ -416,7 +416,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			By("6. Flush audit store and query DataStorage HTTP API for 'business.classified' event")
 			flushAuditStoreAndWait()
 
-			eventType := "signalprocessing.business.classified"
+			eventType := spaudit.EventTypeBusinessClassified
 
 			Eventually(func() int {
 				return countAuditEvents(eventType, correlationID)
@@ -529,7 +529,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			By("6. Flush audit store and query DataStorage HTTP API for 'enrichment.completed' event")
 			flushAuditStoreAndWait()
 
-			eventType := "signalprocessing.enrichment.completed"
+			eventType := spaudit.EventTypeEnrichmentComplete
 
 			Eventually(func() int {
 				return countAuditEvents(eventType, correlationID)

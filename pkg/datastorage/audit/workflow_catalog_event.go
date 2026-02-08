@@ -31,6 +31,13 @@ const (
 	EventTypeWorkflowUpdated = "datastorage.workflow.updated"
 )
 
+// Event category and action constants (L-3 SOC2 Fix: compile-time safety)
+const (
+	EventCategoryWorkflow = "workflow" // Per OpenAPI schema (not "workflow_catalog")
+	ActionCreate          = "create"
+	ActionUpdate          = "update"
+)
+
 // ========================================
 // WORKFLOW CATALOG AUDIT EVENTS
 // ========================================
@@ -54,8 +61,8 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowCreated)
-	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
-	pkgaudit.SetEventAction(auditEvent, "create")
+	pkgaudit.SetEventCategory(auditEvent, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(auditEvent, ActionCreate)
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflow.WorkflowID)
@@ -129,8 +136,8 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.Wo
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowUpdated)
-	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
-	pkgaudit.SetEventAction(auditEvent, "update")
+	pkgaudit.SetEventCategory(auditEvent, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(auditEvent, ActionUpdate)
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflowID)

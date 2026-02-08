@@ -42,15 +42,17 @@ The AA request builder (`pkg/aianalysis/handlers/request_builder.go`) MUST inclu
 
 The HAPI OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequest` schema. Both Go and Python clients MUST be regenerated.
 
-### R4: HAPI Prompt Strategy
+### R4: HAPI Prompt Strategy and Workflow Search
 
-HAPI MUST switch its investigation prompt based on the `signal_mode` value:
+HAPI MUST switch its investigation prompt based on the `signal_mode` value. The prompt MUST also guide the agent's workflow catalog search behavior.
 
 **Reactive** (default):
-> Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine why this happened and recommend remediation.
+> Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine why this happened and recommend remediation. Search for a remediation workflow matching the signal type.
 
 **Predictive**:
-> Evaluate current environment. This incident is predicted but has not occurred yet. Assess resource trends, recent deployments, and current state to determine if preemptive action is warranted. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
+> Evaluate current environment. This incident is predicted but has not occurred yet. Assess resource trends, recent deployments, and current state to determine if preemptive action is warranted. "No action needed" is a valid outcome if the prediction is unlikely to materialize. Search for a **predictive** remediation workflow matching the signal type (e.g., `PredictedOOMKill`). If no predictive-specific workflow exists, fall back to the base reactive workflow (e.g., `OOMKilled`) but adapt execution for preemptive context.
+
+**Critical**: The agent must be aware that the workflow catalog may contain **both** reactive and predictive workflows for the same underlying condition. The `signal_type` field carries the full type (e.g., `PredictedOOMKill`, not `OOMKilled`), enabling the agent to search for predictive-specific workflows first.
 
 ### R5: Valid "No Action" Outcome
 
@@ -68,11 +70,13 @@ Audit events for AI analysis MUST include the `signalMode` value, enabling the E
 ## Data Flow
 
 ```
-RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
-  → AA request builder includes signalMode in IncidentRequest
+RO copies sp.Status.SignalMode + sp.Status.SignalType → aa.Spec.SignalContext
+  → AA request builder includes signalMode + signalType in IncidentRequest
     → HAPI reads signal_mode, switches prompt strategy
       → LLM investigates with correct directive
-        → Response: workflow recommendation OR "no action needed"
+        → Agent searches workflow catalog using signal_type (e.g., PredictedOOMKill)
+          → If no predictive workflow found, agent falls back to base type (e.g., OOMKilled)
+            → Response: workflow recommendation OR "no action needed"
 ```
 
 ---

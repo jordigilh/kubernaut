@@ -51,6 +51,7 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
 var _ = Describe("Severity Determination Integration Tests", Label("integration", "severity", "signalprocessing"), func() {
@@ -253,7 +254,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
 			Eventually(func(g Gomega) {
 				// Query by unique correlation_id (avoids parallel test collisions)
-				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+				count := countAuditEvents(spaudit.EventTypeClassificationDecision, correlationID)
 
 			// Enhanced logging to detect duplicate events (BR-SP-105)
 			// Per DD-SEVERITY-001: "One classification decision = one audit event"
@@ -266,7 +267,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			// Get the event for detailed assertions
-			event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
+			event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 			Expect(err).ToNot(HaveOccurred(), "Should retrieve audit event by correlation_id")
 			Expect(event).ToNot(BeNil(), "Audit event should exist")
 
@@ -339,7 +340,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// ✅ FIX: Query by unique correlation_id (server-side filter)
 			// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
 			Eventually(func(g Gomega) {
-				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+				count := countAuditEvents(spaudit.EventTypeClassificationDecision, correlationID)
 
 			// Enhanced logging to detect duplicate events (BR-SP-105)
 			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
@@ -350,7 +351,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					count, correlationID))
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-			event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
+			event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event).ToNot(BeNil())
 
@@ -405,7 +406,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				flushAuditStoreAndWait()
 
 				// ✅ FIX: Query by unique correlation_id
-				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+				count := countAuditEvents(spaudit.EventTypeClassificationDecision, correlationID)
 
 				// Enhanced logging to detect duplicate events (BR-SP-105)
 				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: >0, correlation_id: %s)\n",
@@ -413,7 +414,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 				g.Expect(count).To(BeNumerically(">", 0))
 
-				event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
+				event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(event).ToNot(BeNil(), "Event should exist")
 
