@@ -3321,23 +3321,14 @@ components:
 
     SearchExecutionMetadata:
       type: object
-      required: [duration_ms, embedding_dimensions, embedding_model]
-      description: Search execution details (BR-AUDIT-028)
+      required: [duration_ms]
+      description: Search execution details (BR-AUDIT-028). V1.0 label-only (DD-WORKFLOW-015).
       properties:
         duration_ms:
           type: integer
           format: int64
           description: Search execution time in milliseconds
           example: 150
-        embedding_dimensions:
-          type: integer
-          format: int32
-          description: Embedding vector dimensionality
-          example: 768
-        embedding_model:
-          type: string
-          description: Embedding model used
-          example: "text-embedding-3-small"
 
     # ========================================
     # AIAnalysis Internal Event Payloads
