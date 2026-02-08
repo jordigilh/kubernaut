@@ -2560,22 +2560,22 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 
 	// Validate Global timeout
 	if rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Global timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Global.Duration)
+		return fmt.Errorf("Global timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Global.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Processing timeout
 	if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Processing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Processing.Duration)
+		return fmt.Errorf("Processing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Processing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Analyzing timeout
 	if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Analyzing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Analyzing.Duration)
+		return fmt.Errorf("Analyzing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Analyzing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Executing timeout
 	if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Executing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Executing.Duration)
+		return fmt.Errorf("Executing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Executing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	return nil

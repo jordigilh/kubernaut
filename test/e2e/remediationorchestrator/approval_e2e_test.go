@@ -562,8 +562,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
-			// Note: Includes lifecycle events + approval events (1 webhook + 1 orchestration approval + 3 lifecycle)
-			Expect(respByTime.Data).To(HaveLen(5),
+			// Note: Includes lifecycle events + approval events + timeout_modified webhook event
+			// Events: 3 lifecycle (started, transitioned, created) + 1 orchestration approval (approved)
+			//       + 1 webhook (remediationapprovalrequest.decided) + 1 webhook (remediationrequest.timeout_modified)
+			Expect(respByTime.Data).To(HaveLen(6),
 				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
 
 			// BUSINESS OUTCOME 4: Verify actor is present in audit data (forensic investigation)
