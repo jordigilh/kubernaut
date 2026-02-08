@@ -20404,20 +20404,10 @@ func (s *SearchExecutionMetadata) encodeFields(e *jx.Encoder) {
 		e.FieldStart("duration_ms")
 		e.Int64(s.DurationMs)
 	}
-	{
-		e.FieldStart("embedding_dimensions")
-		e.Int32(s.EmbeddingDimensions)
-	}
-	{
-		e.FieldStart("embedding_model")
-		e.Str(s.EmbeddingModel)
-	}
 }
 
-var jsonFieldsNameOfSearchExecutionMetadata = [3]string{
+var jsonFieldsNameOfSearchExecutionMetadata = [1]string{
 	0: "duration_ms",
-	1: "embedding_dimensions",
-	2: "embedding_model",
 }
 
 // Decode decodes SearchExecutionMetadata from json.
@@ -20441,30 +20431,6 @@ func (s *SearchExecutionMetadata) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"duration_ms\"")
 			}
-		case "embedding_dimensions":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Int32()
-				s.EmbeddingDimensions = int32(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"embedding_dimensions\"")
-			}
-		case "embedding_model":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Str()
-				s.EmbeddingModel = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"embedding_model\"")
-			}
 		default:
 			return d.Skip()
 		}
@@ -20475,7 +20441,7 @@ func (s *SearchExecutionMetadata) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000111,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

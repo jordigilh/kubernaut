@@ -13028,15 +13028,11 @@ func (s *ScoringV1Audit) SetConfidence(val float64) {
 	s.Confidence = val
 }
 
-// Search execution details (BR-AUDIT-028).
+// Search execution details (BR-AUDIT-028). V1.0 label-only (DD-WORKFLOW-015).
 // Ref: #/components/schemas/SearchExecutionMetadata
 type SearchExecutionMetadata struct {
 	// Search execution time in milliseconds.
 	DurationMs int64 `json:"duration_ms"`
-	// Embedding vector dimensionality.
-	EmbeddingDimensions int32 `json:"embedding_dimensions"`
-	// Embedding model used.
-	EmbeddingModel string `json:"embedding_model"`
 }
 
 // GetDurationMs returns the value of DurationMs.
@@ -13044,29 +13040,9 @@ func (s *SearchExecutionMetadata) GetDurationMs() int64 {
 	return s.DurationMs
 }
 
-// GetEmbeddingDimensions returns the value of EmbeddingDimensions.
-func (s *SearchExecutionMetadata) GetEmbeddingDimensions() int32 {
-	return s.EmbeddingDimensions
-}
-
-// GetEmbeddingModel returns the value of EmbeddingModel.
-func (s *SearchExecutionMetadata) GetEmbeddingModel() string {
-	return s.EmbeddingModel
-}
-
 // SetDurationMs sets the value of DurationMs.
 func (s *SearchExecutionMetadata) SetDurationMs(val int64) {
 	s.DurationMs = val
-}
-
-// SetEmbeddingDimensions sets the value of EmbeddingDimensions.
-func (s *SearchExecutionMetadata) SetEmbeddingDimensions(val int32) {
-	s.EmbeddingDimensions = val
-}
-
-// SetEmbeddingModel sets the value of EmbeddingModel.
-func (s *SearchExecutionMetadata) SetEmbeddingModel(val string) {
-	s.EmbeddingModel = val
 }
 
 type SearchWorkflowsBadRequest RFC7807Problem
