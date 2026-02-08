@@ -165,6 +165,92 @@ var _ = Describe("CreateBatch Hash Chain Verification", func() {
 			"M-2: EventTimestamp must match original after batch insert")
 	})
 
+	It("should produce valid hash when caller provides non-UTC timestamp", func() {
+		correlationID := fmt.Sprintf("batch-hash-%s-utc", testID)
+
+		// Simulate a caller providing a timestamp in a non-UTC timezone (e.g., EST = UTC-5).
+		// Before the H-1 fix, Create()/CreateBatch() did NOT call .UTC() on caller-provided
+		// timestamps, but Export/Verify DID — causing hash mismatch on verification.
+		est := time.FixedZone("EST", -5*60*60)
+		nonUTCTimestamp := time.Date(2026, 2, 5, 10, 30, 45, 123456000, est)
+
+		event := &repository.AuditEvent{
+			EventID:        uuid.New(),
+			EventTimestamp: nonUTCTimestamp, // Non-UTC: 2026-02-05T10:30:45.123456-05:00
+			EventType:      "test.batch.utc",
+			Version:        "1.0",
+			EventCategory:  "test",
+			EventAction:    "verify",
+			EventOutcome:   "success",
+			CorrelationID:  correlationID,
+			ResourceType:   "test-resource",
+			ResourceID:     "test-id",
+			ActorID:        "test-actor",
+			ActorType:      "user",
+			RetentionDays:  2555,
+			EventData:      map[string]interface{}{"timezone_test": true},
+		}
+
+		// Insert via CreateBatch with non-UTC timestamp
+		created, err := auditRepo.CreateBatch(ctx, []*repository.AuditEvent{event})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(created).To(HaveLen(1))
+
+		// The stored timestamp should have been normalized to UTC
+		Expect(created[0].EventTimestamp.Location()).To(Equal(time.UTC),
+			"H-1: EventTimestamp must be normalized to UTC before storage")
+
+		// Export and verify hash chain — this is the critical check.
+		// Export calls .UTC() on the timestamp. If Create/CreateBatch didn't also
+		// call .UTC(), the JSON representation would differ, producing a different hash.
+		filters := repository.ExportFilters{CorrelationID: correlationID}
+		result, err := auditRepo.Export(ctx, filters)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.Events).To(HaveLen(1))
+
+		Expect(result.Events[0].HashChainValid).To(BeTrue(),
+			"H-1: Hash chain must be valid after non-UTC timestamp round-trip")
+	})
+
+	It("should produce valid hash when Create() receives non-UTC timestamp", func() {
+		correlationID := fmt.Sprintf("batch-hash-%s-create-utc", testID)
+
+		// Same test but via Create() (single event path)
+		cet := time.FixedZone("CET", 1*60*60)
+		nonUTCTimestamp := time.Date(2026, 2, 5, 16, 30, 45, 123456000, cet)
+
+		event := &repository.AuditEvent{
+			EventID:        uuid.New(),
+			EventTimestamp: nonUTCTimestamp, // Non-UTC: 2026-02-05T16:30:45.123456+01:00
+			EventType:      "test.create.utc",
+			Version:        "1.0",
+			EventCategory:  "test",
+			EventAction:    "verify",
+			EventOutcome:   "success",
+			CorrelationID:  correlationID,
+			ResourceType:   "test-resource",
+			ResourceID:     "test-id",
+			ActorID:        "test-actor",
+			ActorType:      "user",
+			RetentionDays:  2555,
+			EventData:      map[string]interface{}{"timezone_test": true},
+		}
+
+		created, err := auditRepo.Create(ctx, event)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(created.EventTimestamp.Location()).To(Equal(time.UTC),
+			"H-1: Create() must normalize EventTimestamp to UTC")
+
+		filters := repository.ExportFilters{CorrelationID: correlationID}
+		result, err := auditRepo.Export(ctx, filters)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.Events).To(HaveLen(1))
+
+		Expect(result.Events[0].HashChainValid).To(BeTrue(),
+			"H-1: Hash chain must be valid after non-UTC timestamp round-trip via Create()")
+	})
+
 	It("should maintain hash chain across batch with same correlation_id", func() {
 		correlationID := fmt.Sprintf("batch-hash-%s-chain", testID)
 
