@@ -23,7 +23,7 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 
 ### Key Capabilities
 
-- **Multi-Source Signal Processing**: Prometheus alerts, Kubernetes events, with deduplication and storm detection
+- **Multi-Source Signal Processing**: Prometheus alerts, Kubernetes events with deduplication.
 - **AI-Powered Root Cause Analysis**: HolmesGPT integration for intelligent investigation
 - **Remediation Workflows**: OCI-containerized Tekton workflows with flexible single or multi-step execution
 - **Safety-First Execution**: Admission webhook validation, human-in-the-loop approval gates, and effectiveness tracking
