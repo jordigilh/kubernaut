@@ -121,7 +121,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
 	audit.SetResource(auditEvent, "WorkflowExecution", string(wfe.UID))
-	audit.SetCorrelationID(auditEvent, wfe.Name) // Use WFE name for correlation
+	audit.SetCorrelationID(auditEvent, wfe.Spec.RemediationRequestRef.Name) // DD-AUDIT-CORRELATION-001: parent RR name
 	audit.SetNamespace(auditEvent, wfe.Namespace)
 
 	// Set event data payload

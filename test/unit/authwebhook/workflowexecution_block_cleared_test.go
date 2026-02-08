@@ -28,6 +28,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -50,6 +51,11 @@ func buildBlockClearanceRequest(
 			Name:      wfeName,
 			Namespace: namespace,
 			UID:       types.UID(uid),
+		},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name: "rr-parent-" + wfeName,
+			},
 		},
 		Status: workflowexecutionv1.WorkflowExecutionStatus{
 			BlockClearance: &workflowexecutionv1.BlockClearanceDetails{
@@ -96,6 +102,11 @@ func buildBlockClearanceRequestWithOldObject(
 			Name:      wfeName,
 			Namespace: namespace,
 			UID:       types.UID(uid),
+		},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name: "rr-parent-" + wfeName,
+			},
 		},
 		Status: workflowexecutionv1.WorkflowExecutionStatus{
 			BlockClearance: &workflowexecutionv1.BlockClearanceDetails{

@@ -105,7 +105,7 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
 	audit.SetResource(auditEvent, "RemediationRequest", rr.Name)
-	audit.SetCorrelationID(auditEvent, string(rr.UID)) // Use RR UID for correlation
+	audit.SetCorrelationID(auditEvent, rr.Name) // DD-AUDIT-CORRELATION-001: RR name (human-readable, matches ADR-034 query pattern)
 	audit.SetNamespace(auditEvent, rr.Namespace)
 
 	// Set event data payload (RemediationRequestWebhookAuditPayload)
