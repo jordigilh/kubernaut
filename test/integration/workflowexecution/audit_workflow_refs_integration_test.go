@@ -153,6 +153,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ContainerImage: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
+					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
@@ -280,6 +281,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ContainerImage: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

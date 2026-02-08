@@ -249,7 +249,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			expectedMetrics := []string{
 				wemetrics.MetricNameExecutionTotal,       // Execution count by outcome
 				wemetrics.MetricNameExecutionDuration,    // Execution duration histogram
-				wemetrics.MetricNamePipelineRunCreations, // PipelineRun creation counter
+				wemetrics.MetricNameExecutionCreations, // PipelineRun creation counter
 			}
 
 			for _, metric := range expectedMetrics {
@@ -542,26 +542,27 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					Name:      testName,
 					Namespace: "default",
 				},
-				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
-						Kind:       "RemediationRequest",
-						Name:       "test-rr-" + testName,
-						Namespace:  "default",
-					},
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID: "test-intentional-failure",
-					Version:    "v1.0.0",
-					// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
-					ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				ExecutionEngine: "tekton", // BR-WE-014: Required field
+				RemediationRequestRef: corev1.ObjectReference{
+					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "test-rr-" + testName,
+					Namespace:  "default",
 				},
-					TargetResource: targetResource,
-					Parameters: map[string]string{
-						// Per test/fixtures/tekton/failing-pipeline.yaml
-						"FAILURE_MODE":    "exit",
-						"FAILURE_MESSAGE": "E2E audit failure validation",
-					},
+			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+				WorkflowID: "test-intentional-failure",
+				Version:    "v1.0.0",
+				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
+				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+			},
+				TargetResource: targetResource,
+				Parameters: map[string]string{
+					// Per test/fixtures/tekton/failing-pipeline.yaml
+					"FAILURE_MODE":    "exit",
+					"FAILURE_MESSAGE": "E2E audit failure validation",
 				},
+			},
 			}
 
 			defer func() {
@@ -842,19 +843,19 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Business Behavior: WFE should have PipelineRunRef after Running
+		// Business Behavior: WFE should have ExecutionRef after Running
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
 			if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
-				return updated.Status.PipelineRunRef != nil
+				return updated.Status.ExecutionRef != nil
 			}
 			return false
 		}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
-			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
 			GinkgoWriter.Printf("✅ WFE tracks PipelineRun: %s\n",
-				runningWFE.Status.PipelineRunRef.Name)
+				runningWFE.Status.ExecutionRef.Name)
 
 		// Wait for completion
 		Eventually(func() bool {

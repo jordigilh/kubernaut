@@ -136,8 +136,8 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			finalWFE, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(finalWFE.Status.PipelineRunRef).ToNot(BeNil())
-			Expect(finalWFE.Status.PipelineRunRef.Name).To(Equal(initialPRName))
+			Expect(finalWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(finalWFE.Status.ExecutionRef.Name).To(Equal(initialPRName))
 
 			GinkgoWriter.Printf("✅ BR-WE-002: Concurrent reconcile handled gracefully - only 1 PipelineRun created\n")
 		})
@@ -175,16 +175,16 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying WFE references the externally-created PipelineRun")
-			Expect(finalWFE.Status.PipelineRunRef).ToNot(BeNil())
-			Expect(finalWFE.Status.PipelineRunRef.Name).To(Equal(externalPRName),
+			Expect(finalWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(finalWFE.Status.ExecutionRef.Name).To(Equal(externalPRName),
 				"WFE should reference the pre-existing PipelineRun")
 
-			By("Verifying TektonPipelineCreated condition is set")
+			By("Verifying ExecutionCreated condition is set")
 			Expect(finalWFE.Status.Conditions).ToNot(BeEmpty())
-			createdCondition := findCondition(finalWFE.Status.Conditions, "TektonPipelineCreated")
+			createdCondition := findCondition(finalWFE.Status.Conditions, "ExecutionCreated")
 			Expect(createdCondition).ToNot(BeNil())
 			Expect(createdCondition.Status).To(Equal(metav1.ConditionTrue))
-			Expect(createdCondition.Reason).To(Equal("PipelineCreated"))
+			Expect(createdCondition.Reason).To(Equal("ExecutionCreated"))
 
 			GinkgoWriter.Printf("✅ BR-WE-002: Externally-created PipelineRun adopted successfully\n")
 		})

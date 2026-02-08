@@ -40,7 +40,7 @@ import (
 // ========================================
 
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
-	Context("TektonPipelineCreated condition", func() {
+	Context("ExecutionCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
 			// Create WorkflowExecution
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
@@ -62,8 +62,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/condition-test-app",
+					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
-						"MESSAGE": "Testing TektonPipelineCreated condition",
+						"MESSAGE": "Testing ExecutionCreated condition",
 					},
 				},
 			}
@@ -78,11 +79,11 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				return updated.Status.Conditions
 			}, 30*time.Second, 1*time.Second).Should(ContainElement(
 				And(
-					HaveField("Type", weconditions.ConditionTektonPipelineCreated),
+					HaveField("Type", weconditions.ConditionExecutionCreated),
 					HaveField("Status", metav1.ConditionTrue),
-					HaveField("Reason", weconditions.ReasonPipelineCreated),
+					HaveField("Reason", weconditions.ReasonExecutionCreated),
 				),
-			), "TektonPipelineCreated condition should be set after PipelineRun creation")
+			), "ExecutionCreated condition should be set after PipelineRun creation")
 
 			// Verify PipelineRun was actually created
 			var pr tektonv1.PipelineRun
@@ -98,7 +99,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			// Verify condition message includes PipelineRun name
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
-			condition := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineCreated)
+			condition := weconditions.GetCondition(updated, weconditions.ConditionExecutionCreated)
 			Expect(condition.Message).To(ContainSubstring(pr.Name))
 		})
 	})
@@ -127,6 +128,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/running-test-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -190,6 +192,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/complete-success-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -273,6 +276,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/audit-test-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -327,18 +331,19 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			key := client.ObjectKeyFromObject(wfe)
 
-			// 1. TektonPipelineCreated should be set
+			// 1. ExecutionCreated should be set
 			// Timeout increased to 60s to allow multiple reconciliation cycles in EnvTest (10s requeue interval)
 			Eventually(func() bool {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, key, updated)
-				return weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
 			}, 60*time.Second, 1*time.Second).Should(BeTrue())
 
 			// 2. TektonPipelineRunning should be set
@@ -392,7 +397,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				"Complete lifecycle should have 4 conditions: Created, Running, Complete, AuditRecorded")
 
 			// Verify all conditions are True (success scenario)
-			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineComplete)).To(BeTrue())
 			// AuditRecorded may be True or False depending on mock - just verify it exists

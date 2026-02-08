@@ -28,6 +28,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// Workflow search event type constant (L-3 SOC2 Fix)
+const EventTypeSearchCompleted = "workflow.catalog.search_completed"
+
 // ========================================
 // WORKFLOW SEARCH AUDIT EVENT DATA TYPES
 // ========================================
@@ -157,7 +160,7 @@ func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest
 	// Create event using OpenAPI types (DD-AUDIT-002 V2.0)
 	event := pkgaudit.NewAuditEventRequest()
 	event.Version = "1.0"
-	pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+	pkgaudit.SetEventType(event, EventTypeSearchCompleted)
 	pkgaudit.SetEventCategory(event, "workflow")
 	pkgaudit.SetEventAction(event, "search_completed")
 	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)

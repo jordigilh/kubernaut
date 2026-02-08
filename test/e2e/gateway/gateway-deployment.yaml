@@ -232,6 +232,19 @@ rules:
     resources: ["configmaps"]
     verbs: ["get", "list", "watch"]
 
+  # Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-001)
+  # Gateway uses controller-runtime metadata-only informers for scope label lookups.
+  # list+watch required for informer cache; get for direct metadata reads.
+  - apiGroups: [""]
+    resources: ["pods", "services", "secrets", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+
   # Lease resource permissions for distributed locking (DD-GATEWAY-013, BR-GATEWAY-190)
   # CRITICAL: Required for K8s Lease-based distributed locking to prevent deduplication races
   - apiGroups: ["coordination.k8s.io"]

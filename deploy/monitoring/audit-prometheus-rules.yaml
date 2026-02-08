@@ -113,6 +113,28 @@ data:
                 4. Review `audit_write_duration_seconds` for write latency increases
                 5. Check for network issues between services and Data Storage
 
+          - alert: AuditSlowWrites
+            expr: >
+              histogram_quantile(0.95,
+                rate(audit_write_duration_seconds_bucket[5m])
+              ) > 2
+            for: 5m
+            labels:
+              severity: warning
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit write p95 latency >2s for {{ $labels.service }}"
+              description: |
+                Audit batch write p95 latency is {{ $value | humanizeDuration }}.
+                Slow writes will cause buffer saturation and event drops.
+
+                **Actions**:
+                1. Check Data Storage Service health
+                2. Check PostgreSQL query latency
+                3. Review `audit_buffer_utilization_ratio` for buffer pressure
+                4. Check for network issues between services and Data Storage
+
           - alert: AuditBufferUtilizationWarning
             expr: audit_buffer_utilization_ratio > 0.8
             for: 5m

@@ -85,6 +85,15 @@ spec:
                       Default: use global timeout from RemediationRequest or 30m
                     type: string
                 type: object
+              executionEngine:
+                default: tekton
+                description: |-
+                  ExecutionEngine specifies the backend engine for workflow execution.
+                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                enum:
+                - tekton
+                - job
+                type: string
               parameters:
                 additionalProperties:
                   type: string
@@ -172,6 +181,7 @@ spec:
                 - workflowId
                 type: object
             required:
+            - executionEngine
             - remediationRequestRef
             - targetResource
             - workflowRef
@@ -298,6 +308,45 @@ spec:
               duration:
                 description: Duration of the execution
                 type: string
+              executionRef:
+                description: ExecutionRef references the created execution resource
+                  (PipelineRun or Job)
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              executionStatus:
+                description: ExecutionStatus mirrors key execution resource status
+                  fields
+                properties:
+                  completedTasks:
+                    description: CompletedTasks count
+                    type: integer
+                  message:
+                    description: Message from the execution resource
+                    type: string
+                  reason:
+                    description: Reason from the execution resource (e.g., "Succeeded",
+                      "Failed", "Running")
+                    type: string
+                  status:
+                    description: Status of the execution resource (Unknown, True,
+                      False)
+                    type: string
+                  totalTasks:
+                    description: TotalTasks count (from pipeline spec)
+                    type: integer
+                required:
+                - status
+                type: object
               failureDetails:
                 description: |-
                   FailureDetails contains structured failure information
@@ -407,42 +456,6 @@ spec:
                 - Completed
                 - Failed
                 type: string
-              pipelineRunRef:
-                description: PipelineRunRef references the created Tekton PipelineRun
-                properties:
-                  name:
-                    default: ""
-                    description: |-
-                      Name of the referent.
-                      This field is effectively required, but due to backwards compatibility is
-                      allowed to be empty. Instances of this type with an empty value here are
-                      almost certainly wrong.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-              pipelineRunStatus:
-                description: PipelineRunStatus mirrors key PipelineRun status fields
-                properties:
-                  completedTasks:
-                    description: CompletedTasks count
-                    type: integer
-                  message:
-                    description: Message from PipelineRun
-                    type: string
-                  reason:
-                    description: Reason from PipelineRun (e.g., "Succeeded", "Failed",
-                      "Running")
-                    type: string
-                  status:
-                    description: Status from PipelineRun (Unknown, True, False)
-                    type: string
-                  totalTasks:
-                    description: TotalTasks count (from pipeline spec)
-                    type: integer
-                required:
-                - status
-                type: object
               startTime:
                 description: StartTime when execution started
                 format: date-time

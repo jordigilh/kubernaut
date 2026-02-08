@@ -170,6 +170,12 @@ type WorkflowExecutionSpec struct {
 	// +optional
 	Rationale string `json:"rationale,omitempty"`
 
+	// ExecutionEngine specifies the backend engine for workflow execution.
+	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+	// +kubebuilder:validation:Enum=tekton;job
+	// +kubebuilder:default=tekton
+	ExecutionEngine string `json:"executionEngine"`
+
 	// ExecutionConfig contains minimal execution settings
 	// +optional
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
@@ -247,13 +253,13 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	Duration string `json:"duration,omitempty"`
 
-	// PipelineRunRef references the created Tekton PipelineRun
+	// ExecutionRef references the created execution resource (PipelineRun or Job)
 	// +optional
-	PipelineRunRef *corev1.LocalObjectReference `json:"pipelineRunRef,omitempty"`
+	ExecutionRef *corev1.LocalObjectReference `json:"executionRef,omitempty"`
 
-	// PipelineRunStatus mirrors key PipelineRun status fields
+	// ExecutionStatus mirrors key execution resource status fields
 	// +optional
-	PipelineRunStatus *PipelineRunStatusSummary `json:"pipelineRunStatus,omitempty"`
+	ExecutionStatus *ExecutionStatusSummary `json:"executionStatus,omitempty"`
 
 	// FailureReason explains why execution failed (if applicable)
 	// DEPRECATED: Use FailureDetails for structured failure information
@@ -424,17 +430,17 @@ type BlockClearanceDetails struct {
 	ClearMethod string `json:"clearMethod"`
 }
 
-// PipelineRunStatusSummary captures key PipelineRun status fields
-// Lightweight summary to avoid duplicating full Tekton status
-type PipelineRunStatusSummary struct {
-	// Status from PipelineRun (Unknown, True, False)
+// ExecutionStatusSummary captures key execution resource status fields
+// Lightweight summary for both Tekton PipelineRun and K8s Job backends
+type ExecutionStatusSummary struct {
+	// Status of the execution resource (Unknown, True, False)
 	Status string `json:"status"`
 
-	// Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
+	// Reason from the execution resource (e.g., "Succeeded", "Failed", "Running")
 	// +optional
 	Reason string `json:"reason,omitempty"`
 
-	// Message from PipelineRun
+	// Message from the execution resource
 	// +optional
 	Message string `json:"message,omitempty"`
 

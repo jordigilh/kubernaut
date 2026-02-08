@@ -77,6 +77,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ContainerImage: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
+					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"test": "value",
 					},
@@ -130,6 +131,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ContainerImage: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -179,6 +181,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ContainerImage: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -273,6 +276,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ContainerImage: "", // Empty image triggers pre-execution failure
 					},
 					TargetResource: "default/deployment/test-app",
+					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -325,6 +329,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						ContainerImage: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/ordering-test",
+					ExecutionEngine: "tekton",
 				},
 			}
 

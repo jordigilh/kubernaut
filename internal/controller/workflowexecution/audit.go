@@ -169,8 +169,8 @@ func (r *WorkflowExecutionReconciler) RecordAuditEvent(
 	}
 
 	// Add PipelineRun reference if present (use SetTo for optional field)
-	if wfe.Status.PipelineRunRef != nil {
-		payload.PipelinerunName.SetTo(wfe.Status.PipelineRunRef.Name)
+	if wfe.Status.ExecutionRef != nil {
+		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
 
 	// Set event data using ogen union constructor based on action

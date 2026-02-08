@@ -56,6 +56,8 @@ const (
 	EventTypeApprovalRequested     = "orchestrator.approval.requested"
 	EventTypeApprovalApproved      = "orchestrator.approval.approved"
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
+	EventTypeManualReview          = "orchestrator.remediation.manual_review"
+	EventTypeRoutingBlocked        = "orchestrator.routing.blocked"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -128,7 +130,7 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.created") // Gap #8: Per ADR-034 v1.2 naming convention
+	audit.SetEventType(event, EventTypeLifecycleCreated) // Gap #8: Per ADR-034 v1.2 naming convention
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -181,7 +183,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.started")
+	audit.SetEventType(event, EventTypeLifecycleStarted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionStarted)
 	audit.SetEventOutcome(event, audit.OutcomePending) // Lifecycle started, outcome not yet determined
@@ -269,7 +271,7 @@ func (m *Manager) BuildCompletionEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.completed")
+	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -330,7 +332,7 @@ func (m *Manager) BuildFailureEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.completed")
+	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
@@ -385,7 +387,7 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.approval.requested")
+	audit.SetEventType(event, EventTypeApprovalRequested)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionApprovalRequested)
 	audit.SetEventOutcome(event, audit.OutcomePending) // Approval outcome is pending until decision made
@@ -433,7 +435,7 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.approval."+mapping.Action)
+	audit.SetEventType(event, string(mapping.PayloadEventType))
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, mapping.Action)
 	audit.SetEventOutcome(event, mapping.Outcome)
@@ -483,7 +485,7 @@ func (m *Manager) BuildManualReviewEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.remediation.manual_review")
+	audit.SetEventType(event, EventTypeManualReview)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionManualReview)
 	audit.SetEventOutcome(event, audit.OutcomePending)
@@ -541,7 +543,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.routing.blocked")
+	audit.SetEventType(event, EventTypeRoutingBlocked)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionBlocked)
 	audit.SetEventOutcome(event, audit.OutcomePending)

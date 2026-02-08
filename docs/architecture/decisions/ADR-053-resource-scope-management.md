@@ -676,6 +676,52 @@ At scale (100 blocked RRs):
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: January 20, 2026
+---
+
+## Addendum: V1.0 Implementation Decisions (February 6, 2026)
+
+### Cache Strategy Revision
+
+The original V1.0 plan allowed the RO to use direct API calls for scope validation as a simplification.
+This has been revised: **both Gateway and RO use metadata-only cached clients** (controller-runtime's
+lazy informer mechanism for `PartialObjectMetadata`).
+
+**Rationale**: The RO validates scope for every AA completion that is valid for forwarding to the
+WorkflowExecution service, not just for blocked RR retries. Using direct API calls at this frequency
+would create unnecessary load on the API server. The cached client provides consistent, low-latency
+lookups for both services.
+
+### ScopeChecker Interface (DI Pattern)
+
+A shared `ScopeChecker` interface (`pkg/shared/scope/checker.go`) is used for dependency injection
+in both Gateway and RO. This follows the same mandatory DI pattern as `processing.RetryObserver`:
+- Production: `*scope.Manager` (backed by metadata-only cache)
+- Tests: mock implementations (`AlwaysManagedScopeChecker`, `NeverManagedScopeChecker`)
+- Constructor enforcement: `nil` panics (programming error in bootstrap)
+
+### RO Check Priority (Check #1)
+
+`CheckUnmanagedResource` is the **first** check in the RO's `CheckBlockingConditions()` pipeline,
+not the last. If a resource is unmanaged, all other blocking checks (consecutive failures, rate limits,
+circuit breakers, maintenance windows, exponential backoff) are irrelevant. This avoids wasted
+computation and gives operators a clear, immediate signal about the blocking reason.
+
+### Unknown Kind Resilience
+
+The `scope.Manager.checkResourceLabel()` now handles unknown resource kinds and non-NotFound API
+errors gracefully:
+- Unknown kind (not in `kindToGroup`): skip resource-level check, fall through to namespace
+- Forbidden / connection errors: graceful fallthrough to namespace with Info-level log
+- This ensures scope validation degrades to namespace-level when resource-level is not possible
+
+### Cache Pre-warming (Deferred)
+
+Cache pre-warming (eagerly starting informers for known GVKs at startup) is deferred to v1.1/v2.0.
+V1.0 accepts the lazy informer cold-start latency (200ms-2s per resource type on first access).
+A `ScopeGVKs()` helper in `pkg/shared/scope/cache.go` exports the known GVKs for future pre-warming.
+
+---
+
+**Document Version**: 1.1
+**Last Updated**: February 6, 2026
 **Next Review**: April 20, 2026 (3 months)

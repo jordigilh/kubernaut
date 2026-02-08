@@ -25,6 +25,12 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// Workflow catalog event type constants (L-3 SOC2 Fix)
+const (
+	EventTypeWorkflowCreated = "datastorage.workflow.created"
+	EventTypeWorkflowUpdated = "datastorage.workflow.updated"
+)
+
 // ========================================
 // WORKFLOW CATALOG AUDIT EVENTS
 // ========================================
@@ -47,7 +53,7 @@ import (
 func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
-	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.created")
+	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowCreated)
 	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
 	pkgaudit.SetEventAction(auditEvent, "create")
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
@@ -122,7 +128,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.WorkflowCatalogUpdatedFields) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
-	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.updated")
+	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowUpdated)
 	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
 	pkgaudit.SetEventAction(auditEvent, "update")
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)

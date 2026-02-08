@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -264,6 +265,15 @@ func main() {
 	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit-manager"))
 	setupLog.Info("WorkflowExecution audit manager initialized (P3: Audit Manager)")
 
+	// ========================================
+	// BR-WE-014: Executor Registry (Strategy Pattern)
+	// Registers Tekton and Job execution backends for dispatch
+	// ========================================
+	executorRegistry := weexecutor.NewRegistry()
+	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
+	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
+	setupLog.Info("Executor registry initialized", "engines", executorRegistry.Engines())
+
 	// Setup WorkflowExecution controller
 	if err = (&workflowexecution.WorkflowExecutionReconciler{
 		Client:             mgr.GetClient(),
@@ -277,7 +287,8 @@ func main() {
 		ServiceAccountName: cfg.Execution.ServiceAccount,
 		AuditStore:         auditStore,   // DD-AUDIT-003: Audit store for BR-WE-005
 		PhaseManager:       phaseManager, // P0: Phase State Machine (validated transitions)
-		AuditManager:       auditManager, // P3: Audit Manager (typed audit methods)
+		AuditManager:       auditManager,    // P3: Audit Manager (typed audit methods)
+		ExecutorRegistry:   executorRegistry, // BR-WE-014: Strategy pattern dispatch
 		// DD-WE-004: Exponential Backoff Configuration (BR-WE-012)
 		// V1.0: DEPRECATED - Routing moved to RO per DD-RO-002 Phase 3 (Dec 19, 2025)
 		BaseCooldownPeriod:     cfg.Backoff.BaseCooldown,

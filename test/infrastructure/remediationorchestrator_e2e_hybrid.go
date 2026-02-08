@@ -619,6 +619,17 @@ rules:
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
+# Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-010)
+# RO uses controller-runtime metadata-only informers for scope label lookups.
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets", "namespaces", "persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

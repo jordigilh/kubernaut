@@ -27,6 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -70,6 +71,28 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 		return admission.Allowed("no block clearance requested")
 	}
 
+	// SECURITY: Decode OLD object to determine if this is a truly NEW clearance
+	// Per SOC2 Round 2 H-2: OLD object comparison prevents identity forgery
+	// SOC 2 CC8.1 (User Attribution), CC6.8 (Non-Repudiation)
+	var oldWFE *workflowexecutionv1.WorkflowExecution
+	if len(req.OldObject.Raw) > 0 {
+		oldWFE = &workflowexecutionv1.WorkflowExecution{}
+		if err := json.Unmarshal(req.OldObject.Raw, oldWFE); err != nil {
+			return admission.Errored(http.StatusBadRequest,
+				fmt.Errorf("failed to decode old WorkflowExecution: %w", err))
+		}
+	}
+
+	// SECURITY: TRUE Idempotency Check - Compare OLD object with NEW object
+	// - OLD object has ClearedBy → true idempotency (preserve existing attribution)
+	// - OLD object has NO ClearedBy → NEW clearance (OVERWRITE any user-provided ClearedBy)
+	isNewClearance := oldWFE == nil ||
+		oldWFE.Status.BlockClearance == nil ||
+		oldWFE.Status.BlockClearance.ClearedBy == ""
+	if !isNewClearance {
+		return admission.Allowed("clearance already attributed")
+	}
+
 	// Extract authenticated user from admission request
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
 	if err != nil {
@@ -86,19 +109,13 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 		return admission.Denied(fmt.Sprintf("invalid clearance reason: reason must be at least 10 words for proper audit trail (SOC2 CC7.4), got %d words", len(words)))
 	}
 
-	// Check if clearedBy is already set (preserve existing attribution)
-	if wfe.Status.BlockClearance.ClearedBy != "" {
-		// Already cleared - don't overwrite
-		return admission.Allowed("clearance already attributed")
-	}
-
 	// Populate authentication fields
 	wfe.Status.BlockClearance.ClearedBy = authCtx.Username
 	wfe.Status.BlockClearance.ClearedAt = metav1.Now()
 
 	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "workflowexecution.block.cleared")
+	audit.SetEventType(auditEvent, EventTypeBlockCleared)
 	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "block_cleared")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
@@ -127,9 +144,13 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	auditEvent.EventData = api.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
-	// Explicitly ignore errors - audit should not block webhook operations
-	// The audit store has retry + DLQ mechanisms for reliability
-	_ = h.auditStore.StoreAudit(ctx, auditEvent)
+	// Audit failures are non-blocking but logged for observability
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		logger := ctrl.Log.WithName("wfe-webhook")
+		logger.Error(err, "Audit event storage failed (non-blocking)",
+			"eventType", auditEvent.EventType,
+			"eventAction", auditEvent.EventAction)
+	}
 
 	// Marshal the patched object
 	marshaledWFE, err := json.Marshal(wfe)

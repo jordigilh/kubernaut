@@ -99,7 +99,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 		// Verify final lifecycle conditions are present
 		// We only care about final state (Complete), not transient states (Running)
-		hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
+		hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
 		// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
 		// Test accepts both success and failure (line 73-74), so only check existence
 		hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
@@ -119,7 +119,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 		return hasPipelineCreated && hasPipelineComplete && hasAuditRecorded
 	}, 30*time.Second, 5*time.Second).Should(BeTrue(),
-		"All final lifecycle conditions (TektonPipelineCreated, TektonPipelineComplete, AuditRecorded) should be set")
+		"All final lifecycle conditions (ExecutionCreated, TektonPipelineComplete, AuditRecorded) should be set")
 
 			// Verify condition details
 			final, _ := getWFE(wfe.Name, wfe.Namespace)
@@ -144,26 +144,27 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 					Name:      testName,
 					Namespace: "default",
 				},
-				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
-						Kind:       "RemediationRequest",
-						Name:       "test-rr-" + testName,
-						Namespace:  "default",
-					},
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID: "test-intentional-failure",
-					Version:    "v1.0.0",
-					// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
-					ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				ExecutionEngine: "tekton", // BR-WE-014: Required field
+				RemediationRequestRef: corev1.ObjectReference{
+					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "test-rr-" + testName,
+					Namespace:  "default",
 				},
-					TargetResource: targetResource,
-					Parameters: map[string]string{
-						// Per test/fixtures/tekton/failing-pipeline.yaml
-						"FAILURE_MODE":    "exit",
-						"FAILURE_MESSAGE": "E2E test simulated failure",
-					},
+			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+				WorkflowID: "test-intentional-failure",
+				Version:    "v1.0.0",
+				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
+				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+			},
+				TargetResource: targetResource,
+				Parameters: map[string]string{
+					// Per test/fixtures/tekton/failing-pipeline.yaml
+					"FAILURE_MODE":    "exit",
+					"FAILURE_MESSAGE": "E2E test simulated failure",
 				},
+			},
 			}
 
 			defer func() {
