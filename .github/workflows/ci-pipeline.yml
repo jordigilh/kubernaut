@@ -14,17 +14,12 @@ name: CI Pipeline
 #   - Automatic fallback to local build if registry pull fails
 #   - Saves ~60% disk space and ~30% build time in CI
 #
-# Smart Path Detection:
-#   - Lint: Runs in parallel (Go and Python separately)
-#   - Unit Tests: Matrix runs ALL services + shared-packages always (~2 min total)
-#   - Build & Push: Matrix builds ALL images always (~5 min, includes compilation)
-#   - Integration Tests: Matrix runs ALL services always (~15 min total)
-#     * Design Decision: No path filtering at integration level
-#     * Rationale: Fast enough + better cross-service issue detection
-#   - E2E Tests: Smart path detection per service (30 min each)
-#     * Data Storage changes → ALL services (DS is shared dependency)
-#     * Individual service changes → ONLY that service
-#     * Push to main → ALL services (full validation)
+# Trigger Strategy (paths-ignore):
+#   - CI runs for ALL PRs except pure documentation/asset changes
+#   - Uses paths-ignore blocklist (docs, images, presentations, IDE config)
+#   - Ensures required checks always appear on PRs with code changes
+#   - Non-code PRs (docs-only) skip CI entirely — no wasted minutes
+#   - Push to main → always runs (full validation)
 #
 # Optimization Strategy:
 #   - Parallel lint jobs (Go + Python)
@@ -40,20 +35,18 @@ name: CI Pipeline
 on:
   pull_request:
     branches: [ main ]
-    paths:
-      - '**.go'
-      - '**.py'
-      - 'go.mod'
-      - 'go.sum'
-      - 'test/**'
-      - 'cmd/**'
-      - 'pkg/**'
-      - 'internal/**'
-      - 'api/**'
-      - 'migrations/**'
-      - 'Makefile'
-      - 'holmesgpt-api/**'
-      - '.github/workflows/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '**.svg'
+      - '**.excalidraw'
+      - '**.png'
+      - '**.jpg'
+      - 'kubernaut-presentation/**'
+      - 'LICENSE'
+      - '.beads/**'
+      - '.cursor/**'
+      - '.vscode/**'
   push:
     branches: [ main ]
   workflow_dispatch:
