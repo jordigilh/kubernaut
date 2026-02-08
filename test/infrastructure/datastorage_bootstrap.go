@@ -505,8 +505,6 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
 	// Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
-	// NOTE: Migrations 001-008 (001,002,003,004,006) do NOT use pgvector - they are core schema
-	// The pgvector-dependent migrations (005,007,008) were removed in V1.0 and no longer exist
 	migrationScript := `
 		set -e
 		echo "Creating slm_user role (required by migrations)..."

@@ -430,7 +430,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
-	// 2. Deploy PostgreSQL (V1.0: standard postgres, no pgvector)
+	// 2. Deploy PostgreSQL
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
@@ -502,7 +502,7 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
-	// 2. Deploy PostgreSQL (V1.0: standard postgres, no pgvector)
+	// 2. Deploy PostgreSQL
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
@@ -776,7 +776,7 @@ func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath 
 					Containers: []corev1.Container{
 						{
 							Name:  "postgresql",
-							Image: "postgres:16-alpine", // V1.0: standard postgres, no pgvector
+							Image: "postgres:16-alpine",
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "postgresql",
@@ -1762,7 +1762,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 	_ = exec.Command("podman", "stop", infra.PostgresContainer).Run()
 	_ = exec.Command("podman", "rm", infra.PostgresContainer).Run()
 
-	// Start PostgreSQL (V1.0: standard postgres, no pgvector)
+	// Start PostgreSQL
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.PostgresContainer,
 		"-p", fmt.Sprintf("%s:5432", cfg.PostgresPort),
@@ -1850,21 +1850,10 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		return fmt.Errorf("failed to drop schema: %w", err)
 	}
 
-	// V1.0: pgvector extension REMOVED (label-only architecture)
-	// See: docs/handoff/RESPONSE_DS_PGVECTOR_CLEANUP_COMPLETE.md
-
-	// Apply migrations (V1.0 label-only, no vector migrations)
+	// Apply migrations
 	_, _ = fmt.Fprintln(writer, "  📜 Applying V1.0 migrations (label-only, no embeddings)...")
-	// V1.0 Migration List (label-only architecture, no embeddings)
-	// Removed vector-dependent migrations per TRIAGE_DS_MIGRATION_DEPENDENCIES_V1.0.md:
-	// - 005_vector_schema.sql (creates action_patterns with embedding vector)
-	// - 007_add_context_column.sql (depends on 005)
-	// - 008_context_api_compatibility.sql (adds embedding column)
-	// - 009_update_vector_dimensions.sql (updates vector dimensions)
-	// - 010_audit_write_api_phase1.sql (creates tables with vector columns)
-	// - 011_rename_alert_to_signal.sql (depends on 010)
-	// - 015_create_workflow_catalog_table.sql (creates workflows with embedding)
-	// - 016_update_embedding_dimensions.sql (updates to 768 dimensions)
+	// V1.0 Migration List (label-only architecture per DD-WORKFLOW-015)
+	// Vector-dependent migrations (005, 007-010, 016) removed per TRIAGE_DS_MIGRATION_DEPENDENCIES_V1.0.md
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",

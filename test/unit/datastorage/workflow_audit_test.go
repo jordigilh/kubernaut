@@ -64,9 +64,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 			}
 
 			searchMetadata := ogenclient.SearchExecutionMetadata{
-				DurationMs:          45,
-				EmbeddingDimensions: 768,
-				EmbeddingModel:      "all-mpnet-base-v2",
+				DurationMs: 45,
 			}
 
 			payload := ogenclient.WorkflowSearchAuditPayload{
@@ -114,9 +112,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 			}
 
 			searchMetadata := ogenclient.SearchExecutionMetadata{
-				DurationMs:          30,
-				EmbeddingDimensions: 768,
-				EmbeddingModel:      "all-mpnet-base-v2",
+				DurationMs: 30,
 			}
 
 			payload := ogenclient.WorkflowSearchAuditPayload{
@@ -162,9 +158,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 			}
 
 			searchMetadata := ogenclient.SearchExecutionMetadata{
-				DurationMs:          30,
-				EmbeddingDimensions: 768,
-				EmbeddingModel:      "all-mpnet-base-v2",
+				DurationMs: 30,
 			}
 
 			payload := ogenclient.WorkflowSearchAuditPayload{
@@ -217,9 +211,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 			}
 
 			searchMetadata := ogenclient.SearchExecutionMetadata{
-				DurationMs:          30,
-				EmbeddingDimensions: 768,
-				EmbeddingModel:      "all-mpnet-base-v2",
+				DurationMs: 30,
 			}
 
 			payload := ogenclient.WorkflowSearchAuditPayload{
@@ -269,9 +261,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 			}
 
 			searchMetadata := ogenclient.SearchExecutionMetadata{
-				DurationMs:          30,
-				EmbeddingDimensions: 768,
-				EmbeddingModel:      "all-mpnet-base-v2",
+				DurationMs: 30,
 			}
 
 			payload := ogenclient.WorkflowSearchAuditPayload{
