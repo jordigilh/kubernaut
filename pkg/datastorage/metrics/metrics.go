@@ -18,10 +18,10 @@ limitations under the License.
 //
 // Business Requirement: BR-STORAGE-019 (Logging and metrics for all operations)
 //
-// This package defines 10+ Prometheus metrics to monitor:
+// This package defines Prometheus metrics to monitor:
 // - Write operation performance and success rates
 // - Fallback mode operations
-// - Embedding generation and caching
+// - Caching
 // - Query operation performance
 // - Validation failures
 //
@@ -56,10 +56,9 @@ const (
 	MetricNameAuditTracesTotal = "datastorage_audit_traces_total"
 	MetricNameAuditLagSeconds  = "datastorage_audit_lag_seconds"
 
-	// Embedding generation and caching metrics
-	MetricNameCacheHits                     = "datastorage_cache_hits_total"
-	MetricNameCacheMisses                   = "datastorage_cache_misses_total"
-	MetricNameEmbeddingGenerationDuration   = "datastorage_embedding_generation_duration_seconds"
+	// Caching metrics
+	MetricNameCacheHits   = "datastorage_cache_hits_total"
+	MetricNameCacheMisses = "datastorage_cache_misses_total"
 
 	// Validation metrics
 	MetricNameValidationFailures = "datastorage_validation_failures_total"
@@ -160,8 +159,8 @@ var (
 	)
 )
 
-// Embedding generation and caching metrics
-// BR-STORAGE-008, BR-STORAGE-009
+// Caching metrics
+// BR-STORAGE-009
 
 var (
 	// CacheHits tracks successful embedding cache retrievals.
@@ -175,27 +174,14 @@ var (
 		},
 	)
 
-	// CacheMisses tracks embedding cache misses requiring generation.
+	// CacheMisses tracks cache misses.
 	//
 	// Example Prometheus query:
 	//   rate(datastorage_cache_misses_total[5m])
 	CacheMisses = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricNameCacheMisses, // DD-005 V3.0: Pattern B (full name),
-			Help: "Total number of embedding cache misses",
-		},
-	)
-
-	// EmbeddingGenerationDuration tracks the time to generate vector embeddings.
-	//
-	// Example Prometheus query:
-	//   histogram_quantile(0.95, rate(datastorage_embedding_generation_duration_seconds_bucket[5m]))
-	EmbeddingGenerationDuration = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name: MetricNameEmbeddingGenerationDuration, // DD-005 V3.0: Pattern B (full name),
-			Help: "Duration of embedding generation in seconds",
-			// Buckets optimized for embedding generation (10ms to 5s)
-			Buckets: []float64{.01, .05, .1, .25, .5, 1, 2.5, 5},
+			Help: "Total number of cache misses",
 		},
 	)
 )
@@ -264,7 +250,7 @@ var (
 	// QueryDuration tracks the duration of query operations.
 	//
 	// Labels:
-	//   - operation: Operation type (list, get, semantic_search, filter)
+	//   - operation: Operation type (list, get, filter)
 	//
 	// Example Prometheus query:
 	//   histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
@@ -285,7 +271,7 @@ var (
 	//   - status: Operation status (success, failure)
 	//
 	// Example Prometheus query:
-	//   rate(datastorage_query_total{operation="semantic_search",status="success"}[5m])
+	//   rate(datastorage_query_total{operation="list",status="success"}[5m])
 	QueryTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricNameQueryTotal, // DD-005 V3.0: Pattern B (full name),
@@ -297,13 +283,12 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 9
+// Total Metrics: 8
 // - WriteTotal (Counter with labels)
 // - WriteDuration (Histogram with labels)
 // - FallbackModeTotal (Counter)
 // - CacheHits (Counter)
 // - CacheMisses (Counter)
-// - EmbeddingGenerationDuration (Histogram)
 // - ValidationFailures (Counter with labels)
 // - QueryDuration (Histogram with labels)
 // - QueryTotal (Counter with labels)

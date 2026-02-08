@@ -96,10 +96,9 @@ type ScoringV1 struct {
 }
 
 // SearchExecutionMetadata captures search execution details (BR-AUDIT-028).
+// V1.0: Label-only search (DD-WORKFLOW-015). No embedding fields.
 type SearchExecutionMetadata struct {
-	DurationMs          int64  `json:"duration_ms"`
-	EmbeddingDimensions int    `json:"embedding_dimensions"`
-	EmbeddingModel      string `json:"embedding_model"`
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // ========================================
@@ -286,11 +285,10 @@ func (b *WorkflowSearchAuditEventBuilder) buildWorkflowMetadataOgen(result model
 }
 
 // buildSearchMetadataOgen constructs SearchExecutionMetadata using ogen-generated types.
+// V1.0: Label-only search (DD-WORKFLOW-015). No embedding fields.
 func (b *WorkflowSearchAuditEventBuilder) buildSearchMetadataOgen() ogenclient.SearchExecutionMetadata {
 	return ogenclient.SearchExecutionMetadata{
-		DurationMs:          b.duration.Milliseconds(),
-		EmbeddingDimensions: 768, // all-mpnet-base-v2
-		EmbeddingModel:      "all-mpnet-base-v2",
+		DurationMs: b.duration.Milliseconds(),
 	}
 }
 
