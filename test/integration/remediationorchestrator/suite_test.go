@@ -74,6 +74,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
@@ -357,6 +358,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	roMetrics := rometrics.NewMetrics()
 	GinkgoWriter.Println("✅ RO metrics initialized and registered")
 
+	// BR-SCOPE-010: Create scope manager for routing engine using cached client (ADR-053)
+	scopeMgr := scope.NewManager(k8sManager.GetClient())
+
 	// Create routing engine for blocking logic (BR-ORCH-042)
 	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
 	routingEngine := routing.NewRoutingEngine(
@@ -369,7 +373,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			RecentlyRemediatedCooldown:  300,  // 5 minutes
 			ExponentialBackoffBase:      60,   // 1 minute
 			ExponentialBackoffMax:       3600, // 1 hour
+			ScopeBackoffBase:            5,    // 5 seconds (ADR-053)
+			ScopeBackoffMax:             300,  // 5 minutes (ADR-053)
 		},
+		scopeMgr, // BR-SCOPE-010: Mandatory scope checker
 	)
 
 	reconciler := controller.NewReconciler(

@@ -567,7 +567,7 @@ var _ = Describe("Audit Manager", func() {
 				"Looks good",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event.EventType).To(Equal("orchestrator.approval.approved"))
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeApprovalApproved))
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("success")))
 		})
 
@@ -582,7 +582,7 @@ var _ = Describe("Audit Manager", func() {
 				"Too risky",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event.EventType).To(Equal("orchestrator.approval.rejected"))
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeApprovalRejected))
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
 		})
 
@@ -597,7 +597,9 @@ var _ = Describe("Audit Manager", func() {
 				"Approval deadline passed",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event.EventType).To(Equal("orchestrator.approval.expired"))
+			// M-4: Expired uses PayloadEventType (orchestrator.approval.rejected)
+			// because there is no separate "expired" discriminator in the OpenAPI spec
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeApprovalRejected))
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
 		})
 
@@ -647,7 +649,7 @@ var _ = Describe("Audit Manager", func() {
 				"nr-manual-review-001",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event.EventType).To(Equal("orchestrator.remediation.manual_review"))
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeManualReview))
 		})
 
 		It("should set event outcome to pending", func() {
@@ -727,7 +729,7 @@ var _ = Describe("Audit Manager", func() {
 			Entry("event_type = orchestrator.routing.blocked",
 				"event_type",
 				func(event *ogenclient.AuditEventRequest) {
-					Expect(event.EventType).To(Equal("orchestrator.routing.blocked"))
+					Expect(event.EventType).To(Equal(prodaudit.EventTypeRoutingBlocked))
 				},
 			),
 			Entry("event_category = orchestration",

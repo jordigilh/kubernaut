@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -48,6 +49,7 @@ import (
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"    // Shared infrastructure (PostgreSQL + Redis + DS)
@@ -325,6 +327,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Initialize audit manager (P3: Audit Manager pattern)
 	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit"))
 
+	// BR-WE-014: Executor Registry (Strategy Pattern for Tekton + Job backends)
+	executorRegistry := weexecutor.NewRegistry()
+	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
+	executorRegistry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
+
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
 		Client:                 k8sManager.GetClient(),
 		APIReader:              k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
@@ -336,10 +343,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		BaseCooldownPeriod:     DefaultBaseCooldownPeriod,
 		MaxCooldownPeriod:      DefaultMaxCooldownPeriod,
 		MaxConsecutiveFailures: DefaultMaxConsecutiveFailures,
-		AuditStore:             auditStore,    // REAL audit store for integration tests
-		Metrics:                testMetrics,   // Test-isolated metrics (DD-METRICS-001)
-		StatusManager:          statusManager, // DD-PERF-001: Atomic status updates
-		AuditManager:           auditManager,  // P3: Audit Manager pattern
+		AuditStore:             auditStore,       // REAL audit store for integration tests
+		Metrics:                testMetrics,       // Test-isolated metrics (DD-METRICS-001)
+		StatusManager:          statusManager,     // DD-PERF-001: Atomic status updates
+		AuditManager:           auditManager,      // P3: Audit Manager pattern
+		ExecutorRegistry:       executorRegistry,   // BR-WE-014: Strategy pattern dispatch
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -426,6 +434,7 @@ var _ = SynchronizedAfterSuite(func() {
 // ========================================
 
 // createUniqueWFE creates a WorkflowExecution with unique name for parallel test isolation
+// Defaults to ExecutionEngine: "tekton" for backward compat with existing Tekton tests
 func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	name := IntegrationTestNamePrefix + testID + "-" + time.Now().Format("150405000")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
@@ -446,9 +455,17 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				Version:        "v1.0.0",
 				ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 			},
-			TargetResource: targetResource,
+			TargetResource:  targetResource,
+			ExecutionEngine: "tekton",
 		},
 	}
+}
+
+// createUniqueJobWFE creates a WorkflowExecution with ExecutionEngine "job" for Job backend tests
+func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
+	wfe := createUniqueWFE(testID, targetResource)
+	wfe.Spec.ExecutionEngine = "job"
+	return wfe
 }
 
 // createUniqueWFEWithParams creates a WorkflowExecution with parameters
@@ -570,6 +587,100 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 		}
 	}
 }
+// cleanupJobWFE cleans up a WFE and its associated Job
+func cleanupJobWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
+	// Delete WFE
+	_ = k8sClient.Delete(ctx, wfe)
+
+	// Also directly clean up any Jobs
+	jobList := &batchv1.JobList{}
+	if err := k8sClient.List(ctx, jobList, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{
+		"kubernaut.ai/workflow-execution": wfe.Name,
+	}); err == nil {
+		propagation := metav1.DeletePropagationBackground
+		for i := range jobList.Items {
+			_ = k8sClient.Delete(ctx, &jobList.Items[i], &client.DeleteOptions{
+				PropagationPolicy: &propagation,
+			})
+		}
+	}
+}
+
+// waitForJobCreation waits for a Job to be created for a WFE
+func waitForJobCreation(wfeName string, timeout time.Duration) (*batchv1.Job, error) {
+	var job *batchv1.Job
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextTimeout(timeoutCtx, 100*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
+		jobList := &batchv1.JobList{}
+		err := k8sClient.List(ctx, jobList, client.InNamespace(WorkflowExecutionNS), client.MatchingLabels{
+			"kubernaut.ai/workflow-execution": wfeName,
+		})
+		if err != nil {
+			return false, nil
+		}
+		if len(jobList.Items) > 0 {
+			job = &jobList.Items[0]
+			return true, nil
+		}
+		return false, nil
+	})
+
+	return job, err
+}
+
+// simulateJobCompletion updates a Job to simulate completion (success or failure)
+func simulateJobCompletion(job *batchv1.Job, succeeded bool) error {
+	now := metav1.Now()
+	job.Status.StartTime = &now
+
+	if succeeded {
+		job.Status.Succeeded = 1
+		job.Status.Active = 0
+		job.Status.CompletionTime = &now
+		// K8s requires JobSuccessCriteriaMet before JobComplete
+		job.Status.Conditions = append(job.Status.Conditions,
+			batchv1.JobCondition{
+				Type:               "SuccessCriteriaMet",
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "JobSuccessCriteriaMet",
+				Message:            "Job completed successfully",
+			},
+			batchv1.JobCondition{
+				Type:               batchv1.JobComplete,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "Completed",
+				Message:            "Job completed successfully",
+			},
+		)
+	} else {
+		job.Status.Failed = 1
+		job.Status.Active = 0
+		// K8s requires JobFailureTarget before JobFailed
+		job.Status.Conditions = append(job.Status.Conditions,
+			batchv1.JobCondition{
+				Type:               "FailureTarget",
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "BackoffLimitExceeded",
+				Message:            "Job has reached the specified backoff limit",
+			},
+			batchv1.JobCondition{
+				Type:               batchv1.JobFailed,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: now,
+				Reason:             "BackoffLimitExceeded",
+				Message:            "Job has reached the specified backoff limit",
+			},
+		)
+	}
+	return k8sClient.Status().Update(ctx, job)
+}
+
 // flushAuditBuffer flushes the buffered audit store to ensure all events are written to DataStorage
 // MANDATORY before querying audit events to prevent flaky tests due to buffering
 func flushAuditBuffer() {

@@ -502,8 +502,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	}
 
 	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering
-	// Uses apiReader (cache-bypassed) for immediate label consistency
-	scopeMgr := scope.NewManager(apiReader)
+	// ADR-053 Decision #5: Uses ctrlClient (cached) for metadata-only informers (0 API calls).
+	// Controller-runtime automatically creates metadata-only informers when Get() is called
+	// with PartialObjectMetadata, so no custom cache configuration is needed.
+	scopeMgr := scope.NewManager(ctrlClient)
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{

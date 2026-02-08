@@ -69,9 +69,9 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			By("Waiting for WFE to transition to Running (PipelineRun created)")
 			runningWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "WFE should transition to Running")
-			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil(), "PipelineRunRef should be set")
+			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil(), "ExecutionRef should be set")
 
-			prName := runningWFE.Status.PipelineRunRef.Name
+			prName := runningWFE.Status.ExecutionRef.Name
 			GinkgoWriter.Printf("✅ WFE Running, PipelineRun created: %s\n", prName)
 
 			By("Simulating PipelineRun external deletion (operator action)")
@@ -137,9 +137,9 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			By("Waiting for WFE to transition to Running")
 			runningWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
 
-			prName := runningWFE.Status.PipelineRunRef.Name
+			prName := runningWFE.Status.ExecutionRef.Name
 
 			By("Deleting PipelineRun externally")
 			pr := &tektonv1.PipelineRun{}
@@ -189,7 +189,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 
 		It("should handle deletion during early Running phase gracefully", func() {
 			// PipelineRun deleted shortly after controller transitions to Running.
-			// DD-STATUS-001: Wait for Running phase so PipelineRunRef is persisted,
+			// DD-STATUS-001: Wait for Running phase so ExecutionRef is persisted,
 			// ensuring the controller's reconcileRunning correctly detects the external deletion.
 
 			By("Creating WorkflowExecution")
@@ -197,7 +197,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			wfe := createUniqueWFE("ext-del-pending", targetResource)
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for WFE to reach Running phase (PipelineRunRef persisted)")
+			By("Waiting for WFE to reach Running phase (ExecutionRef persisted)")
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "WFE should reach Running phase")
 
@@ -232,9 +232,8 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			GinkgoWriter.Printf("✅ BR-WE-007: External deletion during early Running handled gracefully\n")
 		})
 
-		It("should set PipelineRunRef to nil after detecting external deletion", func() {
+		It("should handle ExecutionRef after detecting external deletion", func() {
 			// Validates controller cleanup behavior after external deletion
-			// PipelineRunRef should be cleared when PipelineRun no longer exists
 
 			By("Creating WorkflowExecution")
 			targetResource := fmt.Sprintf("default/deployment/ext-del-ref-%d", time.Now().UnixNano())
@@ -244,9 +243,9 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			By("Waiting for WFE to transition to Running")
 			runningWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
 
-			prName := runningWFE.Status.PipelineRunRef.Name
+			prName := runningWFE.Status.ExecutionRef.Name
 
 			By("Deleting PipelineRun externally")
 			pr := &tektonv1.PipelineRun{}
@@ -264,22 +263,22 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 				g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 
-			By("Verifying PipelineRunRef state after external deletion")
+			By("Verifying ExecutionRef state after external deletion")
 			failedWFE, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
-			// PipelineRunRef behavior: Controller may keep ref for audit trail
-			// OR clear it since PipelineRun no longer exists
+			// ExecutionRef behavior: Controller may keep ref for audit trail
+			// OR clear it since execution resource no longer exists
 			// Either behavior is acceptable as long as FailureDetails explains deletion
-			if failedWFE.Status.PipelineRunRef != nil {
-				GinkgoWriter.Printf("   PipelineRunRef kept for audit trail: %s\n", failedWFE.Status.PipelineRunRef.Name)
+			if failedWFE.Status.ExecutionRef != nil {
+				GinkgoWriter.Printf("   ExecutionRef kept for audit trail: %s\n", failedWFE.Status.ExecutionRef.Name)
 			} else {
-				GinkgoWriter.Printf("   PipelineRunRef cleared after deletion\n")
+				GinkgoWriter.Printf("   ExecutionRef cleared after deletion\n")
 			}
 
 			// What matters: FailureDetails must be populated
 			Expect(failedWFE.Status.FailureDetails).ToNot(BeNil(),
-				"FailureDetails must be populated regardless of PipelineRunRef state")
+				"FailureDetails must be populated regardless of ExecutionRef state")
 			Expect(failedWFE.Status.FailureDetails.Message).To(
 				Or(
 					ContainSubstring("not found"),
@@ -287,7 +286,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 					ContainSubstring("NotFound"),
 				))
 
-			GinkgoWriter.Printf("✅ BR-WE-007: PipelineRunRef state validated after external deletion\n")
+			GinkgoWriter.Printf("✅ BR-WE-007: ExecutionRef state validated after external deletion\n")
 		})
 	})
 
@@ -304,12 +303,12 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			By("Waiting for WFE to transition to Running")
 			runningWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(runningWFE.Status.PipelineRunRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
 
 			By("Simulating normal PipelineRun completion (not external deletion)")
 			pr := &tektonv1.PipelineRun{}
 			prKey := types.NamespacedName{
-				Name:      runningWFE.Status.PipelineRunRef.Name,
+				Name:      runningWFE.Status.ExecutionRef.Name,
 				Namespace: WorkflowExecutionNS,
 			}
 			Expect(k8sClient.Get(ctx, prKey, pr)).To(Succeed())

@@ -410,7 +410,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
 		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
-		if strings.Contains(err.Error(), "already exists") {
+		if k8serrors.IsAlreadyExists(err) {
 			c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
 				"name", crdName,
 				"namespace", signal.Namespace,
@@ -470,7 +470,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 		// Check if namespace doesn't exist - fall back to configured fallback namespace
 		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
-		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
+		if isNamespaceNotFoundError(err) {
 			c.logger.Info("Target namespace not found, creating CRD in fallback namespace",
 				"warning", true,
 				"original_namespace", signal.Namespace,
@@ -929,8 +929,13 @@ func isNamespaceNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Primary check: use K8s typed error classification
+	if k8serrors.IsNotFound(err) {
+		// IsNotFound is true for any "not found" — distinguish namespace from CRD
+		errMsg := err.Error()
+		return strings.Contains(errMsg, "namespaces")
+	}
+	// Fallback: string matching for wrapped or non-standard errors
 	errMsg := err.Error()
-	// Check if error message contains "namespaces" and "not found"
-	// This distinguishes namespace errors from RemediationRequest not found errors
 	return strings.Contains(errMsg, "namespaces") && strings.Contains(errMsg, "not found")
 }

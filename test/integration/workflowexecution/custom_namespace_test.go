@@ -109,7 +109,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			}
 			Expect(foundInDefault).To(BeFalse(), "PipelineRun should NOT be in default namespace")
 
-			By("Waiting for WFE to transition to Running phase with PipelineRunRef")
+			By("Waiting for WFE to transition to Running phase with ExecutionRef")
 			// Use Eventually to wait for PipelineRun creation via WFE status
 			var updatedWFE *workflowexecutionv1alpha1.WorkflowExecution
 			Eventually(func() bool {
@@ -117,18 +117,18 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), updated); err != nil {
 					return false
 				}
-				if updated.Status.PipelineRunRef != nil && updated.Status.PipelineRunRef.Name != "" {
+				if updated.Status.ExecutionRef != nil && updated.Status.ExecutionRef.Name != "" {
 					updatedWFE = updated
 					return true
 				}
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE should have PipelineRunRef populated")
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE should have ExecutionRef populated")
 
 			By("Verifying PipelineRun IS in ExecutionNamespace (kubernaut-workflows)")
 			// Fetch the PipelineRun using the reference from WFE status
 			foundPR := &tektonv1.PipelineRun{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      updatedWFE.Status.PipelineRunRef.Name,
+				Name:      updatedWFE.Status.ExecutionRef.Name,
 				Namespace: WorkflowExecutionNS,
 			}, foundPR)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should exist in ExecutionNamespace")
@@ -145,10 +145,10 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), updated); err != nil {
 					return false
 				}
-				// PipelineRunRef should be populated with PipelineRun name
+				// ExecutionRef should be populated with PipelineRun name
 				// (LocalObjectReference doesn't have Namespace field - namespace is implied)
-				return updated.Status.PipelineRunRef != nil &&
-					updated.Status.PipelineRunRef.Name != ""
+				return updated.Status.ExecutionRef != nil &&
+					updated.Status.ExecutionRef.Name != ""
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE should track PipelineRun")
 
 			GinkgoWriter.Printf("✅ PipelineRun created in ExecutionNamespace: %s\n", WorkflowExecutionNS)
@@ -189,7 +189,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				return updated1.UID != "" && updated2.UID != ""
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			By("Waiting for both WFEs to have PipelineRunRefs")
+			By("Waiting for both WFEs to have ExecutionRefs")
 			// Wait for WFE1's PipelineRun
 			var updated1, updated2 *workflowexecutionv1alpha1.WorkflowExecution
 			Eventually(func() bool {
@@ -197,12 +197,12 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe1), u1); err != nil {
 					return false
 				}
-				if u1.Status.PipelineRunRef != nil && u1.Status.PipelineRunRef.Name != "" {
+				if u1.Status.ExecutionRef != nil && u1.Status.ExecutionRef.Name != "" {
 					updated1 = u1
 					return true
 				}
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE1 should have PipelineRunRef")
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE1 should have ExecutionRef")
 
 			// Wait for WFE2's PipelineRun
 			Eventually(func() bool {
@@ -210,18 +210,18 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe2), u2); err != nil {
 					return false
 				}
-				if u2.Status.PipelineRunRef != nil && u2.Status.PipelineRunRef.Name != "" {
+				if u2.Status.ExecutionRef != nil && u2.Status.ExecutionRef.Name != "" {
 					updated2 = u2
 					return true
 				}
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE2 should have PipelineRunRef")
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE2 should have ExecutionRef")
 
 			By("Verifying ALL PipelineRuns are in ExecutionNamespace")
 			// Fetch PipelineRuns using references from WFE statuses
 			pr1 := &tektonv1.PipelineRun{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      updated1.Status.PipelineRunRef.Name,
+				Name:      updated1.Status.ExecutionRef.Name,
 				Namespace: WorkflowExecutionNS,
 			}, pr1)
 			Expect(err).ToNot(HaveOccurred(), "WFE1's PipelineRun should exist in ExecutionNamespace")
@@ -229,7 +229,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 
 			pr2 := &tektonv1.PipelineRun{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      updated2.Status.PipelineRunRef.Name,
+				Name:      updated2.Status.ExecutionRef.Name,
 				Namespace: WorkflowExecutionNS,
 			}, pr2)
 			Expect(err).ToNot(HaveOccurred(), "WFE2's PipelineRun should exist in ExecutionNamespace")
@@ -261,7 +261,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				return updated.UID != ""
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			By("Waiting for WFE to have PipelineRunRef")
+			By("Waiting for WFE to have ExecutionRef")
 			// Use Eventually to wait for PipelineRun creation via WFE status
 			var updatedWFE *workflowexecutionv1alpha1.WorkflowExecution
 			Eventually(func() bool {
@@ -269,12 +269,12 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), updated); err != nil {
 					return false
 				}
-				if updated.Status.PipelineRunRef != nil && updated.Status.PipelineRunRef.Name != "" {
+				if updated.Status.ExecutionRef != nil && updated.Status.ExecutionRef.Name != "" {
 					updatedWFE = updated
 					return true
 				}
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE should have PipelineRunRef")
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "WFE should have ExecutionRef")
 
 			By("Verifying WFE and PipelineRun are in different namespaces")
 			// This validates DD-WE-002: Dedicated Execution Namespace design decision
@@ -284,7 +284,7 @@ var _ = Describe("Custom Execution Namespace", Label("config", "namespace"), fun
 			// Fetch PipelineRun using reference from WFE status
 			foundPR := &tektonv1.PipelineRun{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      updatedWFE.Status.PipelineRunRef.Name,
+				Name:      updatedWFE.Status.ExecutionRef.Name,
 				Namespace: WorkflowExecutionNS,
 			}, foundPR)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")

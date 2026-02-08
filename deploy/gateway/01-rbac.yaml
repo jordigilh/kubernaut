@@ -52,6 +52,41 @@ rules:
       - list
       - watch
 
+  # Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-001)
+  # Gateway uses controller-runtime metadata-only informers for scope label lookups.
+  # list+watch required for informer cache; get for direct metadata reads.
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - secrets
+      - persistentvolumes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - get
+      - list
+      - watch
+
   # ADR-052: Lease resource access for distributed locking (multi-replica safety)
   # Gateway uses K8s Lease resources for distributed mutual exclusion
   # to prevent duplicate RemediationRequest creation across replicas

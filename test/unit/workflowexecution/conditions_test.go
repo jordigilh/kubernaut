@@ -49,18 +49,18 @@ var _ = Describe("Conditions Infrastructure", func() {
 	// Test Condition Setters (5 conditions × 2 tests each = 10 tests)
 	// ========================================
 
-	Describe("SetTektonPipelineCreated", func() {
+	Describe("SetExecutionCreated", func() {
 		Context("when PipelineRun created successfully", func() {
 			It("should set condition to True with PipelineCreated reason", func() {
-				weconditions.SetTektonPipelineCreated(wfe, true,
-					weconditions.ReasonPipelineCreated,
+				weconditions.SetExecutionCreated(wfe, true,
+					weconditions.ReasonExecutionCreated,
 					"PipelineRun test-pr created in kubernaut-workflows")
 
 				Expect(wfe.Status.Conditions).To(HaveLen(1))
 				condition := wfe.Status.Conditions[0]
-				Expect(condition.Type).To(Equal(weconditions.ConditionTektonPipelineCreated))
+				Expect(condition.Type).To(Equal(weconditions.ConditionExecutionCreated))
 				Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-				Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineCreated))
+				Expect(condition.Reason).To(Equal(weconditions.ReasonExecutionCreated))
 				Expect(condition.Message).To(ContainSubstring("test-pr"))
 				Expect(condition.LastTransitionTime).ToNot(BeNil())
 			})
@@ -68,11 +68,11 @@ var _ = Describe("Conditions Infrastructure", func() {
 
 		Context("when PipelineRun creation fails", func() {
 			It("should set condition to False with QuotaExceeded reason", func() {
-				weconditions.SetTektonPipelineCreated(wfe, false,
+				weconditions.SetExecutionCreated(wfe, false,
 					weconditions.ReasonQuotaExceeded,
 					"Failed to create PipelineRun: pods exceeded quota")
 
-				condition := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+				condition := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(weconditions.ReasonQuotaExceeded))
@@ -202,18 +202,18 @@ var _ = Describe("Conditions Infrastructure", func() {
 	Describe("GetCondition", func() {
 		Context("when condition exists", func() {
 			It("should return the condition", func() {
-				weconditions.SetTektonPipelineCreated(wfe, true,
-					weconditions.ReasonPipelineCreated, "Test")
+				weconditions.SetExecutionCreated(wfe, true,
+					weconditions.ReasonExecutionCreated, "Test")
 
-				condition := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+				condition := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 				Expect(condition).ToNot(BeNil())
-				Expect(condition.Type).To(Equal(weconditions.ConditionTektonPipelineCreated))
+				Expect(condition.Type).To(Equal(weconditions.ConditionExecutionCreated))
 			})
 		})
 
 		Context("when condition doesn't exist", func() {
 			It("should return nil", func() {
-				condition := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+				condition := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 				Expect(condition).To(BeNil())
 			})
 		})
@@ -222,27 +222,27 @@ var _ = Describe("Conditions Infrastructure", func() {
 	Describe("IsConditionTrue", func() {
 		Context("when condition exists and is True", func() {
 			It("should return true", func() {
-				weconditions.SetTektonPipelineCreated(wfe, true,
-					weconditions.ReasonPipelineCreated, "Test")
+				weconditions.SetExecutionCreated(wfe, true,
+					weconditions.ReasonExecutionCreated, "Test")
 
-				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)
+				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)
 				Expect(isTrue).To(BeTrue())
 			})
 		})
 
 		Context("when condition exists but is False", func() {
 			It("should return false", func() {
-				weconditions.SetTektonPipelineCreated(wfe, false,
+				weconditions.SetExecutionCreated(wfe, false,
 					weconditions.ReasonPipelineCreationFailed, "Test")
 
-				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)
+				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)
 				Expect(isTrue).To(BeFalse())
 			})
 		})
 
 		Context("when condition doesn't exist", func() {
 			It("should return false", func() {
-				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)
+				isTrue := weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)
 				Expect(isTrue).To(BeFalse())
 			})
 		})
@@ -255,18 +255,18 @@ var _ = Describe("Conditions Infrastructure", func() {
 	Describe("Condition Transitions", func() {
 		It("should update lastTransitionTime on status change", func() {
 			// Set condition to True
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated, "Created")
-			condition1 := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated, "Created")
+			condition1 := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			time1 := condition1.LastTransitionTime
 
 			// Wait brief moment (acceptable use of time.Sleep for timing test)
 			time.Sleep(10 * time.Millisecond)
 
 			// Change condition to False
-			weconditions.SetTektonPipelineCreated(wfe, false,
+			weconditions.SetExecutionCreated(wfe, false,
 				weconditions.ReasonPipelineCreationFailed, "Failed")
-			condition2 := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition2 := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			time2 := condition2.LastTransitionTime
 
 			// Verify timestamp updated
@@ -276,25 +276,25 @@ var _ = Describe("Conditions Infrastructure", func() {
 
 		It("should preserve message and reason on each update", func() {
 			// First update
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated, "First message")
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated, "First message")
 
-			condition1 := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition1 := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			Expect(condition1.Message).To(Equal("First message"))
 
 			// Second update
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated, "Updated message")
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated, "Updated message")
 
-			condition2 := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition2 := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			Expect(condition2.Message).To(Equal("Updated message"),
 				"Message should be updated on subsequent SetCondition calls")
 		})
 
 		It("should maintain multiple conditions independently", func() {
 			// Set multiple conditions
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated, "Pipeline created")
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated, "Pipeline created")
 			weconditions.SetTektonPipelineRunning(wfe, true,
 				weconditions.ReasonPipelineStarted, "Pipeline started")
 			weconditions.SetAuditRecorded(wfe, true,
@@ -304,7 +304,7 @@ var _ = Describe("Conditions Infrastructure", func() {
 			Expect(wfe.Status.Conditions).To(HaveLen(3))
 
 			// Verify each condition independently
-			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineRunning)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionAuditRecorded)).To(BeTrue())
 
@@ -314,7 +314,7 @@ var _ = Describe("Conditions Infrastructure", func() {
 
 			Expect(wfe.Status.Conditions).To(HaveLen(3),
 				"Updating one condition shouldn't change condition count")
-			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)).To(BeTrue(),
+			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)).To(BeTrue(),
 				"Other conditions should remain unchanged")
 			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineRunning)).To(BeFalse(),
 				"Updated condition should reflect new status")
@@ -328,21 +328,21 @@ var _ = Describe("Conditions Infrastructure", func() {
 	Describe("Condition Reason Mapping", func() {
 		It("should support all PipelineCreated failure reasons", func() {
 			// Test quota exceeded
-			weconditions.SetTektonPipelineCreated(wfe, false,
+			weconditions.SetExecutionCreated(wfe, false,
 				weconditions.ReasonQuotaExceeded, "Quota exceeded")
-			condition := weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition := weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			Expect(condition.Reason).To(Equal(weconditions.ReasonQuotaExceeded))
 
 			// Test RBAC denied
-			weconditions.SetTektonPipelineCreated(wfe, false,
+			weconditions.SetExecutionCreated(wfe, false,
 				weconditions.ReasonRBACDenied, "RBAC denied")
-			condition = weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition = weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			Expect(condition.Reason).To(Equal(weconditions.ReasonRBACDenied))
 
 			// Test image pull failed
-			weconditions.SetTektonPipelineCreated(wfe, false,
+			weconditions.SetExecutionCreated(wfe, false,
 				weconditions.ReasonImagePullFailed, "Image pull failed")
-			condition = weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)
+			condition = weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)
 			Expect(condition.Reason).To(Equal(weconditions.ReasonImagePullFailed))
 		})
 
@@ -394,9 +394,9 @@ var _ = Describe("Conditions Infrastructure", func() {
 	Describe("Complete Condition Lifecycle", func() {
 		It("should track full workflow execution lifecycle via conditions", func() {
 			// 1. PipelineRun created
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated, "PipelineRun created")
-			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionTektonPipelineCreated)).To(BeTrue())
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated, "PipelineRun created")
+			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionExecutionCreated)).To(BeTrue())
 
 			// 2. Pipeline starts running
 			weconditions.SetTektonPipelineRunning(wfe, true,
@@ -444,8 +444,8 @@ var _ = Describe("Conditions Infrastructure", func() {
 			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionResourceLocked)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionAuditRecorded)).To(BeTrue())
 
-			// TektonPipelineCreated should NOT be set (no PipelineRun created when locked)
-			Expect(weconditions.GetCondition(wfe, weconditions.ConditionTektonPipelineCreated)).To(BeNil())
+			// ExecutionCreated should NOT be set (no execution resource created when locked)
+			Expect(weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)).To(BeNil())
 		})
 	})
 })

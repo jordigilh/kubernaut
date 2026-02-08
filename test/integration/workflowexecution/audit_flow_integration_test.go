@@ -132,6 +132,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -247,6 +248,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())

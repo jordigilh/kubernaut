@@ -82,6 +82,35 @@ func buildBlockClearanceRequest(
 	}
 }
 
+// buildBlockClearanceRequestWithOldObject creates an admission request with both NEW and OLD objects.
+// SOC2 Round 2 H-2: Required for identity forgery prevention testing.
+func buildBlockClearanceRequestWithOldObject(
+	wfeName, namespace, uid, clearReason, username, userUID string,
+	oldClearedBy string,
+) admission.Request {
+	req := buildBlockClearanceRequest(wfeName, namespace, uid, clearReason, username, userUID)
+
+	// Build OLD object with specified ClearedBy
+	oldWFE := &workflowexecutionv1.WorkflowExecution{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wfeName,
+			Namespace: namespace,
+			UID:       types.UID(uid),
+		},
+		Status: workflowexecutionv1.WorkflowExecutionStatus{
+			BlockClearance: &workflowexecutionv1.BlockClearanceDetails{
+				ClearReason: clearReason,
+				ClearedBy:   oldClearedBy,
+			},
+		},
+	}
+
+	oldJSON, _ := json.Marshal(oldWFE)
+	req.OldObject = runtime.RawExtension{Raw: oldJSON}
+
+	return req
+}
+
 var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func() {
 	var (
 		ctx       context.Context
@@ -121,7 +150,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func(
 			Entry("event_type = workflowexecution.block.cleared",
 				"event_type",
 				func(event *ogenclient.AuditEventRequest) {
-					Expect(event.EventType).To(Equal("workflowexecution.block.cleared"))
+					Expect(event.EventType).To(Equal(authwebhook.EventTypeBlockCleared))
 				},
 			),
 			Entry("event_category = webhook (ADR-034 v1.7)",
@@ -176,6 +205,57 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func(
 		)
 	})
 
+	Describe("Identity Forgery Prevention via OLD Object Comparison", func() {
+		It("should skip webhook when OLD object already has ClearedBy set", func() {
+			// True idempotency: OLD object has ClearedBy, NEW object has same ClearedBy
+			admReq := buildBlockClearanceRequestWithOldObject(
+				"wfe-idempotent", "production", "wfe-uid-010",
+				"manual investigation complete and cluster state verified to be healthy after reviewing logs",
+				"sre@kubernaut.ai", "k8s-user-456",
+				"original-operator@kubernaut.ai", // OLD already has ClearedBy
+			)
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(), "Idempotent resubmission should be allowed")
+			Expect(resp.Patches).To(BeEmpty(), "No patches for idempotent request")
+			Expect(mockStore.StoredEvents).To(BeEmpty(), "No audit event for idempotent request")
+		})
+
+		It("should reject forged ClearedBy when OLD object has different ClearedBy", func() {
+			// Forgery attempt: OLD has ClearedBy="original", NEW has ClearedBy="attacker"
+			// The webhook should preserve OLD object's attribution (no patches, no audit)
+			admReq := buildBlockClearanceRequestWithOldObject(
+				"wfe-forgery", "production", "wfe-uid-011",
+				"manual investigation complete and cluster state verified to be healthy after reviewing logs",
+				"attacker@evil.com", "k8s-attacker-999",
+				"original-operator@kubernaut.ai", // OLD already has ClearedBy
+			)
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(), "Should allow (OLD wins)")
+			Expect(resp.Patches).To(BeEmpty(), "No patches - OLD object attribution preserved")
+			Expect(mockStore.StoredEvents).To(BeEmpty(), "No audit event - not a new clearance")
+		})
+
+		It("should process normally when OLD object has no ClearedBy", func() {
+			// Genuine new clearance: OLD has no ClearedBy
+			admReq := buildBlockClearanceRequestWithOldObject(
+				"wfe-new-clearance", "production", "wfe-uid-012",
+				"manual investigation complete and cluster state verified to be healthy after reviewing logs",
+				"sre@kubernaut.ai", "k8s-user-456",
+				"", // OLD has no ClearedBy (genuinely new clearance)
+			)
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(), "New clearance should be allowed")
+			Expect(resp.Patches).NotTo(BeEmpty(), "Patches should be applied for new clearance")
+			Expect(mockStore.StoredEvents).To(HaveLen(1), "Audit event should be emitted for new clearance")
+		})
+	})
+
 	Describe("Structured Payload Validation", func() {
 		It("should capture workflow name, previous/new state in payload", func() {
 			admReq := buildBlockClearanceRequest(
@@ -196,7 +276,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Cleared Audit Trail", func(
 			Expect(payload.WorkflowName).To(Equal("wfe-payload-test"))
 			Expect(payload.PreviousState).To(Equal(ogenclient.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked))
 			Expect(payload.NewState).To(Equal(ogenclient.WorkflowExecutionWebhookAuditPayloadNewStateRunning))
-			Expect(string(payload.EventType)).To(Equal("workflowexecution.block.cleared"))
+			Expect(string(payload.EventType)).To(Equal(authwebhook.EventTypeBlockCleared))
 		})
 	})
 })

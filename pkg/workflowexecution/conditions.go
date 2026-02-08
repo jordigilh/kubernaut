@@ -39,7 +39,7 @@ import (
 //
 // CONDITION LIFECYCLE:
 // 1. ResourceLocked → Check if target resource is busy (PhaseSkipped)
-// 2. TektonPipelineCreated → PipelineRun created in kubernaut-workflows namespace
+// 2. ExecutionCreated → Execution resource created in kubernaut-workflows namespace
 // 3. TektonPipelineRunning → Pipeline execution started
 // 4. TektonPipelineComplete → Pipeline succeeded or failed
 // 5. AuditRecorded → Audit event written to Data Storage (BR-WE-005)
@@ -47,10 +47,10 @@ import (
 
 // Condition types for WorkflowExecution
 const (
-	// ConditionTektonPipelineCreated indicates Tekton PipelineRun was created
+	// ConditionExecutionCreated indicates the execution resource (PipelineRun or Job) was created
 	// Phase Alignment: Pending → Running transition
-	// Set after successful tektonClient.Create(ctx, pipelineRun)
-	ConditionTektonPipelineCreated = "TektonPipelineCreated"
+	// Set after successful creation of the execution resource
+	ConditionExecutionCreated = "ExecutionCreated"
 
 	// ConditionTektonPipelineRunning indicates Tekton PipelineRun is executing
 	// Phase Alignment: PhaseRunning
@@ -73,10 +73,10 @@ const (
 	ConditionResourceLocked = "ResourceLocked"
 )
 
-// Condition reasons for TektonPipelineCreated
+// Condition reasons for ExecutionCreated
 const (
-	// ReasonPipelineCreated - PipelineRun created successfully
-	ReasonPipelineCreated = "PipelineCreated"
+	// ReasonExecutionCreated - Execution resource created successfully
+	ReasonExecutionCreated = "ExecutionCreated"
 
 	// ReasonPipelineCreationFailed - PipelineRun creation failed
 	ReasonPipelineCreationFailed = "PipelineCreationFailed"
@@ -168,23 +168,23 @@ func IsConditionTrue(wfe *workflowexecutionv1.WorkflowExecution, conditionType s
 // HIGH-LEVEL CONDITION SETTERS
 // ========================================
 
-// SetTektonPipelineCreated sets the TektonPipelineCreated condition
+// SetExecutionCreated sets the ExecutionCreated condition
 //
 // Usage:
 //
 //	// Success case
-//	SetTektonPipelineCreated(wfe, true, ReasonPipelineCreated,
-//	    fmt.Sprintf("PipelineRun %s created in %s namespace", pr.Name, pr.Namespace))
+//	SetExecutionCreated(wfe, true, ReasonExecutionCreated,
+//	    fmt.Sprintf("Execution resource %s created in %s namespace", name, namespace))
 //
 //	// Failure case
-//	SetTektonPipelineCreated(wfe, false, ReasonQuotaExceeded,
-//	    "Failed to create PipelineRun: pods exceeded quota")
-func SetTektonPipelineCreated(wfe *workflowexecutionv1.WorkflowExecution, created bool, reason, message string) {
+//	SetExecutionCreated(wfe, false, ReasonQuotaExceeded,
+//	    "Failed to create execution resource: pods exceeded quota")
+func SetExecutionCreated(wfe *workflowexecutionv1.WorkflowExecution, created bool, reason, message string) {
 	status := metav1.ConditionTrue
 	if !created {
 		status = metav1.ConditionFalse
 	}
-	SetCondition(wfe, ConditionTektonPipelineCreated, status, reason, message)
+	SetCondition(wfe, ConditionExecutionCreated, status, reason, message)
 }
 
 // SetTektonPipelineRunning sets the TektonPipelineRunning condition

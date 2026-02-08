@@ -564,7 +564,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	// Prepare batch insert statement (includes hash chain columns)
 	query := `
 		INSERT INTO audit_events (
-			event_id, event_timestamp, event_date, event_type,
+			event_id, event_version, event_timestamp, event_date, event_type,
 			event_category, event_action, event_outcome,
 			correlation_id, parent_event_id, parent_event_date,
 			resource_type, resource_id, namespace, cluster_name,
@@ -574,15 +574,15 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			event_hash, previous_event_hash,
 			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7,
-			$8, $9, $10,
-			$11, $12, $13, $14,
-			$15, $16,
-			$17, $18, $19, $20,
-			$21, $22, $23,
-			$24, $25,
-			$26, $27, $28, $29
+			$1, $2, $3, $4, $5,
+			$6, $7, $8,
+			$9, $10, $11,
+			$12, $13, $14, $15,
+			$16, $17,
+			$18, $19, $20, $21,
+			$22, $23, $24,
+			$25, $26,
+			$27, $28, $29, $30
 		)
 		RETURNING event_timestamp
 	`
@@ -632,6 +632,18 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				return nil, err
 			}
 
+			// Normalize: unmarshal and remarshal to match PostgreSQL's representation
+			// (same as Create() — ensures hash consistency across insert/read round-trip)
+			var normalizedEventData map[string]interface{}
+			if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+				if unmarshalErr := json.Unmarshal(eventDataJSON, &normalizedEventData); unmarshalErr != nil {
+					err = fmt.Errorf("failed to normalize event_data for event %s: %w", event.EventID, unmarshalErr)
+					return nil, err
+				}
+				event.EventData = normalizedEventData
+				eventDataJSON, _ = json.Marshal(normalizedEventData)
+			}
+
 			// Handle optional fields with sql.Null* types
 			// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
 			parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
@@ -650,11 +662,19 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 			}
 
-			// Set default retention days
-			retentionDays := event.RetentionDays
-			if retentionDays == 0 {
-				retentionDays = 2555
+			// Set default version if not specified (ADR-034: current version is "1.0")
+			version := event.Version
+			if version == "" {
+				version = "1.0"
 			}
+
+			// CRITICAL: Set default retention days BEFORE hash calculation
+			// This ensures the hash includes the correct retention_days value (2555)
+			// instead of 0, matching what will be read back from the DB during verification.
+			if event.RetentionDays == 0 {
+				event.RetentionDays = 2555
+			}
+			retentionDays := event.RetentionDays
 
 			// ========================================
 			// SOC2 Gap #9: Calculate hash chain for this event
@@ -674,10 +694,11 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			lastHashByCorrelation[event.CorrelationID] = eventHash
 			// ========================================
 
-			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 29 parameters)
+			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 30 parameters)
 			var returnedTimestamp time.Time
 			execErr := stmt.QueryRowContext(ctx,
 				event.EventID,
+				version, // event_version
 				event.EventTimestamp,
 				eventDate,
 				event.EventType,
@@ -713,7 +734,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				return nil, err
 			}
 
-			event.EventTimestamp = returnedTimestamp
+			// NOTE: Do NOT overwrite event.EventTimestamp with returnedTimestamp
+			// because the hash was calculated using the original timestamp.
+			// Changing it would break hash verification. (Same as Create() lines 499-502)
 			createdEvents[ie.originalIndex] = event
 		}
 	}

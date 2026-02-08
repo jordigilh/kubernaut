@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,7 +64,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 )
 
 // Reconciler reconciles RemediationRequest objects.
@@ -166,12 +169,17 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			ExponentialBackoffBase:        int64(1 * time.Minute / time.Second),  // 60 seconds (1 minute)
 			ExponentialBackoffMax:         int64(10 * time.Minute / time.Second), // 600 seconds (10 minutes)
 			ExponentialBackoffMaxExponent: 4,                                     // 2^4 = 16x multiplier
+			// Scope validation backoff (ADR-053 Decision #4, BR-SCOPE-010)
+			ScopeBackoffBase: 5,   // 5 seconds initial
+			ScopeBackoffMax:  300, // 5 minutes max
 		}
 		// TODO: Get namespace from controller-runtime manager or environment variable
 		// For now, using empty string which means all namespaces
 		routingNamespace := ""
+		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
+		scopeMgr := scope.NewManager(c)
 		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
-		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig)
+		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeMgr)
 	}
 
 	// ========================================
@@ -575,7 +583,7 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 	if err != nil {
 		// Check if namespace is terminating (async deletion in progress)
 		// This is a benign race condition - namespace is being cleaned up
-		if strings.Contains(err.Error(), "namespace") && strings.Contains(err.Error(), "being terminated") {
+		if k8serrors.IsNamespaceTerminating(err) {
 			logger.V(1).Info("Namespace is terminating, skipping reconciliation",
 				"namespace", rr.Namespace, "reason", "async_cleanup")
 			return ctrl.Result{}, nil // Don't requeue - namespace will be deleted
@@ -2139,7 +2147,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	); err != nil {
 		// Ignore "indexer conflict" error - means WE controller already created this index
 		// Both controllers need this index, so if it exists, we're good
-		if !strings.Contains(err.Error(), "indexer conflict") {
+		if !k8serrors.IsIndexerConflict(err) {
 			return fmt.Errorf("failed to create field index on WorkflowExecution.spec.targetResource: %w", err)
 		}
 		// Index already exists - safe to continue
@@ -2424,6 +2432,11 @@ func (r *Reconciler) HandleBlockedPhase(ctx context.Context, rr *remediationv1.R
 	// Check if cooldown has expired
 	now := time.Now()
 	if now.After(rr.Status.BlockedUntil.Time) {
+		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing
+		if rr.Status.BlockReason == string(remediationv1.BlockReasonUnmanagedResource) {
+			return r.handleUnmanagedResourceExpiry(ctx, rr, logger)
+		}
+
 		// Cooldown expired - transition to Failed
 		logger.Info("Blocked cooldown expired - transitioning to Failed",
 			"name", rr.Name,
@@ -2455,6 +2468,56 @@ func (r *Reconciler) HandleBlockedPhase(ctx context.Context, rr *remediationv1.R
 		"requeueAfter", requeueAfter)
 
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// handleUnmanagedResourceExpiry re-validates scope when an UnmanagedResource block expires.
+// If still unmanaged: re-block with increased backoff.
+// If now managed: transition back to Pending for re-processing.
+//
+// Reference: BR-SCOPE-010, ADR-053 (Resource Scope Management)
+func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, error) {
+	logger.Info("UnmanagedResource block expired - re-validating scope",
+		"name", rr.Name)
+
+	// Re-validate scope using the routing engine
+	blocked := r.routingEngine.CheckUnmanagedResource(ctx, rr)
+
+	if blocked != nil {
+		// Still unmanaged — re-block with increased backoff
+		logger.Info("Resource still unmanaged - re-blocking with increased backoff",
+			"name", rr.Name,
+			"newBackoff", blocked.RequeueAfter)
+
+		blockedUntilMeta := metav1.NewTime(*blocked.BlockedUntil)
+		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
+			rr.Status.BlockReason = blocked.Reason
+			rr.Status.Message = blocked.Message
+			rr.Status.BlockedUntil = &blockedUntilMeta
+			rr.Status.ConsecutiveFailureCount++ // increment to increase next backoff
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update status for scope re-block: %w", err)
+		}
+
+		return ctrl.Result{RequeueAfter: blocked.RequeueAfter}, nil
+	}
+
+	// Now managed — transition back to Pending for re-processing
+	logger.Info("Resource is now managed - unblocking and transitioning to Pending",
+		"name", rr.Name)
+
+	if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
+		rr.Status.OverallPhase = remediationv1.PhasePending
+		rr.Status.BlockReason = ""
+		rr.Status.BlockedUntil = nil
+		rr.Status.Message = "Resource is now managed by Kubernaut - re-processing"
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status after scope unblock: %w", err)
+	}
+
+	// Requeue immediately for re-processing
+	return ctrl.Result{Requeue: true}, nil
 }
 
 // IsTerminalPhase checks if a phase is terminal (no further processing).

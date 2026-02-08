@@ -55,6 +55,10 @@ func (m *MockRoutingEngine) CheckBlockingConditions(ctx context.Context, rr *rem
 	return nil, nil // Always return not blocked for unit tests
 }
 
+func (m *MockRoutingEngine) CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *routing.BlockingCondition {
+	return nil // Always return managed for unit tests
+}
+
 func (m *MockRoutingEngine) Config() routing.Config {
 	return routing.Config{
 		ConsecutiveFailureThreshold: 3,
