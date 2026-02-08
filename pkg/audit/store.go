@@ -314,10 +314,11 @@ func (s *BufferedAuditStore) Close() error {
 
 	s.logger.Info("Closing audit store, flushing remaining events")
 
-	// Cancel store context (signals retry loops to abort during shutdown)
-	s.ctxCancel()
-
-	// Close buffer (signals background worker to stop)
+	// Close buffer FIRST (signals background writer to drain remaining events and stop).
+	// IMPORTANT: Do NOT cancel the store context yet -- the background writer's shutdown
+	// flush needs a valid context to write the final batch to DataStorage.
+	// Previously, ctxCancel() was called before close(s.buffer), which caused the
+	// shutdown flush to fail with "context canceled" and increment failedBatchCount.
 	close(s.buffer)
 
 	// Wait for background worker to finish (with timeout)
@@ -329,7 +330,9 @@ func (s *BufferedAuditStore) Close() error {
 
 	select {
 	case <-done:
-		// Background worker finished
+		// Background worker finished -- NOW cancel the store context for cleanup
+		s.ctxCancel()
+
 		dropped := atomic.LoadInt64(&s.droppedCount)
 		failedBatches := atomic.LoadInt64(&s.failedBatchCount)
 
@@ -350,7 +353,8 @@ func (s *BufferedAuditStore) Close() error {
 		return nil
 
 	case <-time.After(30 * time.Second):
-		// Timeout waiting for background worker
+		// Timeout waiting for background worker -- cancel context to abort any stuck retries
+		s.ctxCancel()
 		s.logger.Error(nil, "Timeout waiting for audit store to close")
 		return fmt.Errorf("timeout waiting for audit store to close")
 	}
