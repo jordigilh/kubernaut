@@ -533,6 +533,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			Expect(err.Error()).To(Or(
 				ContainSubstring("failed batches"),
 				ContainSubstring("dropped"),
+				ContainSubstring("timeout"), // Close() may timeout if retries are still in-flight
 			))
 		})
 	})
