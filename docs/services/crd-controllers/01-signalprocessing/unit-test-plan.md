@@ -11,6 +11,12 @@
 
 ## 📋 Changelog
 
+### Version 1.6.0 (2026-02-05)
+- **PLANNED**: BR-SP-106 Predictive Signal Mode Classification tests
+- **TESTS PLANNED**: 9 unit tests (UT-SP-106-001 through UT-SP-106-009), 1 integration test (IT-SP-106-001)
+- **NEW FILE**: `test/unit/signalprocessing/signalmode_classifier_test.go`
+- **NEW PACKAGE**: `pkg/signalprocessing/classifier/signalmode.go`
+
 ### Version 1.5.0 (2025-12-21)
 - **IMPLEMENTED**: Detection method unit tests (hasPDB, hasHPA, NetworkIsolated, detectLabels)
 - **TESTS ADDED**: 10 new detection tests (CTRL-DETECT-01 through CTRL-DETECT-10)
@@ -91,6 +97,7 @@ Per **ADR-004: Fake Kubernetes Client for Unit Testing**:
 | `classifier/business.go` | 95%+ | 70% | ✅ |
 | `classifier/environment.go` | 88%+ | 70% | ✅ |
 | `classifier/priority.go` | 80%+ | 70% | ✅ |
+| `classifier/signalmode.go` | 0% | 70% | ⏸️ Planned (BR-SP-106) |
 | `classifier/helpers.go` | 0% | 70% | ⚠️ (unused) |
 | `conditions.go` | 100% | 70% | ✅ |
 | `config/config.go` | 100% | 70% | ✅ |
@@ -505,6 +512,37 @@ var _ = Describe("Config & Helpers", func() {
 ### Phase 4: Lifecycle (P3 - 1 day)
 - [ ] `hot_reload_lifecycle_test.go` - 10 tests
 - Expected gain: +5%
+
+---
+
+## BR-SP-106: Predictive Signal Mode Classification
+
+**Test File**: `test/unit/signalprocessing/signalmode_classifier_test.go` (new)
+
+| Test ID | Scenario | Status |
+|---------|----------|--------|
+| UT-SP-106-001 | Classify PredictedOOMKill as predictive + normalize to OOMKilled | ✅ Passed |
+| UT-SP-106-002 | Classify OOMKilled as reactive (unchanged) | ✅ Passed |
+| UT-SP-106-003 | Classify unmapped type as reactive (default) | ✅ Passed |
+| UT-SP-106-004 | Preserve OriginalSignalType for predictive signals | ✅ Passed |
+| UT-SP-106-005 | Empty/nil signal type handling | ✅ Passed |
+| UT-SP-106-006 | Config loading from YAML file | ✅ Passed |
+| UT-SP-106-007 | Hot-reload config change | ✅ Passed |
+
+**Integration Test**: `test/integration/signalprocessing/`
+
+| Test ID | Scenario | Status |
+|---------|----------|--------|
+| IT-SP-106-001 | Enrichment pipeline sets SignalMode + normalized SignalType in SP status | ✅ Passed |
+
+**Audit Test**: `test/unit/signalprocessing/audit_client_test.go` (extend)
+
+| Test ID | Scenario | Status |
+|---------|----------|--------|
+| UT-SP-106-008 | RecordClassificationDecision includes signal_mode in payload | ✅ Passed |
+| UT-SP-106-009 | RecordSignalProcessed includes signal_mode + original_signal_type in payload | ✅ Passed |
+
+**References**: [BR-SP-106](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md), [ADR-054](../../../architecture/decisions/ADR-054-predictive-signal-mode-classification.md)
 
 ---
 
