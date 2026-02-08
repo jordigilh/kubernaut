@@ -152,7 +152,9 @@ func (c *AIAnalysisCreator) Create(
 }
 
 // buildSignalContext constructs the SignalContextInput from RemediationRequest and SignalProcessing.
-// NOTE: Environment and Priority are now owned by SignalProcessing (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
+// NOTE: Environment, Priority, and SignalType are now owned by SignalProcessing (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
+// BR-SP-106: SignalType is read from sp.Status.SignalType (normalized) instead of rr.Spec.SignalType
+// BR-AI-084: SignalMode is copied from sp.Status.SignalMode to allow HAPI prompt switching
 func (c *AIAnalysisCreator) buildSignalContext(
 	rr *remediationv1.RemediationRequest,
 	sp *signalprocessingv1.SignalProcessing,
@@ -167,10 +169,20 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		priority = sp.Status.PriorityAssignment.Priority
 	}
 
+	// BR-SP-106: SignalType from SP status (normalized by signal mode classifier)
+	// For predictive signals: SP normalizes e.g. "PredictedOOMKill" -> "OOMKilled"
+	// For reactive signals: SP copies Spec.Signal.Type unchanged
+	// Fallback to RR spec if SP status field is empty (backwards compatibility)
+	signalType := sp.Status.SignalType
+	if signalType == "" {
+		signalType = rr.Spec.SignalType
+	}
+
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
 		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
-		SignalType:       rr.Spec.SignalType,
+		SignalType:       signalType,          // BR-SP-106: Normalized by SP (not raw from RR)
+		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Predictive signal mode for HAPI prompt switching
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{
