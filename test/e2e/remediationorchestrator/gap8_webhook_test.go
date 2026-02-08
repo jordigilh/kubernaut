@@ -124,7 +124,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			err := k8sClient.Create(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			correlationID = string(rr.UID)
+			correlationID = rr.Name // DD-AUDIT-CORRELATION-001: All services use rr.Name (not UID)
 			GinkgoWriter.Printf("✅ Created RemediationRequest: %s (correlation_id=%s)\n", rr.Name, correlationID)
 
 			// Wait for RemediationOrchestrator controller to initialize TimeoutConfig
