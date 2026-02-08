@@ -1,14 +1,12 @@
 # SearchExecutionMetadata
 
-Search execution details (BR-AUDIT-028)
+Search execution details (BR-AUDIT-028). V1.0 label-only (DD-WORKFLOW-015).
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **duration_ms** | **int** | Search execution time in milliseconds | 
-**embedding_dimensions** | **int** | Embedding vector dimensionality | 
-**embedding_model** | **str** | Embedding model used | 
 
 ## Example
 
