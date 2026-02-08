@@ -42,7 +42,7 @@ class TestWorkflowSearchRequest(unittest.TestCase):
                     severity = '', 
                     environment = '', ),
                 top_k = 1,
-                min_similarity = 0.0
+                min_score = 0.0
             )
         else:
             return WorkflowSearchRequest(

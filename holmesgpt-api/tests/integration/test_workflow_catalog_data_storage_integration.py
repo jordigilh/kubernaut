@@ -482,7 +482,7 @@ def verify_test_data_exists():
                     "severity": "critical"
                 },
                 "top_k": 10,
-                "min_similarity": 0.0
+                "min_score": 0.0
             },
             timeout=HTTP_REQUEST_TIMEOUT
         )
