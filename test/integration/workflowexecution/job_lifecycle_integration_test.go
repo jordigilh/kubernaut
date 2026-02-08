@@ -25,9 +25,12 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
@@ -319,6 +322,443 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			Expect(prList.Items).To(BeEmpty(), "No Tekton resources should be created for Job engine")
 
 			GinkgoWriter.Printf("✅ IT-WE-014-006: Executor dispatch correctly selected Job backend\n")
+		})
+	})
+
+	// ========================================
+	// External Job Deletion (IT-WE-014-010 to IT-WE-014-012)
+	// BR-WE-007 equivalent: Handle externally deleted execution resources
+	// ========================================
+
+	Context("External Job Deletion (BR-WE-007)", func() {
+
+		It("should detect external Job deletion and mark WFE as Failed (IT-WE-014-010)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-ext-del-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("ext-del", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for WFE to transition to Running (Job created)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Verifying Job exists")
+			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(job).ToNot(BeNil())
+
+			By("Simulating external Job deletion (operator action)")
+			propagation := metav1.DeletePropagationBackground
+			Expect(k8sClient.Delete(ctx, job, &client.DeleteOptions{
+				PropagationPolicy: &propagation,
+			})).To(Succeed())
+			GinkgoWriter.Printf("🗑️  Job %s deleted externally\n", job.Name)
+
+			By("Waiting for controller to detect deletion and update WFE status")
+			// Job backend relies on periodic requeue (~10s) for deletion detection
+			Eventually(func(g Gomega) {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed),
+					"WFE should transition to Failed when Job is externally deleted")
+			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
+
+			By("Verifying failure details indicate external deletion")
+			failedWFE, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(failedWFE.Status.FailureDetails).ToNot(BeNil(), "FailureDetails should be populated")
+
+			By("Verifying WFE remains Failed (no retry loop)")
+			Consistently(func(g Gomega) {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed),
+					"WFE should remain Failed (no retry loop)")
+			}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+			GinkgoWriter.Printf("✅ IT-WE-014-010: External Job deletion detected, WFE Failed\n")
+		})
+
+		It("should set AuditRecorded condition on external Job deletion (IT-WE-014-011)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-ext-del-audit-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("ext-del-audit", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Getting and deleting the Job externally")
+			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			propagation := metav1.DeletePropagationBackground
+			Expect(k8sClient.Delete(ctx, job, &client.DeleteOptions{
+				PropagationPolicy: &propagation,
+			})).To(Succeed())
+
+			By("Waiting for WFE to transition to Failed")
+			Eventually(func(g Gomega) {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
+
+			By("Verifying AuditRecorded condition is set (BR-WE-006)")
+			failedWFE, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+
+			auditCondition := weconditions.GetCondition(failedWFE, weconditions.ConditionAuditRecorded)
+			Expect(auditCondition).ToNot(BeNil(),
+				"AuditRecorded condition should be set (proves controller attempted audit for external Job deletion)")
+
+			GinkgoWriter.Printf("✅ IT-WE-014-011: AuditRecorded condition set on external Job deletion\n")
+			GinkgoWriter.Printf("   AuditRecorded Status: %s, Reason: %s\n", auditCondition.Status, auditCondition.Reason)
+		})
+
+		It("should NOT misidentify normal Job completion as external deletion (IT-WE-014-012)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-normal-complete-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("normal-complete", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Simulating normal Job completion (NOT external deletion)")
+			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(simulateJobCompletion(job, true)).To(Succeed())
+
+			By("Verifying WFE transitions to Completed (NOT Failed)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
+				"WFE should complete normally (not trigger external deletion logic)")
+
+			completedWFE, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(completedWFE.Status.FailureDetails).To(BeNil(),
+				"Completed WFE should NOT have FailureDetails")
+
+			GinkgoWriter.Printf("✅ IT-WE-014-012: Normal Job completion NOT misidentified as external deletion\n")
+		})
+	})
+
+	// ========================================
+	// Condition Lifecycle for Job Backend (IT-WE-014-013 to IT-WE-014-015)
+	// BR-WE-006 equivalent: Kubernetes conditions for Jobs
+	// ========================================
+
+	Context("Job Condition Lifecycle (BR-WE-006)", func() {
+
+		It("should set ExecutionCreated condition after Job creation (IT-WE-014-013)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-cond-created-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("cond-created", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for ExecutionCreated condition to be set")
+			key := client.ObjectKeyFromObject(wfe)
+			Eventually(func() []metav1.Condition {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return updated.Status.Conditions
+			}, 30*time.Second, 1*time.Second).Should(ContainElement(
+				And(
+					HaveField("Type", weconditions.ConditionExecutionCreated),
+					HaveField("Status", metav1.ConditionTrue),
+					HaveField("Reason", weconditions.ReasonExecutionCreated),
+				),
+			), "ExecutionCreated condition should be set after Job creation")
+
+			By("Verifying Job was actually created")
+			job, err := waitForJobCreation(wfe.Name, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(job).ToNot(BeNil())
+
+			By("Verifying condition message includes Job name")
+			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
+			condition := weconditions.GetCondition(updated, weconditions.ConditionExecutionCreated)
+			Expect(condition.Message).To(ContainSubstring(job.Name))
+
+			GinkgoWriter.Printf("✅ IT-WE-014-013: ExecutionCreated condition set for Job backend\n")
+		})
+
+		It("should set all conditions during successful Job lifecycle (IT-WE-014-014)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-cond-lifecycle-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("cond-lifecycle", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			key := client.ObjectKeyFromObject(wfe)
+
+			By("Waiting for ExecutionCreated condition")
+			Eventually(func() bool {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
+			}, 60*time.Second, 1*time.Second).Should(BeTrue())
+
+			By("Waiting for ExecutionRunning condition")
+			Eventually(func() bool {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)
+			}, 60*time.Second, 1*time.Second).Should(BeTrue())
+
+			By("Simulating Job completion")
+			job, err := waitForJobCreation(wfe.Name, 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(simulateJobCompletion(job, true)).To(Succeed())
+
+			By("Waiting for ExecutionComplete condition (True = success)")
+			Eventually(func() bool {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)
+			}, 60*time.Second, 1*time.Second).Should(BeTrue())
+
+			By("Waiting for WFE to reach Completed phase")
+			Eventually(func() string {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return updated.Status.Phase
+			}, 15*time.Second, 1*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+
+			By("Verifying all 4 conditions are present")
+			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
+			Expect(updated.Status.Conditions).To(HaveLen(4),
+				"Complete Job lifecycle should have 4 conditions: Created, Running, Complete, AuditRecorded")
+
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)).To(BeTrue())
+			Expect(weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)).ToNot(BeNil())
+
+			GinkgoWriter.Printf("✅ IT-WE-014-014: Complete Job condition lifecycle (success) verified\n")
+		})
+
+		It("should set conditions and FailureDetails on Job failure (IT-WE-014-015)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-cond-fail-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("cond-fail", targetResource)
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with executionEngine=job")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Simulating Job failure")
+			job, err := waitForJobCreation(wfe.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(simulateJobCompletion(job, false)).To(Succeed())
+
+			By("Waiting for WFE to transition to Failed")
+			key := client.ObjectKeyFromObject(wfe)
+			Eventually(func() string {
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				_ = k8sClient.Get(ctx, key, updated)
+				return updated.Status.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+
+			By("Verifying ExecutionComplete condition is False (failure)")
+			failedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
+			Expect(k8sClient.Get(ctx, key, failedWFE)).To(Succeed())
+
+			completeCond := weconditions.GetCondition(failedWFE, weconditions.ConditionExecutionComplete)
+			Expect(completeCond).ToNot(BeNil(), "ExecutionComplete condition should exist on failure")
+			Expect(completeCond.Status).To(Equal(metav1.ConditionFalse),
+				"ExecutionComplete should be False on Job failure")
+
+			By("Verifying FailureDetails is populated")
+			Expect(failedWFE.Status.FailureDetails).ToNot(BeNil(),
+				"FailureDetails should be populated on Job failure")
+
+			By("Verifying AuditRecorded condition exists")
+			auditCond := weconditions.GetCondition(failedWFE, weconditions.ConditionAuditRecorded)
+			Expect(auditCond).ToNot(BeNil(),
+				"AuditRecorded condition should be set (controller attempted audit for Job failure)")
+
+			GinkgoWriter.Printf("✅ IT-WE-014-015: Job failure conditions + FailureDetails verified\n")
+		})
+	})
+
+	// ========================================
+	// AlreadyExists / Race Condition for Job Backend (IT-WE-014-016 to IT-WE-014-017)
+	// BR-WE-002 equivalent: Idempotent execution resource creation
+	// ========================================
+
+	Context("Job AlreadyExists Race Condition (BR-WE-002)", func() {
+
+		It("should fail second WFE when Job already exists for same target (IT-WE-014-016)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-conflict-%d", time.Now().UnixNano())
+
+			wfe1 := createUniqueJobWFE("conflict-job1", targetResource)
+			defer func() {
+				cleanupJobWFE(wfe1)
+			}()
+
+			By("Creating first WFE targeting the resource")
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+
+			By("Waiting for first WFE to reach Running (Job created)")
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Verifying Job exists for first WFE")
+			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(job).ToNot(BeNil())
+
+			By("Creating second WFE for SAME target resource")
+			wfe2 := createUniqueJobWFE("conflict-job2", targetResource)
+			defer func() {
+				cleanupJobWFE(wfe2)
+			}()
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+
+			By("Verifying second WFE fails with ExecutionResourceExists")
+			Eventually(func() string {
+				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
+				"Second WFE should fail due to Job name collision (resource locked)")
+
+			failedWFE2, err := getWFE(wfe2.Name, wfe2.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(failedWFE2.Status.FailureDetails).ToNot(BeNil())
+			Expect(failedWFE2.Status.FailureDetails.Reason).To(Equal("Unknown"),
+				"Failure reason should be 'Unknown' (CRD enum constraint; details in message)")
+			Expect(failedWFE2.Status.FailureDetails.Message).To(ContainSubstring("already exists"),
+				"Failure message should mention resource already exists")
+
+			GinkgoWriter.Printf("✅ IT-WE-014-016: Second WFE failed with ExecutionResourceExists\n")
+		})
+
+		It("should keep first WFE unaffected when second WFE fails on AlreadyExists (IT-WE-014-017)", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-isolation-%d", time.Now().UnixNano())
+
+			wfe1 := createUniqueJobWFE("isolation-job1", targetResource)
+			defer func() {
+				cleanupJobWFE(wfe1)
+			}()
+
+			By("Creating first WFE targeting the resource")
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+
+			By("Waiting for first WFE to reach Running")
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			By("Creating second WFE for SAME target (will fail)")
+			wfe2 := createUniqueJobWFE("isolation-job2", targetResource)
+			defer func() {
+				cleanupJobWFE(wfe2)
+			}()
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+
+			By("Waiting for second WFE to fail")
+			Eventually(func() string {
+				updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
+
+			By("Verifying first WFE remains Running (unaffected)")
+			wfe1Key := types.NamespacedName{Name: wfe1.Name, Namespace: wfe1.Namespace}
+			wfe1Updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+			Expect(k8sClient.Get(ctx, wfe1Key, wfe1Updated)).To(Succeed())
+			Expect(wfe1Updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"First WFE should continue running unaffected by second WFE's failure")
+
+			By("Completing first WFE normally to verify full isolation")
+			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(simulateJobCompletion(job, true)).To(Succeed())
+
+			Eventually(func() string {
+				updated, err := getWFE(wfe1.Name, wfe1.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
+				"First WFE should complete successfully despite second WFE's failure")
+
+			GinkgoWriter.Printf("✅ IT-WE-014-017: First WFE completed normally, isolated from second WFE's AlreadyExists failure\n")
 		})
 	})
 })
