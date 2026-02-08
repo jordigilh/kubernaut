@@ -127,6 +127,8 @@ func (c *WorkflowExecutionCreator) Create(
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.SelectedWorkflow.Confidence,
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,
+			// BR-WE-014: Execution backend engine (default: tekton)
+			ExecutionEngine: "tekton",
 			// ExecutionConfig: Optional timeout from RemediationRequest
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
