@@ -33,7 +33,8 @@ package signalprocessing
 
 import (
 	"context"
-	"fmt"
+	"crypto/sha256"
+	"encoding/hex"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -206,7 +207,10 @@ func createPredictiveTestRR(namespace, name string) *remediationv1alpha1.Remedia
 			Namespace: namespace,
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
-			SignalFingerprint: fmt.Sprintf("e2e-predictive-%s-fingerprint-hash-placeholder-64chars-padded!", name),
+			SignalFingerprint: func() string {
+				h := sha256.Sum256([]byte("e2e-predictive-" + name))
+				return hex.EncodeToString(h[:]) // Always exactly 64 hex chars
+			}(),
 			SignalName:        "E2EPredictiveAlert",
 			Severity:          "critical",
 			SignalType:        "prometheus",
