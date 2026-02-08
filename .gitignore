@@ -88,7 +88,6 @@ build_failures.*
 *-TRIAGE-*.md
 *_SUMMARY.md
 *_STATUS.md
-*_PLAN.md
 *_CLEANUP.md
 *_REPORT.md
 *_IMPLEMENTATION.md
@@ -167,7 +166,6 @@ TDD-*.md
 [A-Z][A-Z_]*_*_ANALYSIS.md
 [A-Z][A-Z_]*_*_ALIGNMENT*.md
 [A-Z][A-Z_]*_*_UPDATES*.md
-[A-Z][A-Z_]*_*_PLAN*.md
 
 # Service binaries (compiled during local development/testing)
 /datastorage
@@ -192,7 +190,6 @@ PR_DESCRIPTION.md
 *_SUMMARY.md
 *_STATUS.md
 *_ANALYSIS.md
-*_PLAN.md
 *_PROGRESS.md
 *_HANDOFF.md
 *_COMPLETE.md
