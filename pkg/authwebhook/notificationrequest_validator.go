@@ -104,7 +104,7 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeNotifCancelled) // DD-WEBHOOK-001 line 349 - Must match payload EventType
-	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
+	audit.SetEventCategory(auditEvent, EventCategoryWebhook) // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)

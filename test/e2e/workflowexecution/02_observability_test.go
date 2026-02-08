@@ -513,11 +513,11 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				GinkgoWriter.Printf("✅ Found audit event: %s\n", event.EventType)
 			}
 
-			Expect(eventTypes).To(HaveKey("workflowexecution.execution.started"),
+			Expect(eventTypes).To(HaveKey(weaudit.EventTypeExecutionStarted),
 				"Expected workflowexecution.execution.started audit event (Gap #6, ADR-034 v1.5)")
 			Expect(eventTypes).To(Or(
-				HaveKey("workflowexecution.workflow.completed"),
-				HaveKey("workflowexecution.workflow.failed"),
+				HaveKey(weaudit.EventTypeCompleted),
+				HaveKey(weaudit.EventTypeFailed),
 			), "Expected workflowexecution.workflow.completed or workflowexecution.workflow.failed audit event (ADR-034 v1.5)")
 
 			GinkgoWriter.Println("✅ BR-WE-005: Audit events persisted to Data Storage PostgreSQL")
@@ -618,24 +618,24 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				for i := range auditEvents {
 					event := &auditEvents[i]
 					GinkgoWriter.Printf("   Event %d: type=%s\n", i, event.EventType)
-					if event.EventType == "workflowexecution.workflow.failed" {
+					if event.EventType == weaudit.EventTypeFailed {
 						failedEvent = event
 						return true
 					}
 				}
-				GinkgoWriter.Printf("⚠️ workflowexecution.workflow.failed event not found in %d events\n", len(auditEvents))
+				GinkgoWriter.Printf("⚠️ %s event not found in %d events\n", weaudit.EventTypeFailed, len(auditEvents))
 				return false
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-				"workflowexecution.workflow.failed audit event should be present in Data Storage (ADR-034 v1.5)")
+				weaudit.EventTypeFailed+" audit event should be present in Data Storage (ADR-034 v1.5)")
 
-			By("Verifying workflowexecution.workflow.failed event includes complete failure details (ADR-034 v1.5)")
+			By("Verifying " + weaudit.EventTypeFailed + " event includes complete failure details (ADR-034 v1.5)")
 			Expect(failedEvent).ToNot(BeNil())
 
 			// V1.0 Maturity Requirement: Use validators.ValidateAuditEvent (P0 - MANDATORY)
 			// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
 			By("Validating audit event structure with validators.ValidateAuditEvent")
 			validators.ValidateAuditEvent(*failedEvent, validators.ExpectedAuditEvent{
-				EventType:     "workflowexecution.workflow.failed", // Per ADR-034 v1.5
+				EventType:     weaudit.EventTypeFailed, // Per ADR-034 v1.5
 				EventCategory: ogenclient.AuditEventEventCategoryWorkflowexecution,
 				EventAction:   "failed", // EventAction = last part after "." (audit.go:109)
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
@@ -746,7 +746,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			By("Validating workflowexecution.execution.started event payload fields (Gap #6, ADR-034 v1.5)")
 			var startedEvent *ogenclient.AuditEvent
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflowexecution.execution.started" {
+				if auditEvents[i].EventType == weaudit.EventTypeExecutionStarted {
 					startedEvent = &auditEvents[i]
 					break
 				}
@@ -754,13 +754,13 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// DEBUG: Show all event types if not found
 			if startedEvent == nil {
-				GinkgoWriter.Printf("⚠️ workflowexecution.execution.started not found. Available event types:\n")
+				GinkgoWriter.Printf("⚠️ %s not found. Available event types:\n", weaudit.EventTypeExecutionStarted)
 				for i := range auditEvents {
 					GinkgoWriter.Printf("   %d: %s\n", i, auditEvents[i].EventType)
 				}
 			}
 
-			Expect(startedEvent).ToNot(BeNil(), "workflowexecution.execution.started event not found (Gap #6, ADR-034 v1.5)")
+			Expect(startedEvent).ToNot(BeNil(), weaudit.EventTypeExecutionStarted+" event not found (Gap #6, ADR-034 v1.5)")
 
 			// Extract event_data using type-safe ogen client method
 			eventData, ok := startedEvent.EventData.GetWorkflowExecutionAuditPayload()
@@ -783,7 +783,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			var terminalEvent *ogenclient.AuditEvent
 			var terminalEventType string
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflowexecution.workflow.completed" || auditEvents[i].EventType == "workflowexecution.workflow.failed" {
+				if auditEvents[i].EventType == weaudit.EventTypeCompleted || auditEvents[i].EventType == weaudit.EventTypeFailed {
 					terminalEvent = &auditEvents[i]
 					terminalEventType = auditEvents[i].EventType
 					break
@@ -809,7 +809,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"pipelinerun_name should be present")
 
 			// If workflow failed, validate FAILURE fields (3 fields)
-			if terminalEventType == "workflowexecution.workflow.failed" {
+			if terminalEventType == weaudit.EventTypeFailed {
 				GinkgoWriter.Println("✅ Validating FAILURE fields...")
 				Expect(terminalEventData.FailureReason.IsSet()).To(BeTrue(),
 					"failure_reason should be present in failed event")
@@ -824,7 +824,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("   Core fields: ✅ (5/5)\n")
 			GinkgoWriter.Printf("   Timing fields: ✅ (3/3)\n")
 			GinkgoWriter.Printf("   PipelineRun reference: ✅ (1/1)\n")
-			if terminalEventType == "workflowexecution.workflow.failed" {
+			if terminalEventType == weaudit.EventTypeFailed {
 				GinkgoWriter.Printf("   Failure fields: ✅ (validated)\n")
 			}
 		})

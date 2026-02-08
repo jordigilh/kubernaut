@@ -166,7 +166,7 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// - Event 2 (Orchestration): orchestrator.approval.{approved|rejected} (WHAT/WHY - business context)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeRARDecided) // Per ADR-034 v1.7
-	audit.SetEventCategory(auditEvent, "webhook")                                // Per ADR-034 v1.7: event_category = emitter service
+	audit.SetEventCategory(auditEvent, EventCategoryWebhook)                      // Per ADR-034 v1.7: event_category = emitter service
 	audit.SetEventAction(auditEvent, "approval_decided")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)

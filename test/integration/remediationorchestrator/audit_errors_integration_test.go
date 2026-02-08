@@ -26,6 +26,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 )
 
 // =============================================================================
@@ -134,7 +135,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 		Expect(err).ToNot(HaveOccurred(), "Failed to flush audit events to DataStorage")
 
 		// Query for orchestrator.lifecycle.completed (failure) audit event
-			eventType := "orchestrator.lifecycle.completed"
+			eventType := roaudit.EventTypeLifecycleCompleted
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
 				var failureEvents []ogenclient.AuditEvent

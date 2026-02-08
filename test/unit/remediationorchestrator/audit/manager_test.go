@@ -121,7 +121,7 @@ var _ = Describe("Audit Manager", func() {
 			// V1.0 Maturity: Use validators.ValidateAuditEvent for structured validation
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				// Required fields
-				EventType:     "orchestrator.lifecycle.started",
+				EventType:     prodaudit.EventTypeLifecycleStarted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "started",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomePending),
@@ -151,7 +151,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.started",
+				EventType:     prodaudit.EventTypeLifecycleStarted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "started",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomePending),
@@ -183,7 +183,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.transitioned",
+				EventType:     prodaudit.EventTypeLifecycleTransitioned,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "transitioned",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeSuccess),
@@ -221,7 +221,7 @@ var _ = Describe("Audit Manager", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-					EventType:     "orchestrator.lifecycle.transitioned",
+					EventType:     prodaudit.EventTypeLifecycleTransitioned,
 					EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 					EventAction:   "transitioned",
 					EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeSuccess),
@@ -252,7 +252,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:     prodaudit.EventTypeLifecycleCompleted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeSuccess),
@@ -280,7 +280,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:     prodaudit.EventTypeLifecycleCompleted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeSuccess),
@@ -316,7 +316,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:     prodaudit.EventTypeLifecycleCompleted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeFailure),
@@ -393,7 +393,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:     prodaudit.EventTypeLifecycleCompleted,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeFailure),
@@ -533,7 +533,7 @@ var _ = Describe("Audit Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
-				EventType:     "orchestrator.approval.requested",
+				EventType:     prodaudit.EventTypeApprovalRequested,
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "approval_requested",
 				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomePending),
