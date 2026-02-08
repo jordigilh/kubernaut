@@ -31,9 +31,7 @@ class SearchExecutionMetadata(BaseModel):
     Search execution details (BR-AUDIT-028)
     """ # noqa: E501
     duration_ms: StrictInt = Field(description="Search execution time in milliseconds")
-    embedding_dimensions: StrictInt = Field(description="Embedding vector dimensionality")
-    embedding_model: StrictStr = Field(description="Embedding model used")
-    __properties: ClassVar[List[str]] = ["duration_ms", "embedding_dimensions", "embedding_model"]
+    __properties: ClassVar[List[str]] = ["duration_ms"]
 
     model_config = {
         "populate_by_name": True,
@@ -84,9 +82,7 @@ class SearchExecutionMetadata(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "duration_ms": obj.get("duration_ms"),
-            "embedding_dimensions": obj.get("embedding_dimensions"),
-            "embedding_model": obj.get("embedding_model")
+            "duration_ms": obj.get("duration_ms")
         })
         return _obj
 

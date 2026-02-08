@@ -42,9 +42,3 @@ redis:
   # ADR-030 Section 6: Secrets loaded from mounted files (empty password for test redis)
   secretsFile: "/app/secrets/redis-credentials.yaml"
   passwordKey: "password"
-
-# Embedding Service configuration (for workflow catalog)
-embedding:
-  url: "http://embedding-service:8086"  # Docker Compose service name
-  timeout: "30s"
-  max_retries: 3

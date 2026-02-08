@@ -18,9 +18,8 @@ limitations under the License.
 Data Storage Stack Deployment for HAPI E2E Tests
 
 Deploys the full Data Storage stack to Kind cluster:
-- PostgreSQL with pgvector extension
+- PostgreSQL
 - Redis for DLQ
-- Embedding Service (mock or real)
 - Data Storage Service
 
 Per DD-TEST-001 v1.2 port allocations:
@@ -84,8 +83,8 @@ class DataStorageDeployment:
         print(f"📁 Creating namespace {self.NAMESPACE}...")
         self._create_namespace()
 
-        # 3. Deploy PostgreSQL with pgvector
-        print("🐘 Deploying PostgreSQL with pgvector...")
+        # 3. Deploy PostgreSQL
+        print("🐘 Deploying PostgreSQL...")
         self._deploy_postgresql()
 
         # 4. Deploy Redis for DLQ
@@ -141,7 +140,7 @@ class DataStorageDeployment:
         print(f"   ✅ Namespace {self.NAMESPACE} ready")
 
     def _deploy_postgresql(self) -> None:
-        """Deploy PostgreSQL with pgvector extension."""
+        """Deploy PostgreSQL."""
         manifest = self._generate_postgresql_manifest()
         self._apply_manifest(manifest, "postgresql")
 
@@ -210,7 +209,6 @@ class DataStorageDeployment:
             "012_adr033_multidimensional_tracking.sql",
             "013_create_audit_events_table.sql",
             "015_create_workflow_catalog_table.sql",
-            "016_update_embedding_dimensions.sql",
             "017_add_workflow_schema_fields.sql",
             "018_rename_execution_bundle_to_container_image.sql",
             "019_uuid_primary_key.sql",
@@ -304,7 +302,7 @@ class DataStorageDeployment:
     # =========================================================================
 
     def _generate_postgresql_manifest(self) -> str:
-        """Generate PostgreSQL + pgvector manifest."""
+        """Generate PostgreSQL manifest."""
         return f"""---
 apiVersion: v1
 kind: ConfigMap
@@ -312,7 +310,6 @@ metadata:
   name: postgresql-init
 data:
   init.sql: |
-    CREATE EXTENSION IF NOT EXISTS vector;
     GRANT ALL PRIVILEGES ON DATABASE action_history TO slm_user;
     GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
     GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
@@ -362,7 +359,7 @@ spec:
     spec:
       containers:
       - name: postgresql
-        image: quay.io/jordigilh/pgvector:pg16
+        image: postgres:16-alpine
         ports:
         - containerPort: 5432
         envFrom:

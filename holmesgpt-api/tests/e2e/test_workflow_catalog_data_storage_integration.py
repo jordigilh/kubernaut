@@ -201,11 +201,10 @@ class TestWorkflowCatalogEndToEnd:
 
         V1.0: No boost/penalty - just base similarity (deferred to V2.0+)
         """
-        # Execute search with lower min_similarity for testing
+        # Execute search with lower min_score for testing
         result = workflow_catalog_tool.invoke(params={
             "query": "OOMKilled critical",
-            "top_k": 5,
-            "min_similarity": 0.3  # Lower threshold for test embeddings
+            "top_k": 5
         })
 
         # BEHAVIOR VALIDATION: Successful search
@@ -274,8 +273,7 @@ class TestWorkflowCatalogEndToEnd:
         # Execute search
         result = workflow_catalog_tool.invoke(params={
             "query": "OOMKilled critical",
-            "top_k": 5,
-            "min_similarity": 0.1  # Lower threshold to get more results
+            "top_k": 5
         })
 
         assert result.status == StructuredToolResultStatus.SUCCESS, \
@@ -350,11 +348,10 @@ class TestWorkflowCatalogEndToEnd:
         2. Expect only CrashLoopBackOff workflows
         3. Validate no OOMKilled workflows returned
         """
-        # Execute search for CrashLoopBackOff with lower threshold
+        # Execute search for CrashLoopBackOff
         result = workflow_catalog_tool.invoke(params={
             "query": "CrashLoopBackOff high",
-            "top_k": 5,
-            "min_similarity": 0.1  # Lower threshold for test embeddings
+            "top_k": 5
         })
 
         assert result.status == StructuredToolResultStatus.SUCCESS, \
@@ -398,11 +395,10 @@ class TestWorkflowCatalogEndToEnd:
         2. Expect exactly 1 result (or 0 if no matches)
         3. Confirm result has positive confidence
         """
-        # Execute search with top_k=1 and lower threshold
+        # Execute search with top_k=1
         result = workflow_catalog_tool.invoke(params={
             "query": "OOMKilled critical",
-            "top_k": 1,
-            "min_similarity": 0.3  # Lower threshold for test embeddings
+            "top_k": 1
         })
 
         assert result.status == StructuredToolResultStatus.SUCCESS, \
@@ -497,7 +493,7 @@ def verify_test_data_exists():
             query="OOMKilled critical",
             filters=filters,
             top_k=10,
-            min_similarity=0.0
+            min_score=0.0
         )
 
         # Execute search using OpenAPI client

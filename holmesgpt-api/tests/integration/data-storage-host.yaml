@@ -38,9 +38,3 @@ redis:
   secretsFile: "/app/secrets/redis-credentials.yaml"
   passwordKey: "password"
 
-# Embedding Service configuration (for workflow catalog)
-embedding:
-  url: "http://localhost:18000"  # Host network mapped port
-  timeout: "30s"
-  max_retries: 3
-

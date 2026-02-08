@@ -211,7 +211,7 @@ class TestWorkflowCatalogDataStorageIntegration:
         BR-STORAGE-013: Tool must call Data Storage Service REST API via OpenAPI client
 
         BEHAVIOR: Tool calls OpenAPI client search_workflows method
-        CORRECTNESS: Request includes query, filters, top_k, min_similarity
+        CORRECTNESS: Request includes query, filters, top_k, min_score
 
         🔄 PRODUCTION: Uses OpenAPI client instead of direct HTTP calls
         """
@@ -318,12 +318,11 @@ class TestWorkflowCatalogDataStorageIntegration:
         BEHAVIOR: Parse hybrid scoring fields from API response
         CORRECTNESS: Map final_score to 'confidence' for LLM response
 
-        NOTE: Per DD-WORKFLOW-002 v2.2 and user decision:
-        - 'similarity_score' was renamed to 'confidence'
-        - 'base_similarity' and 'label_boost' are internal fields (not exposed to LLM)
-        - Only 'confidence' is exposed to the LLM response
+        NOTE: Per DD-WORKFLOW-015 (V1.0 label-only architecture):
+        - 'confidence' is the only scoring field exposed
+        - V1.0 uses label-only search (no semantic similarity)
 
-        🔄 PRODUCTION: Implements DD-WORKFLOW-004 hybrid scoring display using OpenAPI client
+        🔄 PRODUCTION: Implements DD-WORKFLOW-015 V1.0 label-only search using OpenAPI client
         """
         # Setup mock OpenAPI response with DD-WORKFLOW-002 v3.0 flat format
         mock_workflow = WorkflowSearchResult(
@@ -364,12 +363,12 @@ class TestWorkflowCatalogDataStorageIntegration:
         assert workflow["container_image"] == "quay.io/kubernaut/workflow-oomkill:v1.0.0", \
             "DD-WORKFLOW-002 v2.4: container_image must match API response"
 
-        # Per user decision: base_similarity and label_boost are internal fields
-        # They are NOT exposed to the LLM response (only used for audit trail)
+        # Per DD-WORKFLOW-015 (V1.0 label-only architecture):
+        # base_similarity and label_boost don't exist in V1.0
         assert "base_similarity" not in workflow, \
-            "DD-WORKFLOW-002 v2.2: base_similarity is internal, not exposed to LLM"
+            "DD-WORKFLOW-015: base_similarity doesn't exist in V1.0 label-only architecture"
         assert "label_boost" not in workflow, \
-            "DD-WORKFLOW-002 v2.2: label_boost is internal, not exposed to LLM"
+            "DD-WORKFLOW-015: label_boost doesn't exist in V1.0 label-only architecture"
 
     @patch('datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows')
     def test_http_error_handling_br_storage_013(self, mock_search):
