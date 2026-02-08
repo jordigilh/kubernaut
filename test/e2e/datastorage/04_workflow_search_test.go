@@ -144,7 +144,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 				name        string
 				description string
 				labels      map[string]interface{} // JSON labels (hyphenated keys)
-				embedding   []float64
 			}{
 				{
 					workflowID:  fmt.Sprintf("wf-gitops-argocd-%s", testID),
@@ -157,7 +156,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 						"priority":    "P0",         // mandatory
 						"environment": "production", // mandatory
 					},
-					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-gitops-flux-%s", testID),
@@ -170,7 +168,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 						"priority":    "P0",         // mandatory
 						"environment": "production", // mandatory
 					},
-					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-manual-%s", testID),
@@ -186,7 +183,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 						"risk_tolerance":      "low",
 						"component":           "deployment",
 					},
-					embedding: generateTestEmbedding("OOMKilled critical manual kubectl production"),
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-generic-%s", testID),
@@ -199,7 +195,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 						"priority":    "P1",         // mandatory
 						"environment": "production", // mandatory
 					},
-					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-different-signal-%s", testID),
@@ -212,7 +207,6 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 						"priority":    "P2",               // mandatory
 						"environment": "staging",          // mandatory
 					},
-					embedding: nil, // V1.0: no embeddings
 				},
 			}
 
@@ -395,21 +389,3 @@ execution:
 	})
 })
 
-// generateTestEmbedding creates a simple test embedding based on text
-// NOTE: V1.0 uses label-only architecture - embeddings are for future V2.0 semantic search
-func generateTestEmbedding(text string) []float64 {
-	// Generate a deterministic 768-dimensional embedding (per migration 016)
-	// For testing, we use a simple hash-based approach
-	embedding := make([]float64, 768)
-	hash := 0
-	for _, c := range text {
-		hash = (hash*31 + int(c)) % 1000
-	}
-
-	// Fill embedding with deterministic values based on hash
-	for i := range embedding {
-		embedding[i] = float64((hash+i)%100) / 100.0
-	}
-
-	return embedding
-}

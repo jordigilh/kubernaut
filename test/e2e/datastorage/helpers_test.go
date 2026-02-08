@@ -160,9 +160,7 @@ func newMinimalGenericPayload() dsgen.AuditEventRequestEventData {
 				Workflows:  []dsgen.WorkflowResultAudit{},
 			},
 			SearchMetadata: dsgen.SearchExecutionMetadata{
-				DurationMs:          100,
-				EmbeddingDimensions: 1536,
-				EmbeddingModel:      "text-embedding-ada-002",
+				DurationMs: 100,
 			},
 		},
 	}

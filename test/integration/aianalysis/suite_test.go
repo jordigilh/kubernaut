@@ -168,7 +168,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("Phase 1: Infrastructure Startup (process 1 only)")
 	GinkgoWriter.Println("  • Shared envtest (for DataStorage auth)")
-	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
 	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")

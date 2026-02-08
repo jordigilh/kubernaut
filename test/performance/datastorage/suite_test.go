@@ -36,7 +36,7 @@ import (
 // Purpose: Validate SQL query performance at realistic scale using local Podman infrastructure
 //
 // Infrastructure:
-// - Reuses integration test Podman PostgreSQL (with pgvector)
+// - Reuses integration test Podman PostgreSQL
 // - Tests against 1K, 5K, and 10K workflow catalogs
 // - Measures P50, P95, P99 latencies
 // - Tests concurrent query performance
