@@ -68,7 +68,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 	testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 	testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	// Pre-create managed namespace (Pattern: RO E2E)
 	// Note: This test uses a shared namespace for state validation across specs
 	sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-state")
 
@@ -80,7 +80,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		if testCancel != nil {
 			testCancel()  // ← Only cancels test-local context
 		}
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+		// Clean up test namespace (Pattern: RO E2E)
 		// Note: This will delete the shared namespace and all its CRDs
 		helpers.DeleteTestNamespace(ctx, k8sClient, sharedNamespace)
 

@@ -151,21 +151,12 @@ var _ = BeforeSuite(func() {
 	}
 	Expect(k8sClient.Create(suiteCtx, testNS)).To(Succeed())
 
-	fallbackNS := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "kubernaut-system",
-			Labels: map[string]string{"kubernaut.ai/managed": "true"},
-		},
-	}
-	Expect(k8sClient.Create(suiteCtx, fallbackNS)).To(Succeed())
-
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Processing Integration Test Infrastructure - Ready")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("  K8s API:              ", "host", k8sConfig.Host)
 	suiteLogger.Info("  Field Indexers:       spec.signalFingerprint")
 	suiteLogger.Info("  Test Namespace:       processing-test")
-	suiteLogger.Info("  Fallback Namespace:   kubernaut-system")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 

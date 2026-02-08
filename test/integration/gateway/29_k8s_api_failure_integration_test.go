@@ -116,7 +116,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 		// Create CRD creator with failing client (DD-005: uses logr.Logger)
 		retryConfig := config.DefaultRetrySettings()
-		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, testMetrics, "default", &retryConfig, &mocks.NoopRetryObserver{})
+		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, testMetrics, &retryConfig, &mocks.NoopRetryObserver{})
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{
@@ -277,7 +277,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				policyPath := "../../../docs/gateway/policies/priority-policy.rego"
 				priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
 				pathDecider := processing.NewRemediationPathDecider(logger)
-				crdCreator := processing.NewCRDCreator(failingK8sClient, logger, testMetrics, "default", &retryConfig, &mocks.NoopRetryObserver{})
+				crdCreator := processing.NewCRDCreator(failingK8sClient, logger, testMetrics, &retryConfig, &mocks.NoopRetryObserver{})
 
 				serverConfig = &gateway.Config{
 					Port:         8080,
@@ -486,7 +486,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Create CRD creator with circuit-breaker-protected client
 			retryConfig := config.DefaultRetrySettings()
 			cbLogger = zapr.NewLogger(zap.NewNop())
-			cbCrdCreator = processing.NewCRDCreator(cbClient, cbLogger, cbTestMetrics, "default", &retryConfig, &mocks.NoopRetryObserver{})
+			cbCrdCreator = processing.NewCRDCreator(cbClient, cbLogger, cbTestMetrics, &retryConfig, &mocks.NoopRetryObserver{})
 		})
 
 		It("BR-GATEWAY-093-A: should fail-fast when K8s API unavailable after consecutive failures", func() {

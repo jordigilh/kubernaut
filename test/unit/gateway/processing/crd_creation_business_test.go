@@ -62,26 +62,17 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		ctx             context.Context
 		testNamespace   string
 		metricsInstance *metrics.Metrics
-		fallbackNS      string
 		retryConfig     *config.RetrySettings
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		testNamespace = "test-signals"
-		fallbackNS = "kubernaut-system"
 
 		// Create test namespace
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
-			},
-		}
-
-		// Create fallback namespace
-		fallbackNamespace := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: fallbackNS,
 			},
 		}
 
@@ -92,7 +83,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(ns, fallbackNamespace).
+			WithObjects(ns).
 			Build()
 
 		// Create real K8s client wrapper
@@ -114,7 +105,6 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			k8sClient,
 			logr.Discard(),
 			metricsInstance,
-			fallbackNS,
 			retryConfig,
 			&mocks.NoopRetryObserver{},
 		)
@@ -239,7 +229,6 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				k8sClient,
 				logr.Discard(),
 				metricsInstance,
-				fallbackNS,
 				retryConfig,
 				&mocks.NoopRetryObserver{},
 				mockClock,
@@ -366,33 +355,6 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		})
 	})
 
-	Context("Business Resilience - Fallback Namespace Handling", func() {
-		It("uses specified namespace when it exists in cluster", func() {
-			// BUSINESS OUTCOME: Signals are created in their target namespace
-			// This allows proper multi-tenant remediation
-			signal := &types.NormalizedSignal{
-				AlertName:    "PodCrashLooping",
-				Fingerprint:  "ns-test-fingerprint",
-				Severity:     "critical",
-				SourceType:   "prometheus-alert",
-				Source:       "alertmanager",
-				Namespace:    testNamespace, // Using existing namespace
-				ReceivedTime: time.Now(),
-				Resource: types.ResourceIdentifier{
-					Kind: "Pod",
-					Name: "test-pod",
-				},
-			}
-
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
-
-			Expect(err).NotTo(HaveOccurred(),
-				"CRD creation must succeed when namespace exists")
-			Expect(rr.Namespace).To(Equal(testNamespace),
-				"CRD created in signal's target namespace for proper tenant isolation")
-		})
-	})
-
 	Context("Business Auditing - Metadata Preservation", func() {
 		It("preserves signal source type for audit trail", func() {
 			// BUSINESS OUTCOME: Audit trail shows WHERE signal originated
@@ -476,23 +438,16 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 		ctx             context.Context
 		testNamespace   string
 		metricsInstance *metrics.Metrics
-		fallbackNS      string
 		retryConfig     *config.RetrySettings
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		testNamespace = "test-signals"
-		fallbackNS = "kubernaut-system"
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
-			},
-		}
-		fallbackNamespace := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: fallbackNS,
 			},
 		}
 
@@ -502,7 +457,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(ns, fallbackNamespace).
+			WithObjects(ns).
 			Build()
 
 		k8sClient = k8s.NewClient(fakeClient)
@@ -520,7 +475,6 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 			k8sClient,
 			logr.Discard(),
 			metricsInstance,
-			fallbackNS,
 			retryConfig,
 			&mocks.NoopRetryObserver{},
 		)
@@ -607,11 +561,11 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 // ============================================================================
 
 var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
-	Context("when initialized with empty fallback namespace", func() {
-		It("uses safe default namespace", func() {
-			// BUSINESS OUTCOME: Empty namespace doesn't cause failures
+	Context("when initialized with nil retry config", func() {
+		It("uses safe default retry settings", func() {
+			// BUSINESS OUTCOME: Missing retry config doesn't cause failures
 			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-defaults"},
 			}
 
 			scheme := runtime.NewScheme()
@@ -627,18 +581,17 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			registry := prometheus.NewRegistry()
 			metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-			// Initialize with empty fallback namespace
+			// Initialize with nil retry config - should use defaults
 			crdCreator := processing.NewCRDCreator(
 				k8sClient,
 				logr.Discard(),
 				metricsInstance,
-				"", // empty fallback namespace
-				nil,
+				nil, // nil retry config
 				&mocks.NoopRetryObserver{},
 			)
 
 			Expect(crdCreator).NotTo(BeNil(),
-				"CRDCreator uses default 'kubernaut-system' for empty namespace")
+				"CRDCreator uses default retry settings when nil is provided")
 		})
 	})
 
@@ -649,7 +602,6 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 	// PURPOSE: Validate CreateRemediationRequest handles edge cases correctly
 	//
 	// BUSINESS VALUE:
-	// - Namespace not found → fallback namespace (cluster-scoped signals)
 	// - Different source types → correct signalType field
 	// - Empty labels/namespace → safe handling
 	// ============================================================================
@@ -660,7 +612,6 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			k8sClient       *k8s.Client
 			ctx             context.Context
 			testNamespace   string
-			fallbackNS      string
 			metricsInstance *metrics.Metrics
 			retryConfig     *config.RetrySettings
 		)
@@ -668,16 +619,10 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 		BeforeEach(func() {
 			ctx = context.Background()
 			testNamespace = "test-signals"
-			fallbackNS = "kubernaut-system"
 
 			// Create test namespace
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-
-			// Create fallback namespace
-			fallbackNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: fallbackNS},
 			}
 
 			// Setup fake K8s client
@@ -687,7 +632,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(ns, fallbackNamespace).
+				WithObjects(ns).
 				Build()
 
 			k8sClient = k8s.NewClient(fakeClient)
@@ -705,7 +650,6 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				k8sClient,
 				logr.Discard(),
 				metricsInstance,
-				fallbackNS,
 				retryConfig,
 				&mocks.NoopRetryObserver{},
 			)
@@ -808,7 +752,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 						},
 					}
 
-					// This will use fallback namespace for CRD, but we're testing ProviderData
+					// Empty namespace means CRD creation happens in "" namespace; we're testing ProviderData
 					rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 					Expect(err).ToNot(HaveOccurred())

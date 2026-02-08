@@ -27,7 +27,7 @@ var _ = Describe("Observability E2E Tests", func() {
 		_ = testCtx // Suppress unused variable warning (context used implicitly)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
+		// Pre-create managed namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-obs")
 
@@ -38,7 +38,7 @@ var _ = Describe("Observability E2E Tests", func() {
 		if testCancel != nil {
 			testCancel()
 		}
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
+		// Clean up test namespace
 		if testNamespace != "" {
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
@@ -182,7 +182,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Query CRD by name like RO does (direct API Get, no cache/index dependency)
 			// This is 4x faster (30s vs 120s) and more reliable than List() queries
-			// BR-GATEWAY-NAMESPACE-FALLBACK: Use namespace from Gateway response (may be kubernaut-system if fallback occurred)
+			// Use namespace from Gateway response
 			var createdRR remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKey{

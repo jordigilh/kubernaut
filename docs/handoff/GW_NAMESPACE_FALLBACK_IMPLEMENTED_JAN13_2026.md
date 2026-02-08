@@ -1,10 +1,15 @@
 # Gateway Namespace Fallback - Implementation Complete
 
+> **DEPRECATED (February 8, 2026)**: This feature has been deprecated and removed from the
+> codebase. ADR-053 Resource Scope Management now rejects signals to unmanaged namespaces
+> upstream, making namespace fallback redundant. See DD-GATEWAY-007 deprecation notice.
+> All fallback code, configuration, and dedicated tests have been removed.
+
 **Date**: January 13, 2026
 **Change Type**: Feature Implementation
 **Business Requirement**: BR-GATEWAY-NAMESPACE-FALLBACK
-**Test**: `test/e2e/gateway/27_error_handling_test.go:224`
-**Status**: ✅ **COMPLETE** - Ready for Validation
+**Test**: ~~`test/e2e/gateway/27_error_handling_test.go:224`~~ (removed)
+**Status**: **DEPRECATED** (February 2026) - Superseded by ADR-053 Scope Management
 
 ---
 

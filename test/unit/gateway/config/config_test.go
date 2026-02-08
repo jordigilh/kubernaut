@@ -88,9 +88,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					ListenAddr: "", // Missing required field
 				},
 				Processing: config.ProcessingSettings{
-					CRD: config.CRDSettings{
-						FallbackNamespace: "kubernaut-system",
-					},
+					CRD: config.CRDSettings{},
 					Deduplication: config.DeduplicationSettings{
 						TTL: 5 * time.Minute,
 					},
@@ -114,9 +112,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					IdleTimeout:  120 * time.Second,
 				},
 				Processing: config.ProcessingSettings{
-					CRD: config.CRDSettings{
-						FallbackNamespace: "kubernaut-system",
-					},
+					CRD: config.CRDSettings{},
 					Deduplication: config.DeduplicationSettings{
 						TTL: 5 * time.Second, // Invalid: Below minimum threshold (10s)
 					},

@@ -89,9 +89,7 @@ func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metr
 			Deduplication: config.DeduplicationSettings{
 				TTL: 300 * time.Second,
 			},
-			CRD: config.CRDSettings{
-				FallbackNamespace: "test-ns",
-			},
+			CRD: config.CRDSettings{},
 			Retry: config.RetrySettings{
 				MaxAttempts:    3,
 				InitialBackoff: 100 * time.Millisecond,

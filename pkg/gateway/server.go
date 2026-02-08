@@ -275,11 +275,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	fallbackNamespace := "default"
-	if cfg.Processing.CRD.FallbackNamespace != "" {
-		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
-	}
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
 
 	// Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -525,7 +521,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
 
 	// 6. Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -862,7 +858,9 @@ func (s *Server) sendSuccessResponse(
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
-	if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
+	if response.Status == StatusRejected {
+		statusCode = http.StatusOK // HTTP 200 for scope rejection (not an error, just informational)
+	} else if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
 		statusCode = http.StatusAccepted // HTTP 202 for storm aggregation and deduplication
 	}
 

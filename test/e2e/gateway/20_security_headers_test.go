@@ -49,7 +49,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger.Info("Test 20: Security Headers & Observability - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	// Pre-create managed namespace (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -76,7 +76,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		}
 
 	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	// Clean up test namespace (Pattern: RO E2E)
 	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 	if testCancel != nil {

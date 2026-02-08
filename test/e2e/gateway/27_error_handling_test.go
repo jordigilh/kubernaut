@@ -18,19 +18,15 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
-
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -57,14 +53,14 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
 
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	// Pre-create managed namespace for E2E tests (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
 
 		// Clear Redis
 	})
 
 AfterEach(func() {
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	// Clean up test namespace (Pattern: RO E2E)
 	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 	// Previous code (REMOVED - namespace cleanup now handled properly):
@@ -216,80 +212,8 @@ AfterEach(func() {
 	// REASON: Requires K8s API failure simulation
 	// COVERAGE: Unit tests (crd_creator_retry_test.go) validate retry logic with mock K8s client
 
-	It("handles namespace not found by using kubernaut-system namespace fallback", func() {
-		// BUSINESS SCENARIO: Alert references non-existent namespace
-		// Expected: CRD created in kubernaut-system namespace (graceful fallback)
-		//
-		// WHY THIS MATTERS: Invalid namespace shouldn't block remediation
-		// Example: Namespace deleted after alert fired, or cluster-scoped signals (NodeNotReady)
-		// Fallback ensures alert still processed
-		//
-		// WHY kubernaut-system? Proper home for Kubernaut infrastructure, not "default")
-
-		nonExistentNamespace := fmt.Sprintf("does-not-exist-%d", time.Now().UnixNano())
-
-		alertPayload := fmt.Sprintf(`{
-			"version": "4",
-			"status": "firing",
-			"alerts": [{
-				"labels": {
-					"alertname": "NamespaceTest",
-					"severity": "warning",
-					"namespace": "%s",
-					"pod": "orphan-pod"
-				}
-			}]
-		}`, nonExistentNamespace)
-
-		By("Sending alert for non-existent namespace")
-		req, _ := http.NewRequest("POST",
-			gatewayURL+"/api/v1/signals/prometheus",
-			bytes.NewBufferString(alertPayload))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-		resp, err := http.DefaultClient.Do(req)
-		_ = err
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should process alert despite invalid namespace (201 Created)")
-		_ = resp.Body.Close()
-
-		By("Gateway creates CRD in kubernaut-system namespace as fallback")
-		var createdCRD *remediationv1alpha1.RemediationRequest
-		Eventually(func() bool {
-			// Check both the specified namespace and kubernaut-system namespace
-			rrList := &remediationv1alpha1.RemediationRequestList{}
-
-			// Try non-existent namespace first
-			err1 := k8sClient.List(context.Background(), rrList,
-				client.InNamespace(nonExistentNamespace))
-			if err1 == nil && len(rrList.Items) > 0 {
-				createdCRD = &rrList.Items[0]
-				return true
-			}
-
-			// Fall back to kubernaut-system namespace
-			// Filter for CRDs with the correct origin-namespace label to avoid picking up old CRDs
-			err2 := k8sClient.List(context.Background(), rrList,
-				client.InNamespace("kubernaut-system"),
-				client.MatchingLabels{"kubernaut.ai/origin-namespace": nonExistentNamespace})
-			if err2 == nil && len(rrList.Items) > 0 {
-				createdCRD = &rrList.Items[0]
-				return true
-			}
-			return false
-		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "CRD created in fallback namespace (increased timeout for K8s API)")
-
-		By("Verifying cluster-scoped labels are set")
-		Expect(createdCRD).ToNot(BeNil(), "CRD should be created")
-		Expect(createdCRD.Namespace).To(Equal("kubernaut-system"), "CRD should be in kubernaut-system namespace")
-		Expect(createdCRD.Labels["kubernaut.ai/cluster-scoped"]).To(Equal("true"), "CRD should have cluster-scoped label")
-		Expect(createdCRD.Labels["kubernaut.ai/origin-namespace"]).To(Equal(nonExistentNamespace), "CRD should preserve origin namespace in label")
-
-		// BUSINESS OUTCOME VERIFIED:
-		// ✅ Invalid namespace doesn't block remediation
-		// ✅ Graceful fallback ensures alert processed
-		// ✅ CRD placed in proper infrastructure namespace (kubernaut-system)
-		// ✅ Origin namespace preserved in labels for audit/troubleshooting
-		// ✅ Operator can later investigate and fix
-	})
+	// REMOVED: "handles namespace not found by using kubernaut-system namespace fallback"
+	// REASON: Namespace fallback deprecated (DD-GATEWAY-007 DEPRECATED, February 2026)
+	// ADR-053 scope validation now rejects signals to unmanaged namespaces upstream,
+	// making CRD namespace fallback redundant. See DD-GATEWAY-007 deprecation notice.
 })

@@ -720,8 +720,30 @@ Cache pre-warming (eagerly starting informers for known GVKs at startup) is defe
 V1.0 accepts the lazy informer cold-start latency (200ms-2s per resource type on first access).
 A `ScopeGVKs()` helper in `pkg/shared/scope/cache.go` exports the known GVKs for future pre-warming.
 
+### Namespace Fallback Deprecation (DD-GATEWAY-007)
+
+As a direct consequence of scope management, the Gateway's namespace fallback feature
+(DD-GATEWAY-007) has been **deprecated and removed** from the codebase (February 2026).
+
+**Background**: DD-GATEWAY-007 defined a fallback behavior where signals targeting non-existent
+namespaces would have their RemediationRequest CRDs created in `kubernaut-system` with
+origin-namespace labels. This was designed for cluster-scoped signals and deleted namespaces.
+
+**Why Deprecated**: With ADR-053 scope validation running as the first step in the Gateway
+pipeline, signals to unmanaged or non-existent namespaces are now rejected with HTTP 200
+(informational rejection) before CRD creation is ever attempted. Additionally, the RO's
+`CheckUnmanagedResource` (Check #1, BR-SCOPE-010) would block any fallback-created RRs
+since the underlying resource would lack the `kubernaut.ai/managed=true` label.
+
+**Decision**: Creating a RemediationRequest in a fallback namespace for a resource whose
+original namespace no longer exists serves no purpose -- the RO cannot remediate it. Removing
+the fallback eliminates technical debt and simplifies the CRD creation path.
+
+**Removed Code**: `handleNamespaceNotFoundError()`, `isNamespaceNotFoundError()`,
+`FallbackNamespace` config field, `GetPodNamespace()`, and all associated tests.
+
 ---
 
-**Document Version**: 1.1
-**Last Updated**: February 6, 2026
+**Document Version**: 1.2
+**Last Updated**: February 8, 2026
 **Next Review**: April 20, 2026 (3 months)

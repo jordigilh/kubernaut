@@ -59,11 +59,10 @@ type RetryObserver interface {
 // - Example: rr-a1b2c3d4e5f6789
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
-	k8sClient         k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
-	logger            logr.Logger           // DD-005: logr.Logger for unified logging
-	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
-	fallbackNamespace string                // Configurable fallback namespace for CRD creation
-	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
+	k8sClient   k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
+	logger      logr.Logger           // DD-005: logr.Logger for unified logging
+	metrics     *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
+	retryConfig *config.RetrySettings // BR-GATEWAY-111: Retry configuration
 	clock             Clock                 // Clock for time-dependent operations (enables fast testing)
 	retryObserver     RetryObserver         // BR-GATEWAY-058: Notified on each retry attempt
 }
@@ -72,15 +71,15 @@ type CRDCreator struct {
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
 // BR-GATEWAY-058: Accepts RetryObserver for per-attempt audit compliance
 // DD-005: Uses logr.Logger for unified logging
-func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, retryObserver RetryObserver) *CRDCreator {
-	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, fallbackNamespace, retryConfig, retryObserver, nil)
+func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver) *CRDCreator {
+	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, retryConfig, retryObserver, nil)
 }
 
 // NewCRDCreatorWithClock creates a new CRD creator with a custom clock
 // This variant enables testing with MockClock for time-dependent behavior
 //
 // TDD GREEN: Accepts ClientInterface to support circuit breaker (BR-GATEWAY-093)
-func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, retryObserver RetryObserver, clock Clock) *CRDCreator {
+func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver, clock Clock) *CRDCreator {
 	// Metrics are mandatory for observability
 	if metricsInstance == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
@@ -89,11 +88,6 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 	// BR-GATEWAY-058: Retry observer is mandatory for audit compliance
 	if retryObserver == nil {
 		panic("retryObserver cannot be nil: retry observation is mandatory per BR-GATEWAY-058")
-	}
-
-	// Fallback namespace validation
-	if fallbackNamespace == "" {
-		fallbackNamespace = "kubernaut-system" // Safe default
 	}
 
 	// Default retry config if not provided
@@ -108,13 +102,12 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 	}
 
 	return &CRDCreator{
-		k8sClient:         k8sClient,
-		logger:            logger,
-		metrics:           metricsInstance,
-		fallbackNamespace: fallbackNamespace,
-		retryConfig:       retryConfig,
-		clock:             clock,
-		retryObserver:     retryObserver,
+		k8sClient:   k8sClient,
+		logger:      logger,
+		metrics:     metricsInstance,
+		retryConfig: retryConfig,
+		clock:       clock,
+		retryObserver: retryObserver,
 	}
 }
 
@@ -161,15 +154,6 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 		// Handle special cases with dedicated error handlers
 		if k8serrors.IsAlreadyExists(err) {
 			return c.handleAlreadyExistsError(ctx, rr)
-		}
-
-		if k8serrors.IsNotFound(err) && isNamespaceNotFoundError(err) {
-			fallbackErr := c.handleNamespaceNotFoundError(ctx, rr, err)
-			if fallbackErr == nil {
-				return nil // Fallback succeeded
-			}
-			// Fallback failed - continue to retry logic below with updated error
-			err = fallbackErr
 		}
 
 		// Determine if error is retryable
@@ -468,51 +452,11 @@ func (c *CRDCreator) CreateRemediationRequest(
 			return existing, nil
 		}
 
-		// Check if namespace doesn't exist - fall back to configured fallback namespace
-		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
-		if isNamespaceNotFoundError(err) {
-			c.logger.Info("Target namespace not found, creating CRD in fallback namespace",
-				"warning", true,
-				"original_namespace", signal.Namespace,
-				"fallback_namespace", c.fallbackNamespace,
-				"crd_name", crdName)
-
-			// Update namespace to configured fallback namespace
-			rr.Namespace = c.fallbackNamespace
-
-			// Add labels to preserve origin namespace information for cluster-scoped signals
-			rr.Labels["kubernaut.ai/origin-namespace"] = signal.Namespace
-			rr.Labels["kubernaut.ai/cluster-scoped"] = "true"
-
-			// Retry creation in fallback namespace with retry logic
-			// BR-GATEWAY-112: Retry logic for transient K8s API errors
-			if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
-				c.metrics.CRDCreationErrors.WithLabelValues("fallback_failed").Inc()
-				// GAP-10: Wrap error with full context
-				return nil, NewCRDCreationError(
-					signal.Fingerprint,
-					c.fallbackNamespace, // Use fallback namespace in error
-					crdName,
-					signal.SourceType,
-					signal.AlertName,
-					c.retryConfig.MaxAttempts,
-					startTime,
-					fmt.Errorf("failed to create CRD in fallback namespace: %w", err),
-				)
-			}
-
-			// Success with fallback
-			c.logger.Info("Created RemediationRequest CRD in fallback namespace (cluster-scoped signal)",
-				"name", crdName,
-				"namespace", c.fallbackNamespace,
-				"fingerprint", signal.Fingerprint,
-				"original_ns", signal.Namespace)
-
-			c.metrics.CRDsCreatedTotal.WithLabelValues(signal.SourceType, "fallback_ns").Inc()
-			return rr, nil
-		}
-
-		// Other errors (not namespace-related, not already-exists)
+		// Other errors (not already-exists)
+		// Note: Namespace-not-found errors are no longer handled via fallback.
+		// ADR-053 scope validation rejects signals to unmanaged namespaces upstream,
+		// so namespace-not-found during CRD creation is now a genuine error.
+		// See: DD-GATEWAY-007 (DEPRECATED February 2026)
 		c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
 
 		c.logger.Error(err, "Failed to create RemediationRequest CRD",
@@ -733,65 +677,6 @@ func (c *CRDCreator) handleAlreadyExistsError(ctx context.Context, rr *remediati
 	return nil
 }
 
-// handleNamespaceNotFoundError falls back to kubernaut-system namespace.
-//
-// **Business Requirement**: BR-GATEWAY-NAMESPACE-FALLBACK
-// **Business Outcome**: Invalid namespace doesn't block remediation
-//
-// **Scenarios**:
-//   - Namespace deleted after alert fired
-//   - Cluster-scoped signals (NodeNotReady, ClusterRole issues)
-//   - Malformed alert configuration with invalid namespace
-//
-// **Behavior**:
-//   - Logs fallback decision
-//   - Updates RR namespace to "kubernaut-system"
-//   - Adds labels to track origin namespace
-//   - Retries CRD creation in fallback namespace
-//   - Returns error if fallback also fails
-//
-// **Parameters**:
-//   - ctx: Context for cancellation
-//   - rr: RemediationRequest being created (modified in-place)
-//   - originalErr: Original namespace not found error
-//
-// **Returns**:
-//   - error: nil if fallback succeeds, error if fallback fails
-func (c *CRDCreator) handleNamespaceNotFoundError(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, originalErr error) error {
-	originalNamespace := rr.Namespace
-
-	c.logger.Info("Namespace not found, falling back to kubernaut-system",
-		"original_namespace", originalNamespace,
-		"fallback_namespace", "kubernaut-system",
-		"crd_name", rr.Name)
-
-	// Update CRD to use kubernaut-system namespace
-	rr.Namespace = "kubernaut-system"
-
-	// Add labels to track the fallback
-	if rr.Labels == nil {
-		rr.Labels = make(map[string]string)
-	}
-	rr.Labels["kubernaut.ai/cluster-scoped"] = "true"
-	rr.Labels["kubernaut.ai/origin-namespace"] = originalNamespace
-
-	// Retry creation in kubernaut-system namespace
-	err := c.k8sClient.CreateRemediationRequest(ctx, rr)
-	if err == nil {
-		c.logger.Info("CRD created successfully in kubernaut-system namespace after fallback",
-			"original_namespace", originalNamespace,
-			"crd_name", rr.Name)
-		return nil
-	}
-
-	// If fallback also failed, log and return error
-	c.logger.Error(err, "CRD creation failed even after kubernaut-system fallback",
-		"original_namespace", originalNamespace,
-		"fallback_namespace", "kubernaut-system",
-		"crd_name", rr.Name)
-	return err
-}
-
 // shouldRetryError determines if an error is transient and retryable.
 //
 // **Business Requirement**: BR-GATEWAY-112 (Error Classification)
@@ -918,24 +803,3 @@ func (c *CRDCreator) waitWithBackoff(ctx context.Context, attempt int, err error
 	}
 }
 
-// isNamespaceNotFoundError checks if an error is specifically about a namespace not being found
-// (as opposed to a CRD not being found)
-//
-// Example error message: "namespaces \"does-not-exist-123\" not found"
-//
-// BR-GATEWAY-NAMESPACE-FALLBACK: Used to detect when to fallback to kubernaut-system namespace
-// Test: test/e2e/gateway/27_error_handling_test.go:224
-func isNamespaceNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Primary check: use K8s typed error classification
-	if k8serrors.IsNotFound(err) {
-		// IsNotFound is true for any "not found" — distinguish namespace from CRD
-		errMsg := err.Error()
-		return strings.Contains(errMsg, "namespaces")
-	}
-	// Fallback: string matching for wrapped or non-standard errors
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "namespaces") && strings.Contains(errMsg, "not found")
-}
