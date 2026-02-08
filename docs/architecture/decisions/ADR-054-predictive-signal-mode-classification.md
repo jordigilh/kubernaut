@@ -15,9 +15,9 @@ Kubernaut is reactive by design: it processes signals representing incidents tha
 
 Two problems block predictive signal support today:
 
-1. **Workflow catalog mismatch**: Predictive signal types (e.g., `PredictedOOMKill`) don't match any workflow in the catalog, which registers workflows under base signal types (e.g., `OOMKilled`). The workflow catalog uses `signal_type` as a mandatory label filter (DD-WORKFLOW-001).
+1. **Agent doesn't distinguish signal modes**: Without explicit classification, the agent treats all signals as reactive incidents. For a predicted event that hasn't occurred yet, the agent performs standard RCA — producing irrelevant results ("no error logs found" — because nothing has failed yet). The agent needs to know this is a prediction so it can investigate how to **prevent** the incident rather than diagnose one that already happened.
 
-2. **Wrong investigation strategy**: HolmesGPT performs root cause analysis ("what happened?") for all signals. For a predicted incident that hasn't occurred, RCA produces irrelevant results ("no error logs found"). The AI agent needs a different directive: "evaluate current environment and determine if preemptive action is warranted."
+2. **Workflow catalog search mismatch**: Predictive signal types from Prometheus (e.g., `PredictedOOMKill`) don't match existing workflows in the catalog, which are registered under base signal types (e.g., `OOMKilled`). The signal type must be normalized to the base type so the agent can find the correct workflow, while a separate `signalMode` field tells the agent the investigation context is predictive.
 
 ### Business Requirements
 
@@ -28,7 +28,8 @@ This ADR implements two Business Requirements:
 ### Constraints
 
 - No CRD label changes — `signalMode` lives in status (SP) and spec (AA), not labels
-- Signal type normalization must preserve the original signal type for audit trail
+- Signal type normalized to base type so the agent can search the existing workflow catalog
+- Original signal type preserved in SP status for audit trail
 - Predictive mode must allow "no action needed" as a valid LLM outcome
 - v1.0 — no backwards compatibility concerns (not yet released)
 
@@ -36,24 +37,23 @@ This ADR implements two Business Requirements:
 
 ## Decision
 
-### 1. Signal Mode Classification in Signal Processing
+### 1. Signal Mode Classification and Signal Type Normalization in Signal Processing
 
-**Chosen**: SP classifies all signals as `reactive` (default) or `predictive` based on a configurable signal type mapping, and normalizes predictive signal types to their base type.
+**Chosen**: SP classifies all signals as `reactive` (default) or `predictive` based on configurable pattern matching (e.g., the `Predicted` prefix convention from Prometheus). SP **normalizes** predictive signal types to their base type so the agent can search the existing workflow catalog, while preserving the original signal type in status for audit.
 
-**Classification Logic**:
+**Classification and Normalization Logic**:
 ```
 Input: PredictedOOMKill
-  → Lookup in predictive-signal-mappings.yaml
-  → Found: PredictedOOMKill → OOMKilled
-  → Set: status.signalType = "OOMKilled" (normalized for workflow catalog)
+  → Matches predictive pattern (configurable, e.g. "Predicted*" prefix)
   → Set: status.signalMode = "predictive"
-  → Set: status.originalSignalType = "PredictedOOMKill" (preserved for audit)
+  → Set: status.signalType = "OOMKilled" (normalized — matches existing workflow catalog)
+  → Set: status.originalSignalType = "PredictedOOMKill" (preserved for audit trail)
 
 Input: OOMKilled
-  → Lookup in predictive-signal-mappings.yaml
-  → Not found (not a predictive type)
-  → Set: status.signalType = "OOMKilled" (unchanged)
+  → Does not match any predictive pattern
   → Set: status.signalMode = "reactive"
+  → Set: status.signalType = "OOMKilled" (unchanged)
+  → Set: status.originalSignalType = "" (not applicable)
 ```
 
 **Configuration**:
@@ -64,13 +64,17 @@ predictive_signal_mappings:
   PredictedCPUThrottling: CPUThrottling
   PredictedDiskPressure: DiskPressure
   PredictedNodeNotReady: NodeNotReady
+  # Operators can add new mappings without code changes
 ```
 
 **Rationale**:
-- **Config-driven**: Operators can add new predictive signal types without code changes
+- **Normalization enables catalog reuse**: The agent searches for `OOMKilled` workflows that already exist — no need to create predictive-specific workflow entries. The `signalMode` field tells the agent the context is predictive.
+- **Source-agnostic workflow catalog**: Normalization decouples the workflow catalog from signal source naming conventions. The catalog only deals with base signal types (`OOMKilled`, `DiskPressure`, etc.) regardless of whether the signal came from Prometheus `predict_linear()`, a reactive Prometheus alert, a Kubernetes event, or any future signal source (AWS CloudWatch, Azure Monitor, etc.). Source-specific naming is an SP concern, not a catalog concern.
+- **Clean separation**: SP handles signal type normalization (its responsibility), the prompt handles investigation strategy (HAPI's responsibility). The LLM never needs to know about `PredictedOOMKill` as a signal type.
+- **Config-driven**: Operators can add new predictive signal type mappings without code changes
 - **Hot-reloadable**: Follows BR-SP-072 pattern (fsnotify-based ConfigMap reload)
-- **Safe default**: Unknown signal types default to `reactive`, no workflow disruption
-- **Audit preserving**: Original signal type retained for full traceability
+- **Safe default**: Unmapped signal types default to `reactive`, no workflow disruption
+- **Audit trail**: Original signal type preserved for full traceability
 
 ---
 
@@ -79,19 +83,22 @@ predictive_signal_mappings:
 **Chosen**: `signalMode` flows through the existing pipeline using established copy patterns — no new wiring required.
 
 ```
-Prometheus predict_linear() alert
+Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
   → Gateway (receives PredictedOOMKill, passes through unchanged)
     → Signal Processing
         status.signalMode = "predictive"
-        status.signalType = "OOMKilled" (normalized)
-        status.originalSignalType = "PredictedOOMKill"
+        status.signalType = "OOMKilled" (normalized to base type)
+        status.originalSignalType = "PredictedOOMKill" (preserved for audit)
       → Remediation Orchestrator
           copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
+          copies sp.Status.SignalType → aa.Spec.SignalContext.SignalType (normalized)
           (same pattern as severity, environment, priority)
         → AI Analysis
-            passes signalMode to HAPI in IncidentRequest
+            passes signalMode + signalType (normalized) to HAPI in IncidentRequest
           → HolmesGPT API
-              switches prompt strategy based on signal_mode
+              1. Agent receives signal_type = "OOMKilled" (searches catalog normally)
+              2. Agent receives signal_mode = "predictive" (switches prompt strategy)
+              3. Prompt: "This is a predicted incident — investigate how to prevent it"
 ```
 
 **Rationale**:
@@ -103,15 +110,18 @@ Prometheus predict_linear() alert
 
 ### 3. HAPI Prompt Strategy
 
-**Chosen**: HAPI switches its investigation prompt based on `signal_mode`, with two distinct directives.
+**Chosen**: HAPI switches its investigation prompt based on `signal_mode`, with two distinct directives. Because SP normalizes the signal type, the agent always searches the workflow catalog with the base type — no special search logic needed.
 
 **Reactive** (default — incident has occurred):
 > Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine the root cause and recommend remediation.
 
 **Predictive** (incident predicted, not yet occurred):
-> Evaluate current environment. This incident is predicted based on resource trend analysis but has not occurred yet. Assess resource utilization trends, recent deployments, and current state to determine if preemptive action is warranted. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
+> Evaluate current environment. This incident is **predicted** based on resource trend analysis but has not occurred yet. Assess resource utilization trends, recent deployments, and current state to determine if preemptive action is warranted and how to **prevent** this incident. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
+
+**Why this works cleanly**: The agent receives `signal_type = "OOMKilled"` in both modes — it searches the same workflow catalog entry. The only difference is the investigation prompt: reactive asks "what happened and why?", predictive asks "this is about to happen, how do we prevent it?". The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP.
 
 **Rationale**:
+- **Zero workflow search complexity**: The agent always searches by the normalized base signal type — no fallback logic, no dual-search, no prefix handling
 - **Clear directive**: The LLM knows exactly what investigation mode to use
 - **Valid "no action"**: Predictive mode explicitly allows the LLM to conclude no preemptive action is needed (trend reversal, temporary spike, etc.)
 - **Audit differentiation**: Enables Effectiveness Monitor to track predictive vs. reactive outcomes separately
@@ -132,35 +142,36 @@ Prometheus predict_linear() alert
 
 ## Alternatives Considered
 
-### Alternative A: Workflow Catalog Signal Type Aliases
+### Alternative A: Preserve Predictive Signal Type (No Normalization)
 
-Register workflows with multiple signal types (e.g., `signal-type-alias: PredictedOOMKill`).
+SP preserves `PredictedOOMKill` as the signal type and expects the agent to search for predictive-specific workflows in the catalog, with fallback to the base type.
 
 **Rejected because**:
-- Requires DD-WORKFLOW-001 schema changes
-- Every workflow must be updated with predictive aliases
-- DataStorage search query changes needed
-- Doesn't solve the prompt strategy problem (HAPI still wouldn't know to switch investigation mode)
+- Requires the LLM to understand predictive signal type naming conventions and implement fallback logic
+- Requires the workflow catalog to contain separate predictive workflow entries, or the agent must strip the prefix
+- Adds workflow search complexity to the LLM prompt — fragile and hard to test reliably
+- The LLM's RCA result would need to reference the predictive signal type, adding more LLM-side logic
+- Much simpler to normalize in SP (deterministic code) and let the prompt carry the predictive context
 
-### Alternative B: Gateway Normalizes Signal Type
+### Alternative B: Gateway Classifies Signal Mode
 
-Gateway performs the predictive-to-base signal type mapping before creating the SP CRD.
+Gateway performs the predictive pattern detection before creating the SP CRD.
 
 **Rejected because**:
 - Gateway's role is signal ingestion and deduplication, not classification
 - Classification belongs in Signal Processing (established responsibility boundary)
-- Gateway would need to maintain signal type mapping config (wrong layer)
+- Gateway would need to maintain signal pattern config (wrong layer)
 - SP already has the enrichment pipeline infrastructure (hot-reload, Rego engine, etc.)
 
 ### Alternative C: HAPI Infers Predictive Mode from Signal Type Name
 
-HAPI checks if the signal type starts with "Predicted" and adjusts its prompt.
+HAPI checks if the signal type starts with "Predicted" and adjusts its prompt, without an explicit `signalMode` field from the pipeline.
 
 **Rejected because**:
-- Fragile string-based convention
+- Fragile string-based convention in the LLM layer — no guarantee the LLM will reliably parse the prefix
 - No explicit pipeline signal — implicit behavior is error-prone
 - Doesn't generalize to non-"Predicted" naming patterns
-- Violates separation of concerns (classification is SP's job)
+- Violates separation of concerns (classification is SP's job, not the LLM's)
 
 ---
 
@@ -169,15 +180,16 @@ HAPI checks if the signal type starts with "Predicted" and adjusts its prompt.
 ### Positive
 
 1. **Immediate value with zero code changes**: Prometheus `predict_linear()` alerting rules generate predictive signals today. Even without the pipeline enhancement, these alerts flow through Kubernaut and trigger standard remediation.
-2. **Incremental enhancement**: The pipeline changes (SP → RO → AA → HAPI) follow existing patterns, minimizing implementation risk.
-3. **Enterprise ROI proof**: Predictive vs. reactive tracking in audit events enables the Effectiveness Monitor to answer "How often did predictions prevent incidents?"
-4. **Extensible**: New predictive signal types added via config, not code.
+2. **Source-agnostic workflow catalog**: Normalization at the SP layer decouples the workflow catalog from signal source naming conventions. Workflows are defined once per base signal type and work for any source — Prometheus predictive alerts, reactive alerts, Kubernetes events, or future integrations (CloudWatch, Azure Monitor, PagerDuty). Adding a new signal source never requires new workflow catalog entries.
+3. **Incremental enhancement**: The pipeline changes (SP → RO → AA → HAPI) follow existing patterns, minimizing implementation risk.
+4. **Enterprise ROI proof**: Predictive vs. reactive tracking in audit events enables the Effectiveness Monitor to answer "How often did predictions prevent incidents?"
+5. **Extensible**: New predictive signal type mappings added via config, not code.
 
 ### Negative
 
 1. **Prompt engineering iteration**: The predictive prompt will need tuning against real scenarios. Mitigated by prompt being a configuration string, not compiled code.
 2. **Linear regression limitations**: `predict_linear()` is a simple linear model — poor for periodic metrics (CPU, request rate). Documented in BR-SP-106 as a known constraint. Future enhancement could integrate `double_exponential_smoothing()` (Prometheus 3.x) for seasonal data.
-3. **Config maintenance**: Signal type mappings must be maintained as new alert types are added. Mitigated by hot-reload and operator documentation.
+3. **Config maintenance**: Signal type mappings must be maintained as new predictive alert types are added. Mitigated by hot-reload and operator documentation.
 
 ### Neutral
 
@@ -202,15 +214,15 @@ HAPI checks if the signal type starts with "Predicted" and adjusts its prompt.
 
 | Component | File | Change |
 |---|---|---|
-| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `OriginalSignalType` to status |
+| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode` to status |
 | SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification during enrichment |
-| SP classifier | `pkg/signalprocessing/classifier/` (new) | Signal mode mapping logic |
-| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Mapping file |
+| SP classifier | `pkg/signalprocessing/classifier/` (new) | Signal mode pattern matching logic |
+| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive pattern config |
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
 | HAPI OpenAPI | `holmesgpt-api/openapi.yaml` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy |
+| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy + workflow search guidance |
 | Deepcopy | `zz_generated.deepcopy.go` | `make generate` |
 
 ---

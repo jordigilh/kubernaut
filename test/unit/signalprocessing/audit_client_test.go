@@ -116,7 +116,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventType).To(Equal("signalprocessing.signal.processed"))
+				Expect(event.EventType).To(Equal(audit.EventTypeSignalProcessed))
 				Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategory("signalprocessing")))
 				Expect(event.EventAction).To(Equal("processed"))
 				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("success")))
@@ -149,7 +149,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventType).To(Equal("signalprocessing.phase.transition"))
+				Expect(event.EventType).To(Equal(audit.EventTypePhaseTransition))
 				Expect(event.EventAction).To(Equal("phase_transition"))
 			})
 		})
@@ -177,7 +177,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventType).To(Equal("signalprocessing.classification.decision"))
+				Expect(event.EventType).To(Equal(audit.EventTypeClassificationDecision))
 				Expect(event.EventAction).To(Equal("classification"))
 			})
 		})
@@ -204,7 +204,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventType).To(Equal("signalprocessing.enrichment.completed"))
+				Expect(event.EventType).To(Equal(audit.EventTypeEnrichmentComplete))
 				Expect(event.DurationMs.IsSet()).To(BeTrue())
 				Expect(event.DurationMs.Value).To(Equal(150))
 			})
@@ -222,7 +222,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
-				Expect(event.EventType).To(Equal("signalprocessing.error.occurred"))
+				Expect(event.EventType).To(Equal(audit.EventTypeError))
 				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
 				// Error message is stored in structured EventData (DD-AUDIT-004 V2.2)
 				// EventData is a discriminated union, access via GetSignalProcessingAuditPayload

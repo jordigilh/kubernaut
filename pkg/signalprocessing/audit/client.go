@@ -55,6 +55,15 @@ const (
 	EventCategorySignalProcessing = CategorySignalProcessing
 )
 
+// Event action constants (L-3 SOC2 Fix: compile-time safety for event action strings)
+const (
+	ActionProcessed      = "processed"
+	ActionPhaseTransition = "phase_transition"
+	ActionClassification = "classification"
+	ActionEnrichment     = "enrichment"
+	ActionError          = "error"
+)
+
 // AuditClient handles audit event storage using pkg/audit shared library.
 // BR-SP-090: Categorization Audit Trail
 // DD-005 v2.0: Uses logr.Logger
@@ -151,7 +160,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalProcessed)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "processed")
+	audit.SetEventAction(event, ActionProcessed)
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
@@ -196,7 +205,7 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypePhaseTransition)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "phase_transition")
+	audit.SetEventAction(event, ActionPhaseTransition)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
@@ -286,7 +295,7 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeClassificationDecision)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "classification")
+	audit.SetEventAction(event, ActionClassification)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
@@ -348,7 +357,7 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeBusinessClassified)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "classification")
+	audit.SetEventAction(event, ActionClassification)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
@@ -393,7 +402,7 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeEnrichmentComplete)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "enrichment")
+	audit.SetEventAction(event, ActionEnrichment)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
@@ -431,7 +440,7 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeError)
 	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, "error")
+	audit.SetEventAction(event, ActionError)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)

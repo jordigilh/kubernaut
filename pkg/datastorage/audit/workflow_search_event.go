@@ -29,7 +29,10 @@ import (
 )
 
 // Workflow search event type constant (L-3 SOC2 Fix)
-const EventTypeSearchCompleted = "workflow.catalog.search_completed"
+const (
+	EventTypeSearchCompleted = "workflow.catalog.search_completed"
+	ActionSearchCompleted    = "search_completed"
+)
 
 // ========================================
 // WORKFLOW SEARCH AUDIT EVENT DATA TYPES
@@ -160,8 +163,8 @@ func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest
 	event := pkgaudit.NewAuditEventRequest()
 	event.Version = "1.0"
 	pkgaudit.SetEventType(event, EventTypeSearchCompleted)
-	pkgaudit.SetEventCategory(event, "workflow")
-	pkgaudit.SetEventAction(event, "search_completed")
+	pkgaudit.SetEventCategory(event, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(event, ActionSearchCompleted)
 	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(event, "service", "datastorage")
 	pkgaudit.SetResource(event, "workflow_catalog", resourceID)
