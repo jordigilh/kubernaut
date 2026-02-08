@@ -737,9 +737,25 @@ data:
       extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
       count(extracted) > 0
     }
+---
+# 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)
+# YAML config (not Rego) — simple key-value lookup for signal mode classification
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-predictive-signal-mappings
+  namespace: kubernaut-system
+data:
+  predictive-signal-mappings.yaml: |
+    # BR-SP-106: Predictive Signal Mode Classification (E2E test config)
+    predictive_signal_mappings:
+      PredictedOOMKill: OOMKilled
+      PredictedCPUThrottling: CPUThrottling
+      PredictedDiskPressure: DiskPressure
+      PredictedNodeNotReady: NodeNotReady
 `
 
-	// Single kubectl apply for all 5 ConfigMaps (includes severity policy for BR-SP-105)
+	// Single kubectl apply for all 6 ConfigMaps (includes severity policy for BR-SP-105, predictive mappings for BR-SP-106)
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(combinedPolicies)
 	cmd.Stdout = writer
@@ -748,7 +764,7 @@ data:
 		return fmt.Errorf("failed to deploy Rego policies (batched): %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "  ✓ Rego policies deployed (batched: environment, priority, business, customlabels)")
+	_, _ = fmt.Fprintln(writer, "  ✓ Policies deployed (batched: environment, priority, business, customlabels, severity, predictive-signal-mappings)")
 	return nil
 }
 
@@ -984,6 +1000,11 @@ spec:
         - name: policies
           mountPath: /etc/signalprocessing/policies
           readOnly: true
+        # BR-SP-106: Mount predictive signal mappings (separate from Rego policies)
+        - name: predictive-signal-mappings
+          mountPath: /etc/signalprocessing/predictive-signal-mappings.yaml
+          subPath: predictive-signal-mappings.yaml
+          readOnly: true
         # E2E Coverage: Mount coverage directory
         - name: coverdata
           mountPath: /coverdata
@@ -1002,6 +1023,10 @@ spec:
               name: signalprocessing-severity-policy
           - configMap:
               name: signalprocessing-customlabels-policy
+      # BR-SP-106: Predictive signal mode mappings (YAML, not Rego)
+      - name: predictive-signal-mappings
+        configMap:
+          name: signalprocessing-predictive-signal-mappings
       # E2E Coverage: hostPath volume for coverage data
       - name: coverdata
         hostPath:
