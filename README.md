@@ -18,14 +18,15 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 
 1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager and Kubernetes Events
 2. **AI Analysis**: Uses HolmesGPT for root cause analysis and remediation recommendations
-3. **Workflow Orchestration**: Executes OCI-containerized remediation workflows via Tekton Pipelines
+3. **Workflow Orchestration**: Executes remediation workflows via Tekton Pipelines or Kubernetes Jobs
 4. **Continuous Learning**: Tracks effectiveness of workflow executions and successful remediations over time
 
 ### Key Capabilities
 
 - **Multi-Source Signal Processing**: Prometheus alerts, Kubernetes events with deduplication.
 - **AI-Powered Root Cause Analysis**: HolmesGPT integration for intelligent investigation
-- **Remediation Workflows**: OCI-containerized Tekton workflows with flexible single or multi-step execution
+- **Remediation Workflows**: Flexible execution via Tekton Pipelines (multi-step) or Kubernetes Jobs (single-step), with OCI-containerized workflow definitions
+- **Resource Scope Management**: Label-based opt-in model (`kubernaut.ai/managed=true`) controls which namespaces and resources Kubernaut manages, with metadata-only informer caching for both Gateway and Remediation Orchestrator (ADR-053)
 - **Safety-First Execution**: Admission webhook validation, human-in-the-loop approval gates, and effectiveness tracking
 - **Continuous Learning**: Multi-dimensional effectiveness tracking (incident type, workflow, action)
 - **Production-Ready**: Comprehensive CI coverage reporting, SOC2-compliant audit traces, 10 of 10 V1.0 services ready
@@ -42,11 +43,11 @@ Kubernaut follows a microservices architecture with 10 production-ready services
 
 ### Architecture Flow
 
-1. **Gateway Service** receives signals (Prometheus alerts, K8s events) and creates `RemediationRequest` CRDs
-2. **Remediation Orchestrator** (CRD controller) coordinates remediation lifecycle across 4 other CRD controllers:
+1. **Gateway Service** receives signals (Prometheus alerts, K8s events), validates resource scope via metadata-only informer cache (`kubernaut.ai/managed` label, ADR-053), and creates `RemediationRequest` CRDs
+2. **Remediation Orchestrator** (CRD controller) validates resource scope as Check #1 in the routing pipeline, then coordinates remediation lifecycle across 4 other CRD controllers:
    - **Signal Processing Service**: Enriches signals with Kubernetes context
    - **AI Analysis Service**: Performs HolmesGPT investigation and generates recommendations
-   - **Workflow Execution**: Orchestrates Tekton Pipelines for multi-step workflows
+   - **Workflow Execution**: Orchestrates Tekton Pipelines or Kubernetes Jobs for remediation workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)
 3. **Data Storage Service** provides centralized PostgreSQL access (ADR-032)
 4. **Effectiveness Monitor** tracks workflow remediation outcomes (deferred to V1.1)
@@ -72,7 +73,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 82.4% |
 | **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 81.8% |
 | **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 80.1% |
-| **Workflow Execution** | ✅ v1.0 | Tekton workflow orchestration | 79.1% |
+| **Workflow Execution** | ✅ v1.0 | Tekton Pipeline & K8s Job orchestration | 79.1% |
 | **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 76.0% |
 | **Notification** | ✅ v1.0 | Multi-channel delivery | 72.7% |
 | **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 65.2% |
@@ -86,9 +87,9 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **SOC2 Type II Compliance** (January 2026): RR reconstruction (DD-AUDIT-004), operator attribution (DD-WEBHOOK-001), hash chain integrity (ADR-034)
 - ✅ **CI/CD Coverage Pipeline** (February 2026): Per-tier analysis with line-by-line merging, automated PR comments
 - ✅ **SAR Authentication**: Middleware-based SubjectAccessReview for all stateless services (DD-AUTH-014)
-- 🚧 **Remaining** (2 PRs):
-  1. **Resource Scope Management** (#38): `kubernaut.ai/managed` label-based opt-in (BR-SCOPE-001, ADR-053)
-  2. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
+- ✅ **Resource Scope Management** (February 2026): `kubernaut.ai/managed` label-based opt-in for both Gateway and Remediation Orchestrator (BR-SCOPE-001, BR-SCOPE-010, ADR-053). Namespace fallback deprecated (DD-GATEWAY-007). ScopeChecker interface with mandatory DI, metadata-only informer caching, exponential backoff for unmanaged resources.
+- 🚧 **Remaining** (1 PR):
+  1. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
 
 ---
 
@@ -152,7 +153,7 @@ Kubernaut services use **Kustomize** for Kubernetes deployment.
 
 ### **CRD Controllers** (Manifests Pending)
 
-CRD controller deployment manifests (Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator) will be finalized after the **Resource Scope Management** task (#38), which introduces the `kubernaut.ai/managed` label required for resource scoping.
+CRD controller deployment manifests (Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator) will be finalized after the **Segmented E2E Scenarios** task (#39). Resource Scope Management (`kubernaut.ai/managed` label) is now complete — controllers require the managed label on target namespaces/resources (ADR-053).
 
 ### **Deployment Guides**
 
@@ -186,7 +187,7 @@ kubectl run kubernaut-must-gather \
 - All Kubernaut CRDs (RemediationRequests, SignalProcessings, AIAnalyses, etc.)
 - Service logs (Gateway, Data Storage, HolmesGPT API, CRD controllers)
 - Configurations (ConfigMaps, Secrets sanitized)
-- Tekton Pipelines (PipelineRuns, TaskRuns, logs)
+- Tekton Pipelines (PipelineRuns, TaskRuns, logs) and Kubernetes Jobs
 - Database infrastructure (PostgreSQL, Redis)
 - Metrics snapshots and audit event samples
 
@@ -250,7 +251,7 @@ Test plan → docs/development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.
 - **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)**: Service boundaries and V1/V2 roadmap
 - **[Multi-CRD Reconciliation Architecture](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**: CRD communication patterns
 - **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)**: Authoritative CRD field definitions
-- **[Tekton Execution Architecture](docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md)**: Workflow orchestration with Tekton
+- **[Tekton Execution Architecture](docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md)**: Workflow orchestration with Tekton Pipelines and Kubernetes Jobs
 - **[Design Decisions](docs/architecture/decisions/)**: All DD-* and ADR-* architectural decisions
 
 ### Service Documentation
@@ -349,7 +350,7 @@ Apache License 2.0
 
 **Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
-**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | 2 PRs remaining | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
+**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | Scope management ✅ | 1 PR remaining | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
 
-**Current Sprint**: Resource Scope Management (#38, BR-SCOPE-001) → Segmented E2E (#39) → V1.0 Pre-release
+**Current Sprint**: Segmented E2E (#39) → V1.0 Pre-release
 
