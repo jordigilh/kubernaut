@@ -1,0 +1,67 @@
+name: CI Skip Checks
+
+# Provides required status checks for PRs that only change non-code files
+# (docs, diagrams, images, etc.) where the main CI pipeline is skipped
+# due to paths-ignore filtering.
+#
+# This workflow runs on ALL PRs, detects whether code files changed,
+# and if not, reports passing status for the 3 required branch protection
+# checks: Lint (Go Services), Lint (Python Services), Test Suite Summary.
+#
+# When code files ARE changed, these jobs are skipped (the main CI pipeline
+# provides the real checks instead).
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.go'
+              - '**.py'
+              - 'go.mod'
+              - 'go.sum'
+              - 'test/**'
+              - 'cmd/**'
+              - 'pkg/**'
+              - 'internal/**'
+              - 'api/**'
+              - 'migrations/**'
+              - 'Makefile'
+              - 'holmesgpt-api/**'
+              - '.github/workflows/**'
+
+  lint-go:
+    name: Lint (Go Services)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code_changed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No code changes detected — skipping Go lint (docs/assets-only PR)"
+
+  lint-python:
+    name: Lint (Python Services)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code_changed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No code changes detected — skipping Python lint (docs/assets-only PR)"
+
+  summary:
+    name: Test Suite Summary
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code_changed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No code changes detected — skipping test suite (docs/assets-only PR)"
