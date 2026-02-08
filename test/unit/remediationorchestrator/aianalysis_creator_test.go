@@ -141,9 +141,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(createdAI.Spec.RemediationID).To(Equal(rr.Name))
 
 			// Verify SignalContext
-			// Fingerprint and SignalType come from RR.Spec (not normalized)
+			// Fingerprint comes from RR.Spec
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(rr.Spec.SignalType))
+			// BR-SP-106: SignalType now comes from SP.Status (normalized by signal mode classifier)
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(completedSP.Status.SignalType))
 			// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
@@ -395,6 +396,91 @@ var _ = Describe("AIAnalysisCreator", func() {
 					"failed to create AIAnalysis",
 				),
 			)
+		})
+
+		// BR-SP-106 / BR-AI-084: Predictive Signal Mode
+		Context("BR-SP-106: Signal mode propagation from SP to AA", func() {
+			It("UT-RO-106-001: should copy SignalMode from SP status to AA spec", func() {
+				// Arrange: SP has predictive signal mode
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.SignalMode = "predictive"
+				completedSP.Status.SignalType = "OOMKilled"             // normalized
+				completedSP.Status.OriginalSignalType = "PredictedOOMKill" // preserved for audit
+
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					SignalType: "PredictedOOMKill", // Raw type from Gateway
+				})
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// SignalMode should be copied from SP status
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("predictive"))
+			})
+
+			It("UT-RO-106-002: should read SignalType from SP status (not RR spec)", func() {
+				// Arrange: SP has normalized signal type
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				completedSP.Status.SignalMode = "predictive"
+				completedSP.Status.SignalType = "OOMKilled"             // Normalized by SP
+				completedSP.Status.OriginalSignalType = "PredictedOOMKill"
+
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					SignalType: "PredictedOOMKill", // Raw type from Gateway (should NOT be used)
+				})
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// SignalType should come from SP status (normalized), NOT from RR spec
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).ToNot(Equal("PredictedOOMKill"))
+			})
+
+			It("should default to reactive signal mode for reactive signals", func() {
+				// Arrange: SP has reactive signal mode
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				// NewCompletedSignalProcessing defaults to reactive/prometheus
+
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"))
+				// SignalType for reactive comes from SP status (which mirrors Spec.Signal.Type)
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("prometheus"))
+			})
 		})
 	})
 })
