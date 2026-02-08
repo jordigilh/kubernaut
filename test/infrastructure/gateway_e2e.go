@@ -951,8 +951,9 @@ rules:
   # Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-001)
   # Gateway uses controller-runtime metadata-only informers for scope label lookups.
   # list+watch required for informer cache; get for direct metadata reads.
+  # Includes cluster-scoped resources (nodes, persistentvolumes) for opt-in label checks.
   - apiGroups: [""]
-    resources: ["pods", "services", "secrets", "persistentvolumes"]
+    resources: ["pods", "nodes", "services", "secrets", "persistentvolumes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

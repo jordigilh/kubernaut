@@ -159,14 +159,17 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send same alert twice (should be deduplicated)
 			// Use unique alert name to avoid CRD collisions from previous tests
+			// NOTE: Uses Pod (namespaced) instead of Node (cluster-scoped) because scope
+			// validation requires the resource to be opted-in. Pod inherits managed status
+			// from the namespace label; a Node would need its own label on a real Node object.
 			uniqueID := time.Now().UnixNano()
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("DuplicateAlert-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
-					Kind: "Node",
-					Name: fmt.Sprintf("worker-%d", uniqueID),
+					Kind: "Pod",
+					Name: fmt.Sprintf("test-pod-%d", uniqueID),
 				},
 			})
 
