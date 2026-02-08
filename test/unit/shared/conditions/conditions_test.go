@@ -178,14 +178,14 @@ var _ = Describe("Shared Conditions Utilities", func() {
 		It("should work with multiple services pattern", func() {
 			// Simulate WorkflowExecution conditions
 			conditions.Set(&conditionsList, "ExecutionCreated", metav1.ConditionTrue, "ExecutionCreated", "Execution resource created")
-			conditions.Set(&conditionsList, "TektonPipelineRunning", metav1.ConditionTrue, "PipelineStarted", "Pipeline executing")
-			conditions.Set(&conditionsList, "TektonPipelineComplete", metav1.ConditionTrue, "PipelineSucceeded", "All tasks completed")
+			conditions.Set(&conditionsList, "ExecutionRunning", metav1.ConditionTrue, "ExecutionStarted", "Execution resource running")
+			conditions.Set(&conditionsList, "ExecutionComplete", metav1.ConditionTrue, "ExecutionSucceeded", "All tasks completed")
 			conditions.Set(&conditionsList, "AuditRecorded", metav1.ConditionTrue, "AuditSucceeded", "Audit event recorded")
 
 			Expect(conditionsList).To(HaveLen(4))
 			Expect(conditions.IsTrue(conditionsList, "ExecutionCreated")).To(BeTrue())
-			Expect(conditions.IsTrue(conditionsList, "TektonPipelineRunning")).To(BeTrue())
-			Expect(conditions.IsTrue(conditionsList, "TektonPipelineComplete")).To(BeTrue())
+			Expect(conditions.IsTrue(conditionsList, "ExecutionRunning")).To(BeTrue())
+			Expect(conditions.IsTrue(conditionsList, "ExecutionComplete")).To(BeTrue())
 			Expect(conditions.IsTrue(conditionsList, "AuditRecorded")).To(BeTrue())
 		})
 	})

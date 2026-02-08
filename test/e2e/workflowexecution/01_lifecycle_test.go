@@ -100,9 +100,9 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 		// Verify final lifecycle conditions are present
 		// We only care about final state (Complete), not transient states (Running)
 		hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
-		// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
+		// ExecutionComplete can be True (success) or False (failure) - just verify it's set
 		// Test accepts both success and failure (line 73-74), so only check existence
-		hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
+		hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionExecutionComplete) != nil
 		// AuditRecorded may be True or False depending on audit store availability
 		hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
 
@@ -119,7 +119,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 
 		return hasPipelineCreated && hasPipelineComplete && hasAuditRecorded
 	}, 30*time.Second, 5*time.Second).Should(BeTrue(),
-		"All final lifecycle conditions (ExecutionCreated, TektonPipelineComplete, AuditRecorded) should be set")
+		"All final lifecycle conditions (ExecutionCreated, ExecutionComplete, AuditRecorded) should be set")
 
 			// Verify condition details
 			final, _ := getWFE(wfe.Name, wfe.Namespace)
@@ -188,15 +188,15 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			Expect(failed.Status.FailureDetails).ToNot(BeNil(), "FailureDetails should be populated")
 			Expect(failed.Status.FailureDetails.Message).ToNot(BeEmpty(), "Failure message should be set")
 
-			// BR-WE-004 EXTENDED: Verify TektonPipelineComplete condition reflects failure
+			// BR-WE-004 EXTENDED: Verify ExecutionComplete condition reflects failure
 			// This validation moved from integration tests (EnvTest limitation) to E2E
-			completeCond := weconditions.GetCondition(failed, weconditions.ConditionTektonPipelineComplete)
-			Expect(completeCond).ToNot(BeNil(), "TektonPipelineComplete condition should exist")
-			Expect(completeCond.Status).To(Equal(metav1.ConditionFalse), "TektonPipelineComplete should be False on failure")
+			completeCond := weconditions.GetCondition(failed, weconditions.ConditionExecutionComplete)
+			Expect(completeCond).ToNot(BeNil(), "ExecutionComplete condition should exist")
+			Expect(completeCond.Status).To(Equal(metav1.ConditionFalse), "ExecutionComplete should be False on failure")
 			Expect(completeCond.Reason).To(Equal(weconditions.ReasonTaskFailed), "Condition should reflect task-level failure")
 
 			GinkgoWriter.Printf("✅ Failure details populated: %s\n", failed.Status.FailureDetails.Message)
-			GinkgoWriter.Printf("✅ TektonPipelineComplete condition: Status=%s, Reason=%s\n",
+			GinkgoWriter.Printf("✅ ExecutionComplete condition: Status=%s, Reason=%s\n",
 				completeCond.Status, completeCond.Reason)
 		})
 

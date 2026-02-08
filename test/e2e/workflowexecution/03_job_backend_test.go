@@ -120,7 +120,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					return false
 				}
 				hasCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
-				hasComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
+				hasComplete := weconditions.GetCondition(updated, weconditions.ConditionExecutionComplete) != nil
 				return hasCreated && hasComplete
 			}, 30*time.Second, 5*time.Second).Should(BeTrue(),
 				"ExecutionCreated and ExecutionComplete conditions should be set")
@@ -184,7 +184,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			Expect(failed.Status.FailureDetails.Message).ToNot(BeEmpty(), "Failure message should be set")
 
 			By("Verifying ExecutionComplete condition reflects failure")
-			completeCond := weconditions.GetCondition(failed, weconditions.ConditionTektonPipelineComplete)
+			completeCond := weconditions.GetCondition(failed, weconditions.ConditionExecutionComplete)
 			Expect(completeCond).ToNot(BeNil(), "ExecutionComplete condition should exist")
 			Expect(completeCond.Status).To(Equal(metav1.ConditionFalse),
 				"ExecutionComplete should be False on Job failure")

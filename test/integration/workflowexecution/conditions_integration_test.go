@@ -107,7 +107,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 	// V1.0 NOTE: ResourceLocked condition test removed - routing moved to RO (DD-RO-002)
 	// RO prevents creation of second WFE for same target, so WE never sees this scenario
 
-	Context("TektonPipelineRunning condition", func() {
+	Context("ExecutionRunning condition", func() {
 		It("should be set when PipelineRun starts executing", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -165,13 +165,13 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			Eventually(func() bool {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, key, updated)
-				return weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-				"TektonPipelineRunning condition should be set when PipelineRun is running")
+				"ExecutionRunning condition should be set when execution resource is running")
 		})
 	})
 
-	Context("TektonPipelineComplete condition", func() {
+	Context("ExecutionComplete condition", func() {
 		It("should be set to True when PipelineRun succeeds", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -231,9 +231,9 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			Eventually(func() bool {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, key, updated)
-				return weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineComplete)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-				"TektonPipelineComplete condition should be True when pipeline succeeds")
+				"ExecutionComplete condition should be True when execution succeeds")
 
 			// Verify WFE reached Completed phase
 			Eventually(func() string {
@@ -242,11 +242,11 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				return updated.Status.Phase
 			}, 10*time.Second, 1*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
-			// Verify condition reason is PipelineSucceeded
+			// Verify condition reason is ExecutionSucceeded
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
-			condition := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete)
-			Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineSucceeded))
+			condition := weconditions.GetCondition(updated, weconditions.ConditionExecutionComplete)
+			Expect(condition.Reason).To(Equal(weconditions.ReasonExecutionSucceeded))
 		})
 
 		// REMOVED: Moved to E2E suite
@@ -346,12 +346,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)
 			}, 60*time.Second, 1*time.Second).Should(BeTrue())
 
-			// 2. TektonPipelineRunning should be set
+			// 2. ExecutionRunning should be set
 			// Timeout increased to 60s to allow multiple reconciliation cycles in EnvTest (10s requeue interval)
 			Eventually(func() bool {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, key, updated)
-				return weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)
 			}, 60*time.Second, 1*time.Second).Should(BeTrue())
 
 			// 3. Complete the PipelineRun
@@ -375,12 +375,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			pr.Status.CompletionTime = &now
 			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
-			// 4. TektonPipelineComplete should be set to True
+			// 4. ExecutionComplete should be set to True
 			// Timeout increased to 60s to allow multiple reconciliation cycles in EnvTest (10s requeue interval)
 			Eventually(func() bool {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, key, updated)
-				return weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineComplete)
+				return weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)
 			}, 60*time.Second, 1*time.Second).Should(BeTrue())
 
 			// 5. Verify WFE reached Completed phase
@@ -398,8 +398,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 			// Verify all conditions are True (success scenario)
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
-			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)).To(BeTrue())
-			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineComplete)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())
+			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionComplete)).To(BeTrue())
 			// AuditRecorded may be True or False depending on mock - just verify it exists
 			Expect(weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded)).ToNot(BeNil())
 		})

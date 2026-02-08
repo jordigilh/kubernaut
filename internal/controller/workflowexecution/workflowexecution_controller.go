@@ -452,12 +452,13 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
 			}
 			// For Job backend, AlreadyExists means deterministic name collision
-			markErr := r.MarkFailedWithReason(ctx, wfe, "ExecutionResourceExists",
+			// Note: Uses "Unknown" reason (CRD enum constraint); specific cause in message
+			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
 				fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
 			return ctrl.Result{}, markErr
 		}
 		logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
-		markErr := r.MarkFailedWithReason(ctx, wfe, "ExecutionCreationFailed",
+		markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
 			fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
 		return ctrl.Result{}, markErr
 	}
@@ -583,8 +584,8 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	default:
 		// Still running - update conditions and requeue
 		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Spec.ExecutionEngine)
-		weconditions.SetTektonPipelineRunning(wfe, true,
-			weconditions.ReasonPipelineStarted,
+		weconditions.SetExecutionRunning(wfe, true,
+			weconditions.ReasonExecutionStarted,
 			fmt.Sprintf("Execution running (%s: %s)", wfe.Spec.ExecutionEngine, result.Reason))
 	}
 
@@ -1173,8 +1174,8 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		wfe.Status.Duration = durationStr
 
 		// BR-WE-006: Set TektonPipelineComplete condition
-		weconditions.SetTektonPipelineComplete(wfe, true,
-			weconditions.ReasonPipelineSucceeded,
+		weconditions.SetExecutionComplete(wfe, true,
+			weconditions.ReasonExecutionSucceeded,
 			fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
 
 		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
@@ -1240,7 +1241,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	}
 
 	// Determine condition values
-	failureReason := weconditions.ReasonPipelineFailed
+	failureReason := weconditions.ReasonExecutionFailed
 	failureMessage := "Pipeline execution failed"
 	if failureDetails != nil {
 		// Map WE failure reasons to condition reasons
@@ -1288,7 +1289,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		wfe.Status.FailureDetails = failureDetails
 
 		// BR-WE-006: Set TektonPipelineComplete condition to False
-		weconditions.SetTektonPipelineComplete(wfe, false,
+		weconditions.SetExecutionComplete(wfe, false,
 			failureReason,
 			failureMessage)
 
@@ -1356,7 +1357,7 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 	failureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, failureDetails)
 
 	// Determine condition values
-	conditionReason := weconditions.ReasonPipelineCreationFailed
+	conditionReason := weconditions.ReasonExecutionCreationFailed
 	switch reason {
 	case "QuotaExceeded":
 		conditionReason = weconditions.ReasonQuotaExceeded
