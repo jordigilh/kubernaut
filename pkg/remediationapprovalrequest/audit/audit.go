@@ -37,16 +37,12 @@ const (
 
 // Event types
 const (
-	EventTypeApprovalDecision      = "approval.decision"       // P0 - SOC 2 critical
-	EventTypeApprovalRequestCreated = "approval.request.created" // P1 - context
-	EventTypeApprovalTimeout       = "approval.timeout"        // P1 - operational
+	EventTypeApprovalDecision = "approval.decision" // P0 - SOC 2 critical
 )
 
 // Event actions
 const (
-	EventActionDecisionMade   = "decision_made"
-	EventActionRequestCreated = "request_created"
-	EventActionTimeout        = "timeout"
+	EventActionDecisionMade = "decision_made"
 )
 
 // Actor types

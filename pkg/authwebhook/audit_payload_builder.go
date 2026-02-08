@@ -34,7 +34,7 @@ import (
 // Note: Uses toRemediationApprovalAuditPayloadDecision from audit_helpers.go
 func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest) api.RemediationApprovalAuditPayload {
 	return api.RemediationApprovalAuditPayload{
-		EventType:       "webhook.approval.decided",
+		EventType:       api.RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided,
 		RequestName:     rar.Name,
 		Decision:        toRemediationApprovalAuditPayloadDecision(string(rar.Status.Decision)),
 		DecidedAt:       rar.Status.DecidedAt.Time,

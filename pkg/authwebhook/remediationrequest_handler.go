@@ -25,7 +25,9 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -98,19 +100,19 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 
 	// Write complete audit event (webhook.remediationrequest.timeout_modified)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "webhook.remediationrequest.timeout_modified")
-	audit.SetEventCategory(auditEvent, "orchestration") // Gap #8: Use orchestration category (webhook is RR implementation detail)
+	audit.SetEventType(auditEvent, EventTypeTimeoutModified)
+	audit.SetEventCategory(auditEvent, roaudit.EventCategoryOrchestration) // Gap #8: Use orchestration category (webhook is RR implementation detail)
 	audit.SetEventAction(auditEvent, "timeout_modified")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
 	audit.SetResource(auditEvent, "RemediationRequest", rr.Name)
-	audit.SetCorrelationID(auditEvent, string(rr.UID)) // Use RR UID for correlation
+	audit.SetCorrelationID(auditEvent, rr.Name) // DD-AUDIT-CORRELATION-001: RR name (human-readable, matches ADR-034 query pattern)
 	audit.SetNamespace(auditEvent, rr.Namespace)
 
 	// Set event data payload (RemediationRequestWebhookAuditPayload)
 	// Per Gap #8: Capture old and new TimeoutConfig for audit trail
 	payload := api.RemediationRequestWebhookAuditPayload{
-		EventType:  "webhook.remediationrequest.timeout_modified",
+		EventType:  api.RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified,
 		RrName:     rr.Name,
 		Namespace:  rr.Namespace,
 		ModifiedBy: authCtx.Username, // ModifiedBy is string, not OptString
@@ -130,9 +132,13 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	auditEvent.EventData = api.NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
-	// Explicitly ignore errors - audit should not block webhook operations
-	// The audit store has retry + DLQ mechanisms for reliability
-	_ = h.auditStore.StoreAudit(ctx, auditEvent)
+	// Audit failures are non-blocking but logged for observability
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		logger := ctrl.Log.WithName("rr-webhook")
+		logger.Error(err, "Audit event storage failed (non-blocking)",
+			"eventType", auditEvent.EventType,
+			"eventAction", auditEvent.EventAction)
+	}
 
 	// Marshal the patched object
 	marshaledRR, err := json.Marshal(rr)

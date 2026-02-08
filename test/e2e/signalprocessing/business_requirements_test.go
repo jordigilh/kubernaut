@@ -47,8 +47,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -67,6 +65,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -80,15 +79,11 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-node-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNs},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-node")
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-001: Node enrichment - moved from integration tier (ENVTEST limitation)
@@ -136,7 +131,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 					Name:         "NodeEnrichTest",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -193,7 +188,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
 					Name:         "DegradedModeTest",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -244,21 +239,13 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var testNs string
 
 		BeforeEach(func() {
-			testNs = fmt.Sprintf("e2e-prod-%s", uuid.New().String()[:8])
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: testNs,
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-prod", helpers.WithLabels(map[string]string{
+				"kubernaut.ai/environment": "production",
+			}))
 		})
 
 		AfterEach(func() {
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 		})
 
 		// TDD RED: This test will FAIL until controller assigns P0 priority
@@ -331,7 +318,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 						Name:         "MemoryPressure",
-						Severity: "high",
+						Severity:     "high",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -363,29 +350,13 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 		var stagingNs, devNs string
 
 		BeforeEach(func() {
-			stagingNs = fmt.Sprintf("e2e-staging-%s", uuid.New().String()[:8])
-			devNs = fmt.Sprintf("e2e-dev-%s", uuid.New().String()[:8])
-
-			// Create staging namespace
-			Expect(k8sClient.Create(ctx, &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   stagingNs,
-					Labels: map[string]string{"kubernaut.ai/environment": "staging"},
-				},
-			})).To(Succeed())
-
-			// Create development namespace
-			Expect(k8sClient.Create(ctx, &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   devNs,
-					Labels: map[string]string{"kubernaut.ai/environment": "development"},
-				},
-			})).To(Succeed())
+			stagingNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-staging", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "staging"}))
+			devNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-dev", helpers.WithLabels(map[string]string{"kubernaut.ai/environment": "development"}))
 		})
 
 		AfterEach(func() {
-			_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: stagingNs}})
-			_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: devNs}})
+			helpers.DeleteTestNamespace(ctx, k8sClient, stagingNs)
+			helpers.DeleteTestNamespace(ctx, k8sClient, devNs)
 		})
 
 		// TDD RED: This test will FAIL until controller assigns P2 priority
@@ -448,7 +419,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
 						Name:         "DevInfo",
-						Severity: "low",
+						Severity:     "low",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -485,26 +456,16 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing", func() {
 	var testNs string
 
-	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-env-%s", uuid.New().String()[:8])
-	})
-
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// TDD RED: This test will FAIL until controller classifies environment
 	It("BR-SP-051: should classify production from namespace label with high confidence", func() {
 		By("Creating namespace with production label")
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"kubernaut.ai/environment": "production",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-env", helpers.WithLabels(map[string]string{
+			"kubernaut.ai/environment": "production",
+		}))
 
 		By("Creating SignalProcessing CR")
 		sp := &signalprocessingv1alpha1.SignalProcessing{
@@ -522,7 +483,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
 					Name:         "TestAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -557,13 +518,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 	// TDD RED: This test will FAIL until controller defaults to unknown
 	It("BR-SP-053: should default to unknown for unclassifiable namespaces", func() {
 		By("Creating namespace without environment label")
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				// No kubernaut.ai/environment label
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-env")
 
 		By("Creating SignalProcessing CR")
 		sp := &signalprocessingv1alpha1.SignalProcessing{
@@ -581,7 +536,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
 					Name:         "UnclassifiedAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -619,15 +574,11 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-owner-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNs},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-owner")
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// TDD RED: This test will FAIL until controller builds owner chain
@@ -740,15 +691,11 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-detect-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNs},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-detect")
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// TDD RED: This test will FAIL until controller detects PDB
@@ -909,7 +856,7 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
 					Name:         "HPAAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -947,20 +894,13 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-custom-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"kubernaut.ai/team": "payments",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-custom", helpers.WithLabels(map[string]string{
+			"kubernaut.ai/team": "payments",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// TDD RED: This test will FAIL until controller extracts custom labels
@@ -1026,20 +966,13 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-audit-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"kubernaut.ai/environment": "production",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-audit", helpers.WithLabels(map[string]string{
+			"kubernaut.ai/environment": "production",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-090: Verify audit events are written to DataStorage
@@ -1245,20 +1178,13 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 	var testNs string
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-workload-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"kubernaut.ai/environment": "production",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-workload", helpers.WithLabels(map[string]string{
+			"kubernaut.ai/environment": "production",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-A: StatefulSet enrichment - targets enrichStatefulSet (0% coverage)
@@ -1343,7 +1269,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
 					Name:         "StatefulSetPodAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1547,7 +1473,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
 					Name:         "ServicePodAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1590,21 +1516,14 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-deploy-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "production",
-					"team":        "platform",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-deploy", helpers.WithLabels(map[string]string{
+			"environment": "production",
+			"team":        "platform",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-D: Deployment enrichment - targets enrichDeploymentSignal (0% → 75%)
@@ -1666,7 +1585,7 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
 					Name:         "DeploymentRolloutAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1710,21 +1629,14 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-sts-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "production",
-					"team":        "data",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-sts", helpers.WithLabels(map[string]string{
+			"environment": "production",
+			"team":        "data",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-A: StatefulSet enrichment - targets enrichStatefulSetSignal (0% → 75%)
@@ -1849,21 +1761,14 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-ds-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "production",
-					"team":        "platform",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-ds", helpers.WithLabels(map[string]string{
+			"environment": "production",
+			"team":        "platform",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-B: DaemonSet enrichment - targets enrichDaemonSetSignal (0% → 75%)
@@ -1924,7 +1829,7 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1a2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "DaemonSetNodeAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1968,21 +1873,14 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-rs-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "staging",
-					"team":        "platform",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-rs", helpers.WithLabels(map[string]string{
+			"environment": "staging",
+			"team":        "platform",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-C: ReplicaSet enrichment - targets enrichReplicaSetSignal (0% → 75%)
@@ -2044,7 +1942,7 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
 					Name:         "ReplicaSetAlert",
-					Severity: "high",
+					Severity:     "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2088,21 +1986,14 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-svc-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "production",
-					"team":        "network",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-svc", helpers.WithLabels(map[string]string{
+			"environment": "production",
+			"team":        "network",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-103-E: Service enrichment - targets enrichServiceSignal (0% → 75%)
@@ -2233,21 +2124,14 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p0-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "production", // Production environment
-					"team":        "platform",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-p0", helpers.WithLabels(map[string]string{
+			"environment": "production", // Production environment
+			"team":        "platform",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-070-A: Production + Critical → Priority assigned
@@ -2337,21 +2221,14 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p2-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				Labels: map[string]string{
-					"environment": "staging", // Non-production environment
-					"team":        "development",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-p2", helpers.WithLabels(map[string]string{
+			"environment": "staging", // Non-production environment
+			"team":        "development",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-070-B: Non-production + Warning → Priority assigned
@@ -2389,7 +2266,7 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 					Name:         "StagingWarningAlert",
-					Severity: "high", // Warning severity
+					Severity:     "high", // Warning severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2429,21 +2306,13 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 	const interval = 5 * time.Second
 
 	BeforeEach(func() {
-		testNs = fmt.Sprintf("e2e-p3-%s", uuid.New().String()[:8])
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNs,
-				// No environment label (unknown environment)
-				Labels: map[string]string{
-					"team": "experimental",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-p3", helpers.WithLabels(map[string]string{
+			"team": "experimental",
+		}))
 	})
 
 	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
 	})
 
 	// BR-SP-070-C: Unknown environment + Info → Priority assigned
@@ -2481,7 +2350,7 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "ExperimentalInfoAlert",
-					Severity: "low", // Info severity
+					Severity:     "low", // Info severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),

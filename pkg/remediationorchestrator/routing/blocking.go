@@ -25,6 +25,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -33,6 +34,7 @@ import (
 // Allows mocking in unit tests while using real implementation in integration tests.
 type Engine interface {
 	CheckBlockingConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string) (*BlockingCondition, error)
+	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
 }
@@ -42,10 +44,11 @@ type Engine interface {
 //
 // Reference: DD-RO-002 (Centralized Routing Responsibility)
 type RoutingEngine struct {
-	client    client.Client
-	apiReader client.Reader // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
-	namespace string
-	config    Config
+	client       client.Client
+	apiReader    client.Reader       // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
+	namespace    string
+	config       Config
+	scopeChecker scope.ScopeChecker // BR-SCOPE-010: Mandatory scope validation (DI, same as RetryObserver)
 }
 
 // Config holds configuration for routing decisions.
@@ -84,16 +87,33 @@ type Config struct {
 	// Prevents overflow and aligns with MaxCooldown
 	// Reference: DD-WE-004 line 71
 	ExponentialBackoffMaxExponent int
+
+	// ========================================
+	// SCOPE VALIDATION BACKOFF (ADR-053, BR-SCOPE-010)
+	// ========================================
+
+	// ScopeBackoffBase is the initial backoff period for unmanaged resource blocking.
+	// Default: 5 seconds (per ADR-053 Decision #4)
+	ScopeBackoffBase int64 // seconds
+
+	// ScopeBackoffMax is the maximum backoff period for unmanaged resource blocking.
+	// Default: 300 seconds (5 minutes, per ADR-053 Decision #4)
+	ScopeBackoffMax int64 // seconds
 }
 
 // NewRoutingEngine creates a new RoutingEngine with the given client and config.
-// DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries
-func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config) *RoutingEngine {
+// DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries.
+// BR-SCOPE-010: scopeChecker is mandatory (panics on nil, same pattern as RetryObserver).
+func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker) *RoutingEngine {
+	if scopeChecker == nil {
+		panic("scopeChecker must not be nil — use mocks.AlwaysManagedScopeChecker{} in tests")
+	}
 	return &RoutingEngine{
-		client:    client,
-		apiReader: apiReader,
-		namespace: namespace,
-		config:    config,
+		client:       client,
+		apiReader:    apiReader,
+		namespace:    namespace,
+		config:       config,
+		scopeChecker: scopeChecker,
 	}
 }
 
@@ -108,15 +128,16 @@ func (r *RoutingEngine) Config() Config {
 // the RR can proceed to workflow execution.
 //
 // Priority Order (checked sequentially, first match wins):
-// 1. ConsecutiveFailures (BR-ORCH-042) - highest priority
-// 2. DuplicateInProgress (DD-RO-002-ADDENDUM) - prevents RR flood
-// 3. ResourceBusy (DD-RO-002) - protects target resources
-// 4. RecentlyRemediated (DD-RO-002 Check 4) - workflow-specific cooldown
-// 5. ExponentialBackoff (DD-WE-004) - graduated retry
+// 1. UnmanagedResource (BR-SCOPE-010, ADR-053) - MUST be first: if not in scope, nothing else matters
+// 2. ConsecutiveFailures (BR-ORCH-042) - consecutive failure protection
+// 3. DuplicateInProgress (DD-RO-002-ADDENDUM) - prevents RR flood
+// 4. ResourceBusy (DD-RO-002) - protects target resources
+// 5. RecentlyRemediated (DD-RO-002 Check 4) - workflow-specific cooldown
+// 6. ExponentialBackoff (DD-WE-004) - graduated retry
 //
 // Parameters:
 //   - workflowID: The workflow ID from AIAnalysis.Status.SelectedWorkflow.WorkflowID
-//     Used for workflow-specific cooldown in Check 4 (RecentlyRemediated).
+//     Used for workflow-specific cooldown in Check 5 (RecentlyRemediated).
 //
 // Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
 func (r *RoutingEngine) CheckBlockingConditions(
@@ -124,7 +145,13 @@ func (r *RoutingEngine) CheckBlockingConditions(
 	rr *remediationv1.RemediationRequest,
 	workflowID string,
 ) (*BlockingCondition, error) {
-	// Check 1: Consecutive failures (highest priority)
+	// Check 1: UnmanagedResource (BR-SCOPE-010, ADR-053) — MUST be first
+	// If the resource is not in scope, no other checks matter.
+	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
+		return blocked, nil
+	}
+
+	// Check 2: Consecutive failures
 	if blocked := r.CheckConsecutiveFailures(ctx, rr); blocked != nil {
 		return blocked, nil
 	}
@@ -446,6 +473,86 @@ func (r *RoutingEngine) CheckExponentialBackoff(
 		RequeueAfter: requeueAfter,
 		BlockedUntil: &nextAllowed,
 	}
+}
+
+// CheckUnmanagedResource checks if the target resource is in Kubernaut's management scope.
+// Blocks when the resource or its namespace does not have the kubernaut.ai/managed=true label.
+//
+// This is Check #1 (highest priority) in the blocking pipeline. If a resource is unmanaged,
+// no other checks (consecutive failures, rate limits, etc.) are relevant.
+//
+// BlockReason: "UnmanagedResource"
+// RequeueAfter: Exponential backoff (5s initial, 5min max, 2x multiplier per ADR-053 Decision #4)
+//
+// Reference: BR-SCOPE-010 (RO Scope Blocking), ADR-053 (Resource Scope Management)
+func (r *RoutingEngine) CheckUnmanagedResource(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+) *BlockingCondition {
+	logger := log.FromContext(ctx)
+
+	managed, err := r.scopeChecker.IsManaged(ctx,
+		rr.Namespace,
+		rr.Spec.TargetResource.Kind,
+		rr.Spec.TargetResource.Name)
+	if err != nil {
+		// Scope infra error — log and pass through (don't block on infra issues)
+		logger.Error(err, "Scope validation failed — allowing RR to proceed",
+			"namespace", rr.Namespace,
+			"kind", rr.Spec.TargetResource.Kind,
+			"name", rr.Spec.TargetResource.Name)
+		return nil
+	}
+
+	if managed {
+		return nil
+	}
+
+	// Calculate backoff: 5s initial, 5min max, 2x multiplier (ADR-053 Decision #4)
+	retryCount := rr.Status.ConsecutiveFailureCount // reuse existing retry counter
+	backoffDuration := r.calculateScopeBackoff(retryCount)
+	blockedUntil := time.Now().Add(backoffDuration)
+
+	logger.Info("Blocking RR: target resource is not managed by Kubernaut",
+		"namespace", rr.Namespace,
+		"kind", rr.Spec.TargetResource.Kind,
+		"name", rr.Spec.TargetResource.Name,
+		"backoff", backoffDuration,
+		"blockedUntil", blockedUntil.Format(time.RFC3339))
+
+	return &BlockingCondition{
+		Blocked: true,
+		Reason:  string(remediationv1.BlockReasonUnmanagedResource),
+		Message: fmt.Sprintf("Resource %s/%s/%s not managed by Kubernaut. "+
+			"Add label kubernaut.ai/managed=true to namespace or resource.",
+			rr.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+		RequeueAfter: backoffDuration,
+		BlockedUntil: &blockedUntil,
+	}
+}
+
+// calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.
+// Uses the shared backoff library (DD-SHARED-001) with scope-specific config (ADR-053 Decision #4).
+//
+// Formula: min(Base × 2^(retryCount), Max) with ±10% jitter
+// Defaults: 5s initial, 5min max (configured via Config.ScopeBackoffBase/Max)
+func (r *RoutingEngine) calculateScopeBackoff(retryCount int32) time.Duration {
+	base := r.config.ScopeBackoffBase
+	if base <= 0 {
+		base = 5 // default: 5 seconds (ADR-053)
+	}
+	max := r.config.ScopeBackoffMax
+	if max <= 0 {
+		max = 300 // default: 300 seconds = 5 minutes (ADR-053)
+	}
+
+	config := backoff.Config{
+		BasePeriod:    time.Duration(base) * time.Second,
+		MaxPeriod:     time.Duration(max) * time.Second,
+		Multiplier:    2.0,
+		JitterPercent: 10,
+	}
+	return config.Calculate(retryCount)
 }
 
 // CalculateExponentialBackoff calculates the cooldown duration based on consecutive failures.

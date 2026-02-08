@@ -25,12 +25,11 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -77,23 +76,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-sig-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-sig")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-001
@@ -326,7 +316,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.received"
+				eventType := gateway.EventTypeSignalReceived
 				var receivedEvents []ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -372,22 +362,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-crd-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-crd")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-006
@@ -415,7 +396,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -428,7 +409,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"gateway.crd.created audit event should exist in DataStorage")
 
 				By("3. Validate audit event metadata")
-				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				Expect(crdCreatedEvent.EventType).To(Equal(gateway.EventTypeCRDCreated))
 				Expect(crdCreatedEvent.EventAction).To(Equal("created"))
 				Expect(crdCreatedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryGateway))
 				Expect(crdCreatedEvent.CorrelationID).To(Equal(correlationID))
@@ -492,7 +473,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -557,7 +538,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -643,22 +624,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-dedup-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-dedup")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-011
@@ -707,7 +679,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Note: The deduplicated event uses the FIRST CRD's correlation ID (existing RR)
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &firstCRDName, &eventType, nil)
@@ -720,7 +692,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"gateway.signal.deduplicated audit event should exist")
 
 				By("4. Validate deduplication audit metadata")
-				Expect(dedupEvent.EventType).To(Equal("gateway.signal.deduplicated"))
+				Expect(dedupEvent.EventType).To(Equal(gateway.EventTypeSignalDeduplicated))
 				Expect(dedupEvent.EventAction).To(Equal("deduplicated"))
 				Expect(dedupEvent.CorrelationID).To(Equal(firstCRDName))
 
@@ -765,7 +737,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
@@ -825,7 +797,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Use actual RR name as correlation ID
 				actualCorrelationID := response.RemediationRequestName
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID, &eventType, nil)
@@ -889,7 +861,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
@@ -968,7 +940,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &rrNameA, &eventType, nil)
@@ -1055,7 +1027,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Use actual RR name as correlation ID
 				actualCorrelationID2 := response2.RemediationRequestName
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID2, &eventType, nil)
@@ -1067,7 +1039,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				// Validate it's a creation event, not deduplication
-				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				Expect(crdCreatedEvent.EventType).To(Equal(gateway.EventTypeCRDCreated))
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
 				Expect(ok).To(BeTrue())
 				Expect(payload.Fingerprint).To(Equal(actualFingerprint))
@@ -1087,23 +1059,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-unique-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-unique")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-AUD-020] should assign globally unique audit IDs to all events", func() {
@@ -1197,23 +1160,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		BeforeEach(func() {
 			// Create unique test namespace for K8s resource isolation
-			processID := GinkgoParallelProcess()
-			testNamespace = fmt.Sprintf("gw-aud-fail-%d-%s", processID, uuid.New().String()[:8])
-
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = sharedhelpers.CreateTestNamespace(ctx, k8sClient, "gw-aud-fail")
 
 			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
 		})
 
 		AfterEach(func() {
 			// Cleanup namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			sharedhelpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-AUD-016
@@ -1238,9 +1192,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "API server unavailable",
 				}
 
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error when K8s fails")
@@ -1249,7 +1203,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
@@ -1271,7 +1225,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("3. Validate gateway.crd.failed audit event fields")
-				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventType).To(Equal(gateway.EventTypeCRDFailed))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID),
 					"BR-GATEWAY-058-A: Correlation ID should be readable format (alertname:namespace:kind:name)")
@@ -1313,9 +1267,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
 				}
 
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				_, err = gwServer.ProcessSignal(ctx, signal)
 				Expect(err).To(HaveOccurred())
@@ -1324,7 +1278,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
@@ -1363,19 +1317,88 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		// Test ID: GW-INT-AUD-018
 		// Scenario: Retry Attempt Audit Events
-		// BR: BR-GATEWAY-058
+		// BR: BR-GATEWAY-058, BR-GATEWAY-113
 		// Section: 1.4.3
 		Context("when retrying failed CRD creation (GW-INT-AUD-018, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
-				Skip("Deferred: Gateway ProcessSignal() audit enhancement needed - BR-GATEWAY-113 exists but intermediate retry events not audited")
-				// Implementation Note:
-				// - Gateway's ProcessSignal() currently fails immediately on K8s errors
-				// - No retry loop exists in the current implementation
-				// - Requires audit enhancement: BR-GATEWAY-113 exists (retry logic works), but intermediate retry events not audited
-				// - Once retry logic is added, this test will validate:
-				//   1. Each retry attempt emits a separate gateway.crd.failed event
-				//   2. Each event has unique EventID but same CorrelationID
-				//   3. ErrorDetails includes retry count or attempt number
+				By("1. Create signal and process with retryable (503) K8s client error")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert := createPrometheusAlert(testNamespace, "TestRetryAudit018", "critical", fingerprint, correlationID)
+
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Always-failing client with retryable 503 error
+				failingK8sClient := &ErrorInjectableK8sClient{
+					Client:     k8sClient,
+					failCreate: true,
+					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
+				}
+
+				// Configure retry: 3 attempts with minimal backoff for fast test
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gatewayConfig.Processing.Retry.MaxAttempts = 3
+				gatewayConfig.Processing.Retry.InitialBackoff = 1 * time.Millisecond
+				gatewayConfig.Processing.Retry.MaxBackoff = 2 * time.Millisecond
+
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = gwServer.ProcessSignal(ctx, signal)
+				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error after all retries exhausted")
+
+				By("2. Query gateway.crd.failed audit events (expecting 3: 2 intermediate + 1 final)")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := gateway.EventTypeCRDFailed
+				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
+					signal.AlertName,
+					signal.Namespace,
+					signal.Resource.Kind,
+					signal.Resource.Name,
+				)
+
+				var auditEvents []ogenclient.AuditEvent
+				Eventually(func() int {
+					events, _, queryErr := sharedhelpers.QueryAuditEvents(ctx, client, &readableCorrelationID, &eventType, nil)
+					if queryErr != nil {
+						return 0
+					}
+					auditEvents = events
+					return len(events)
+				}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
+					"BR-GATEWAY-058: Should emit 3 gateway.crd.failed audit events (2 intermediate retries + 1 final)")
+
+				By("3. Validate each event has unique EventID but same CorrelationID")
+				eventIDs := make(map[string]bool)
+				for _, event := range auditEvents {
+					Expect(event.EventType).To(Equal(gateway.EventTypeCRDFailed))
+					Expect(event.CorrelationID).To(Equal(readableCorrelationID),
+						"BR-GATEWAY-058: All retry events share the same CorrelationID")
+					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+
+					eventIDStr := event.EventID.Value.String()
+					Expect(eventIDs).ToNot(HaveKey(eventIDStr),
+						"BR-GATEWAY-058: Each retry event must have a unique EventID")
+					eventIDs[eventIDStr] = true
+				}
+
+				By("4. Validate ErrorDetails present in each event")
+				for _, event := range auditEvents {
+					payload, ok := extractGatewayPayload(&event)
+					Expect(ok).To(BeTrue(), "BR-GATEWAY-058: Each retry event must have GatewayAuditPayload")
+
+					errorDetails, hasError := payload.ErrorDetails.Get()
+					Expect(hasError).To(BeTrue(), "BR-GATEWAY-058: Each retry event must include ErrorDetails")
+					Expect(errorDetails.Message).To(ContainSubstring("Service Unavailable"),
+						"BR-GATEWAY-058: Error message should describe the transient failure")
+				}
+
+				GinkgoWriter.Printf("✅ Retry audit validated: %d events, %d unique IDs, correlation_id=%s\n",
+					len(auditEvents), len(eventIDs), readableCorrelationID)
 			})
 		})
 
@@ -1395,9 +1418,9 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				}
 
 				By("2. Trip circuit breaker by making 10+ failed requests")
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient, sharedAuditStore)
+				Expect(err).ToNot(HaveOccurred())
 
 				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
 				for i := 0; i < 10; i++ {
@@ -1432,7 +1455,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
@@ -1455,7 +1478,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("5. Validate audit event includes circuit breaker error details")
-				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventType).To(Equal(gateway.EventTypeCRDFailed))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID))
 

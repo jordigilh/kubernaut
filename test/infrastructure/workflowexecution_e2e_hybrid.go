@@ -225,6 +225,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create namespace %s: %w", WorkflowExecutionNamespace, nsErr)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", WorkflowExecutionNamespace)
+	// BR-SCOPE-001: Label namespace as managed by Kubernaut
+	_ = exec.Command("kubectl", "label", "namespace", WorkflowExecutionNamespace,
+		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
 	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
@@ -235,6 +238,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create namespace %s: %w", ExecutionNamespace, execNsErr)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", ExecutionNamespace)
+	// BR-SCOPE-001: Label namespace as managed by Kubernaut
+	_ = exec.Command("kubectl", "label", "namespace", ExecutionNamespace,
+		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
 
@@ -727,6 +733,9 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to create namespace %s: %w", namespace, nsErr)
 	}
 	_, _ = fmt.Fprintf(output, "   ✅ Namespace %s ready\n", namespace)
+	// BR-SCOPE-001: Label namespace as managed by Kubernaut
+	_ = exec.Command("kubectl", "label", "namespace", namespace,
+		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
 
 	// Deploy CRDs (use absolute path)
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")

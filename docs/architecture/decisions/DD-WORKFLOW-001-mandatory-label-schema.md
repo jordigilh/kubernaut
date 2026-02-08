@@ -1,5 +1,7 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
+> **Note**: V1.0 uses label-only matching per DD-WORKFLOW-015. Semantic search references in this document are historical context for V1.1+.
+
 **Date**: November 14, 2025
 **Status**: ✅ **APPROVED** (V2.4 - Multi-Environment Support)
 **Decision Maker**: Kubernaut Architecture Team

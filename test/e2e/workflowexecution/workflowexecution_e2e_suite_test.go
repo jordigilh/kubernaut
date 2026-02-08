@@ -219,6 +219,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		err = tektonv1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
+		// Note: batch/v1 is already registered by k8s.io/client-go/kubernetes/scheme (BR-WE-014)
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
@@ -368,6 +369,7 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			Namespace: "default",
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+			ExecutionEngine: "tekton", // BR-WE-014: Required field (enum: tekton, job)
 			// Required reference to parent RemediationRequest
 			RemediationRequestRef: corev1.ObjectReference{
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",

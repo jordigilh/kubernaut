@@ -19,7 +19,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -106,13 +105,14 @@ type DeduplicationSettings struct {
 // Environment classification now owned by Signal Processing per DD-CATEGORIZATION-001
 
 // CRDSettings contains CRD creation configuration.
+//
+// Note: FallbackNamespace field removed (February 2026).
+// Namespace fallback is deprecated per DD-GATEWAY-007 (DEPRECATED).
+// ADR-053 scope validation now rejects signals to unmanaged namespaces upstream,
+// making CRD namespace fallback redundant.
 type CRDSettings struct {
-	// Fallback namespace for CRD creation when target namespace doesn't exist
-	// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
-	// Default: auto-detect from pod's namespace (/var/run/secrets/kubernetes.io/serviceaccount/namespace)
-	// Override: set explicitly for multi-tenant or special scenarios
-	// If auto-detect fails (non-K8s environment), falls back to "kubernaut-system"
-	FallbackNamespace string `yaml:"fallbackNamespace"` // Default: auto-detect pod namespace
+	// Reserved for future CRD creation configuration
+	// FallbackNamespace was removed - see DD-GATEWAY-007 deprecation notice
 }
 
 // RetrySettings configures retry behavior for transient K8s API errors.
@@ -231,32 +231,6 @@ func (r *RetrySettings) Validate() error {
 	return nil
 }
 
-// GetPodNamespace auto-detects the pod's namespace from the service account mount.
-// This is the standard Kubernetes pattern for in-cluster namespace detection.
-//
-// Returns:
-//   - Pod's namespace if running in Kubernetes cluster
-//   - "kubernaut-system" as fallback for non-K8s environments (e.g., local dev)
-func GetPodNamespace() string {
-	// Standard Kubernetes service account namespace file
-	const namespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-
-	data, err := os.ReadFile(namespaceFile)
-	if err != nil {
-		// Not running in Kubernetes cluster (e.g., local development)
-		// Fall back to default production namespace
-		return "kubernaut-system"
-	}
-
-	namespace := strings.TrimSpace(string(data))
-	if namespace == "" {
-		// Empty namespace file (should never happen, but be defensive)
-		return "kubernaut-system"
-	}
-
-	return namespace
-}
-
 // LoadFromFile loads configuration from a YAML file
 func LoadFromFile(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
@@ -267,12 +241,6 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 	var cfg ServerConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Apply smart defaults for CRD fallback namespace
-	// If not explicitly configured, auto-detect from pod's namespace
-	if cfg.Processing.CRD.FallbackNamespace == "" {
-		cfg.Processing.CRD.FallbackNamespace = GetPodNamespace()
 	}
 
 	// Apply retry defaults if not configured
@@ -429,19 +397,6 @@ func (c *ServerConfig) Validate() error {
 		)
 		err.Impact = "Exceeds maximum (but field is deprecated and unused)"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
-		return err
-	}
-
-	// CRD settings validation
-	if c.Processing.CRD.FallbackNamespace == "" {
-		err := NewConfigError(
-			"processing.crd.fallback_namespace",
-			"(empty)",
-			"is empty after defaults",
-			"This should never happen - auto-detected from pod namespace",
-		)
-		err.Impact = "Cluster-scoped signals cannot be processed"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#crd"
 		return err
 	}
 

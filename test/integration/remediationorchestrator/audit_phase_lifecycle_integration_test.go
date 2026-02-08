@@ -49,6 +49,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 )
 
 var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 §1)", func() {
@@ -72,7 +73,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			return nil, fmt.Errorf("dsClients is nil - DataStorage client not initialized in test suite")
 		}
 
-		eventCategory := "orchestration"
+		eventCategory := roaudit.EventCategoryOrchestration
 
 		// PAGINATION FIX (2026-01-24): Fetch ALL pages to avoid missing events under concurrent load
 		// Root Cause: Under high load (12 procs), 100+ events can exist, causing first-page-only
@@ -179,7 +180,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 		var queryErr error
 
 		Eventually(func() bool {
-			events, queryErr = queryAuditEvents(correlationID, "orchestrator.lifecycle.transitioned")
+			events, queryErr = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
 			if queryErr != nil {
 				GinkgoWriter.Printf("⏳ Waiting for phase transition audit event (error: %v)\n", queryErr)
 				return false
@@ -197,8 +198,8 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 		event := events[0]
 
 		// Validate event details
-		Expect(event.EventType).To(Equal("orchestrator.lifecycle.transitioned"))
-		Expect(string(event.EventCategory)).To(Equal("orchestration"))
+		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleTransitioned))
+		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration))
 		Expect(event.EventAction).To(Equal("transitioned"))
 		Expect(event.CorrelationID).To(Equal(correlationID))
 		Expect(string(event.EventOutcome)).To(Equal("success"))
@@ -265,7 +266,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-				events, err = queryAuditEvents(correlationID, "orchestrator.lifecycle.transitioned")
+				events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
 				if err != nil {
 					return false
 				}
@@ -367,22 +368,22 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-				events, err = queryAuditEvents(correlationID, "orchestrator.lifecycle.completed")
-				if err != nil {
-					GinkgoWriter.Printf("⏳ Waiting for completion audit event (error: %v)\n", err)
-					return false
-				}
-				return len(events) > 0
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-				"Lifecycle completion audit event should be persisted in DataStorage")
+			events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Waiting for completion audit event (error: %v)\n", err)
+				return false
+			}
+			return len(events) > 0
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"Lifecycle completion audit event should be persisted in DataStorage")
 
-			// Validate event details
-			Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
-			event := events[0]
+		// Validate event details
+		Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
+		event := events[0]
 
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.completed"))
-			Expect(string(event.EventCategory)).To(Equal("orchestration")) // Convert enum to string
-			Expect(event.EventAction).To(Equal("completed"))
+		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
+		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
+		Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
 			Expect(event.CorrelationID).To(Equal(correlationID))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
@@ -451,28 +452,28 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-				events, err = queryAuditEvents(correlationID, "orchestrator.lifecycle.completed")
-				if err != nil {
-					GinkgoWriter.Printf("⏳ Waiting for failure completion audit event (error: %v)\n", err)
-					return false
-				}
-				if len(events) > 0 {
-					GinkgoWriter.Printf("✅ Found %d completion events, first event: EventType=%s, EventCategory=%s, EventOutcome=%s\n",
-						len(events), events[0].EventType, events[0].EventCategory, string(events[0].EventOutcome))
-				} else {
-					GinkgoWriter.Printf("⏳ No completion events found yet (correlation_id=%s, event_type=orchestrator.lifecycle.completed)\n", correlationID)
-				}
-				return len(events) > 0
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-				"Lifecycle failure completion audit event should be persisted in DataStorage")
+			events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Waiting for failure completion audit event (error: %v)\n", err)
+				return false
+			}
+			if len(events) > 0 {
+				GinkgoWriter.Printf("✅ Found %d completion events, first event: EventType=%s, EventCategory=%s, EventOutcome=%s\n",
+					len(events), events[0].EventType, events[0].EventCategory, string(events[0].EventOutcome))
+			} else {
+				GinkgoWriter.Printf("⏳ No completion events found yet (correlation_id=%s, event_type=%s)\n", correlationID, roaudit.EventTypeLifecycleCompleted)
+			}
+			return len(events) > 0
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"Lifecycle failure completion audit event should be persisted in DataStorage")
 
-			// Validate event details
-			Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
-			event := events[0]
+		// Validate event details
+		Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
+		event := events[0]
 
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.completed"))
-			Expect(string(event.EventCategory)).To(Equal("orchestration")) // Convert enum to string
-			Expect(event.EventAction).To(Equal("completed"))
+		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
+		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
+		Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
 			Expect(event.CorrelationID).To(Equal(correlationID))
 			Expect(string(event.EventOutcome)).To(Equal("failure"))
 

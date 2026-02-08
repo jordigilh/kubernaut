@@ -28,6 +28,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// Workflow search event type constant (L-3 SOC2 Fix)
+const (
+	EventTypeSearchCompleted = "workflow.catalog.search_completed"
+	ActionSearchCompleted    = "search_completed"
+)
+
 // ========================================
 // WORKFLOW SEARCH AUDIT EVENT DATA TYPES
 // ========================================
@@ -93,10 +99,9 @@ type ScoringV1 struct {
 }
 
 // SearchExecutionMetadata captures search execution details (BR-AUDIT-028).
+// V1.0: Label-only search (DD-WORKFLOW-015). No embedding fields.
 type SearchExecutionMetadata struct {
-	DurationMs          int64  `json:"duration_ms"`
-	EmbeddingDimensions int    `json:"embedding_dimensions"`
-	EmbeddingModel      string `json:"embedding_model"`
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // ========================================
@@ -157,9 +162,9 @@ func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest
 	// Create event using OpenAPI types (DD-AUDIT-002 V2.0)
 	event := pkgaudit.NewAuditEventRequest()
 	event.Version = "1.0"
-	pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-	pkgaudit.SetEventCategory(event, "workflow")
-	pkgaudit.SetEventAction(event, "search_completed")
+	pkgaudit.SetEventType(event, EventTypeSearchCompleted)
+	pkgaudit.SetEventCategory(event, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(event, ActionSearchCompleted)
 	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(event, "service", "datastorage")
 	pkgaudit.SetResource(event, "workflow_catalog", resourceID)
@@ -283,11 +288,10 @@ func (b *WorkflowSearchAuditEventBuilder) buildWorkflowMetadataOgen(result model
 }
 
 // buildSearchMetadataOgen constructs SearchExecutionMetadata using ogen-generated types.
+// V1.0: Label-only search (DD-WORKFLOW-015). No embedding fields.
 func (b *WorkflowSearchAuditEventBuilder) buildSearchMetadataOgen() ogenclient.SearchExecutionMetadata {
 	return ogenclient.SearchExecutionMetadata{
-		DurationMs:          b.duration.Milliseconds(),
-		EmbeddingDimensions: 768, // all-mpnet-base-v2
-		EmbeddingModel:      "all-mpnet-base-v2",
+		DurationMs: b.duration.Milliseconds(),
 	}
 }
 

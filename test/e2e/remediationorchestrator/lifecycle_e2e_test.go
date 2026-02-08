@@ -231,8 +231,9 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						Version:        "v1.0.0",
 						ContainerImage: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
 					},
-					TargetResource: testNS + "/Deployment/test-app",
-					Confidence:     0.92,
+					TargetResource:  testNS + "/Deployment/test-app",
+					ExecutionEngine: "tekton",
+					Confidence:      0.92,
 				},
 			}
 			Expect(k8sClient.Create(ctx, we)).To(Succeed())

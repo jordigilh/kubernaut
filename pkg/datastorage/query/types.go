@@ -17,77 +17,12 @@ limitations under the License.
 package query
 
 import (
-	"database/sql/driver"
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
-// Vector is a custom type for pgvector embeddings that implements sql.Scanner
-// BR-STORAGE-008: Vector type for pgvector compatibility
-type Vector []float32
-
-// Scan implements sql.Scanner for Vector type
-// Converts PostgreSQL vector format "[x,y,z,...]" to []float32
-func (v *Vector) Scan(value interface{}) error {
-	if value == nil {
-		*v = nil
-		return nil
-	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("failed to scan Vector: expected []byte, got %T", value)
-	}
-
-	// Parse "[x,y,z,...]" format
-	str := string(bytes)
-	str = strings.TrimPrefix(str, "[")
-	str = strings.TrimSuffix(str, "]")
-
-	if str == "" {
-		*v = []float32{}
-		return nil
-	}
-
-	parts := strings.Split(str, ",")
-	result := make([]float32, len(parts))
-
-	for i, part := range parts {
-		val, err := strconv.ParseFloat(strings.TrimSpace(part), 32)
-		if err != nil {
-			return fmt.Errorf("failed to parse vector element %d: %w", i, err)
-		}
-		result[i] = float32(val)
-	}
-
-	*v = result
-	return nil
-}
-
-// Value implements driver.Valuer for Vector type
-// Converts []float32 to PostgreSQL vector format "[x,y,z,...]"
-func (v Vector) Value() (driver.Value, error) {
-	if v == nil {
-		return nil, nil
-	}
-
-	if len(v) == 0 {
-		return "[]", nil
-	}
-
-	parts := make([]string, len(v))
-	for i, val := range v {
-		parts[i] = strconv.FormatFloat(float64(val), 'f', -1, 32)
-	}
-
-	return "[" + strings.Join(parts, ",") + "]", nil
-}
-
-// RemediationAuditResult is used for scanning from database with Vector support
+// RemediationAuditResult is used for scanning from database
 // This is an internal type that gets converted to models.RemediationAudit
 type RemediationAuditResult struct {
 	ID                   int64      `db:"id"`
@@ -107,7 +42,6 @@ type RemediationAuditResult struct {
 	TargetResource       string     `db:"target_resource"`
 	ErrorMessage         *string    `db:"error_message"`
 	Metadata             string     `db:"metadata"`
-	Embedding            Vector     `db:"embedding"` // Use Vector for scanning
 	CreatedAt            time.Time  `db:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at"`
 }
@@ -132,31 +66,9 @@ func (r *RemediationAuditResult) ToRemediationAudit() *models.RemediationAudit {
 		TargetResource:       r.TargetResource,
 		ErrorMessage:         r.ErrorMessage,
 		Metadata:             r.Metadata,
-		Embedding:            models.Vector(r.Embedding), // Convert query.Vector to models.Vector
 		CreatedAt:            r.CreatedAt,
 		UpdatedAt:            r.UpdatedAt,
 	}
-}
-
-// SemanticResultRow is used for scanning semantic search results from database
-type SemanticResultRow struct {
-	RemediationAuditResult
-	Similarity float32 `db:"similarity"`
-}
-
-// ToSemanticResult converts SemanticResultRow to SemanticResult
-func (r *SemanticResultRow) ToSemanticResult() *SemanticResult {
-	return &SemanticResult{
-		RemediationAudit: r.ToRemediationAudit(),
-		Similarity:       r.Similarity,
-	}
-}
-
-// SemanticResult represents a semantic search result with similarity score
-// BR-STORAGE-012: Semantic search result type
-type SemanticResult struct {
-	*models.RemediationAudit
-	Similarity float32 `json:"similarity"` // Cosine similarity score (0-1)
 }
 
 // PaginationResult contains paginated results with metadata

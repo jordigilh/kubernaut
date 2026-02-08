@@ -41,8 +41,8 @@ class RemediationApprovalAuditPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('webhook.approval.decided'):
-            raise ValueError("must be one of enum values ('webhook.approval.decided')")
+        if value not in ('webhook.remediationapprovalrequest.decided'):
+            raise ValueError("must be one of enum values ('webhook.remediationapprovalrequest.decided')")
         return value
 
     @field_validator('decision')

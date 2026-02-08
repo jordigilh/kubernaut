@@ -58,7 +58,7 @@ import (
 //
 //   Standard Fields (11):
 //     1. version              (e.g., "1.0")
-//     2. event_type           (e.g., "gateway.signal.received")
+//     2. event_type           (e.g., gateway.EventTypeSignalReceived)
 //     3. event_category       (e.g., "gateway")
 //     4. event_action         (e.g., "received", "deduplicated")
 //     5. event_outcome        (e.g., "success")
@@ -222,7 +222,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
 			// Note: Filter by event_type since Gateway emits multiple events per correlation_id (signal.received, crd.created)
-			eventType := "gateway.signal.received"
+			eventType := gateway.EventTypeSignalReceived
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType),
@@ -264,7 +264,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"version should be '1.0' per ADR-034")
 
 			// Field 2: event_type
-			Expect(event.EventType).To(Equal("gateway.signal.received"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeSignalReceived),
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
@@ -394,7 +394,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ OUTCOME 6: SOC2 compliance - 7-year audit trail
 			Expect(event.Version).To(Equal("1.0"),
 				"Business outcome: ADR-034 v1.0 format ensures audit events remain queryable for compliance")
-			Expect(event.EventType).To(Equal("gateway.signal.received"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeSignalReceived),
 				"Business outcome: Structured event_type enables automated compliance reporting")
 		})
 	})
@@ -445,7 +445,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			By("3. Query Data Storage for deduplication audit event")
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
-			eventType2 := "gateway.signal.deduplicated"
+			eventType2 := gateway.EventTypeSignalDeduplicated
 			params2 := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType2),
@@ -483,7 +483,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"version should be '1.0' per ADR-034")
 
 			// Field 2: event_type (✅ DD-API-001: Direct OpenAPI type access)
-			Expect(event.EventType).To(Equal("gateway.signal.deduplicated"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeSignalDeduplicated),
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
@@ -589,7 +589,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// This is validated implicitly by occurrence_count=2 with deduplication_status='duplicate'
 
 			// ✅ OUTCOME 5: SOC2 compliance - audit trail shows deduplication decision
-			Expect(event.EventType).To(Equal("gateway.signal.deduplicated"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeSignalDeduplicated),
 				"Business outcome: Separate event type enables SOC2 audit trail for deduplication decisions")
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"Business outcome: outcome='success' confirms deduplication was intentional, not an error")
@@ -621,7 +621,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			By("2. Query Data Storage for crd.created audit event")
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
-			eventType3 := "gateway.crd.created"
+			eventType3 := gateway.EventTypeCRDCreated
 			params3 := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType3),
@@ -650,7 +650,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			// Critical ADR-034 fields (✅ DD-API-001: Direct OpenAPI type access)
 			Expect(event.Version).To(Equal("1.0"), "version should be '1.0' per ADR-034")
-			Expect(event.EventType).To(Equal("gateway.crd.created"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeCRDCreated),
 				"event_type should be 'gateway.crd.created'")
 			Expect(string(event.EventCategory)).To(Equal(gateway.CategoryGateway), "event_category should be 'gateway'")
 			Expect(event.EventAction).To(Equal("created"), "event_action should be 'created'")
@@ -687,7 +687,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ OUTCOME 3: SOC2 compliance - resource creation audit trail
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"Business outcome: outcome='success' confirms CRD was successfully created in K8s API")
-			Expect(event.EventType).To(Equal("gateway.crd.created"),
+			Expect(event.EventType).To(Equal(gateway.EventTypeCRDCreated),
 				"Business outcome: Separate event type enables querying 'how many CRDs created per day' (SLA metric)")
 
 			// ✅ OUTCOME 4: Debugging support - links signal to K8s resource

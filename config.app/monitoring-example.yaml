@@ -57,19 +57,6 @@ database:
   maxIdleConns: 5
   connMaxLifetime: "5m"
 
-# Vector Database Configuration (for pattern learning and analytics)
-vectordb:
-  enabled: true
-  backend: "memory"  # Use memory for example/development
-  embedding_service:
-    service: "local"
-    dimension: 384
-    model: "all-MiniLM-L6-v2"
-  cache:
-    enabled: true
-    max_size: 1000
-    cache_type: "memory"
-
 # Monitoring Configuration - Phase 1 Implementation
 monitoring:
   # Enable production monitoring clients (vs stub implementations)
@@ -102,13 +89,6 @@ monitoring:
     prediction_model: "similarity"      # Prediction model type
     async_processing: true               # Process assessments asynchronously
     batch_size: 10                       # Batch size for processing
-
-    # Vector Database Configuration
-    vector_db:
-      type: "memory"                     # "memory" or "pgvector"
-      connection_url: ""                 # For external vector databases
-      embedding_model: "text-embedding-ada-002"
-      vector_size: 1536
 
 # Alert Processing Filters
 filters:
@@ -183,22 +163,6 @@ monitoring:
     prediction_model: "similarity"      # Use similarity-based prediction
     async_processing: true               # Process in background
     batch_size: 20                       # Larger batch for production
-
-    # Production vector database configuration
-    vector_db:
-      type: "memory"                     # Use memory for simplicity
-      connection_url: ""
-      embedding_model: "text-embedding-ada-002"
-      vector_size: 1536
-
-# Alternative: PostgreSQL with pgvector for large-scale deployments
-# monitoring:
-#   effectiveness:
-#     vector_db:
-#       type: "pgvector"
-#       connection_url: "postgresql://user:password@postgres:5432/vectors"
-#       embedding_model: "text-embedding-ada-002"
-#       vector_size: 1536
 
 ---
 # Environment Variable Configuration

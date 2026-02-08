@@ -302,7 +302,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			// Query for lifecycle_completed event
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventCategory: ogenclient.NewOptString("orchestration"),
+				EventCategory: ogenclient.NewOptString(audit.EventCategoryOrchestration),
 				EventType:     ogenclient.NewOptString(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)),
 			}
 			resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
@@ -566,7 +566,7 @@ func queryAuditEventsOpenAPI(client *ogenclient.Client, correlationID, eventType
 	// Per ADR-034 v1.2: event_category is MANDATORY for queries
 	// Use context.Background() for query context (safe for parallel test execution)
 	queryCtx := context.Background()
-	eventCategory := "orchestration" // RO audit events use "orchestration" category
+	eventCategory := audit.EventCategoryOrchestration // RO audit events use "orchestration" category
 	params := ogenclient.QueryAuditEventsParams{
 		CorrelationID: ogenclient.NewOptString(correlationID),
 		EventCategory: ogenclient.NewOptString(eventCategory), // ✅ Required per ADR-034 v1.2 (matches pkg/remediationorchestrator/audit/audit.go)

@@ -502,7 +502,7 @@ source =
     %s
 
 [report]
-show_missing = false
+show_missing = true
 skip_covered = false
 `, filepath.Join(projectRoot, opts.SourceDir)+"/", opts.ContainerSourceDir+"/")
 

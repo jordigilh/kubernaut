@@ -265,7 +265,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// PHASE 2: Query Data Storage for gateway.signal.received event
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-			eventType := "gateway.signal.received"
+			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
 			// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
@@ -306,7 +306,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// Standard audit fields (per ADR-034)
 			Expect(auditEvent.Version).To(Equal("1.0"), "Audit event version")
-			Expect(auditEvent.EventType).To(Equal("gateway.signal.received"), "Event type")
+			Expect(auditEvent.EventType).To(Equal(gateway.EventTypeSignalReceived), "Event type")
 			Expect(string(auditEvent.EventCategory)).To(Equal(gateway.CategoryGateway), "Event category")
 			Expect(auditEvent.EventAction).To(Equal("received"), "Event action")
 			Expect(string(auditEvent.EventOutcome)).To(Equal("success"), "Event outcome")
@@ -478,7 +478,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			defer func() { _ = resp.Body.Close() }()
 
 			// Query Data Storage for audit event
-			eventType := "gateway.signal.received"
+			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
@@ -603,7 +603,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			defer func() { _ = resp.Body.Close() }()
 
 			// Query Data Storage for audit event
-			eventType := "gateway.signal.received"
+			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
@@ -729,10 +729,23 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}`, sharedNamespace)
 
 			// Send initial alert
-			resp1, err := postToGateway(gatewayURL+"/api/v1/signals/prometheus", initialAlert)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create new RR")
-			correlationID1, err := extractCorrelationID(resp1)
+			// BR-SCOPE-002: Wrap in Eventually to tolerate informer cache warm-up delays
+			// The managed namespace label may not be visible to the Gateway's scope cache immediately
+			var resp1 *http.Response
+			var correlationID1 string
+			Eventually(func() int {
+				var postErr error
+				resp1, postErr = postToGateway(gatewayURL+"/api/v1/signals/prometheus", initialAlert)
+				Expect(postErr).ToNot(HaveOccurred())
+				statusCode := resp1.StatusCode
+				if statusCode != http.StatusCreated {
+					_ = resp1.Body.Close()
+				}
+				return statusCode
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"First alert should create new RR (may retry while scope cache syncs)")
+			var err error
+			correlationID1, err = extractCorrelationID(resp1)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(correlationID1).ToNot(BeEmpty())
 			_ = resp1.Body.Close()
@@ -740,7 +753,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// ✅ MANDATORY: Use Eventually() to wait for first audit event (NO time.Sleep())
 			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
 			By("Waiting for initial signal audit event to be written")
-			eventTypeReceived := "gateway.signal.received"
+			eventTypeReceived := gateway.EventTypeSignalReceived
 			// K8s Cache Synchronization: Audit events depend on CRD visibility. Allow 60s for cache sync.
 			// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
 			Eventually(func() int {
@@ -770,7 +783,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying gateway.signal.deduplicated event captures all 3 RR reconstruction fields")
 
-			eventType := "gateway.signal.deduplicated"
+			eventType := gateway.EventTypeSignalDeduplicated
 			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
@@ -938,7 +951,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying Prometheus alert audit event has all 3 RR reconstruction fields")
 
-			eventType := "gateway.signal.received"
+			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
 			Eventually(func() int {

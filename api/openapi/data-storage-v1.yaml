@@ -1701,10 +1701,12 @@ components:
               'workflowexecution.workflow.failed': '#/components/schemas/WorkflowExecutionAuditPayload'
               'workflowexecution.selection.completed': '#/components/schemas/WorkflowExecutionAuditPayload'  # Gap #5 (BR-AUDIT-005) - ADR-034 v1.5
               'workflowexecution.execution.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005) - ADR-034 v1.5
+              'orchestrator.remediation.manual_review': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.routing.blocked': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
-              'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
-              'webhook.approval.decided': '#/components/schemas/RemediationApprovalAuditPayload'
+              'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
+              'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
               'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
@@ -2524,7 +2526,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2953,11 +2955,11 @@ components:
     WorkflowExecutionWebhookAuditPayload:
       type: object
       required: [workflow_name, clear_reason, cleared_at, previous_state, new_state, event_type]
-      description: Type-safe audit event payload for WorkflowExecution webhooks (workflow.unblocked)
+      description: Type-safe audit event payload for WorkflowExecution webhooks (block.cleared)
       properties:
         event_type:
           type: string
-          enum: ['webhook.workflow.unblocked']
+          enum: ['workflowexecution.block.cleared']
           description: Event type for discriminator (matches parent event_type)
         workflow_name:
           type: string
@@ -2987,7 +2989,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['webhook.approval.decided']
+          enum: ['webhook.remediationapprovalrequest.decided']
           description: Event type for discriminator (matches parent event_type)
         request_name:
           type: string
@@ -3319,23 +3321,14 @@ components:
 
     SearchExecutionMetadata:
       type: object
-      required: [duration_ms, embedding_dimensions, embedding_model]
-      description: Search execution details (BR-AUDIT-028)
+      required: [duration_ms]
+      description: Search execution details (BR-AUDIT-028). V1.0 label-only (DD-WORKFLOW-015).
       properties:
         duration_ms:
           type: integer
           format: int64
           description: Search execution time in milliseconds
           example: 150
-        embedding_dimensions:
-          type: integer
-          format: int32
-          description: Embedding vector dimensionality
-          example: 768
-        embedding_model:
-          type: string
-          description: Embedding model used
-          example: "text-embedding-3-small"
 
     # ========================================
     # AIAnalysis Internal Event Payloads

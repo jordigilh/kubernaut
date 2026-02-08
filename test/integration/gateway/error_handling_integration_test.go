@@ -31,14 +31,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,17 +49,11 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("gw-error-%d-%s", processID, uuid.New().String()[:8])
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-error")
 		logger = GinkgoLogr
 
-		// Create test namespace
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "Test namespace must be created")
-
-		// Create kubernaut-system fallback namespace (if not already exists)
-		fallbackNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"}}
-		_ = k8sClient.Create(ctx, fallbackNs) // Ignore error if already exists
+		// Note: Namespace fallback removed (DD-GATEWAY-007 DEPRECATED, February 2026)
+		// kubernaut-system namespace no longer needed for CRD fallback
 	})
 
 	AfterEach(func() {
@@ -172,9 +164,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create unique namespace to trigger potential race conditions")
-			uniqueNs := fmt.Sprintf("cascade-test-%s", uuid.New().String()[:8])
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: uniqueNs}}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			uniqueNs := helpers.CreateTestNamespace(ctx, k8sClient, "cascade-test")
 
 			By("3. Process 5 rapid signals to stress test error handling")
 			prometheusAdapter := adapters.NewPrometheusAdapter()
@@ -209,10 +199,10 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			validResponse, err := gwServer.ProcessSignal(ctx, validSignal)
-		Expect(err).ToNot(HaveOccurred(),
-			"BR-GATEWAY-113: Gateway must recover from cascading failures")
-		Expect(validResponse.Status).To(Or(Equal("created"), Equal("duplicate")),
-			"BR-GATEWAY-113: Gateway must continue normal operation after stress")
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-113: Gateway must recover from cascading failures")
+			Expect(validResponse.Status).To(Or(Equal("created"), Equal("duplicate")),
+				"BR-GATEWAY-113: Gateway must continue normal operation after stress")
 
 			GinkgoWriter.Printf("✅ Cascading failure resilience: %d/%d signals succeeded, Gateway operational\n",
 				successCount, 5)

@@ -21,14 +21,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -62,26 +60,15 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-sig-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-sig")
 
 			// Create custom Prometheus registry for test isolation
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-MET-001] should increment gateway_signals_received_total when signal processed", func() {
@@ -220,25 +207,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-crd-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-crd")
 
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-MET-006] should increment gateway_crds_created_total on successful CRD creation", func() {
@@ -292,15 +268,10 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 				"status":      "created",
 			})
 
-			processID := GinkgoParallelProcess()
 			By("2. Create second test namespace")
-			testNamespace2 := fmt.Sprintf("gw-metrics-ns2-%d-%s", processID, uuid.New().String()[:8])
-			ns2 := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace2},
-			}
-			Expect(k8sClient.Create(ctx, ns2)).To(Succeed())
+			testNamespace2 := helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-ns2")
 			defer func() {
-				_ = k8sClient.Delete(ctx, ns2)
+				helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace2)
 			}()
 
 			By("3. Process signals in different namespaces")
@@ -343,25 +314,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-dedup-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-dedup")
 
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-MET-011] should increment gateway_signals_deduplicated_total on deduplication", func() {
@@ -479,25 +439,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-perf-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-perf")
 
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		It("[GW-INT-MET-004] should populate gateway_http_request_duration_seconds histogram", func() {
@@ -602,25 +551,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-lifecycle-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-lifecycle")
 
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-MET-007
@@ -742,25 +680,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		)
 
 		BeforeEach(func() {
-			processID := GinkgoParallelProcess()
 			ctx = context.Background()
-			testNamespace = fmt.Sprintf("gw-metrics-advdedup-%d-%s", processID, uuid.New().String()[:8])
-
-			// Create test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-metrics-advdedup")
 
 			metricsReg = prometheus.NewRegistry()
 		})
 
 		AfterEach(func() {
-			// Delete test namespace
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-			}
-			_ = k8sClient.Delete(ctx, ns)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
 		// Test ID: GW-INT-MET-013

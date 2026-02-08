@@ -181,6 +181,10 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 				AlertName: "TimeoutTest",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: "timeout-test-pod",
+				},
 			})
 
 			start := time.Now()

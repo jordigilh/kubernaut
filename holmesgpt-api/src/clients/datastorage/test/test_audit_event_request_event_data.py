@@ -202,9 +202,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             labels = { }, )
                         ], ),
                 search_metadata = datastorage.models.search_execution_metadata.SearchExecutionMetadata(
-                    duration_ms = 150, 
-                    embedding_dimensions = 768, 
-                    embedding_model = 'text-embedding-3-small', ),
+                    duration_ms = 150, ),
                 version = '1.0.0',
                 status = 'active',
                 is_latest_version = True,
@@ -383,9 +381,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             labels = { }, )
                         ], ),
                 search_metadata = datastorage.models.search_execution_metadata.SearchExecutionMetadata(
-                    duration_ms = 150, 
-                    embedding_dimensions = 768, 
-                    embedding_model = 'text-embedding-3-small', ),
+                    duration_ms = 150, ),
                 version = '1.0.0',
                 status = 'active',
                 is_latest_version = True,

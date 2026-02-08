@@ -49,7 +49,6 @@ type ListOptions struct {
 // Supported parameter types (enforced by PostgreSQL driver at query execution):
 //   - string, int, int64, float32, float64, bool
 //   - time.Time, []byte
-//   - query.Vector ([]float32 for pgvector)
 //   - Other types supported by lib/pq PostgreSQL driver
 //
 // Type safety is enforced at:
@@ -142,7 +141,6 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 		"arg_count", len(args))
 
 	// Execute query and scan results into intermediate type
-	// We use RemediationAuditResult because it has query.Vector which implements sql.Scanner
 	var results []RemediationAuditResult
 	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
@@ -206,92 +204,6 @@ func (s *Service) PaginatedList(ctx context.Context, opts *ListOptions) (*Pagina
 	return result, nil
 }
 
-// SemanticSearch performs vector similarity search
-// BR-STORAGE-012: Semantic search with HNSW index optimization
-func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*SemanticResult, error) {
-	// Track semantic search duration for observability
-	// BR-STORAGE-019: Prometheus metrics for vector search performance
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		metrics.QueryDuration.WithLabelValues(metrics.OperationSemanticSearch).Observe(duration.Seconds())
-	}()
-
-	// Validate query
-	if queryText == "" {
-		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
-		return nil, fmt.Errorf("query string cannot be empty")
-	}
-
-	// V1.0: Label-only search (embeddings removed per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
-	// For DO-GREEN phase, we'll use a mock embedding
-	queryEmbedding := generateMockEmbedding(queryText)
-
-	// Convert embedding to pgvector string format
-	queryEmbeddingStr := embeddingToString(queryEmbedding)
-
-	// Set query planner hints to force HNSW index usage
-	// This ensures PostgreSQL uses the HNSW index even with complex WHERE clauses
-	// SET LOCAL ensures hints only apply to this transaction, not the entire session
-	plannerHints := `
-		SET LOCAL enable_seqscan = off;
-		SET LOCAL enable_indexscan = on;
-	`
-
-	if _, err := s.db.ExecContext(ctx, plannerHints); err != nil {
-		// Log warning but don't fail the query
-		// Planner hints are an optimization, not a requirement
-		s.logger.Info("failed to set query planner hints for HNSW optimization",
-			"error", err,
-			"impact", "query may not use HNSW index optimally, performance could be degraded")
-	} else {
-		s.logger.V(1).Info("query planner hints set successfully",
-			"hint", "enable_seqscan=off, enable_indexscan=on")
-	}
-
-	// Perform vector similarity search using pgvector
-	// <=> is the cosine distance operator in pgvector
-	// 1 - distance = similarity score (0 to 1, where 1 is most similar)
-	// With planner hints, PostgreSQL will prefer using the HNSW index
-	// NOTE: Cast parameter to vector (not public.vector) since the column is already typed
-	// and the <=> operator is defined for vector type
-	sqlQuery := `
-		SELECT
-			id, name, namespace, phase, action_type, status, start_time, end_time,
-			duration, remediation_request_id, signal_fingerprint, severity,
-			environment, cluster_name, target_resource, error_message, metadata,
-			embedding, created_at, updated_at,
-			(1 - (embedding <=> $1::vector)) as similarity
-		FROM remediation_audit
-		WHERE embedding IS NOT NULL
-		ORDER BY embedding <=> $1::vector
-		LIMIT 10
-	`
-
-	// Execute query and scan results into SemanticResultRow (with Vector type)
-	rows := make([]*SemanticResultRow, 0)
-	if err := s.db.SelectContext(ctx, &rows, sqlQuery, queryEmbeddingStr); err != nil {
-		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
-		s.logger.Error(err, "semantic search failed",
-			"query", queryText)
-		return nil, fmt.Errorf("semantic search failed: %w", err)
-	}
-
-	metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusSuccess).Inc()
-
-	// Convert to SemanticResult (with []float32)
-	results := make([]*SemanticResult, len(rows))
-	for i, row := range rows {
-		results[i] = row.ToSemanticResult()
-	}
-
-	s.logger.Info("semantic search successful",
-		"query", queryText,
-		"result_count", len(results))
-
-	return results, nil
-}
-
 // countRemediationAudits returns total count for pagination
 func (s *Service) countRemediationAudits(ctx context.Context, opts *ListOptions) (int64, error) {
 	// Build COUNT query with same filters as ListRemediationAudits
@@ -324,32 +236,4 @@ func (s *Service) countRemediationAudits(ctx context.Context, opts *ListOptions)
 	}
 
 	return count, nil
-}
-
-// generateMockEmbedding creates a mock 768-dimensional embedding for testing (per migration 016)
-// V1.0: Label-only search (embeddings removed, semantic search deferred to V2.0)
-func generateMockEmbedding(text string) []float32 {
-	embedding := make([]float32, 768)
-	// Simple hash-based mock embedding
-	for i := range embedding {
-		embedding[i] = float32((len(text)+i)%100) * 0.01
-	}
-	return embedding
-}
-
-// embeddingToString converts a float32 slice to pgvector string format '[x,y,z,...]'
-func embeddingToString(embedding []float32) string {
-	if len(embedding) == 0 {
-		return "[]"
-	}
-
-	result := "["
-	for i, val := range embedding {
-		if i > 0 {
-			result += ","
-		}
-		result += fmt.Sprintf("%f", val)
-	}
-	result += "]"
-	return result
 }

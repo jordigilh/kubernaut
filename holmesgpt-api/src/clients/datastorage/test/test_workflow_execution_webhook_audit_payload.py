@@ -36,7 +36,7 @@ class TestWorkflowExecutionWebhookAuditPayload(unittest.TestCase):
         model = WorkflowExecutionWebhookAuditPayload()
         if include_optional:
             return WorkflowExecutionWebhookAuditPayload(
-                event_type = 'webhook.workflow.unblocked',
+                event_type = 'workflowexecution.block.cleared',
                 workflow_name = 'restart-payment-api-2025-12-17-abc123',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
@@ -45,7 +45,7 @@ class TestWorkflowExecutionWebhookAuditPayload(unittest.TestCase):
             )
         else:
             return WorkflowExecutionWebhookAuditPayload(
-                event_type = 'webhook.workflow.unblocked',
+                event_type = 'workflowexecution.block.cleared',
                 workflow_name = 'restart-payment-api-2025-12-17-abc123',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),

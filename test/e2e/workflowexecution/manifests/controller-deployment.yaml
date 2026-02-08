@@ -42,6 +42,10 @@ rules:
 - apiGroups: ["tekton.dev"]
   resources: ["taskruns"]
   verbs: ["get", "list", "watch"]
+# BR-WE-014: Kubernetes Job execution backend permissions
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 # Events for audit trail
 - apiGroups: [""]
   resources: ["events"]

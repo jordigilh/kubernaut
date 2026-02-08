@@ -1,5 +1,7 @@
 # DD-WORKFLOW-004: Hybrid Weighted Label Scoring for Workflow Selection
 
+> **Note**: V1.0 uses label-only matching per DD-WORKFLOW-015. Semantic search and pgvector references in this document are historical context for V1.1+.
+
 **Date**: November 22, 2025
 **Status**: ✅ **APPROVED** (V1.6 IMPLEMENTED)
 **Confidence**: 95%

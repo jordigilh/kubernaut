@@ -30,17 +30,19 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 09: Signal Validation & Rejection (BR-GATEWAY-003, BR-GATEWAY-043)
 // BEHAVIOR: Gateway validates incoming payloads and rejects malformed ones
 // CORRECTNESS: Invalid payloads return HTTP 400, valid payloads return 201/202
-// Parallel-safe: No namespace needed, tests HTTP responses only
+// BR-SCOPE-002: Valid payload step requires a managed namespace for scope validation
 var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Ordered, func() {
 	var (
-		testCancel context.CancelFunc
-		testLogger logr.Logger
-		httpClient *http.Client
+		testCancel    context.CancelFunc
+		testLogger    logr.Logger
+		httpClient    *http.Client
+		testNamespace string
 	)
 
 	BeforeAll(func() {
@@ -48,12 +50,16 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		testLogger = logger.WithValues("test", "signal-validation")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
+		// BR-SCOPE-002: Create managed namespace so the valid payload passes scope validation
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "signal-valid")
+
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 09: Signal Validation & Rejection - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
 	AfterAll(func() {
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		if testCancel != nil {
 			testCancel()
 		}
@@ -130,14 +136,15 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		testLogger.Info(fmt.Sprintf("  ✅ Empty alerts array rejected: HTTP %d", resp3.StatusCode))
 		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body3)))
 
-		// BEHAVIOR TEST: Gateway accepts well-formed valid payload
+		// BEHAVIOR TEST: Gateway accepts well-formed valid payload in a managed namespace
 		// CORRECTNESS: Returns HTTP 201 (Created) or 202 (Accepted for buffering)
+		// BR-SCOPE-002: Payload must target a managed namespace to pass scope validation
 		testLogger.Info("")
 		testLogger.Info("Step 4: Verify Gateway accepts valid payload")
 
 		validPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: fmt.Sprintf("ValidationTest-%s", uuid.New().String()[:8]),
-			Namespace: "default",
+			Namespace: testNamespace, // BR-SCOPE-002: use managed namespace (was "default")
 			PodName:   "validation-test-pod",
 			Severity:  "warning",
 			Annotations: map[string]string{
@@ -147,23 +154,25 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		})
 
 		var resp4 *http.Response
-		Eventually(func() error {
-			var err error
+		// Eventually tolerates informer cache sync delay (scope manager uses metadata-only cache)
+		Eventually(func() int {
 			req4, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(validPayload))
-			if err != nil {
-				return err
-			}
+			Expect(err).ToNot(HaveOccurred())
 			req4.Header.Set("Content-Type", "application/json")
 			req4.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp4, err = httpClient.Do(req4)
-			return err
-		}, 10*time.Second, 1*time.Second).Should(Succeed())
+			Expect(err).ToNot(HaveOccurred())
+			code := resp4.StatusCode
+			if code != http.StatusCreated && code != http.StatusAccepted {
+				_ = resp4.Body.Close() // close on retry
+			}
+			return code
+		}, 15*time.Second, 1*time.Second).Should(
+			Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"Valid payload should return HTTP 201 or 202 (BR-GATEWAY-003)")
 		body4, _ := io.ReadAll(resp4.Body)
 		_ = resp4.Body.Close()
 
-		// CORRECTNESS: Valid payload must return 201 or 202
-		Expect(resp4.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"Valid payload should return HTTP 201 or 202 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Valid payload accepted: HTTP %d", resp4.StatusCode))
 		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body4)))
 

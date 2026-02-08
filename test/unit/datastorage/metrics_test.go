@@ -108,20 +108,6 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			Expect(newValue).To(Equal(initialValue + 1))
 		})
 
-		// BEHAVIOR: EmbeddingGenerationDuration histogram records AI embedding generation latency
-		// CORRECTNESS: Histogram is properly registered and records multiple observations
-		It("should track embedding generation duration with functional histogram", func() {
-			// ARRANGE + ACT: Observe a 150ms embedding generation
-			metrics.EmbeddingGenerationDuration.Observe(0.150) // 150ms
-
-			// CORRECTNESS: Histogram is registered and functional
-			histogram := metrics.EmbeddingGenerationDuration
-			Expect(histogram).ToNot(BeNil(), "EmbeddingGenerationDuration histogram should be registered")
-
-			// CORRECTNESS: Can observe additional values (verify histogram functionality)
-			histogram.Observe(0.100) // 100ms
-			histogram.Observe(0.200) // 200ms - verify histogram accepts multiple observations
-		})
 	})
 
 	Context("Validation Metrics", func() {
@@ -152,7 +138,6 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			operations := []string{
 				metrics.OperationList,
 				metrics.OperationGet,
-				metrics.OperationSemanticSearch,
 				metrics.OperationFilter,
 			}
 
@@ -166,7 +151,6 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			operations := []string{
 				metrics.OperationList,
 				metrics.OperationGet,
-				metrics.OperationSemanticSearch,
 				metrics.OperationFilter,
 			}
 			statuses := []string{metrics.StatusSuccess, metrics.StatusFailure}
@@ -197,11 +181,11 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			// Validation failures: 4 fields × 3 reasons = 12 combinations
 			validationCardinality := 4 * 3
 
-			// Query operations: 4 operations × 2 statuses = 8 combinations
-			queryCardinality := 4 * 2
+			// Query operations: 3 operations × 2 statuses = 6 combinations
+			queryCardinality := 3 * 2
 
-			// Query duration: 4 operations
-			queryDurationCardinality := 4
+			// Query duration: 3 operations
+			queryDurationCardinality := 3
 
 			// Other metrics (no labels or single counter): ~10
 			otherCardinality := 10
@@ -209,7 +193,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			totalCardinality := writeCardinality + dualwriteCardinality + validationCardinality +
 				queryCardinality + queryDurationCardinality + otherCardinality
 
-			// Total: 8 + 6 + 12 + 8 + 4 + 10 = 48 (well under 100 target)
+			// Total: 8 + 6 + 12 + 6 + 3 + 10 = 45 (well under 100 target)
 			Expect(totalCardinality).To(BeNumerically("<", 100),
 				"Total cardinality should be under 100 to prevent Prometheus performance issues")
 
@@ -320,7 +304,7 @@ func BenchmarkMetricsQueryDurationTracking(b *testing.B) {
 	// BR-STORAGE-007: Benchmark query duration tracking overhead
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		metrics.QueryDuration.WithLabelValues(metrics.OperationSemanticSearch).Observe(0.010)
+		metrics.QueryDuration.WithLabelValues(metrics.OperationFilter).Observe(0.010)
 	}
 }
 
@@ -333,9 +317,8 @@ func BenchmarkMetricsFullWriteOperationInstrumentation(b *testing.B) {
 		// Validation metrics
 		metrics.ValidationFailures.WithLabelValues("name", metrics.ValidationReasonRequired).Inc()
 
-		// Embedding metrics
+		// Cache metrics
 		metrics.CacheMisses.Inc()
-		metrics.EmbeddingGenerationDuration.Observe(0.150)
 
 		// Write metrics
 		metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()

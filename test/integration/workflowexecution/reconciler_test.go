@@ -82,8 +82,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Verifying WFE status updated to Running")
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updatedWFE.Status.PipelineRunRef).ToNot(BeNil())
-			Expect(updatedWFE.Status.PipelineRunRef.Name).To(Equal(pr.Name))
+			Expect(updatedWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(updatedWFE.Status.ExecutionRef.Name).To(Equal(pr.Name))
 		})
 
 		It("should pass parameters to PipelineRun", func() {
@@ -191,7 +191,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(updatedWFE.Status.FailureDetails).ToNot(BeNil())
 		})
 
-		It("should populate PipelineRunStatus during Running phase", func() {
+		It("should populate ExecutionStatus during Running phase", func() {
 			By("Creating a WorkflowExecution")
 			wfe = createUniqueWFE("status-running", "default/deployment/running-test")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -200,9 +200,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying PipelineRunRef is populated")
-			Expect(updatedWFE.Status.PipelineRunRef).ToNot(BeNil())
-			Expect(updatedWFE.Status.PipelineRunRef.Name).ToNot(BeEmpty())
+			By("Verifying ExecutionRef is populated")
+			Expect(updatedWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(updatedWFE.Status.ExecutionRef.Name).ToNot(BeEmpty())
 		})
 	})
 
@@ -679,9 +679,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Fetching PipelineRun and verifying deterministic naming")
 				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(wfeStatus.Status.PipelineRunRef).ToNot(BeNil())
+				Expect(wfeStatus.Status.ExecutionRef).ToNot(BeNil())
 
-				prName := wfeStatus.Status.PipelineRunRef.Name
+				prName := wfeStatus.Status.ExecutionRef.Name
 				// Deterministic name should be "wfe-" + first 16 chars of sha256(targetResource)
 				// Verify format: starts with "wfe-" and has correct length (DD-WE-003)
 				Expect(prName).To(HavePrefix("wfe-"))
@@ -717,7 +717,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Verifying PipelineRun is deleted after cooldown (lock released)")
 				Eventually(func() bool {
 					pr := &tektonv1.PipelineRun{}
-					prName := "wfe-" + wfe1Status.Status.PipelineRunRef.Name[4:] // Reconstruct deterministic name
+					prName := "wfe-" + wfe1Status.Status.ExecutionRef.Name[4:] // Reconstruct deterministic name
 					err := k8sClient.Get(ctx, client.ObjectKey{
 						Name:      prName,
 						Namespace: "default", // ExecutionNamespace
@@ -761,7 +761,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				// Use Eventually to verify PipelineRun exists (allows for controller reconciliation timing)
 				pr := &tektonv1.PipelineRun{}
 				prKey := client.ObjectKey{
-					Name:      wfeStatus.Status.PipelineRunRef.Name,
+					Name:      wfeStatus.Status.ExecutionRef.Name,
 					Namespace: WorkflowExecutionNS, // PipelineRuns are in kubernaut-workflows namespace
 				}
 				Eventually(func() error {
@@ -804,7 +804,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Verifying elapsed time < cooldown means PipelineRun still exists")
 				pr := &tektonv1.PipelineRun{}
 				prKey := client.ObjectKey{
-					Name:      wfeStatus.Status.PipelineRunRef.Name,
+					Name:      wfeStatus.Status.ExecutionRef.Name,
 					Namespace: WorkflowExecutionNS, // PipelineRuns are in kubernaut-workflows namespace
 				}
 				// Use Eventually to allow for controller reconciliation timing
@@ -915,7 +915,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			It("should record workflowexecution_pipelinerun_creation_total counter", func() {
 				By("Getting initial counter value")
-				initialCount := prometheusTestutil.ToFloat64(reconciler.Metrics.PipelineRunCreations)
+				initialCount := prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
 
 				By("Creating WorkflowExecution")
 				targetResource := "test-namespace/deployment/metrics-pr-creation"
@@ -929,11 +929,11 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Verifying pipelinerun_creation_total incremented")
 				// Use Eventually to handle controller reconciliation timing for metrics
 				Eventually(func() float64 {
-					return prometheusTestutil.ToFloat64(reconciler.Metrics.PipelineRunCreations)
+					return prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
 				}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", initialCount),
 					"pipelinerun_creation_total should increment after controller creates PipelineRun")
 
-				finalCount := prometheusTestutil.ToFloat64(reconciler.Metrics.PipelineRunCreations)
+				finalCount := prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
 
 				GinkgoWriter.Printf("✅ BR-WE-008: PipelineRun creation metric incremented from %.0f to %.0f\n",
 					initialCount, finalCount)

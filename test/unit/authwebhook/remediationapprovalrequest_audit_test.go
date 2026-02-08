@@ -163,7 +163,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 
 				// Validate audit event structure (ADR-034 v1.7 Section 1.1.1)
 				// Two-Event Pattern: webhook.remediationapprovalrequest.decided (this event)
-				Expect(event.EventType).To(Equal("webhook.remediationapprovalrequest.decided"),
+				Expect(event.EventType).To(Equal(authwebhook.EventTypeRARDecided),
 					"Event type per ADR-034 v1.7 webhook namespace")
 				Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryWebhook),
 					"CRITICAL: event_category = 'webhook' (per ADR-034 v1.7 two-event pattern)")
@@ -430,7 +430,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 			Expect(payload.Decision).To(Equal(ogenclient.RemediationApprovalAuditPayloadDecisionApproved))
 			Expect(payload.DecisionMessage).To(Equal("Approved for production deployment"))
 			Expect(payload.AiAnalysisRef).To(Equal("ai-analysis-789"))
-			Expect(string(payload.EventType)).To(Equal("webhook.approval.decided"))
+			Expect(string(payload.EventType)).To(Equal(authwebhook.EventTypeRARDecided))
 		})
 	})
 })

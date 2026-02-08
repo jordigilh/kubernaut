@@ -120,7 +120,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			GinkgoWriter.Printf("✅ Status updated by controller to: %s\n", updated.Status.Phase)
 		})
 
-		It("should set PipelineRunRef when Running", func() {
+		It("should set ExecutionRef when Running", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-prref-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("prref", targetResource)
 
@@ -130,22 +130,22 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for controller to set PipelineRunRef
+			// Wait for controller to set ExecutionRef
 			Eventually(func() bool {
 				updated, err := getWFE(wfe.Name, wfe.Namespace)
 				if err != nil {
 					return false
 				}
-				return updated.Status.PipelineRunRef != nil && updated.Status.PipelineRunRef.Name != ""
+				return updated.Status.ExecutionRef != nil && updated.Status.ExecutionRef.Name != ""
 			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue())
 
-			// Verify PipelineRunRef
+			// Verify ExecutionRef
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.PipelineRunRef).ToNot(BeNil())
-			Expect(updated.Status.PipelineRunRef.Name).ToNot(BeEmpty())
+			Expect(updated.Status.ExecutionRef).ToNot(BeNil())
+			Expect(updated.Status.ExecutionRef.Name).ToNot(BeEmpty())
 
-			GinkgoWriter.Printf("✅ PipelineRunRef set: %s\n", updated.Status.PipelineRunRef.Name)
+			GinkgoWriter.Printf("✅ ExecutionRef set: %s\n", updated.Status.ExecutionRef.Name)
 		})
 
 		It("should persist ConsecutiveFailures from status", func() {
@@ -274,7 +274,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			// Get the associated PipelineRun name
 			running, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(running.Status.PipelineRunRef).ToNot(BeNil(),
+			Expect(running.Status.ExecutionRef).ToNot(BeNil(),
 				"Business Outcome: WFE must track its associated PipelineRun")
 
 			// Verify finalizer is present before deletion

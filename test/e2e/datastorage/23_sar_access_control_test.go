@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -358,8 +359,8 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			Eventually(func() bool {
 				auditResp, err := authorizedClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(generatedWorkflowID.String()),
-					EventCategory: dsgen.NewOptString("workflow"),
-					EventType:     dsgen.NewOptString("datastorage.workflow.created"),
+				EventCategory: dsgen.NewOptString(dsaudit.EventCategoryWorkflow),
+				EventType:     dsgen.NewOptString(dsaudit.EventTypeWorkflowCreated),
 					Limit:         dsgen.NewOptInt(10),
 				})
 				if err != nil {

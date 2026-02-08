@@ -28,10 +28,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Business Outcome Testing: Test WHAT Prometheus alert processing enables
@@ -51,10 +51,10 @@ import (
 
 var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", func() {
 	var (
-		testCtx       context.Context      // ← Test-local context
-		testCancel    context.CancelFunc
+		testCtx    context.Context // ← Test-local context
+		testCancel context.CancelFunc
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		logger    *zap.Logger
+		logger *zap.Logger
 		// Unique namespace names per test run (avoids parallel test interference)
 		prodNamespace    string
 		stagingNamespace string
@@ -62,15 +62,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 	)
 
 	BeforeEach(func() {
-		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
+		testCtx, testCancel = context.WithCancel(context.Background()) // ← Uses local variable
 		logger = zap.NewNop()
-
-		// Generate unique namespace names to avoid parallel test interference
-		// Use timestamp to ensure uniqueness per test (GinkgoRandomSeed is same for all tests in a run)
-		uniqueSuffix := fmt.Sprintf("p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
-		prodNamespace = fmt.Sprintf("prod-%s", uniqueSuffix)
-		stagingNamespace = fmt.Sprintf("staging-%s", uniqueSuffix)
-		devNamespace = fmt.Sprintf("dev-%s", uniqueSuffix)
 
 		// Setup test infrastructure using helpers
 
@@ -84,46 +77,19 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 		// Create UNIQUE test namespaces with environment labels for classification
 		// This is required for environment-based priority assignment
-		testNamespaces := []struct {
-			name  string
-			label string
-		}{
-			{prodNamespace, "production"},
-			{stagingNamespace, "staging"},
-			{devNamespace, "development"},
-		}
-
-		for _, ns := range testNamespaces {
-			// Check if namespace exists first
-			existingNs := &corev1.Namespace{}
-			err := k8sClient.Get(testCtx, client.ObjectKey{Name: ns.name}, existingNs)
-			namespaceExists := err == nil
-
-			if namespaceExists {
-				// Check if it already has the right label - if so, skip deletion/recreation
-				if existingNs.Labels != nil && existingNs.Labels["environment"] == ns.label {
-					continue // Namespace already configured correctly
-				}
-
-				// Delete namespace to recreate with correct labels
-				_ = k8sClient.Delete(testCtx, existingNs)
-
-				// Wait for deletion to complete (namespace deletion is asynchronous)
-				// Use longer timeout for envtest which can be slower
-				Eventually(func() error {
-					checkNs := &corev1.Namespace{}
-					return k8sClient.Get(testCtx, client.ObjectKey{Name: ns.name}, checkNs)
-				}, "60s", "500ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
-			}
-
-			// Create namespace with correct label
-			namespace := &corev1.Namespace{}
-			namespace.Name = ns.name
-			namespace.Labels = map[string]string{
-				"environment": ns.label, // Required for EnvironmentClassifier
-			}
-			err = k8sClient.Create(testCtx, namespace) //nolint:ineffassign // Test pattern: error reassignment across phases
-		}
+		// Use shared helper for E2E tests (waits for namespace to be Active)
+		prodNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "prod",
+			helpers.WithLabels(map[string]string{
+				"environment": "production", // Required for EnvironmentClassifier
+			}))
+		stagingNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "staging",
+			helpers.WithLabels(map[string]string{
+				"environment": "staging", // Required for EnvironmentClassifier
+			}))
+		devNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "dev",
+			helpers.WithLabels(map[string]string{
+				"environment": "development", // Required for EnvironmentClassifier
+			}))
 
 		logger.Info("Test setup complete",
 			zap.String("gateway_url", gatewayURL),
@@ -132,17 +98,17 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 	})
 
 	AfterEach(func() {
-	if testCancel != nil {
-		testCancel()  // ← Only cancels test-local context
-	}
+		if testCancel != nil {
+			testCancel() // ← Only cancels test-local context
+		}
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// Cleanup all test namespaces
 		testNamespaces := []string{prodNamespace, stagingNamespace, devNamespace}
 		for _, nsName := range testNamespaces {
-			ns := &corev1.Namespace{}
-			ns.Name = nsName
-			_ = k8sClient.Delete(testCtx, ns) // Ignore error if namespace doesn't exist
+			if nsName != "" {
+				helpers.DeleteTestNamespace(testCtx, k8sClient, nsName)
+			}
 		}
 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
@@ -181,17 +147,17 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-		resp, err := http.DefaultClient.Do(req)
-		_ = err // Explicitly discard HTTP error - will be checked via status code
-		_ = err // Explicitly discard HTTP error - will be checked via status code
-		defer func() { _ = resp.Body.Close() }()
+			resp, err := http.DefaultClient.Do(req)
+			_ = err // Explicitly discard HTTP error - will be checked via status code
+			_ = err // Explicitly discard HTTP error - will be checked via status code
+			defer func() { _ = resp.Body.Close() }()
 
-		// BUSINESS OUTCOME 1: HTTP 201 Created
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "First occurrence must create CRD (201 Created)")
+			// BUSINESS OUTCOME 1: HTTP 201 Created
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "First occurrence must create CRD (201 Created)")
 
-		// Parse response to get fingerprint
-		var response map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&response) //nolint:ineffassign // Test pattern: error reassignment across phases
+			// Parse response to get fingerprint
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response) //nolint:ineffassign // Test pattern: error reassignment across phases
 			fingerprint, ok := response["fingerprint"].(string)
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
@@ -256,7 +222,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
-		_ = err // Explicitly discard HTTP error - will be checked via status code
+			_ = err // Explicitly discard HTTP error - will be checked via status code
 			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -307,12 +273,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
-		// First alert: Creates CRD
-		req1, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-		req1.Header.Set("Content-Type", "application/json")
-		req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-		resp1, err := http.DefaultClient.Do(req1)
-		_ = err // Explicitly discard HTTP error - will be checked via status code
+			// First alert: Creates CRD
+			req1, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
+			req1.Header.Set("Content-Type", "application/json")
+			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			resp1, err := http.DefaultClient.Do(req1)
+			_ = err // Explicitly discard HTTP error - will be checked via status code
 			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert must create CRD (201 Created)")
 
@@ -330,22 +296,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			firstCRDName := crdList1.Items[0].Name
 
-		// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
-		// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
-		// DD-E2E-DIRECT-API-001: Query CRD by known name (RO E2E pattern)
-		// Direct Get() bypasses cache/index issues and is 4x faster (30s vs 120s)
-		var confirmedCRD remediationv1alpha1.RemediationRequest
-		Eventually(func() error {
-			return k8sClient.Get(testCtx, client.ObjectKey{
-				Namespace: prodNamespace,
-				Name:      firstCRDName,
-			}, &confirmedCRD)
-		}, 30*time.Second, 1*time.Second).Should(Succeed(),
-			"CRD should be queryable by name within 30s (matches RO E2E pattern)")
+			// DD-E2E-DIRECT-API-001: Query CRD by known name (RO E2E pattern)
+			// Direct Get() bypasses cache/index issues and is 4x faster (30s vs 120s)
+			var confirmedCRD remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: prodNamespace,
+					Name:      firstCRDName,
+				}, &confirmedCRD)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 
-		// Second alert: Duplicate (CRD still in non-terminal phase)
-		req2, err := http.NewRequest("POST", url, bytes.NewReader(payload)) //nolint:ineffassign // Test pattern: error reassignment across phases
+			// Second alert: Duplicate (CRD still in non-terminal phase)
+			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload)) //nolint:ineffassign // Test pattern: error reassignment across phases
 			req2.Header.Set("Content-Type", "application/json")
 			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp2, err := http.DefaultClient.Do(req2) //nolint:ineffassign // Test pattern: error reassignment across phases
@@ -447,33 +413,33 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 				resp, err := http.DefaultClient.Do(req)
-		_ = err // Explicitly discard HTTP error - will be checked via status code
+				_ = err // Explicitly discard HTTP error - will be checked via status code
 				defer func() { _ = resp.Body.Close() }()
 
-			// Read response body and parse CRD name (DD-E2E-DIRECT-API-001)
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
+				// Read response body and parse CRD name (DD-E2E-DIRECT-API-001)
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
 
-			// Check HTTP status - should be 201 for new CRD or 202 for duplicate
-			Expect(resp.StatusCode).To(BeNumerically(">=", 200))
-			Expect(resp.StatusCode).To(BeNumerically("<", 300),
-				"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
+				// Check HTTP status - should be 201 for new CRD or 202 for duplicate
+				Expect(resp.StatusCode).To(BeNumerically(">=", 200))
+				Expect(resp.StatusCode).To(BeNumerically("<", 300),
+					"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
 
-			// Parse Gateway response to get CRD name
-			var gwResp GatewayResponse
-			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
-			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
+				// Parse Gateway response to get CRD name
+				var gwResp GatewayResponse
+				Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+				Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
 
-			// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
-			// Direct Get() is 2x faster (30s vs 60s) and more reliable
-			var crd remediationv1alpha1.RemediationRequest
-			Eventually(func() error {
-				return k8sClient.Get(testCtx, client.ObjectKey{
-					Namespace: tc.namespace,
-					Name:      gwResp.RemediationRequestName,
-				}, &crd)
-			}, 30*time.Second, 1*time.Second).Should(Succeed(),
-				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
+				// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
+				// Direct Get() is 2x faster (30s vs 60s) and more reliable
+				var crd remediationv1alpha1.RemediationRequest
+				Eventually(func() error {
+					return k8sClient.Get(testCtx, client.ObjectKey{
+						Namespace: tc.namespace,
+						Name:      gwResp.RemediationRequestName,
+					}, &crd)
+				}, 30*time.Second, 1*time.Second).Should(Succeed(),
+					"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 				// Note: Environment/Priority assertions removed (2025-12-06)
 				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 				// Gateway only creates CRD, SP enriches with classification

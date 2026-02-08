@@ -219,6 +219,7 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				ContainerImage: "quay.io/jordigilh/test-workflows/test:v1.0.0",
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
+			ExecutionEngine: "tekton",
 		},
 	}
 }
@@ -263,12 +264,12 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 		updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: testName, Namespace: namespace}, updated)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updated.Status.PipelineRunRef).ToNot(BeNil())
-		g.Expect(updated.Status.PipelineRunRef.Name).ToNot(BeEmpty())
+		g.Expect(updated.Status.ExecutionRef).ToNot(BeNil())
+		g.Expect(updated.Status.ExecutionRef.Name).ToNot(BeEmpty())
 
 		// Get the created PipelineRun
 		pr = &tektonv1.PipelineRun{}
-		prKey := types.NamespacedName{Name: updated.Status.PipelineRunRef.Name, Namespace: WorkflowExecutionNS}
+		prKey := types.NamespacedName{Name: updated.Status.ExecutionRef.Name, Namespace: WorkflowExecutionNS}
 		g.Expect(k8sClient.Get(ctx, prKey, pr)).To(Succeed())
 	}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 

@@ -26,7 +26,6 @@ package audit
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,6 +56,8 @@ const (
 	EventTypeApprovalRequested     = "orchestrator.approval.requested"
 	EventTypeApprovalApproved      = "orchestrator.approval.approved"
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
+	EventTypeManualReview          = "orchestrator.remediation.manual_review"
+	EventTypeRoutingBlocked        = "orchestrator.routing.blocked"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -67,6 +68,7 @@ const (
 // Event actions for RO audit events (per DD-AUDIT-003)
 const (
 	ActionStarted           = "started"
+	ActionCreated           = "created"
 	ActionTransitioned      = "transitioned"
 	ActionCompleted         = "completed"
 	ActionFailed            = "failed"
@@ -129,7 +131,7 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.created") // Gap #8: Per ADR-034 v1.2 naming convention
+	audit.SetEventType(event, EventTypeLifecycleCreated) // Gap #8: Per ADR-034 v1.2 naming convention
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -182,7 +184,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.started")
+	audit.SetEventType(event, EventTypeLifecycleStarted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionStarted)
 	audit.SetEventOutcome(event, audit.OutcomePending) // Lifecycle started, outcome not yet determined
@@ -270,7 +272,7 @@ func (m *Manager) BuildCompletionEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.completed")
+	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
@@ -299,51 +301,39 @@ func (m *Manager) BuildCompletionEvent(
 // Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
 // BR-AUDIT-005 Gap #7: Now includes standardized error_details for SOC2 compliance
+//
+// F-6 SOC2 Audit Fix: Changed failureErr from string to error type.
+// Uses ClassifyError for typed error classification instead of string matching.
 func (m *Manager) BuildFailureEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
 	failurePhase string,
-	failureReason string,
+	failureErr error,
 	durationMs int64,
 ) (*ogenclient.AuditEventRequest, error) {
+	// F-6: Use typed error classification instead of strings.Contains
+	classification := ClassifyError(failureErr)
+
+	failureReason := ""
+	if failureErr != nil {
+		failureReason = failureErr.Error()
+	}
+
 	// BR-AUDIT-005 Gap #7: Build standardized error_details
 	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
 
-	// Determine error code and retry guidance based on failure phase/reason
-	// BR-AUDIT-005 Gap #7: Check most specific errors first (invalid config before general timeout)
-	var errorCode string
-	var retryPossible bool
-
-	switch {
-	case strings.Contains(failureReason, "ERR_INVALID_TIMEOUT_CONFIG"):
-		errorCode = "ERR_INVALID_TIMEOUT_CONFIG" // Specific invalid timeout config error
-		retryPossible = false                    // Invalid config is permanent
-	case strings.Contains(failureReason, "invalid") || strings.Contains(failureReason, "configuration"):
-		errorCode = "ERR_INVALID_CONFIG"
-		retryPossible = false // Invalid config is permanent
-	case strings.Contains(failureReason, "timeout"):
-		errorCode = "ERR_TIMEOUT_REMEDIATION"
-		retryPossible = true // Timeouts are transient
-	case strings.Contains(failureReason, "not found") || strings.Contains(failureReason, "create"):
-		errorCode = "ERR_K8S_CREATE_FAILED"
-		retryPossible = true // K8s creation may be transient
-	default:
-		errorCode = "ERR_INTERNAL_ORCHESTRATION"
-		retryPossible = true // Default to retryable
-	}
-
 	errorDetails := sharedaudit.NewErrorDetails(
 		"remediationorchestrator",
-		errorCode,
+		classification.Code,
 		errorMessage,
-		retryPossible,
+		classification.RetryPossible,
 	)
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.lifecycle.completed")
+	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
@@ -398,7 +388,7 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.approval.requested")
+	audit.SetEventType(event, EventTypeApprovalRequested)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionApprovalRequested)
 	audit.SetEventOutcome(event, audit.OutcomePending) // Approval outcome is pending until decision made
@@ -446,7 +436,7 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.approval."+mapping.Action)
+	audit.SetEventType(event, string(mapping.PayloadEventType))
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, mapping.Action)
 	audit.SetEventOutcome(event, mapping.Outcome)
@@ -496,7 +486,7 @@ func (m *Manager) BuildManualReviewEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.remediation.manual_review")
+	audit.SetEventType(event, EventTypeManualReview)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionManualReview)
 	audit.SetEventOutcome(event, audit.OutcomePending)
@@ -507,15 +497,16 @@ func (m *Manager) BuildManualReviewEvent(
 	audit.SetSeverity(event, "warning")
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
+	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType:        api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		EventType:        api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview,
 		RrName:           rrName,
 		Namespace:        namespace,
 		Reason:           api.OptString{Value: reason, Set: true},
 		SubReason:        api.OptString{Value: subReason, Set: true},
 		NotificationName: api.OptString{Value: notificationName, Set: true},
 	}
-	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -553,7 +544,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "orchestrator.routing.blocked")
+	audit.SetEventType(event, EventTypeRoutingBlocked)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionBlocked)
 	audit.SetEventOutcome(event, audit.OutcomePending)
@@ -563,16 +554,13 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	audit.SetNamespace(event, namespace)
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	// All optional fields are handled by omitempty JSON tags in RoutingBlockedData
-	// Use ogen union constructor (OGEN-MIGRATION)
-	// Note: RoutingBlockedData doesn't have RrName/Namespace, they come from function params
+	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
 	payload := api.RemediationOrchestratorAuditPayload{
-		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
 		RrName:    rrName,
 		Namespace: namespace,
 	}
-	// TODO: Add blocking-specific fields to OpenAPI schema (BlockReason, BlockMessage, etc.)
-	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData(payload)
 
 	return event, nil
 }

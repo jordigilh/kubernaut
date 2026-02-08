@@ -30,37 +30,38 @@ import (
 // ========================================
 //
 // Kubernetes Conditions provide standardized status information for WorkflowExecution CRD.
-// These conditions surface Tekton PipelineRun state to operators via `kubectl describe`.
+// These conditions surface execution resource state (PipelineRun or Job) to operators via `kubectl describe`.
 //
 // WHY BR-WE-006?
-// - ✅ Observability: Operators see Tekton pipeline state without querying Tekton directly
+// - ✅ Observability: Operators see execution state without querying backend directly
 // - ✅ Contract Compliance: DD-CONTRACT-001 v1.4 requires Conditions field
 // - ✅ Consistency: Aligns with AIAnalysis and Kubernetes API conventions
+// - ✅ Backend-Agnostic: Conditions work for both Tekton PipelineRun and K8s Job backends
 //
 // CONDITION LIFECYCLE:
 // 1. ResourceLocked → Check if target resource is busy (PhaseSkipped)
-// 2. TektonPipelineCreated → PipelineRun created in kubernaut-workflows namespace
-// 3. TektonPipelineRunning → Pipeline execution started
-// 4. TektonPipelineComplete → Pipeline succeeded or failed
+// 2. ExecutionCreated → Execution resource created in kubernaut-workflows namespace
+// 3. ExecutionRunning → Execution resource started (PipelineRun or Job)
+// 4. ExecutionComplete → Execution succeeded or failed
 // 5. AuditRecorded → Audit event written to Data Storage (BR-WE-005)
 // ========================================
 
 // Condition types for WorkflowExecution
 const (
-	// ConditionTektonPipelineCreated indicates Tekton PipelineRun was created
+	// ConditionExecutionCreated indicates the execution resource (PipelineRun or Job) was created
 	// Phase Alignment: Pending → Running transition
-	// Set after successful tektonClient.Create(ctx, pipelineRun)
-	ConditionTektonPipelineCreated = "TektonPipelineCreated"
+	// Set after successful creation of the execution resource
+	ConditionExecutionCreated = "ExecutionCreated"
 
-	// ConditionTektonPipelineRunning indicates Tekton PipelineRun is executing
+	// ConditionExecutionRunning indicates the execution resource (PipelineRun or Job) is executing
 	// Phase Alignment: PhaseRunning
-	// Set when PipelineRun.Status.Conditions[Succeeded].Reason == "Running"
-	ConditionTektonPipelineRunning = "TektonPipelineRunning"
+	// Set when execution resource reports active/running status
+	ConditionExecutionRunning = "ExecutionRunning"
 
-	// ConditionTektonPipelineComplete indicates Tekton PipelineRun finished
+	// ConditionExecutionComplete indicates the execution resource (PipelineRun or Job) finished
 	// Phase Alignment: PhaseCompleted OR PhaseFailed
-	// Set when PipelineRun reaches terminal state (Succeeded/Failed)
-	ConditionTektonPipelineComplete = "TektonPipelineComplete"
+	// Set when execution resource reaches terminal state (Succeeded/Failed)
+	ConditionExecutionComplete = "ExecutionComplete"
 
 	// ConditionAuditRecorded indicates audit event was written to Data Storage
 	// Phase Alignment: All phases (cross-cutting concern)
@@ -73,13 +74,13 @@ const (
 	ConditionResourceLocked = "ResourceLocked"
 )
 
-// Condition reasons for TektonPipelineCreated
+// Condition reasons for ExecutionCreated
 const (
-	// ReasonPipelineCreated - PipelineRun created successfully
-	ReasonPipelineCreated = "PipelineCreated"
+	// ReasonExecutionCreated - Execution resource created successfully
+	ReasonExecutionCreated = "ExecutionCreated"
 
-	// ReasonPipelineCreationFailed - PipelineRun creation failed
-	ReasonPipelineCreationFailed = "PipelineCreationFailed"
+	// ReasonExecutionCreationFailed - Execution resource creation failed
+	ReasonExecutionCreationFailed = "ExecutionCreationFailed"
 
 	// ReasonQuotaExceeded - Kubernetes resource quota exceeded
 	ReasonQuotaExceeded = "QuotaExceeded"
@@ -91,22 +92,22 @@ const (
 	ReasonImagePullFailed = "ImagePullFailed"
 )
 
-// Condition reasons for TektonPipelineRunning
+// Condition reasons for ExecutionRunning
 const (
-	// ReasonPipelineStarted - Pipeline execution started
-	ReasonPipelineStarted = "PipelineStarted"
+	// ReasonExecutionStarted - Execution resource started
+	ReasonExecutionStarted = "ExecutionStarted"
 
-	// ReasonPipelineFailedToStart - Pipeline stuck in pending
-	ReasonPipelineFailedToStart = "PipelineFailedToStart"
+	// ReasonExecutionFailedToStart - Execution resource stuck in pending
+	ReasonExecutionFailedToStart = "ExecutionFailedToStart"
 )
 
-// Condition reasons for TektonPipelineComplete
+// Condition reasons for ExecutionComplete
 const (
-	// ReasonPipelineSucceeded - Pipeline completed successfully
-	ReasonPipelineSucceeded = "PipelineSucceeded"
+	// ReasonExecutionSucceeded - Execution completed successfully
+	ReasonExecutionSucceeded = "ExecutionSucceeded"
 
-	// ReasonPipelineFailed - Pipeline execution failed
-	ReasonPipelineFailed = "PipelineFailed"
+	// ReasonExecutionFailed - Execution failed
+	ReasonExecutionFailed = "ExecutionFailed"
 
 	// ReasonTaskFailed - Tekton Task failed
 	ReasonTaskFailed = "TaskFailed"
@@ -168,61 +169,61 @@ func IsConditionTrue(wfe *workflowexecutionv1.WorkflowExecution, conditionType s
 // HIGH-LEVEL CONDITION SETTERS
 // ========================================
 
-// SetTektonPipelineCreated sets the TektonPipelineCreated condition
+// SetExecutionCreated sets the ExecutionCreated condition
 //
 // Usage:
 //
 //	// Success case
-//	SetTektonPipelineCreated(wfe, true, ReasonPipelineCreated,
-//	    fmt.Sprintf("PipelineRun %s created in %s namespace", pr.Name, pr.Namespace))
+//	SetExecutionCreated(wfe, true, ReasonExecutionCreated,
+//	    fmt.Sprintf("Execution resource %s created in %s namespace", name, namespace))
 //
 //	// Failure case
-//	SetTektonPipelineCreated(wfe, false, ReasonQuotaExceeded,
-//	    "Failed to create PipelineRun: pods exceeded quota")
-func SetTektonPipelineCreated(wfe *workflowexecutionv1.WorkflowExecution, created bool, reason, message string) {
+//	SetExecutionCreated(wfe, false, ReasonQuotaExceeded,
+//	    "Failed to create execution resource: pods exceeded quota")
+func SetExecutionCreated(wfe *workflowexecutionv1.WorkflowExecution, created bool, reason, message string) {
 	status := metav1.ConditionTrue
 	if !created {
 		status = metav1.ConditionFalse
 	}
-	SetCondition(wfe, ConditionTektonPipelineCreated, status, reason, message)
+	SetCondition(wfe, ConditionExecutionCreated, status, reason, message)
 }
 
-// SetTektonPipelineRunning sets the TektonPipelineRunning condition
+// SetExecutionRunning sets the ExecutionRunning condition
 //
 // Usage:
 //
-//	// Pipeline started
-//	SetTektonPipelineRunning(wfe, true, ReasonPipelineStarted,
-//	    "Pipeline executing task 2 of 5 (apply-memory-increase)")
+//	// Execution started
+//	SetExecutionRunning(wfe, true, ReasonExecutionStarted,
+//	    "Execution resource running (task 2 of 5)")
 //
-//	// Pipeline failed to start
-//	SetTektonPipelineRunning(wfe, false, ReasonPipelineFailedToStart,
-//	    "Pipeline stuck in pending: node pressure")
-func SetTektonPipelineRunning(wfe *workflowexecutionv1.WorkflowExecution, running bool, reason, message string) {
+//	// Execution failed to start
+//	SetExecutionRunning(wfe, false, ReasonExecutionFailedToStart,
+//	    "Execution resource stuck in pending: node pressure")
+func SetExecutionRunning(wfe *workflowexecutionv1.WorkflowExecution, running bool, reason, message string) {
 	status := metav1.ConditionTrue
 	if !running {
 		status = metav1.ConditionFalse
 	}
-	SetCondition(wfe, ConditionTektonPipelineRunning, status, reason, message)
+	SetCondition(wfe, ConditionExecutionRunning, status, reason, message)
 }
 
-// SetTektonPipelineComplete sets the TektonPipelineComplete condition
+// SetExecutionComplete sets the ExecutionComplete condition
 //
 // Usage:
 //
-//	// Pipeline succeeded
-//	SetTektonPipelineComplete(wfe, true, ReasonPipelineSucceeded,
-//	    "All 5 tasks completed successfully in 45s")
+//	// Execution succeeded
+//	SetExecutionComplete(wfe, true, ReasonExecutionSucceeded,
+//	    "All tasks completed successfully in 45s")
 //
-//	// Pipeline failed
-//	SetTektonPipelineComplete(wfe, false, ReasonTaskFailed,
+//	// Execution failed
+//	SetExecutionComplete(wfe, false, ReasonTaskFailed,
 //	    "Task apply-memory-increase failed: kubectl apply failed with exit code 1")
-func SetTektonPipelineComplete(wfe *workflowexecutionv1.WorkflowExecution, succeeded bool, reason, message string) {
+func SetExecutionComplete(wfe *workflowexecutionv1.WorkflowExecution, succeeded bool, reason, message string) {
 	status := metav1.ConditionTrue
 	if !succeeded {
 		status = metav1.ConditionFalse
 	}
-	SetCondition(wfe, ConditionTektonPipelineComplete, status, reason, message)
+	SetCondition(wfe, ConditionExecutionComplete, status, reason, message)
 }
 
 // SetAuditRecorded sets the AuditRecorded condition

@@ -52,6 +52,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 )
 
 // ========================================
@@ -153,6 +154,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ContainerImage: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
+					ExecutionEngine: "tekton",
 					Parameters: map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
@@ -180,8 +182,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 
 				// Count by type to check if Gap 5-6 events are present (ADR-034 v1.5)
 				eventCounts := countEventsByType(events)
-				hasSelection := eventCounts["workflowexecution.selection.completed"] >= 1
-				hasExecution := eventCounts["workflowexecution.execution.started"] >= 1
+				hasSelection := eventCounts[weaudit.EventTypeSelectionCompleted] >= 1
+				hasExecution := eventCounts[weaudit.EventTypeExecutionStarted] >= 1
 				return hasSelection && hasExecution
 			}, 60*time.Second, 1*time.Second).Should(BeTrue(),
 				"Should have workflowexecution.selection.completed and workflowexecution.execution.started events (Gap 5-6, ADR-034 v1.5)")
@@ -194,19 +196,19 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			eventCounts := countEventsByType(allEvents)
 
 			// Gap 5-6: Validate exactly 1 of each required event type (per ADR-034 v1.5)
-			Expect(eventCounts["workflowexecution.selection.completed"]).To(Equal(1),
-				"Gap 5: Should have exactly 1 workflowexecution.selection.completed event (ADR-034 v1.5)")
-			Expect(eventCounts["workflowexecution.execution.started"]).To(Equal(1),
-				"Gap 6: Should have exactly 1 workflowexecution.execution.started event (ADR-034 v1.5)")
+			Expect(eventCounts[weaudit.EventTypeSelectionCompleted]).To(Equal(1),
+				"Gap 5: Should have exactly 1 "+weaudit.EventTypeSelectionCompleted+" event (ADR-034 v1.5)")
+			Expect(eventCounts[weaudit.EventTypeExecutionStarted]).To(Equal(1),
+				"Gap 6: Should have exactly 1 "+weaudit.EventTypeExecutionStarted+" event (ADR-034 v1.5)")
 
 			// Workflow may complete during test - if so, validate exactly 1 completion event (per ADR-034 v1.5)
-			if completionCount, exists := eventCounts["workflowexecution.workflow.completed"]; exists {
+			if completionCount, exists := eventCounts[weaudit.EventTypeCompleted]; exists {
 				Expect(completionCount).To(Equal(1),
 					"If workflow completed, should have exactly 1 workflow.completed event")
 			}
 
 			By("4. Validate workflowexecution.selection.completed event structure (ADR-034 v1.5)")
-			selectionEvents := filterEventsByType(allEvents, "workflowexecution.selection.completed")
+			selectionEvents := filterEventsByType(allEvents, weaudit.EventTypeSelectionCompleted)
 			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
 			selectionEvent := selectionEvents[0]
@@ -226,7 +228,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
-			executionEvents := filterEventsByType(allEvents, "workflowexecution.execution.started")
+			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)
 			Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
 
 			executionEvent := executionEvents[0]
@@ -280,6 +282,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						ContainerImage: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -293,17 +296,17 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Per ADR-034 v1.5: event type is "workflowexecution.selection.completed"
 			Eventually(func() int {
 				flushAuditBuffer() // Flush on each poll attempt
-				selectionType := "workflowexecution.selection.completed"
+				selectionType := weaudit.EventTypeSelectionCompleted
 				events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 				if err != nil {
 					return 0
 				}
 				return len(events)
 			}, 30*time.Second, 1*time.Second).Should(Equal(1),
-				"Should have exactly 1 workflowexecution.selection.completed event (ADR-034 v1.5)")
+				"Should have exactly 1 "+weaudit.EventTypeSelectionCompleted+" event (ADR-034 v1.5)")
 
 			By("3. Validate selection event is present")
-			selectionType := "workflowexecution.selection.completed"
+			selectionType := weaudit.EventTypeSelectionCompleted
 			selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")

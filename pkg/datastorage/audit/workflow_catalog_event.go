@@ -25,6 +25,19 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// Workflow catalog event type constants (L-3 SOC2 Fix)
+const (
+	EventTypeWorkflowCreated = "datastorage.workflow.created"
+	EventTypeWorkflowUpdated = "datastorage.workflow.updated"
+)
+
+// Event category and action constants (L-3 SOC2 Fix: compile-time safety)
+const (
+	EventCategoryWorkflow = "workflow" // Per OpenAPI schema (not "workflow_catalog")
+	ActionCreate          = "create"
+	ActionUpdate          = "update"
+)
+
 // ========================================
 // WORKFLOW CATALOG AUDIT EVENTS
 // ========================================
@@ -47,9 +60,9 @@ import (
 func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
-	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.created")
-	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
-	pkgaudit.SetEventAction(auditEvent, "create")
+	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowCreated)
+	pkgaudit.SetEventCategory(auditEvent, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(auditEvent, ActionCreate)
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflow.WorkflowID)
@@ -122,9 +135,9 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.WorkflowCatalogUpdatedFields) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
-	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.updated")
-	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
-	pkgaudit.SetEventAction(auditEvent, "update")
+	pkgaudit.SetEventType(auditEvent, EventTypeWorkflowUpdated)
+	pkgaudit.SetEventCategory(auditEvent, EventCategoryWorkflow)
+	pkgaudit.SetEventAction(auditEvent, ActionUpdate)
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflowID)

@@ -50,6 +50,7 @@ import (
 	"time"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,8 +73,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 )
 
@@ -102,6 +105,12 @@ type WorkflowExecutionReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+
+	// DD-STATUS-001: APIReader bypasses informer cache for direct API server reads.
+	// Used in reconcilePending to prevent race conditions from stale cache data:
+	// - Prevents duplicate audit events (cache lag between concurrent reconciles)
+	// - Ensures ExecutionRef is fresh for external deletion detection
+	APIReader client.Reader
 
 	// ========================================
 	// V1.0 MATURITY REQUIREMENTS (SERVICE_MATURITY_REQUIREMENTS.md)
@@ -164,6 +173,11 @@ type WorkflowExecutionReconciler struct {
 	// Per CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §7
 	// Provides typed audit methods for better testability
 	AuditManager *weaudit.Manager
+
+	// ExecutorRegistry dispatches to the correct execution backend (BR-WE-014)
+	// Maps execution engine names ("tekton", "job") to Executor implementations.
+	// When nil, falls back to inline Tekton-only code path.
+	ExecutorRegistry *weexecutor.Registry
 
 	// ========================================
 	// DEPRECATED: EXPONENTIAL BACKOFF CONFIGURATION (BR-WE-012, DD-WE-004)
@@ -272,6 +286,11 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// BR-WE-014: Default to "tekton" if executionEngine is unset (backward compatibility)
+	if wfe.Spec.ExecutionEngine == "" {
+		wfe.Spec.ExecutionEngine = "tekton"
+	}
+
 	// ========================================
 	// Phase-Based Reconciliation
 	// Per Controller Refactoring Pattern Library:
@@ -309,6 +328,29 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling Pending phase")
+
+	// ========================================
+	// DD-STATUS-001: Re-read WFE from API server to bypass informer cache.
+	// Prevents race conditions where concurrent reconciles read stale data:
+	// - F1: ExecutionRef not yet cached → misses external deletion detection
+	// - F2: Phase not yet cached → re-enters reconcilePending → duplicate audit events
+	// ========================================
+	freshWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(wfe), freshWFE); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil // WFE was deleted
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to re-read WFE from API server: %w", err)
+	}
+	// If the fresh WFE has already progressed past Pending, requeue to let the
+	// main Reconcile re-route based on the updated phase.
+	if freshWFE.Status.Phase != "" && freshWFE.Status.Phase != workflowexecutionv1alpha1.PhasePending {
+		logger.Info("WFE already progressed past Pending (informer cache was stale), requeueing",
+			"freshPhase", freshWFE.Status.Phase)
+		return ctrl.Result{Requeue: true}, nil
+	}
+	// Use fresh data for the remainder of this reconcile
+	*wfe = *freshWFE
 
 	// V1.0: No routing logic - RO makes ALL routing decisions before creating WFE
 	// If WFE exists, execute it. RO already checked routing.
@@ -351,70 +393,89 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 
 	// ========================================
 	// Gap #5: Record workflow selection audit event (BR-AUDIT-005)
-	// Emitted AFTER validation, BEFORE PipelineRun creation
-	// Provides visibility into which workflow was selected for execution
-	// IDEMPOTENCY: Only emit once - skip if PipelineRun already exists
+	// Emitted AFTER validation, BEFORE execution resource creation
+	// IDEMPOTENCY: Only emit once - skip if execution resource already exists
 	// ========================================
-	// Check if PipelineRun already exists to ensure idempotency (prevent duplicate events on re-reconciliation)
-	pr := r.BuildPipelineRun(wfe)
-	existingPR := &tektonv1.PipelineRun{}
-	prExists := false
-	prGetErr := r.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR)
-	if prGetErr == nil {
-		prExists = true
-	} else if apierrors.IsNotFound(prGetErr) && wfe.Status.PipelineRunRef != nil {
-		// INT-EXTERN-02: PipelineRun was deleted externally after we created it
-		// We know we created it because PipelineRunRef is set, but now it's NotFound
-		logger.Error(prGetErr, "PipelineRun not found - deleted externally during Pending phase")
+	// DD-STATUS-001: Use APIReader to bypass informer cache for existence check.
+	// Prevents duplicate audit events when concurrent reconciles don't yet see a recently-created resource in cache.
+	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	resourceExists := false
+	var resourceGetErr error
+	switch wfe.Spec.ExecutionEngine {
+	case "job":
+		existingJob := &batchv1.Job{}
+		resourceGetErr = r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
+	default: // "tekton"
+		existingPR := &tektonv1.PipelineRun{}
+		resourceGetErr = r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
+	}
+	if resourceGetErr == nil {
+		resourceExists = true
+	} else if apierrors.IsNotFound(resourceGetErr) && wfe.Status.ExecutionRef != nil {
+		// INT-EXTERN-02: Execution resource was deleted externally after we created it
+		logger.Error(resourceGetErr, "Execution resource not found - deleted externally during Pending phase",
+			"engine", wfe.Spec.ExecutionEngine)
 		return r.MarkFailed(ctx, wfe, nil)
 	}
 
-	if !prExists {
+	if !resourceExists {
 		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe); err != nil {
 			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
-			// Non-blocking: workflow execution continues
-			// Audit condition will be updated later
 		}
 	} else {
-		logger.V(2).Info("Skipping workflow.selection.completed audit event - PipelineRun already exists",
-			"pipelineRun", pr.Name)
+		logger.V(2).Info("Skipping workflow.selection.completed audit event - execution resource already exists",
+			"resource", resourceName, "engine", wfe.Spec.ExecutionEngine)
 	}
 
 	// ========================================
-	// Step 2: Create PipelineRun (already built above for idempotency check)
+	// Step 2: Create execution resource via executor dispatch (BR-WE-014)
 	// ========================================
-	logger.Info("Creating PipelineRun",
-		"pipelineRun", pr.Name,
-		"namespace", pr.Namespace,
-	)
-
-	if err := r.Create(ctx, pr); err != nil {
-		// DD-WE-003 Layer 2: Execution-time collision handling (not routing)
-		if apierrors.IsAlreadyExists(err) {
-			return r.HandleAlreadyExists(ctx, wfe, pr, err)
-		}
-		logger.Error(err, "Failed to create PipelineRun")
-		markErr := r.MarkFailedWithReason(ctx, wfe, "PipelineRunCreationFailed", fmt.Sprintf("Failed to create PipelineRun: %v", err))
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+	if err != nil {
+		logger.Error(err, "Unsupported execution engine", "engine", wfe.Spec.ExecutionEngine)
+		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", err.Error())
 		return ctrl.Result{}, markErr
 	}
 
-	// Day 7: Record PipelineRun creation metric (BR-WE-008)
-	// DD-METRICS-001: Use injected metrics instead of global function
+	logger.Info("Creating execution resource",
+		"engine", wfe.Spec.ExecutionEngine,
+		"resource", resourceName,
+		"namespace", r.ExecutionNamespace,
+	)
+
+	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace)
+	if createErr != nil {
+		if apierrors.IsAlreadyExists(createErr) {
+			// DD-WE-003 Layer 2: Execution-time collision handling
+			if wfe.Spec.ExecutionEngine == "tekton" {
+				pr := r.BuildPipelineRun(wfe)
+				return r.HandleAlreadyExists(ctx, wfe, pr, createErr)
+			}
+			// For Job backend, AlreadyExists means deterministic name collision
+			// Note: Uses "Unknown" reason (CRD enum constraint); specific cause in message
+			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+				fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+			return ctrl.Result{}, markErr
+		}
+		logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.ExecutionEngine)
+		markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+			fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.ExecutionEngine, createErr))
+		return ctrl.Result{}, markErr
+	}
+
+	// Record execution creation metric (BR-WE-008)
 	if r.Metrics != nil {
-		r.Metrics.RecordPipelineRunCreation()
+		r.Metrics.RecordExecutionCreation()
 	}
 
 	// ========================================
 	// Gap #6: Record execution workflow started audit event (BR-AUDIT-005)
-	// Emitted AFTER PipelineRun creation succeeds
-	// Provides PipelineRun reference for complete Request-Response reconstruction
 	// ========================================
-	if err := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, pr.Name, pr.Namespace); err != nil {
+	if err := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, createdName, r.ExecutionNamespace); err != nil {
 		logger.V(1).Info("Failed to record execution.workflow.started audit event", "error", err)
 		weconditions.SetAuditRecorded(wfe, false,
 			weconditions.ReasonAuditFailed,
 			fmt.Sprintf("Failed to record audit event: %v", err))
-		// Non-blocking: workflow execution continues even if audit fails
 	} else {
 		weconditions.SetAuditRecorded(wfe, true,
 			weconditions.ReasonAuditSucceeded,
@@ -422,11 +483,12 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	// ========================================
-	// BR-WE-006: Set TektonPipelineCreated condition
+	// BR-WE-006: Set ExecutionCreated condition
 	// ========================================
-	weconditions.SetTektonPipelineCreated(wfe, true,
-		weconditions.ReasonPipelineCreated,
-		fmt.Sprintf("PipelineRun %s created in %s namespace", pr.Name, pr.Namespace))
+	weconditions.SetExecutionCreated(wfe, true,
+		weconditions.ReasonExecutionCreated,
+		fmt.Sprintf("%s execution resource %s created in %s namespace",
+			wfe.Spec.ExecutionEngine, createdName, r.ExecutionNamespace))
 
 	// ========================================
 	// Step 3: Prepare status update to Running (P0: Phase State Machine)
@@ -436,27 +498,19 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Running: %w", err)
 	}
 	wfe.Status.StartTime = &now
-	wfe.Status.PipelineRunRef = &corev1.LocalObjectReference{
-		Name: pr.Name,
+	wfe.Status.ExecutionRef = &corev1.LocalObjectReference{
+		Name: createdName,
 	}
 
-	// ========================================
-	// Day 8 DEPRECATED: The old "workflow.started" event has been replaced by Day 3 Gap #6:
-	// "execution.workflow.started" (emitted above after PipelineRun creation).
-	// This provides more granular audit trail per BR-AUDIT-005 Gap #5 & #6.
-	// The audit condition is now set by Gap #6 emission (lines 382-396).
-	// ========================================
 	// Single atomic status update with all changes
-	// This eliminates race condition from multiple sequential updates
-	// ========================================
 	if err := r.updateStatus(ctx, wfe, "Running with conditions"); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
-		fmt.Sprintf("Created PipelineRun %s/%s", pr.Namespace, pr.Name))
+	r.Recorder.Event(wfe, "Normal", "ExecutionCreated",
+		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.ExecutionEngine, r.ExecutionNamespace, createdName))
 
-	// Requeue to check PipelineRun status
+	// Requeue to check execution status
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
@@ -466,57 +520,73 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 // ========================================
 func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconciling Running phase")
+	logger.Info("Reconciling Running phase", "engine", wfe.Spec.ExecutionEngine)
 
 	// ========================================
-	// Step 1: Fetch PipelineRun from execution namespace (DD-WE-002)
+	// Step 1: Get execution status via executor dispatch (BR-WE-014)
 	// ========================================
-	var pr tektonv1.PipelineRun
-	if err := r.Get(ctx, client.ObjectKey{
-		Name:      wfe.Status.PipelineRunRef.Name,
-		Namespace: r.ExecutionNamespace,
-	}, &pr); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Error(err, "PipelineRun not found - deleted externally")
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+	if err != nil {
+		logger.Error(err, "Unsupported execution engine during Running phase")
+		return r.MarkFailed(ctx, wfe, nil)
+	}
+
+	result, getErr := exec.GetStatus(ctx, wfe, r.ExecutionNamespace)
+	if getErr != nil {
+		if apierrors.IsNotFound(getErr) {
+			logger.Error(getErr, "Execution resource not found - deleted externally",
+				"engine", wfe.Spec.ExecutionEngine)
 			return r.MarkFailed(ctx, wfe, nil)
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, getErr
 	}
 
 	// ========================================
-	// Step 2: Update PipelineRunStatusSummary for visibility (v3.2)
+	// Step 2: Update ExecutionStatusSummary for visibility
 	// ========================================
-	wfe.Status.PipelineRunStatus = r.BuildPipelineRunStatusSummary(&pr)
+	if result.Summary != nil {
+		wfe.Status.ExecutionStatus = result.Summary
+	}
 
 	// ========================================
-	// Step 3: Map Tekton status to WFE phase using knative APIs (v3.2)
+	// Step 3: Map execution result to WFE phase
 	// ========================================
-	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
-	if succeededCond != nil {
-		switch {
-		case succeededCond.IsTrue():
-			// Success - calculate duration and mark completed
-			logger.Info("PipelineRun succeeded")
+	switch result.Phase {
+	case workflowexecutionv1alpha1.PhaseCompleted:
+		logger.Info("Execution succeeded", "engine", wfe.Spec.ExecutionEngine)
+		if wfe.Spec.ExecutionEngine == "tekton" {
+			// Tekton path: MarkCompleted needs the PipelineRun for detailed failure extraction
+			var pr tektonv1.PipelineRun
+			if err := r.Get(ctx, client.ObjectKey{
+				Name:      wfe.Status.ExecutionRef.Name,
+				Namespace: r.ExecutionNamespace,
+			}, &pr); err != nil {
+				return r.MarkCompleted(ctx, wfe, nil)
+			}
 			return r.MarkCompleted(ctx, wfe, &pr)
-		case succeededCond.IsFalse():
-			// Failure - extract details and mark failed
-			logger.Info("PipelineRun failed", "reason", succeededCond.Reason)
-			return r.MarkFailed(ctx, wfe, &pr)
-		default:
-			// Still running - update status and requeue
-			logger.V(1).Info("PipelineRun still running", "reason", succeededCond.Reason)
-			// BR-WE-006: Set TektonPipelineRunning condition
-			weconditions.SetTektonPipelineRunning(wfe, true,
-				weconditions.ReasonPipelineStarted,
-				fmt.Sprintf("Pipeline executing (%s)", succeededCond.Reason))
 		}
-	} else {
-		// No condition yet - PipelineRun just created, not started by Tekton yet
-		// Set TektonPipelineRunning to indicate we're waiting for Tekton to start it
-		logger.V(1).Info("PipelineRun has no status conditions yet (Tekton not started)")
-		weconditions.SetTektonPipelineRunning(wfe, true,
-			weconditions.ReasonPipelineStarted,
-			"Pipeline created, waiting for Tekton to start execution")
+		return r.MarkCompleted(ctx, wfe, nil)
+
+	case workflowexecutionv1alpha1.PhaseFailed:
+		logger.Info("Execution failed", "engine", wfe.Spec.ExecutionEngine, "reason", result.Reason)
+		if wfe.Spec.ExecutionEngine == "tekton" {
+			var pr tektonv1.PipelineRun
+			if err := r.Get(ctx, client.ObjectKey{
+				Name:      wfe.Status.ExecutionRef.Name,
+				Namespace: r.ExecutionNamespace,
+			}, &pr); err != nil {
+				return r.MarkFailed(ctx, wfe, nil)
+			}
+			return r.MarkFailed(ctx, wfe, &pr)
+		}
+		return r.MarkFailed(ctx, wfe, nil)
+
+	default:
+		// Still running - update conditions and requeue
+		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Spec.ExecutionEngine)
+		weconditions.SetExecutionRunning(wfe, true,
+			weconditions.ReasonExecutionStarted,
+			fmt.Sprintf("Execution running (%s: %s)", wfe.Spec.ExecutionEngine, result.Reason))
 	}
 
 	// ========================================
@@ -563,27 +633,42 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
-	// Cooldown expired - delete PipelineRun to release lock
+	// Cooldown expired - delete execution resource to release lock
 	// DD-WE-003: Use deterministic name for atomic locking
-	prName := PipelineRunName(wfe.Spec.TargetResource)
-	pr := &tektonv1.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      prName,
-			Namespace: r.ExecutionNamespace,
-		},
-	}
-
-	if err := r.Delete(ctx, pr); err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete PipelineRun after cooldown")
-			return ctrl.Result{}, err
+	if r.ExecutorRegistry != nil {
+		exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+		if execErr != nil {
+			exec, _ = r.ExecutorRegistry.Get("tekton") // Fallback
 		}
-		// PipelineRun already deleted - continue
-		logger.V(1).Info("PipelineRun already deleted", "pipelineRun", prName)
+		if exec != nil {
+			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
+				logger.Error(err, "Failed to cleanup execution resource after cooldown",
+					"engine", exec.Engine())
+				return ctrl.Result{}, err
+			}
+			logger.Info("Lock released after cooldown",
+				"targetResource", wfe.Spec.TargetResource,
+				"engine", exec.Engine(),
+				"cooldownPeriod", cooldown,
+			)
+		}
 	} else {
+		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
+		prName := PipelineRunName(wfe.Spec.TargetResource)
+		pr := &tektonv1.PipelineRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      prName,
+				Namespace: r.ExecutionNamespace,
+			},
+		}
+		if err := r.Delete(ctx, pr); err != nil {
+			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete PipelineRun after cooldown")
+				return ctrl.Result{}, err
+			}
+		}
 		logger.Info("Lock released after cooldown",
 			"targetResource", wfe.Spec.TargetResource,
-			"pipelineRun", prName,
 			"cooldownPeriod", cooldown,
 		)
 	}
@@ -675,31 +760,44 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	}
 
 	// ========================================
-	// Cleanup: Delete PipelineRun using deterministic name (DD-WE-003)
-	// This ensures cleanup even if PipelineRunRef was never set
+	// Cleanup: Delete execution resource via executor dispatch (BR-WE-014, DD-WE-003)
+	// This ensures cleanup even if ExecutionRef was never set
 	// ========================================
-	prName := PipelineRunName(wfe.Spec.TargetResource)
-	logger.Info("Deleting associated PipelineRun",
-		"pipelineRun", prName,
-		"namespace", r.ExecutionNamespace,
-	)
-
-	pr := &tektonv1.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      prName,
-			Namespace: r.ExecutionNamespace,
-		},
-	}
-
-	if err := r.Delete(ctx, pr); err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete PipelineRun during finalization")
-			return ctrl.Result{}, err
+	if r.ExecutorRegistry != nil {
+		exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.ExecutionEngine)
+		if execErr != nil {
+			logger.Error(execErr, "Unknown engine during cleanup, falling back to Tekton cleanup")
+			exec, _ = r.ExecutorRegistry.Get("tekton")
 		}
-		// PipelineRun already deleted - continue
-		logger.V(1).Info("PipelineRun already deleted", "pipelineRun", prName)
+		if exec != nil {
+			logger.Info("Cleaning up execution resource",
+				"engine", exec.Engine(),
+				"namespace", r.ExecutionNamespace,
+			)
+			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
+				logger.Error(err, "Failed to cleanup execution resource during finalization",
+					"engine", exec.Engine())
+				return ctrl.Result{}, err
+			}
+			logger.Info("Finalizer: cleaned up execution resource", "engine", exec.Engine())
+		}
 	} else {
-		logger.Info("Finalizer: deleted associated PipelineRun", "pipelineRun", prName)
+		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
+		prName := PipelineRunName(wfe.Spec.TargetResource)
+		pr := &tektonv1.PipelineRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      prName,
+				Namespace: r.ExecutionNamespace,
+			},
+		}
+		if err := r.Delete(ctx, pr); err != nil {
+			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete PipelineRun during finalization")
+				return ctrl.Result{}, err
+			}
+		} else {
+			logger.Info("Finalizer: deleted associated PipelineRun", "pipelineRun", prName)
+		}
 	}
 
 	// ========================================
@@ -740,7 +838,7 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	); err != nil {
 		// Ignore "indexer conflict" error - if RO controller created this index first, we're good
 		// Both controllers need this index anyway (WE for locking, RO for routing)
-		if !strings.Contains(err.Error(), "indexer conflict") {
+		if !k8serrors.IsIndexerConflict(err) {
 			return fmt.Errorf("failed to create field index on spec.targetResource: %w", err)
 		}
 		// Index already exists - safe to continue
@@ -862,13 +960,13 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 
 			// Set start time and PipelineRun reference
 			wfe.Status.StartTime = &now
-			wfe.Status.PipelineRunRef = &corev1.LocalObjectReference{
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{
 				Name: pr.Name,
 			}
 
-			// Set TektonPipelineCreated condition (consistency with main flow)
-			weconditions.SetTektonPipelineCreated(wfe, true,
-				weconditions.ReasonPipelineCreated,
+			// Set ExecutionCreated condition (consistency with main flow)
+			weconditions.SetExecutionCreated(wfe, true,
+				weconditions.ReasonExecutionCreated,
 				fmt.Sprintf("PipelineRun %s already exists (race condition)", prName))
 
 			return nil
@@ -1007,8 +1105,8 @@ func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(ctx context.Context,
 
 // BuildPipelineRunStatusSummary creates a lightweight status summary from PipelineRun
 // Provides visibility into task progress during execution (v3.2)
-func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.PipelineRunStatusSummary {
-	summary := &workflowexecutionv1alpha1.PipelineRunStatusSummary{
+func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status: "Unknown",
 	}
 
@@ -1076,8 +1174,8 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		wfe.Status.Duration = durationStr
 
 		// BR-WE-006: Set TektonPipelineComplete condition
-		weconditions.SetTektonPipelineComplete(wfe, true,
-			weconditions.ReasonPipelineSucceeded,
+		weconditions.SetExecutionComplete(wfe, true,
+			weconditions.ReasonExecutionSucceeded,
 			fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
 
 		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
@@ -1143,7 +1241,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	}
 
 	// Determine condition values
-	failureReason := weconditions.ReasonPipelineFailed
+	failureReason := weconditions.ReasonExecutionFailed
 	failureMessage := "Pipeline execution failed"
 	if failureDetails != nil {
 		// Map WE failure reasons to condition reasons
@@ -1191,7 +1289,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		wfe.Status.FailureDetails = failureDetails
 
 		// BR-WE-006: Set TektonPipelineComplete condition to False
-		weconditions.SetTektonPipelineComplete(wfe, false,
+		weconditions.SetExecutionComplete(wfe, false,
 			failureReason,
 			failureMessage)
 
@@ -1259,7 +1357,7 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 	failureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, failureDetails)
 
 	// Determine condition values
-	conditionReason := weconditions.ReasonPipelineCreationFailed
+	conditionReason := weconditions.ReasonExecutionCreationFailed
 	switch reason {
 	case "QuotaExceeded":
 		conditionReason = weconditions.ReasonQuotaExceeded
@@ -1287,8 +1385,8 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 		// Set failure details
 		wfe.Status.FailureDetails = failureDetails
 
-		// BR-WE-006: Set TektonPipelineCreated condition to False for pre-execution failures
-		weconditions.SetTektonPipelineCreated(wfe, false,
+		// BR-WE-006: Set ExecutionCreated condition to False for pre-execution failures
+		weconditions.SetExecutionCreated(wfe, false,
 			conditionReason,
 			fmt.Sprintf("Failed to create PipelineRun: %s", message))
 

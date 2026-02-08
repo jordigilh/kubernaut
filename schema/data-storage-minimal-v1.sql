@@ -12,9 +12,7 @@
 --   - pkg/contextapi/sqlbuilder/builder.go
 --   - pkg/contextapi/query/executor.go
 --   - pkg/contextapi/query/aggregation.go
-
--- Enable pgvector extension (idempotent)
-CREATE EXTENSION IF NOT EXISTS vector;
+-- V1.0: Label-only architecture (DD-WORKFLOW-015). No pgvector/semantic search.
 
 -- Table 1: resource_references
 -- Stores Kubernetes resource metadata (namespace, kind, name)
@@ -54,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_ah_resource_id ON action_histories(resource_id);
 CREATE INDEX IF NOT EXISTS idx_ah_last_action_at ON action_histories(last_action_at DESC);
 
 -- Table 3: resource_action_traces
--- Main audit trail table with vector embeddings for semantic search
+-- Main audit trail table
 -- Contains all incident/action data queried by Context API
 CREATE TABLE IF NOT EXISTS resource_action_traces (
     id BIGSERIAL PRIMARY KEY,
@@ -85,9 +83,6 @@ CREATE TABLE IF NOT EXISTS resource_action_traces (
     cluster_name VARCHAR(255),
     environment VARCHAR(50),
 
-    -- Vector embedding for semantic search (BR-CONTEXT-002)
-    embedding vector(384),
-
     -- Audit timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -102,11 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_rat_execution_status ON resource_action_traces(ex
 CREATE INDEX IF NOT EXISTS idx_rat_action_timestamp ON resource_action_traces(action_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_rat_cluster_name ON resource_action_traces(cluster_name);
 CREATE INDEX IF NOT EXISTS idx_rat_environment ON resource_action_traces(environment);
-
--- Vector similarity search index using HNSW (Hierarchical Navigable Small World)
--- BR-CONTEXT-002: Semantic search support
-CREATE INDEX IF NOT EXISTS idx_rat_embedding_hnsw ON resource_action_traces
-USING hnsw (embedding vector_cosine_ops);
 
 -- Trigger function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_timestamp()

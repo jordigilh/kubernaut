@@ -1,3 +1,8 @@
+> **SUPERSEDED**: This document is superseded by DD-WORKFLOW-015 (V1.0 label-only architecture).
+> pgvector and semantic search are deferred to V1.1+. Retained for historical context.
+
+---
+
 # PostgreSQL Vector Database Setup Guide
 
 ## 🎉 **STATUS: FULLY IMPLEMENTED**

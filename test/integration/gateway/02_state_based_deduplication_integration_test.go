@@ -32,10 +32,6 @@ package gateway
 
 import (
 	"fmt"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -44,6 +40,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -71,20 +68,8 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("dedup-int-%d-%s", processID, uuid.New().String()[:8])
+		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "dedup-int")
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-
-		// Wait for namespace to be ready
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 
@@ -108,10 +93,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 			return
 		}
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(ctx, ns)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		testLogger.Info("✅ Test cleanup complete")
 	})
@@ -131,14 +113,14 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 
 		for i := 0; i < 5; i++ {
 			signal := createNormalizedSignal(SignalBuilder{
-				AlertName: signalName1,
-				Namespace:  testNamespace,
+				AlertName:    signalName1,
+				Namespace:    testNamespace,
 				ResourceName: fmt.Sprintf("dedup-pod-%d", i),
-				Kind:       "Pod",
-				Severity:   "critical",
-				Source:     "prometheus",
+				Kind:         "Pod",
+				Severity:     "critical",
+				Source:       "prometheus",
 				Labels: map[string]string{
-					"test": "deduplication",
+					"test":    "deduplication",
 					"pod_num": fmt.Sprintf("%d", i),
 				},
 			})
@@ -155,14 +137,14 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 
 		// Same signalname and pod = same fingerprint
 		duplicateSignal := createNormalizedSignal(SignalBuilder{
-			AlertName: signalName1,
-			Namespace:  testNamespace,
+			AlertName:    signalName1,
+			Namespace:    testNamespace,
 			ResourceName: "dedup-pod-0", // Same as first signal
-			Kind:       "Pod",
-			Severity:   "critical",
-			Source:     "prometheus",
+			Kind:         "Pod",
+			Severity:     "critical",
+			Source:       "prometheus",
 			Labels: map[string]string{
-				"test": "deduplication",
+				"test":    "deduplication",
 				"pod_num": "0",
 			},
 		})
@@ -185,16 +167,16 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 
 		for i := 0; i < 5; i++ {
 			signal := createNormalizedSignal(SignalBuilder{
-				AlertName: signalName2,
-				Namespace:  testNamespace,
+				AlertName:    signalName2,
+				Namespace:    testNamespace,
 				ResourceName: fmt.Sprintf("dedup2-pod-%d", i),
-				Kind:       "Pod",
-				Severity:   "warning",
-				Source:     "prometheus",
+				Kind:         "Pod",
+				Severity:     "warning",
+				Source:       "prometheus",
 				Labels: map[string]string{
-					"test": "deduplication",
+					"test":        "deduplication",
 					"alert_group": "2",
-					"pod_num": fmt.Sprintf("%d", i),
+					"pod_num":     fmt.Sprintf("%d", i),
 				},
 			})
 
