@@ -42,17 +42,17 @@ The AA request builder (`pkg/aianalysis/handlers/request_builder.go`) MUST inclu
 
 The HAPI OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequest` schema. Both Go and Python clients MUST be regenerated.
 
-### R4: HAPI Prompt Strategy and Workflow Search
+### R4: HAPI Prompt Strategy
 
-HAPI MUST switch its investigation prompt based on the `signal_mode` value. The prompt MUST also guide the agent's workflow catalog search behavior.
+HAPI MUST switch its investigation prompt based on the `signal_mode` value.
 
 **Reactive** (default):
-> Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine why this happened and recommend remediation. Search for a remediation workflow matching the signal type.
+> Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine why this happened and recommend remediation.
 
 **Predictive**:
-> Evaluate current environment. This incident is predicted but has not occurred yet. Assess resource trends, recent deployments, and current state to determine if preemptive action is warranted. "No action needed" is a valid outcome if the prediction is unlikely to materialize. Search for a **predictive** remediation workflow matching the signal type (e.g., `PredictedOOMKill`). If no predictive-specific workflow exists, fall back to the base reactive workflow (e.g., `OOMKilled`) but adapt execution for preemptive context.
+> Evaluate current environment. This incident is **predicted** based on resource trend analysis but has not occurred yet. Assess resource utilization trends, recent deployments, and current state to determine if preemptive action is warranted and how to **prevent** this incident. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
 
-**Critical**: The agent must be aware that the workflow catalog may contain **both** reactive and predictive workflows for the same underlying condition. The `signal_type` field carries the full type (e.g., `PredictedOOMKill`, not `OOMKilled`), enabling the agent to search for predictive-specific workflows first.
+**Why this is clean**: Because SP normalizes the signal type (BR-SP-106), the agent receives `signal_type = "OOMKilled"` in both modes. It searches the same workflow catalog entry regardless of mode. The only difference is the investigation prompt: reactive asks "what happened and why?", predictive asks "this is about to happen, how do we prevent it?". The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP normalization.
 
 ### R5: Valid "No Action" Outcome
 
@@ -70,12 +70,12 @@ Audit events for AI analysis MUST include the `signalMode` value, enabling the E
 ## Data Flow
 
 ```
-RO copies sp.Status.SignalMode + sp.Status.SignalType → aa.Spec.SignalContext
-  → AA request builder includes signalMode + signalType in IncidentRequest
+RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
+  → AA request builder includes signalMode in IncidentRequest
     → HAPI reads signal_mode, switches prompt strategy
-      → LLM investigates with correct directive
-        → Agent searches workflow catalog using signal_type (e.g., PredictedOOMKill)
-          → If no predictive workflow found, agent falls back to base type (e.g., OOMKilled)
+      → LLM receives normalized signal_type (e.g., "OOMKilled") + mode context
+        → Agent searches workflow catalog for "OOMKilled" (standard search, no special logic)
+          → Prompt directs: RCA (reactive) or predict & prevent (predictive)
             → Response: workflow recommendation OR "no action needed"
 ```
 
@@ -124,6 +124,13 @@ RO copies sp.Status.SignalMode + sp.Status.SignalType → aa.Spec.SignalContext
 
 ### E2E Tests
 - Full pipeline: predictive alert → SP → RO → AA → HAPI → workflow selection (or "no action")
+
+> **Note — Mock LLM Enhancement Required**: The Mock LLM (`test/services/mock-llm/src/server.py`) needs a small enhancement to support predictive signal testing:
+> 1. **New predictive scenario variants**: Add predictive variants for existing scenarios (e.g., `oomkilled_predictive`) in the `MOCK_SCENARIOS` dict. These use the same `workflow_id` (same catalog entry, since SP normalizes the signal type) but return `root_cause` text reflecting prediction/prevention rather than reactive RCA.
+> 2. **Detection logic update**: In `_detect_scenario()`, detect `"predictive"` or `"signal_mode"` in the message content to select the predictive variant of a scenario.
+> 3. **"No action" scenario**: Add a predictive-specific scenario that returns `selected_workflow: null` with reasoning like "trend reversing, no preemptive action needed" — validates R5.
+>
+> The mock's architecture (two-phase response: tool call → final analysis) and config loading (YAML scenarios file) remain unchanged. This is a scenario addition, not a structural change.
 
 ---
 
