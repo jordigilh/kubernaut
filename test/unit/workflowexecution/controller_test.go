@@ -2130,8 +2130,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		Context("DD-WE-003: Deterministic PipelineRun Name", func() {
-			It("should delete PipelineRun using deterministic name (not PipelineRunRef)", func() {
-				// Given: WFE with finalizer and PipelineRunRef
+			It("should delete PipelineRun using deterministic name (not ExecutionRef)", func() {
+				// Given: WFE with finalizer and ExecutionRef
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-wfe-delete",
@@ -2143,14 +2143,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseRunning,
-						PipelineRunRef: &corev1.LocalObjectReference{
+						ExecutionRef: &corev1.LocalObjectReference{
 							Name: "some-different-name", // Different from deterministic name
 						},
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// And: PipelineRun exists with deterministic name (NOT PipelineRunRef.Name)
+				// And: PipelineRun exists with deterministic name (NOT ExecutionRef.Name)
 				prName := workflowexecution.PipelineRunName(wfe.Spec.TargetResource)
 				pr := &tektonv1.PipelineRun{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2174,8 +2174,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			})
 
-			It("should delete PipelineRun even when PipelineRunRef is nil", func() {
-				// Given: WFE with finalizer but NO PipelineRunRef
+			It("should delete PipelineRun even when ExecutionRef is nil", func() {
+				// Given: WFE with finalizer but NO ExecutionRef
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-wfe-no-ref",
@@ -2187,7 +2187,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhasePending,
-						PipelineRunRef: nil, // No ref set
+						ExecutionRef: nil, // No ref set
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -2424,7 +2424,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		Context("workflowexecution_pipelinerun_creation_total metric", func() {
 			It("should be accessible from the metrics package", func() {
 				// Per DD-METRICS-001: Access via metrics struct
-				Expect(testMetrics.PipelineRunCreations).ToNot(BeNil())
+				Expect(testMetrics.ExecutionCreations).ToNot(BeNil())
 			})
 		})
 

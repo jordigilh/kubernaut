@@ -59,7 +59,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,6 +87,7 @@ import (
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
@@ -168,7 +168,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("Phase 1: Infrastructure Startup (process 1 only)")
 	GinkgoWriter.Println("  • Shared envtest (for DataStorage auth)")
-	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
 	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")
@@ -582,15 +582,27 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	By(fmt.Sprintf("[Process %d] Creating per-process namespaces", processNum))
 	// Create kubernaut-system namespace for controller
+	// Static namespace name - add managed label directly
 	systemNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubernaut-system",
+			Labels: map[string]string{
+				"kubernaut.ai/managed": "true",
+			},
+		},
 	}
 	err = k8sClient.Create(ctx, systemNs)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create default namespace for tests
+	// Static namespace name - add managed label directly
 	defaultNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "default"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+			Labels: map[string]string{
+				"kubernaut.ai/managed": "true",
+			},
+		},
 	}
 	_ = k8sClient.Create(ctx, defaultNs) // May already exist
 
@@ -826,18 +838,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
-	// Format: test-aa-<8-char-uuid> for readability and uniqueness
-	testNamespace = "test-aa-" + uuid.New().String()[:8]
-
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testNamespace,
-		},
-	}
-
-	err := k8sClient.Create(context.Background(), ns)
-	Expect(err).NotTo(HaveOccurred(),
-		"Failed to create test namespace %s", testNamespace)
+	testNamespace = helpers.CreateTestNamespace(context.Background(), k8sClient, "test-aa")
 
 	GinkgoWriter.Printf("📦 [AA] Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
 })
@@ -846,17 +847,7 @@ var _ = AfterEach(func() {
 	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
 	// This is MUCH faster than deleting individual AIAnalysis resources
 	if testNamespace != "" {
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-
-		err := k8sClient.Delete(context.Background(), ns)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  [AA] Failed to delete namespace %s: %v\n", testNamespace, err)
-		} else {
-			GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
-		}
+		helpers.DeleteTestNamespace(context.Background(), k8sClient, testNamespace)
+		GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
 	}
 })

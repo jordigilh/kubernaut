@@ -4,8 +4,9 @@ Kubernaut Coverage Report Generator
 
 Replaces the bash+awk coverage reporting with a single Python script that:
 - Parses Go coverage profiles (.out files) for line-by-line analysis
-- Parses Python pytest-cov reports (.txt files) for module-level analysis
+- Parses Python coverage reports (.txt files) with --show-missing for line-level data
 - Performs proper cross-tier line-by-line merging for "All Tiers" column
+  (Go: block-level key merge; Python: missing-line intersection)
 - Falls back to .pct summary files when full .out data isn't available
 - Outputs markdown, table, or json formats
 
@@ -375,22 +376,82 @@ def calc_go_service_all_tiers(service: str) -> str:
 
 @dataclass
 class PythonModuleCoverage:
-    """Coverage data for a single Python module."""
+    """Coverage data for a single Python module.
+
+    When the report includes --show-missing, missing_lines contains the
+    specific line numbers that were NOT executed.  This enables true
+    line-by-line cross-tier merging (same approach Go services use).
+    """
     name: str
     total_stmts: int
     missed_stmts: int
+    missing_lines: set[int] = field(default_factory=set)
 
     @property
     def covered_stmts(self) -> int:
         return self.total_stmts - self.missed_stmts
 
+    @property
+    def has_line_data(self) -> bool:
+        """Whether this module has line-level missing data (vs just counts).
+
+        True when we parsed the Missing column (even if the set is empty,
+        which just means 100 % coverage — no lines missing).
+        """
+        return len(self.missing_lines) > 0 or self.missed_stmts == 0
+
+
+def parse_missing_lines(missing_str: str) -> set[int]:
+    """Parse a coverage.py Missing column value into a set of line numbers.
+
+    Handles individual lines, ranges, and branch indicators:
+        "45-60, 75-80"       → {45, 46, …, 60, 75, 76, …, 80}
+        "45, 47, 50-52"      → {45, 47, 50, 51, 52}
+        "45->48, 50-52"      → {50, 51, 52}   (branch indicators skipped)
+        ""                   → set()
+    """
+    lines: set[int] = set()
+    if not missing_str or not missing_str.strip():
+        return lines
+
+    for part in missing_str.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # Skip branch-coverage indicators like "45->48"
+        if "->" in part:
+            continue
+        if "-" in part:
+            try:
+                start_s, end_s = part.split("-", 1)
+                lines.update(range(int(start_s.strip()), int(end_s.strip()) + 1))
+            except (ValueError, TypeError):
+                continue
+        else:
+            try:
+                lines.add(int(part))
+            except ValueError:
+                continue
+    return lines
+
 
 def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
-    """Parse a Python pytest-cov text report into module coverage data."""
-    modules = []
+    """Parse a Python coverage text report into module coverage data.
+
+    Supports both plain reports (Name / Stmts / Miss / Cover) and
+    --show-missing reports (Name / Stmts / Miss / Cover / Missing).
+    When the Missing column is present the per-line data is stored in
+    PythonModuleCoverage.missing_lines for line-level cross-tier merging.
+
+    Files may contain pytest output, headers, separators, and multiple
+    coverage tables (e.g. pytest-cov ``term-missing`` + ``coverage report``).
+    The parser extracts all matching rows and deduplicates by module name,
+    preferring entries that carry line-level data.
+    """
+    seen: dict[str, PythonModuleCoverage] = {}
     path = Path(filepath)
     if not path.exists() or path.stat().st_size == 0:
-        return modules
+        return []
 
     with open(path) as f:
         for line in f:
@@ -420,10 +481,33 @@ def parse_python_coverage_file(filepath: str) -> list[PythonModuleCoverage]:
                 if not name.startswith("src/"):
                     continue
 
-                modules.append(PythonModuleCoverage(
-                    name=name, total_stmts=total_stmts, missed_stmts=missed_stmts
-                ))
-    return modules
+                # Parse Missing column if present.
+                # Format: Name  Stmts  Miss  Cover%  [Missing…]
+                # parts[3] is the Cover percentage (e.g. "80%"),
+                # parts[4:] contain the missing line ranges.
+                missing_lines: set[int] = set()
+                if len(parts) > 4:
+                    missing_str = " ".join(parts[4:])
+                    missing_lines = parse_missing_lines(missing_str)
+
+                entry = PythonModuleCoverage(
+                    name=name,
+                    total_stmts=total_stmts,
+                    missed_stmts=missed_stmts,
+                    missing_lines=missing_lines,
+                )
+
+                # Deduplicate: prefer entries with line-level data over
+                # plain entries (the same file may contain both formats).
+                if name in seen:
+                    existing = seen[name]
+                    if entry.has_line_data and not existing.has_line_data:
+                        seen[name] = entry
+                    # Otherwise keep first (or existing with line data)
+                else:
+                    seen[name] = entry
+
+    return list(seen.values())
 
 
 def filter_python_modules(
@@ -446,6 +530,68 @@ def calc_python_coverage(modules: list[PythonModuleCoverage]) -> str:
     if total == 0:
         return "0.0%"
     return f"{(covered / total) * 100:.1f}%"
+
+
+def merge_python_coverage_by_lines(
+    *module_lists: list[PythonModuleCoverage],
+) -> dict[str, PythonModuleCoverage]:
+    """Merge Python coverage across tiers using line-level data.
+
+    For each module present in multiple tiers, a line is considered
+    "missed" only if it is missed in **every** tier that reports it
+    (i.e. the intersection of the per-tier missing-line sets).
+    This mirrors Go's ``merge_go_coverage_entries`` block-level merge
+    and gives true accumulated coverage.
+
+    Falls back to module-level "best miss count" when line data is
+    unavailable for a module (e.g. legacy reports without --show-missing).
+    """
+    # Collect all entries per module across all tiers
+    module_data: dict[str, list[PythonModuleCoverage]] = {}
+    for modules in module_lists:
+        for m in modules:
+            module_data.setdefault(m.name, []).append(m)
+
+    merged: dict[str, PythonModuleCoverage] = {}
+    for name, entries in module_data.items():
+        entries_with_lines = [e for e in entries if e.has_line_data]
+
+        if entries_with_lines:
+            # ── Line-level merge ──────────────────────────────────
+            # Start with the missing lines from the first entry and
+            # intersect with every subsequent entry.  A line survives
+            # the intersection only if ALL tiers missed it.
+            intersected_missing = entries_with_lines[0].missing_lines.copy()
+            for e in entries_with_lines[1:]:
+                intersected_missing &= e.missing_lines
+
+            max_stmts = max(e.total_stmts for e in entries)
+
+            # Filter out line numbers beyond the valid statement range.
+            # Different tiers may report different statement counts for
+            # the same module (e.g., code changes between test runs).
+            # Without this filter, len(intersected_missing) can exceed
+            # max_stmts, producing negative covered_stmts.
+            intersected_missing = {
+                line for line in intersected_missing if 1 <= line <= max_stmts
+            }
+
+            merged[name] = PythonModuleCoverage(
+                name=name,
+                total_stmts=max_stmts,
+                missed_stmts=len(intersected_missing),
+                missing_lines=intersected_missing,
+            )
+        else:
+            # ── Fallback: module-level merge (best miss count) ────
+            best = min(entries, key=lambda e: e.missed_stmts)
+            merged[name] = PythonModuleCoverage(
+                name=name,
+                total_stmts=max(e.total_stmts for e in entries),
+                missed_stmts=best.missed_stmts,
+            )
+
+    return merged
 
 
 def get_python_total_from_file(filepath: str) -> Optional[str]:
@@ -508,9 +654,10 @@ def calc_python_service() -> ServiceCoverage:
             pct = read_pct_file("coverage_e2e_holmesgpt-api.pct")
             svc.e2e = pct if pct else "-"
 
-    # All Tiers: module-level merge across all tier files.
-    # For each Python module, take the best (lowest miss count) across tiers.
-    # This is the Python equivalent of Go's line-by-line merging.
+    # All Tiers: line-level merge across all tier files.
+    # For each Python module, intersect the per-tier missing-line sets so
+    # that a line is "missed" only if ALL tiers missed it.  This is the
+    # true Python equivalent of Go's block-level merge_go_coverage_entries.
     #
     # NOTE: We do NOT apply unit/integration pattern filters here — All Tiers
     # considers ALL modules. Each tier's per-module data may cover different
@@ -520,32 +667,16 @@ def calc_python_service() -> ServiceCoverage:
         int_file,
         e2e_file,
     ]
-    merged_modules: dict[str, PythonModuleCoverage] = {}
+    all_module_lists: list[list[PythonModuleCoverage]] = []
     has_module_data = False
     for tf in all_tier_files:
         modules = parse_python_coverage_file(tf)
         if modules:
             has_module_data = True
-            for m in modules:
-                if m.name in merged_modules:
-                    existing = merged_modules[m.name]
-                    # Same module: take the tier with fewer missed statements
-                    # (= more coverage). total_stmts should be the same across
-                    # tiers for the same module, but use max as a safety net.
-                    if m.missed_stmts < existing.missed_stmts:
-                        merged_modules[m.name] = PythonModuleCoverage(
-                            name=m.name,
-                            total_stmts=max(m.total_stmts, existing.total_stmts),
-                            missed_stmts=m.missed_stmts,
-                        )
-                else:
-                    merged_modules[m.name] = PythonModuleCoverage(
-                        name=m.name,
-                        total_stmts=m.total_stmts,
-                        missed_stmts=m.missed_stmts,
-                    )
+            all_module_lists.append(modules)
 
-    if has_module_data and merged_modules:
+    if has_module_data and all_module_lists:
+        merged_modules = merge_python_coverage_by_lines(*all_module_lists)
         svc.all_tiers = calc_python_coverage(list(merged_modules.values()))
     else:
         # Fallback: use best percentage if no module data available

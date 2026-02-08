@@ -10,7 +10,10 @@ rules:
   - configmaps
   - namespaces
   - nodes
+  - persistentvolumes
   - pods
+  - secrets
+  - services
   verbs:
   - get
   - list
@@ -29,6 +32,15 @@ rules:
   - deployments
   - replicasets
   - statefulsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
   verbs:
   - get
   - list

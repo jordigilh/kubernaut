@@ -32,10 +32,8 @@ Query Format (per DD-LLM-001):
   - Example: "OOMKilled critical", "CrashLoopBackOff high configuration"
   - Uses canonical Kubernetes event reasons from LLM's RCA findings
 
-This toolset integrates with the Data Storage Service REST API for semantic workflow search:
-  - Two-phase semantic search (exact label matching + pgvector similarity)
-  - Hybrid weighted scoring (confidence = base_similarity + label_boost - label_penalty)
-  - Real-time embedding generation via Data Storage Service
+This toolset integrates with the Data Storage Service REST API for workflow search:
+  - V1.0 label-only search (DD-WORKFLOW-015)
   - Confidence scores: 90-95% for exact label matches
 
 Audit Trail (DD-WORKFLOW-014 v2.1):
@@ -82,9 +80,7 @@ logger = logging.getLogger(__name__)
 #
 # Integration: This toolset calls Data Storage Service REST API
 #   - Endpoint: POST /api/v1/workflows/search
-#   - Two-phase semantic search (exact labels + pgvector similarity)
-#   - Hybrid scoring (base_similarity + label_boost - label_penalty)
-#   - Real-time embedding generation
+#   - V1.0 label-only search (DD-WORKFLOW-015)
 
 
 # ========================================
@@ -319,9 +315,7 @@ class SearchWorkflowCatalogTool(Tool):
     - workflows: List of ranked workflows with confidence scores (90-95% for exact matches)
 
     🔄 PRODUCTION: Integrated with Data Storage Service REST API
-    - Two-phase semantic search (exact labels + pgvector similarity)
-    - Hybrid weighted scoring (base similarity + label boost - label penalty)
-    - Real-time embedding generation
+    - V1.0 label-only search (DD-WORKFLOW-015)
     """
 
     def __init__(
@@ -523,8 +517,7 @@ class SearchWorkflowCatalogTool(Tool):
 
         Implementation:
             - Calls Data Storage Service REST API
-            - Two-phase semantic search (exact labels + pgvector similarity)
-            - Hybrid weighted scoring (confidence = base + boost - penalty)
+            - V1.0 label-only search (DD-WORKFLOW-015)
             - remediation_id passed in JSON body for audit correlation
         """
         try:
@@ -765,11 +758,10 @@ class SearchWorkflowCatalogTool(Tool):
 
         Business Requirement: BR-STORAGE-013
         Design Decisions:
-          - DD-WORKFLOW-002 v2.3 - Two-phase semantic search
+          - DD-WORKFLOW-015 - V1.0 label-only architecture
           - DD-WORKFLOW-014 v2.1 - remediation_id in JSON body
           - DD-LLM-001 - Structured query format
           - DD-STORAGE-008 - Workflow Catalog Schema
-          - DD-WORKFLOW-004 - Hybrid Weighted Label Scoring
           - DD-WORKFLOW-001 v1.6 - DetectedLabels validation against RCA resource
 
         Args:
@@ -782,9 +774,7 @@ class SearchWorkflowCatalogTool(Tool):
             List of transformed workflow dictionaries (for LLM)
 
         🔄 PRODUCTION: Calls Data Storage Service /api/v1/workflows/search
-          Phase 1: Exact label matching (SQL WHERE clause)
-          Phase 2: Semantic ranking (pgvector similarity)
-          Hybrid scoring: base_similarity + label_boost - label_penalty
+          V1.0 label-only search (DD-WORKFLOW-015)
           Expected confidence: 90-95% for exact matches
 
         DD-WORKFLOW-014 v2.1: remediation_id passed in JSON body
@@ -842,7 +832,7 @@ class SearchWorkflowCatalogTool(Tool):
                 "query": query,
                 "filters": search_filters,
                 "top_k": top_k,
-                "min_similarity": 0.3,  # 30% minimum similarity threshold (DD-WORKFLOW-002)
+                "min_score": 0.3,  # 30% minimum score threshold (DD-WORKFLOW-015)
                 "remediation_id": self._remediation_id  # For audit correlation
             }
 
@@ -867,7 +857,7 @@ class SearchWorkflowCatalogTool(Tool):
                 query=query,
                 filters=filters_obj,
                 top_k=top_k,
-                min_similarity=0.3,
+                min_score=0.3,
                 remediation_id=self._remediation_id
             )
 
@@ -1051,9 +1041,8 @@ class WorkflowCatalogToolset(Toolset):
 
     Architecture:
     - Embedded toolset in holmesgpt-api
-    - Calls Data Storage Service REST API for semantic search
-    - Two-phase search: exact label matching + pgvector similarity
-    - Hybrid weighted scoring: confidence = base + boost - penalty
+    - Calls Data Storage Service REST API for workflow search
+    - V1.0 label-only search (DD-WORKFLOW-015)
     - Expected confidence: 90-95% for exact matches
 
     Audit Trail (DD-WORKFLOW-014 v2.1):

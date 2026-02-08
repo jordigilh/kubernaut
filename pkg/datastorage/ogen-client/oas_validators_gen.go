@@ -304,7 +304,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -594,7 +594,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -2681,7 +2681,7 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 
 func (s RemediationApprovalAuditPayloadEventType) Validate() error {
 	switch s {
-	case "webhook.approval.decided":
+	case "webhook.remediationapprovalrequest.decided":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2902,6 +2902,10 @@ func (s RemediationOrchestratorAuditPayloadEventType) Validate() error {
 	case "orchestrator.approval.approved":
 		return nil
 	case "orchestrator.approval.rejected":
+		return nil
+	case "orchestrator.remediation.manual_review":
+		return nil
+	case "orchestrator.routing.blocked":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -4212,7 +4216,7 @@ func (s *WorkflowExecutionWebhookAuditPayload) Validate() error {
 
 func (s WorkflowExecutionWebhookAuditPayloadEventType) Validate() error {
 	switch s {
-	case "webhook.workflow.unblocked":
+	case "workflowexecution.block.cleared":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

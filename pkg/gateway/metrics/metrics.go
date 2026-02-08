@@ -74,6 +74,10 @@ const (
 
 	// MetricNameCircuitBreakerOperationsTotal tracks operations through circuit breaker
 	MetricNameCircuitBreakerOperationsTotal = "gateway_circuit_breaker_operations_total"
+
+	// MetricNameSignalsRejectedTotal tracks signals rejected by scope filtering
+	// BR-SCOPE-002: Gateway Signal Filtering
+	MetricNameSignalsRejectedTotal = "gateway_signals_rejected_total"
 )
 
 // Metrics holds all Gateway service Prometheus metrics
@@ -108,6 +112,9 @@ type Metrics struct {
 	// Track K8s API circuit breaker state and operation results
 	CircuitBreakerState      *prometheus.GaugeVec   // gateway_circuit_breaker_state
 	CircuitBreakerOperations *prometheus.CounterVec // gateway_circuit_breaker_operations_total
+
+	// Scope Filtering Metrics (BR-SCOPE-002: Gateway Signal Filtering)
+	SignalsRejectedTotal *prometheus.CounterVec // gateway_signals_rejected_total{reason}
 
 	// Internal: Registry for custom metrics exposure (test isolation)
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
@@ -232,6 +239,15 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total operations through circuit breaker by name and result",
 			},
 			[]string{"name", "result"},
+		),
+
+		// Scope Filtering Metrics (BR-SCOPE-002)
+		SignalsRejectedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameSignalsRejectedTotal,
+				Help: "Total signals rejected by scope filtering by rejection reason",
+			},
+			[]string{"reason"},
 		),
 	}
 

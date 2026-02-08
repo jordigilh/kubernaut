@@ -218,7 +218,6 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 
 			Entry("list", metrics.OperationList, metrics.OperationList),
 			Entry("get", metrics.OperationGet, metrics.OperationGet),
-			Entry("semantic_search", metrics.OperationSemanticSearch, metrics.OperationSemanticSearch),
 			Entry("filter", metrics.OperationFilter, metrics.OperationFilter),
 		)
 
@@ -241,9 +240,9 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 				uniqueOperations[operation] = true
 			}
 
-			// Should only have the 4 known operations (unknown maps to "filter")
-			Expect(len(uniqueOperations)).To(BeNumerically("<=", 4),
-				"Operation cardinality should be bounded to 4 values")
+			// Should only have the 3 known operations (unknown maps to "filter")
+			Expect(len(uniqueOperations)).To(BeNumerically("<=", 3),
+				"Operation cardinality should be bounded to 3 values")
 		})
 	})
 
@@ -253,12 +252,12 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			maxFailureReasons := 6    // 5 known + 1 unknown
 			maxValidationCombos := 60 // 10 fields × 6 reasons
 			maxTableStatus := 8       // 4 tables × 2 statuses
-			maxOperations := 4        // 4 query operations
+			maxOperations := 3        // 3 query operations
 
 			totalMaxCardinality := maxFailureReasons + maxValidationCombos + maxTableStatus + maxOperations
 
-			Expect(totalMaxCardinality).To(Equal(78),
-				"Total cardinality should be exactly 78")
+			Expect(totalMaxCardinality).To(Equal(77),
+				"Total cardinality should be exactly 77")
 			Expect(totalMaxCardinality).To(BeNumerically("<", 100),
 				"Total cardinality should be well under 100 (Prometheus best practice)")
 		})

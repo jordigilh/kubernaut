@@ -245,7 +245,7 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 
 		// Transition to terminal Failed (skip blocking check to avoid infinite loop)
 		return r.transitionToFailedTerminal(ctx, rr, "blocked",
-			fmt.Sprintf("Cooldown expired after blocking due to %s", blockReason))
+			fmt.Errorf("Cooldown expired after blocking due to %s", blockReason))
 	}
 
 	// Still in cooldown - requeue at exact expiry time
@@ -260,9 +260,14 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 // transitionToFailedTerminal is the terminal Failed transition that skips blocking check.
 // Used when transitioning from Blocked after cooldown expiry.
 // This prevents infinite loops: Failed -> Blocked -> Failed -> Blocked...
-func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string) (ctrl.Result, error) {
+func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase string, failureErr error) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	startTime := rr.CreationTimestamp.Time
+
+	failureReason := ""
+	if failureErr != nil {
+		failureReason = failureErr.Error()
+	}
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -281,7 +286,7 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 
 	// Emit audit event (DD-AUDIT-003)
 	durationMs := time.Since(startTime).Milliseconds()
-	r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
+	r.emitFailureAudit(ctx, rr, failurePhase, failureErr, durationMs)
 
 	logger.Info("Remediation failed (terminal)",
 		"failurePhase", failurePhase,

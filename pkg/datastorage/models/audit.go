@@ -17,52 +17,8 @@ limitations under the License.
 package models
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
 )
-
-// Vector is a custom type for PostgreSQL vector columns with pgvector extension
-// Implements sql.Scanner and driver.Valuer for seamless database operations
-type Vector []float32
-
-// Scan implements sql.Scanner for Vector type
-// Converts PostgreSQL vector format "[x,y,z,...]" to []float32
-func (v *Vector) Scan(value interface{}) error {
-	if value == nil {
-		*v = nil
-		return nil
-	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("failed to scan Vector: expected []byte, got %T", value)
-	}
-
-	// PostgreSQL returns vectors as "[1.0,2.0,3.0]"
-	str := string(bytes)
-	str = strings.Trim(str, "[]")
-
-	if str == "" {
-		*v = make([]float32, 0)
-		return nil
-	}
-
-	parts := strings.Split(str, ",")
-	result := make([]float32, len(parts))
-
-	for i, part := range parts {
-		val, err := strconv.ParseFloat(strings.TrimSpace(part), 32)
-		if err != nil {
-			return fmt.Errorf("failed to parse vector element %d: %w", i, err)
-		}
-		result[i] = float32(val)
-	}
-
-	*v = result
-	return nil
-}
 
 // RemediationAudit represents a complete remediation workflow audit
 // BR-STORAGE-001: Audit trail for remediation workflows
@@ -83,8 +39,7 @@ type RemediationAudit struct {
 	ClusterName          string     `json:"cluster_name" db:"cluster_name"`
 	TargetResource       string     `json:"target_resource" db:"target_resource"`
 	ErrorMessage         *string    `json:"error_message,omitempty" db:"error_message"`
-	Metadata             string     `json:"metadata" db:"metadata"`             // JSON string
-	Embedding            Vector     `json:"embedding,omitempty" db:"embedding"` // vector(384) with custom scanner
+	Metadata             string     `json:"metadata" db:"metadata"` // JSON string
 	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at" db:"updated_at"`
 }

@@ -34,6 +34,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -146,11 +147,11 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		// Verify lifecycle.started audit event was emitted
 		// Note: Gap #8 also emits lifecycle.created, so filter by event type
-		lifecycleStartedEvents := mockAuditStore.GetEventsByType("orchestrator.lifecycle.started")
+		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected exactly one lifecycle.started event")
 		event := lifecycleStartedEvents[0]
 		Expect(event).ToNot(BeNil())
-		Expect(event.EventType).To(Equal("orchestrator.lifecycle.started"))
+		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleStarted))
 		Expect(event.EventAction).To(Equal("started"))
 		// Use enum type comparison, not string
 		Expect(string(event.EventOutcome)).To(Equal("pending"))
@@ -175,7 +176,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Verify phase transition audit event
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.transitioned"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleTransitioned))
 			Expect(event.EventAction).To(Equal("transitioned"))
 		})
 
@@ -205,7 +206,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Verify completion audit event
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.completed"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
 			Expect(event.EventAction).To(Equal("completed"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 		})
@@ -236,7 +237,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Per DD-AUDIT-003: lifecycle failure uses lifecycle.completed with outcome=failure
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.completed"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
 			Expect(event.EventAction).To(Equal("completed"))
 			Expect(string(event.EventOutcome)).To(Equal("failure"))
 		})
@@ -263,7 +264,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Verify approval requested audit event
 			// Filter by event type since phase transition also emits an event
-			approvalEvents := mockAuditStore.GetEventsByType("orchestrator.approval.requested")
+			approvalEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeApprovalRequested)
 			Expect(approvalEvents).To(HaveLen(1))
 			event := approvalEvents[0]
 			Expect(event.EventAction).To(Equal("approval_requested"))
@@ -294,7 +295,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Per DD-AUDIT-003: Approval events use specific action types
 			// Filter by event type since phase transition also emits an event
-			approvedEvents := mockAuditStore.GetEventsByType("orchestrator.approval.approved")
+			approvedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeApprovalApproved)
 			Expect(approvedEvents).To(HaveLen(1))
 			event := approvedEvents[0]
 			Expect(event.EventAction).To(Equal("approved"))
@@ -325,7 +326,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Per DD-AUDIT-003: Rejection events use specific action types
 			// Filter by event type since phase transition also emits an event
-			rejectedEvents := mockAuditStore.GetEventsByType("orchestrator.approval.rejected")
+			rejectedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeApprovalRejected)
 			Expect(rejectedEvents).To(HaveLen(1))
 			event := rejectedEvents[0]
 			Expect(event.EventAction).To(Equal("rejected"))
@@ -348,7 +349,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Per DD-AUDIT-003: Timeout/failure events use lifecycle.completed with outcome=failure
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.completed"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
 			Expect(event.EventAction).To(Equal("completed"))
 			Expect(string(event.EventOutcome)).To(Equal("failure"))
 		})
@@ -409,7 +410,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
 		// Verify lifecycle.started event was emitted (Gap #8 also emits lifecycle.created)
-		lifecycleStartedEvents := mockAuditStore.GetEventsByType("orchestrator.lifecycle.started")
+		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected lifecycle.started event after initialization")
 
 		// Second reconcile: transitions from Pending to Processing and emits phase.transitioned

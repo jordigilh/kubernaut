@@ -1,0 +1,156 @@
+# Audit Service - Prometheus Alert Rules
+# F-5 SOC2 Fix: Deploy Audit Prometheus Alerting Rules
+#
+# These alerts monitor the audit event pipeline defined in pkg/audit/metrics.go.
+# All services using the shared audit library expose these metrics.
+#
+# Key Metrics:
+# - audit_events_dropped_total: Events dropped due to buffer full
+# - audit_events_buffered_total: Events successfully buffered
+# - audit_batches_failed_total: Batches failed after max retries
+# - audit_events_written_total: Events successfully written to storage
+# - audit_buffer_utilization_ratio: Current buffer utilization (0.0-1.0)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-prometheus-rules
+  namespace: kubernaut-system
+  labels:
+    app: audit
+    component: monitoring
+data:
+  audit-alerts.yaml: |
+    groups:
+      - name: audit_pipeline_health
+        interval: 30s
+        rules:
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          # CRITICAL ALERTS (Page immediately)
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          - alert: AuditBufferUtilizationCritical
+            expr: audit_buffer_utilization_ratio > 0.95
+            for: 2m
+            labels:
+              severity: critical
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit buffer near capacity ({{ $value | humanizePercentage }}) for {{ $labels.service }}"
+              description: |
+                Audit buffer utilization is at {{ $value | humanizePercentage }} for service {{ $labels.service }}.
+                Events will be dropped imminently if write throughput does not increase.
+
+                **SOC2 Impact**:
+                - Audit events may be lost (CC7.2 compliance risk)
+                - Regulatory audit trail gaps may result
+
+                **Immediate Actions**:
+                1. Check Data Storage Service health: `kubectl get pods -n kubernaut-system -l app=datastorage`
+                2. Check Data Storage logs for write failures: `kubectl logs -n kubernaut-system deployment/datastorage --tail=100`
+                3. Check PostgreSQL connectivity and performance
+                4. Review `audit_batches_failed_total` for write failures
+                5. Consider scaling Data Storage replicas
+
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          # WARNING ALERTS (Investigate during business hours)
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          - alert: AuditHighDropRate
+            expr: >
+              rate(audit_events_dropped_total[5m])
+              /
+              (rate(audit_events_buffered_total[5m]) + rate(audit_events_dropped_total[5m]))
+              > 0.01
+            for: 5m
+            labels:
+              severity: warning
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit event drop rate >1% for {{ $labels.service }}"
+              description: |
+                Audit events are being dropped at a rate of {{ $value | humanizePercentage }} for service {{ $labels.service }}.
+                This indicates the audit buffer is regularly reaching capacity.
+
+                **SOC2 Impact**:
+                - Dropped events create gaps in the audit trail (CC7.2)
+                - Compliance auditors may flag missing events
+
+                **Actions**:
+                1. Check `audit_buffer_utilization_ratio` for buffer saturation
+                2. Check `audit_batches_failed_total` for write failures
+                3. Review Data Storage Service write latency: `audit_write_duration_seconds`
+                4. Consider increasing buffer size in audit config (current default: 10000)
+                5. Check if PostgreSQL is under pressure
+
+          - alert: AuditHighBatchFailureRate
+            expr: >
+              rate(audit_batches_failed_total[5m])
+              /
+              (rate(audit_events_written_total[5m]) + rate(audit_batches_failed_total[5m]))
+              > 0.05
+            for: 5m
+            labels:
+              severity: warning
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit batch failure rate >5% for {{ $labels.service }}"
+              description: |
+                Audit batch writes are failing at a rate of {{ $value | humanizePercentage }} for service {{ $labels.service }}.
+                Failed batches are dropped after max retries (default: 3).
+
+                **SOC2 Impact**:
+                - Failed batches result in lost audit events (CC7.2)
+                - May indicate Data Storage Service or PostgreSQL issues
+
+                **Actions**:
+                1. Check Data Storage Service health: `kubectl get pods -n kubernaut-system -l app=datastorage`
+                2. Check Data Storage logs for errors: `kubectl logs -n kubernaut-system deployment/datastorage --tail=100`
+                3. Check PostgreSQL connectivity: `kubectl exec -n kubernaut-system datastorage-0 -- pg_isready`
+                4. Review `audit_write_duration_seconds` for write latency increases
+                5. Check for network issues between services and Data Storage
+
+          - alert: AuditSlowWrites
+            expr: >
+              histogram_quantile(0.95,
+                rate(audit_write_duration_seconds_bucket[5m])
+              ) > 2
+            for: 5m
+            labels:
+              severity: warning
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit write p95 latency >2s for {{ $labels.service }}"
+              description: |
+                Audit batch write p95 latency is {{ $value | humanizeDuration }}.
+                Slow writes will cause buffer saturation and event drops.
+
+                **Actions**:
+                1. Check Data Storage Service health
+                2. Check PostgreSQL query latency
+                3. Review `audit_buffer_utilization_ratio` for buffer pressure
+                4. Check for network issues between services and Data Storage
+
+          - alert: AuditBufferUtilizationWarning
+            expr: audit_buffer_utilization_ratio > 0.8
+            for: 5m
+            labels:
+              severity: warning
+              component: audit
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Audit buffer utilization >80% for {{ $labels.service }}"
+              description: |
+                Audit buffer utilization is at {{ $value | humanizePercentage }} for service {{ $labels.service }}.
+                If utilization continues to rise, events will be dropped.
+
+                **Actions**:
+                1. Check Data Storage Service write throughput
+                2. Review `audit_write_duration_seconds` for increasing latency
+                3. Check `audit_batches_failed_total` for write failures
+                4. Consider increasing buffer size if this is during expected peak traffic
+                5. Monitor for AuditBufferUtilizationCritical alert escalation

@@ -132,6 +132,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -247,6 +248,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					},
 					TargetResource: targetResource,
+					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -303,7 +305,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				"Expected workflowexecution.execution.started event in lifecycle (ADR-034 v1.5)")
 
 			// May have workflowexecution.workflow.completed or workflowexecution.workflow.failed depending on Tekton availability
-			if eventTypes["workflowexecution.workflow.completed"] || eventTypes["workflowexecution.workflow.failed"] {
+			if eventTypes[weaudit.EventTypeCompleted] || eventTypes[weaudit.EventTypeFailed] {
 				GinkgoWriter.Println("✅ Complete workflow lifecycle tracked in audit trail")
 			} else {
 				GinkgoWriter.Println("⚠️  Only workflowexecution.execution.started event found (expected in test env without full Tekton)")

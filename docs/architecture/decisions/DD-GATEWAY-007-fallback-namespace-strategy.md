@@ -1,9 +1,32 @@
 # DD-GATEWAY-007: Fallback Namespace Strategy for Cluster-Scoped Signals
 
 ## Status
-**✅ APPROVED** (2025-10-31)
-**Last Reviewed**: 2025-10-31
-**Confidence**: 95%
+**DEPRECATED** (February 2026)
+**Originally Approved**: 2025-10-31
+**Deprecated**: February 8, 2026
+**Superseded By**: [ADR-053: Resource Scope Management](ADR-053-resource-scope-management.md)
+
+> **DEPRECATION NOTICE**: This design decision has been deprecated. The namespace
+> fallback feature has been removed from the Gateway codebase. ADR-053 Resource
+> Scope Management now handles unmanaged namespaces by rejecting signals upstream
+> (at the Gateway scope validation layer), before CRD creation is ever attempted.
+> The Remediation Orchestrator (BR-SCOPE-010) also blocks unmanaged resources,
+> making any fallback-created RemediationRequests useless.
+>
+> **Reason**: Scope validation makes namespace fallback redundant and creates
+> technical debt. If a namespace does not exist or is not labeled with
+> `kubernaut.ai/managed=true`, the signal is rejected with HTTP 200 (informational
+> rejection). This is the correct behavior -- creating a RemediationRequest in a
+> fallback namespace for a resource whose namespace no longer exists would only
+> cause the RO to fail when it double-checks the managed label on the resource.
+>
+> **Code Removal**: All fallback logic (`handleNamespaceNotFoundError`,
+> `isNamespaceNotFoundError`, `FallbackNamespace` config field, `GetPodNamespace()`)
+> has been removed from `pkg/gateway/processing/crd_creator.go`,
+> `pkg/gateway/config/config.go`, and `pkg/gateway/server.go`.
+>
+> **Test Updates**: E2E tests 22 and 27 (dedicated fallback tests) have been removed.
+> Unit and integration tests referencing fallback have been updated.
 
 ---
 
@@ -269,6 +292,6 @@ Expect(crd.Labels["kubernaut.io/origin-namespace"]).To(Equal(originalNamespace))
 
 **Document Maintainer**: Kubernaut Architecture Team
 **Created**: 2025-10-31
-**Status**: ✅ **APPROVED AND IMPLEMENTED**
-**Version**: 1.0
+**Status**: **DEPRECATED** (February 2026) - Superseded by ADR-053 Resource Scope Management
+**Version**: 1.1 (deprecation update)
 

@@ -58,6 +58,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"        // BR-SCOPE-002: Resource scope management
 )
 
 // Gateway Audit Event Type Constants (from OpenAPI spec)
@@ -135,6 +136,7 @@ type Server struct {
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
+	scopeChecker  ScopeChecker                       // BR-SCOPE-002: nil = no scope filtering (backward compat)
 
 	// Infrastructure clients
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
@@ -223,7 +225,7 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metric
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore) (*Server, error) {
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker ScopeChecker) (*Server, error) {
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -244,13 +246,6 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	// Result: Test expected ERR_CIRCUIT_BREAKER_OPEN but got ERR_K8S_UNKNOWN
 	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
 
-	// Create CRD creator with circuit-breaker-protected client
-	fallbackNamespace := "default"
-	if cfg.Processing.CRD.FallbackNamespace != "" {
-		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
-	}
-	crdCreator := processing.NewCRDCreator(cbClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
-
 	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety (test environment)
 	// Uses ctrlClient as apiReader (test clients don't have separate cache/apiReader)
 	var lockManager *processing.DistributedLockManager
@@ -263,20 +258,24 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		lockManager = processing.NewDistributedLockManager(ctrlClient, namespace, podName)
 	}
 
-	// Create server
+	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
 		config:          cfg,
 		adapterRegistry: adapterRegistry,
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
-		crdCreator:      crdCreator,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
-		lockManager:     lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:      auditStore,  // Injected for testing
+		lockManager:     lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:      auditStore,   // Injected for testing
+		scopeChecker:    scopeChecker, // BR-SCOPE-002: nil = no scope filtering
 		metricsInstance: metricsInstance,
 		logger:          logger,
 	}
+
+	// Create CRD creator with retry observer wired to server audit emission
+	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
 
 	// Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -445,8 +444,6 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// ========================================
 	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
 
-	crdCreator := processing.NewCRDCreator(cbClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
-
 	// DD-GATEWAY-011: Status-based deduplication
 	// All state in K8s RR status - Redis fully deprecated
 	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
@@ -500,21 +497,31 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
 	}
 
-	// Create server (Redis-free)
+	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering
+	// ADR-053 Decision #5: Uses ctrlClient (cached) for metadata-only informers (0 API calls).
+	// Controller-runtime automatically creates metadata-only informers when Get() is called
+	// with PartialObjectMetadata, so no custom cache configuration is needed.
+	scopeMgr := scope.NewManager(ctrlClient)
+
+	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
 		config:          cfg,
 		adapterRegistry: adapterRegistry,
 		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
-		crdCreator:      crdCreator,
 		lockManager:     lockManager,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
 		auditStore:      auditStore,
+		scopeChecker:    scopeMgr, // BR-SCOPE-002: Label-based scope filtering
 		metricsInstance: metricsInstance,
 		logger:          logger,
 	}
+
+	// Create CRD creator with retry observer wired to server audit emission
+	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
 
 	// 6. Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -851,7 +858,9 @@ func (s *Server) sendSuccessResponse(
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
-	if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
+	if response.Status == StatusRejected {
+		statusCode = http.StatusOK // HTTP 200 for scope rejection (not an error, just informational)
+	} else if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
 		statusCode = http.StatusAccepted // HTTP 202 for storm aggregation and deduplication
 	}
 
@@ -972,6 +981,39 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
+// validateScope checks whether the signal's target resource is within Kubernaut's
+// management scope. Returns (nil, nil) if managed or scope checking is disabled,
+// (*ProcessingResponse, nil) for a clean rejection, or (nil, error) on scope
+// infrastructure failure.
+//
+// BR-SCOPE-002: Label-based resource opt-in with 2-level hierarchy.
+// Scope filtering is optional — nil scopeChecker disables it for backward compatibility.
+func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
+	if s.scopeChecker == nil {
+		return nil, nil
+	}
+
+	managed, err := s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
+	if err != nil {
+		return nil, fmt.Errorf("scope validation failed: %w", err)
+	}
+
+	if managed {
+		return nil, nil
+	}
+
+	logger := middleware.GetLogger(ctx)
+	s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonUnmanagedResource).Inc()
+	logger.Info("Signal rejected: resource not managed by Kubernaut",
+		"namespace", signal.Namespace,
+		"kind", signal.Resource.Kind,
+		"name", signal.Resource.Name,
+		"reason", RejectionReasonUnmanagedResource,
+		"fingerprint", signal.Fingerprint)
+
+	return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
+}
+
 // ProcessSignal implements adapters.SignalProcessor interface
 //
 // This is the main signal processing pipeline, called by adapter handlers.
@@ -1005,15 +1047,23 @@ func (s *Server) Stop(ctx context.Context) error {
 // This is the main signal processing pipeline orchestrator.
 //
 // Pipeline stages:
-// 1. Deduplication check → processDuplicateSignal() if duplicate
-// 2. Storm detection → processStormAggregation() if storm detected
-// 3. CRD creation → createRemediationRequestCRD() for new signals
+// 1. Scope validation → validateScope() rejects unmanaged resources
+// 2. Deduplication check → processDuplicateSignal() if duplicate
+// 3. Storm detection → processStormAggregation() if storm detected
+// 4. CRD creation → createRemediationRequestCRD() for new signals
 func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	start := time.Now()
 	logger := middleware.GetLogger(ctx)
 
 	// Record ingestion metric (environment label removed - SP owns classification)
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
+
+	// BR-SCOPE-002: Validate resource is within Kubernaut's management scope
+	if rejection, err := s.validateScope(ctx, signal); err != nil {
+		return nil, err
+	} else if rejection != nil {
+		return rejection, nil
+	}
 
 	// BR-GATEWAY-190: Acquire distributed lock for multi-replica safety
 	// DD-GATEWAY-013: K8s Lease-based distributed locking pattern
@@ -1252,7 +1302,7 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // if the alert was accepted (HTTP status code).
 // See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingResponse struct {
-	Status                      string `json:"status"` // "created", "duplicate", or "accepted"
+	Status                      string `json:"status"` // "created", "duplicate", "accepted", or "rejected"
 	Message                     string `json:"message"`
 	Fingerprint                 string `json:"fingerprint"`
 	Duplicate                   bool   `json:"duplicate"`
@@ -1264,6 +1314,8 @@ type ProcessingResponse struct {
 	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
 	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
 	WindowID  string `json:"windowID,omitempty"`  // aggregation window identifier
+	// BR-SCOPE-002: Rejection details for unmanaged resource signals
+	Rejection *RejectionResponse `json:"rejection,omitempty"`
 }
 
 // Processing status constants (HTTP response body status field)
@@ -1595,6 +1647,17 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 		s.logger.Info("DD-AUDIT-003: Failed to emit crd.created audit event",
 			"error", err, "rrName", rrName)
 	}
+}
+
+// retryAuditObserver implements processing.RetryObserver by emitting
+// a gateway.crd.failed audit event for each intermediate retry attempt.
+// BR-GATEWAY-058: Every retry attempt MUST generate an audit event.
+type retryAuditObserver struct {
+	server *Server
+}
+
+func (o *retryAuditObserver) OnRetryAttempt(ctx context.Context, signal *types.NormalizedSignal, attempt int, err error) {
+	o.server.emitCRDCreationFailedAudit(ctx, signal, err)
 }
 
 // emitCRDCreationFailedAudit emits 'gateway.crd.failed' audit event (DD-AUDIT-003)

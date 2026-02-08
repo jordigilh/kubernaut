@@ -31,12 +31,13 @@ import (
 
 // Helper to create test event for internal client tests
 // DD-AUDIT-002 V2.0: Uses OpenAPI types with ogen union constructors
+// L-2 SOC2 Fix: event_type matches EventData discriminator (gateway.crd.created)
 func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "datastorage.audit.written")
-	audit.SetEventCategory(event, "storage")
-	audit.SetEventAction(event, "written")
+	audit.SetEventType(event, "gateway.crd.created")
+	audit.SetEventCategory(event, "gateway")
+	audit.SetEventAction(event, "crd_created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "datastorage")
 	audit.SetResource(event, "AuditEvent", resourceID)
@@ -45,7 +46,7 @@ func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	// Use GatewayAuditPayload as generic test payload (ogen migration - discriminated union)
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
 		AlertName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
@@ -184,7 +185,6 @@ var _ = Describe("InternalAuditClient", func() {
 				// Create test events using OpenAPI types
 				event1 := createInternalTestEvent("event-1")
 				event2 := createInternalTestEvent("event-2")
-				audit.SetEventType(event2, "datastorage.audit.failed")
 				audit.SetEventAction(event2, "write_failed")
 				audit.SetEventOutcome(event2, audit.OutcomeFailure)
 				audit.SetCorrelationID(event2, "correlation-2")

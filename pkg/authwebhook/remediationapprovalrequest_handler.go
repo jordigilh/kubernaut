@@ -165,8 +165,8 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// - Event 1 (Webhook): webhook.remediationapprovalrequest.decided (WHO - authenticated user)
 	// - Event 2 (Orchestration): orchestrator.approval.{approved|rejected} (WHAT/WHY - business context)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "webhook.remediationapprovalrequest.decided") // Per ADR-034 v1.7
-	audit.SetEventCategory(auditEvent, "webhook")                                // Per ADR-034 v1.7: event_category = emitter service
+	audit.SetEventType(auditEvent, EventTypeRARDecided) // Per ADR-034 v1.7
+	audit.SetEventCategory(auditEvent, EventCategoryWebhook)                      // Per ADR-034 v1.7: event_category = emitter service
 	audit.SetEventAction(auditEvent, "approval_decided")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
@@ -193,9 +193,12 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// - event_action: "approval_decided" (via audit.SetEventAction)
 
 	// Store audit event asynchronously (buffered write)
-	// Explicitly ignore errors - audit should not block webhook operations
-	// The audit store has retry + DLQ mechanisms for reliability
-	_ = h.auditStore.StoreAudit(ctx, auditEvent)
+	// Audit failures are non-blocking but logged for observability
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		logger.Error(err, "Audit event storage failed (non-blocking)",
+			"eventType", auditEvent.EventType,
+			"eventAction", auditEvent.EventAction)
+	}
 
 	// BUGFIX: Log correct correlationID (parent RR name, not RAR name)
 	logger.Info("Webhook audit event emitted",

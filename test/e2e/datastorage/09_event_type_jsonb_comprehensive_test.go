@@ -984,18 +984,18 @@ var eventTypeCatalog = []eventTypeTestCase{
 	},
 	{
 		Service:       "webhooks",
-		EventType:     "webhook.workflow.unblocked",
+		EventType:     "workflowexecution.block.cleared",
 		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
-		EventAction:   "unblocked",
+		EventAction:   "block_cleared",
 		CreateEvent: func() ogenclient.AuditEventRequest {
 			wfeName := fmt.Sprintf("wfe-test-unblocked-%s", uuid.New().String()[:8])
 			correlationID := fmt.Sprintf("test-gap-1.1-webhook-wfe-unblock-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
-				EventType:      "webhook.workflow.unblocked",
+				EventType:      "workflowexecution.block.cleared",
 				EventTimestamp: time.Now().UTC(),
 				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
-				EventAction:    "unblocked",
+				EventAction:    "block_cleared",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("user"),
 				ActorID:        ogenclient.NewOptString("admin@example.com"),
@@ -1003,7 +1003,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(wfeName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowExecutionWebhookAuditPayload{
-					EventType:     ogenclient.WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked,
+					EventType:     ogenclient.WorkflowExecutionWebhookAuditPayloadEventTypeWorkflowexecutionBlockCleared,
 					WorkflowName:  wfeName,
 					ClearReason:   "Manual approval by ops team - E2E test",
 					ClearedAt:     time.Now().UTC(),
@@ -1019,7 +1019,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	},
 	{
 		Service:       "webhooks",
-		EventType:     "webhook.approval.decided",
+		EventType:     "webhook.remediationapprovalrequest.decided",
 		EventCategory: ogenclient.AuditEventRequestEventCategoryWebhook,
 		EventAction:   "decided",
 		CreateEvent: func() ogenclient.AuditEventRequest {
@@ -1027,7 +1027,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			correlationID := fmt.Sprintf("test-gap-1.1-webhook-approval-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
-				EventType:      "webhook.approval.decided",
+				EventType:      "webhook.remediationapprovalrequest.decided",
 				EventTimestamp: time.Now().UTC(),
 				EventCategory:  ogenclient.AuditEventRequestEventCategoryWebhook,
 				EventAction:    "decided",
@@ -1038,7 +1038,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(approvalName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(ogenclient.RemediationApprovalAuditPayload{
-					EventType:       ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
+					EventType:       ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided,
 					RequestName:     approvalName,
 					Decision:        ogenclient.RemediationApprovalAuditPayloadDecisionApproved,
 					DecidedAt:       time.Now().UTC(),

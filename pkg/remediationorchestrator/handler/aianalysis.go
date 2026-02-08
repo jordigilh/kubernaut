@@ -42,11 +42,11 @@ type AIAnalysisHandler struct {
 	scheme              *runtime.Scheme
 	notificationCreator *creator.NotificationCreator
 	Metrics             *metrics.Metrics
-	transitionToFailed  func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
+	transitionToFailed  func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
 }
 
 // NewAIAnalysisHandler creates a new AIAnalysisHandler.
-func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)) *AIAnalysisHandler {
+func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)) *AIAnalysisHandler {
 	return &AIAnalysisHandler{
 		client:              c,
 		scheme:              s,
@@ -373,7 +373,7 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 
 	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
-	return h.transitionToFailed(ctx, rr, "ai_analysis", reviewCtx.Message)
+	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("%s", reviewCtx.Message))
 }
 
 // propagateFailure propagates AIAnalysis failure to RemediationRequest.
@@ -408,7 +408,7 @@ func (h *AIAnalysisHandler) propagateFailure(
 
 	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
-	return h.transitionToFailed(ctx, rr, "ai_analysis", failureReason)
+	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("%s", failureReason))
 }
 
 // IsWorkflowResolutionFailed checks if AIAnalysis failed due to workflow resolution issues.

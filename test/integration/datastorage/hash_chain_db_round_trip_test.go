@@ -122,16 +122,9 @@ var _ = Describe("Hash Chain DB Round-Trip Investigation", func() {
 		// ========================================
 		// STEP 4: Prepare both events for hashing
 		// ========================================
-		// Simulate calculateEventHash() logic
+		// Use exported PrepareEventForHashing (single source of truth for field clearing)
 		prepareForHashing := func(event *repository.AuditEvent, label string) (string, []byte) {
-			eventCopy := *event
-			eventCopy.EventHash = ""
-			eventCopy.PreviousEventHash = ""
-			eventCopy.EventDate = repository.DateOnly{}
-			eventCopy.LegalHold = false
-			eventCopy.LegalHoldReason = ""
-			eventCopy.LegalHoldPlacedBy = ""
-			eventCopy.LegalHoldPlacedAt = nil
+			eventCopy := repository.PrepareEventForHashing(event)
 
 			eventJSON, err := json.Marshal(eventCopy)
 			Expect(err).ToNot(HaveOccurred())

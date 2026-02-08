@@ -376,8 +376,8 @@ func (m *Manager) recordAuditEvent(
 	}
 
 	// Add PipelineRun reference if present
-	if wfe.Status.PipelineRunRef != nil {
-		payload.PipelinerunName.SetTo(wfe.Status.PipelineRunRef.Name)
+	if wfe.Status.ExecutionRef != nil {
+		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
 
 	// Set event data using ogen union constructor based on action
@@ -442,14 +442,24 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 			errorMessage += ": " + wfe.Status.FailureDetails.Message
 		}
 
-		// Determine error code based on failure type
+		// Determine error code based on FailureDetails.Reason (structured enum)
+		// Uses Kubernetes-style reason code instead of string matching on error message
 		errorCode := "ERR_PIPELINE_FAILED"
 		retryPossible := true // Pipeline failures may be transient
 
-		// Check if it's a permanent error (e.g., invalid workflow)
-		if strings.Contains(errorMessage, "not found") || strings.Contains(errorMessage, "invalid") {
+		switch wfe.Status.FailureDetails.Reason {
+		case "ConfigurationError", "Forbidden":
 			errorCode = "ERR_WORKFLOW_NOT_FOUND"
 			retryPossible = false
+		case "OOMKilled", "ResourceExhausted", "DeadlineExceeded":
+			errorCode = "ERR_PIPELINE_FAILED"
+			retryPossible = true
+		case "ImagePullBackOff":
+			errorCode = "ERR_IMAGE_PULL"
+			retryPossible = true
+		case "TaskFailed":
+			errorCode = "ERR_PIPELINE_FAILED"
+			retryPossible = !wfe.Status.FailureDetails.WasExecutionFailure
 		}
 
 		errorDetails = sharedaudit.NewErrorDetails(
@@ -525,8 +535,8 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	}
 
 	// Add PipelineRun reference if present
-	if wfe.Status.PipelineRunRef != nil {
-		payload.PipelinerunName.SetTo(wfe.Status.PipelineRunRef.Name)
+	if wfe.Status.ExecutionRef != nil {
+		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
 
 	// Set event data using ogen union constructor - always use "failed" for recordFailureAuditWithDetails

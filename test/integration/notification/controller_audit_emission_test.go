@@ -31,6 +31,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	notifaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
@@ -138,7 +139,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				// Flush audit buffer on each retry to ensure events are written to DataStorage
 				_ = realAuditStore.Flush(queryCtx)
 
-				events := queryAuditEvents("notification.message.sent", string(notification.UID))
+				events := queryAuditEvents(notifaudit.EventTypeMessageSent, string(notification.UID))
 				if len(events) > 0 {
 					sentEvent = &events[0]
 					return true
@@ -154,7 +155,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Use validators.ValidateAuditEvent for structured validation
 			// ========================================
 			validators.ValidateAuditEvent(*sentEvent, validators.ExpectedAuditEvent{
-				EventType:     "notification.message.sent",
+				EventType:     notifaudit.EventTypeMessageSent,
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
@@ -217,7 +218,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				// Flush audit buffer on each retry to ensure events are written to DataStorage
 				_ = realAuditStore.Flush(queryCtx)
 
-				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 201
+				events := queryAuditEvents(notifaudit.EventTypeMessageSent, testID) // testID is correlation_id per line 201
 				if len(events) > 0 {
 					slackEvent = &events[0]
 					return true
@@ -230,7 +231,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
 			validators.ValidateAuditEvent(*slackEvent, validators.ExpectedAuditEvent{
-				EventType:     "notification.message.sent",
+				EventType:     notifaudit.EventTypeMessageSent,
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
@@ -287,7 +288,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check correlation_id matches remediationID
 			var corrEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.sent", remediationID)
+				events := queryAuditEvents(notifaudit.EventTypeMessageSent, remediationID)
 				if len(events) > 0 {
 					corrEvent = &events[0]
 					return true
@@ -358,7 +359,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			_ = realAuditStore.Flush(queryCtx)
 			Eventually(func() int {
 
-				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 338
+				events := queryAuditEvents(notifaudit.EventTypeMessageSent, testID) // testID is correlation_id per line 338
 				return len(events)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
 				"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
@@ -415,7 +416,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				// Flush audit buffer on each retry to ensure events are written to DataStorage
 				_ = realAuditStore.Flush(queryCtx)
 
-				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 391
+				events := queryAuditEvents(notifaudit.EventTypeMessageSent, testID) // testID is correlation_id per line 391
 				for _, e := range events {
 					// Verify all ADR-034 required fields (OptString types)
 					if string(e.EventCategory) == "notification" &&
@@ -504,7 +505,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for failed event
 			var failedEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.failed", testID) // testID is correlation_id per line 469
+				events := queryAuditEvents(notifaudit.EventTypeMessageFailed, testID) // testID is correlation_id per line 469
 				if len(events) > 0 {
 					failedEvent = &events[0]
 					return true
@@ -517,7 +518,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
 			validators.ValidateAuditEvent(*failedEvent, validators.ExpectedAuditEvent{
-				EventType:     "notification.message.failed",
+				EventType:     notifaudit.EventTypeMessageFailed,
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent", // Action was "sent" (attempted), outcome is "failure"
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),

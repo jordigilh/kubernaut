@@ -1209,11 +1209,12 @@ func EnsureTestNamespace(ctx context.Context, k8sClient *K8sTestClient, namespac
 		}, "60s", "1s").Should(BeTrue(), "Namespace %s should be fully deleted", namespaceName)
 	}
 
-	// Create namespace with environment label (production environment for priority classification)
+	// Create namespace with environment label and managed label (BR-SCOPE-001)
 	ns := &corev1.Namespace{}
 	ns.Name = namespaceName
 	ns.Labels = map[string]string{
-		"environment": "production", // Tests simulate production environment
+		"kubernaut.ai/managed": "true",       // BR-SCOPE-001: Managed by Kubernaut
+		"environment":          "production", // Tests simulate production environment
 	}
 	err = k8sClient.Client.Create(ctx, ns)
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -1326,7 +1327,7 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
-	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore)
+	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1467,6 +1468,7 @@ func getGaugeValue(registry *prometheus.Registry, metricName string, labels map[
 
 	return 0
 }
+
 // getHistogramSampleCount retrieves the sample count of a Histogram metric
 func getHistogramSampleCount(registry *prometheus.Registry, metricName string, labels map[string]string) uint64 {
 	metricFamilies, err := registry.Gather()
@@ -1516,7 +1518,7 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
-	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore)
+	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

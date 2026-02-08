@@ -210,27 +210,37 @@ func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsReposi
 // SOC2 Requirement: Tamper-evident audit logs (SOC 2 Type II, NIST 800-53, Sarbanes-Oxley)
 // ========================================
 
+// PrepareEventForHashing returns a copy of the event with excluded fields zeroed out.
+// This MUST be used by all hash calculation paths (write-time, export, verify-chain)
+// to ensure consistent hashing across the entire audit pipeline.
+//
+// Excluded fields:
+// 1. EventHash, PreviousEventHash — not yet calculated at write time
+// 2. EventDate — derived from EventTimestamp (DB-generated)
+// 3. LegalHold, LegalHoldReason, LegalHoldPlacedBy, LegalHoldPlacedAt — can change
+//    after event creation (SOC2 Gap #8)
+//
+// Note: EventTimestamp IS included in hash (set before calculation during INSERT).
+func PrepareEventForHashing(event *AuditEvent) AuditEvent {
+	eventCopy := *event
+	eventCopy.EventHash = ""
+	eventCopy.PreviousEventHash = ""
+	eventCopy.EventDate = DateOnly{}
+
+	// SOC2 Gap #8: Legal hold fields can change after event creation
+	eventCopy.LegalHold = false
+	eventCopy.LegalHoldReason = ""
+	eventCopy.LegalHoldPlacedBy = ""
+	eventCopy.LegalHoldPlacedAt = nil
+
+	return eventCopy
+}
+
 // calculateEventHash computes SHA256 hash for blockchain-style chain
 // Hash = SHA256(previous_event_hash + event_json)
 // This creates an immutable chain where tampering with ANY event breaks the chain
 func calculateEventHash(previousHash string, event *AuditEvent) (string, error) {
-	// CRITICAL: This MUST match calculateEventHashForVerification() in audit_export.go
-	// We must exclude fields that are:
-	// 1. The hash fields themselves (EventHash, PreviousEventHash) - not yet calculated
-	// 2. DB-generated date field (EventDate) - derived from EventTimestamp
-	// 3. Legal hold fields (LegalHold*) - can change AFTER event creation (SOC2 Gap #8)
-	// Note: EventTimestamp IS included in hash (set before calculation at line 291-292)
-	eventForHashing := *event // Create a copy
-	eventForHashing.EventHash = ""
-	eventForHashing.PreviousEventHash = ""
-	eventForHashing.EventDate = DateOnly{} // Clear derived field only
-
-	// SOC2 Gap #8: Legal hold fields can change after event creation
-	// They are NOT part of the immutable audit event hash
-	eventForHashing.LegalHold = false
-	eventForHashing.LegalHoldReason = ""
-	eventForHashing.LegalHoldPlacedBy = ""
-	eventForHashing.LegalHoldPlacedAt = nil
+	eventForHashing := PrepareEventForHashing(event)
 
 	// Serialize event to JSON (canonical form for consistent hashing)
 	eventJSON, err := json.Marshal(eventForHashing)
@@ -298,6 +308,13 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	if event.EventTimestamp.IsZero() {
 		event.EventTimestamp = time.Now().UTC()
 	}
+
+	// Force UTC normalization before hash calculation.
+	// Export/Verify convert to UTC when recomputing hashes (audit_export.go:195,
+	// audit_verify_chain_handler.go:183). Without this, a caller-provided timestamp
+	// with a timezone offset (e.g., "-05:00") would produce a different JSON
+	// representation than the UTC version ("Z"), breaking hash verification.
+	event.EventTimestamp = event.EventTimestamp.UTC()
 
 	// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
 	// PostgreSQL stores timestamps with microsecond precision (6 decimal places).
@@ -554,7 +571,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	// Prepare batch insert statement (includes hash chain columns)
 	query := `
 		INSERT INTO audit_events (
-			event_id, event_timestamp, event_date, event_type,
+			event_id, event_version, event_timestamp, event_date, event_type,
 			event_category, event_action, event_outcome,
 			correlation_id, parent_event_id, parent_event_date,
 			resource_type, resource_id, namespace, cluster_name,
@@ -564,15 +581,15 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			event_hash, previous_event_hash,
 			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7,
-			$8, $9, $10,
-			$11, $12, $13, $14,
-			$15, $16,
-			$17, $18, $19, $20,
-			$21, $22, $23,
-			$24, $25,
-			$26, $27, $28, $29
+			$1, $2, $3, $4, $5,
+			$6, $7, $8,
+			$9, $10, $11,
+			$12, $13, $14, $15,
+			$16, $17,
+			$18, $19, $20, $21,
+			$22, $23, $24,
+			$25, $26,
+			$27, $28, $29, $30
 		)
 		RETURNING event_timestamp
 	`
@@ -607,6 +624,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				event.EventTimestamp = time.Now().UTC()
 			}
 
+			// Force UTC normalization before hash calculation (see Create() for rationale)
+			event.EventTimestamp = event.EventTimestamp.UTC()
+
 			// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
 			// (see Create() function for detailed explanation)
 			event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
@@ -620,6 +640,18 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			if marshalErr != nil {
 				err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
 				return nil, err
+			}
+
+			// Normalize: unmarshal and remarshal to match PostgreSQL's representation
+			// (same as Create() — ensures hash consistency across insert/read round-trip)
+			var normalizedEventData map[string]interface{}
+			if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+				if unmarshalErr := json.Unmarshal(eventDataJSON, &normalizedEventData); unmarshalErr != nil {
+					err = fmt.Errorf("failed to normalize event_data for event %s: %w", event.EventID, unmarshalErr)
+					return nil, err
+				}
+				event.EventData = normalizedEventData
+				eventDataJSON, _ = json.Marshal(normalizedEventData)
 			}
 
 			// Handle optional fields with sql.Null* types
@@ -640,11 +672,19 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 			}
 
-			// Set default retention days
-			retentionDays := event.RetentionDays
-			if retentionDays == 0 {
-				retentionDays = 2555
+			// Set default version if not specified (ADR-034: current version is "1.0")
+			version := event.Version
+			if version == "" {
+				version = "1.0"
 			}
+
+			// CRITICAL: Set default retention days BEFORE hash calculation
+			// This ensures the hash includes the correct retention_days value (2555)
+			// instead of 0, matching what will be read back from the DB during verification.
+			if event.RetentionDays == 0 {
+				event.RetentionDays = 2555
+			}
+			retentionDays := event.RetentionDays
 
 			// ========================================
 			// SOC2 Gap #9: Calculate hash chain for this event
@@ -664,10 +704,11 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			lastHashByCorrelation[event.CorrelationID] = eventHash
 			// ========================================
 
-			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 29 parameters)
+			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 30 parameters)
 			var returnedTimestamp time.Time
 			execErr := stmt.QueryRowContext(ctx,
 				event.EventID,
+				version, // event_version
 				event.EventTimestamp,
 				eventDate,
 				event.EventType,
@@ -703,7 +744,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				return nil, err
 			}
 
-			event.EventTimestamp = returnedTimestamp
+			// NOTE: Do NOT overwrite event.EventTimestamp with returnedTimestamp
+			// because the hash was calculated using the original timestamp.
+			// Changing it would break hash verification. (Same as Create() lines 499-502)
 			createdEvents[ie.originalIndex] = event
 		}
 	}

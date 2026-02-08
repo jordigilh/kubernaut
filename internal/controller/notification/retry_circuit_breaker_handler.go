@@ -50,6 +50,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
+// PermanentFailureMarker is the string stored in delivery attempt errors
+// to indicate a permanent (non-retryable) failure. Used by circuit breaker
+// logic to skip retry for channels with permanent errors (4xx, auth failures).
+const PermanentFailureMarker = "permanent failure"
+
 // ========================================
 // CHANNEL DELIVERY STATUS HELPERS
 // ========================================
@@ -96,7 +101,7 @@ func (r *NotificationRequestReconciler) hasChannelPermanentError(notification *n
 	for _, attempt := range notification.Status.DeliveryAttempts {
 		if attempt.Channel == channel && attempt.Status == "failed" {
 			// Check if error message indicates permanent failure
-			if strings.Contains(attempt.Error, "permanent failure") {
+			if strings.Contains(attempt.Error, PermanentFailureMarker) {
 				return true
 			}
 		}

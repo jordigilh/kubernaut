@@ -177,6 +177,11 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			return nil, err
 		}
 
+		// CRITICAL: Force timestamp to UTC for hash consistency
+		// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
+		// Must match the write-time JSON representation for correct hash verification.
+		event.EventTimestamp = event.EventTimestamp.UTC()
+
 		// Unmarshal event_data
 		if len(eventDataJSON) > 0 {
 			if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
@@ -269,16 +274,17 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 	return response, nil
 }
 
-// calculateExpectedHash computes the expected SHA256 hash for verification
-// Must match the calculateEventHash logic in repository
+// calculateExpectedHash computes the expected SHA256 hash for verification.
+// Uses repository.PrepareEventForHashing to ensure identical field-clearing
+// logic as write-time, preventing false-positive tampering detections.
 func calculateExpectedHash(previousHash string, event *repository.AuditEvent) (string, error) {
-	// Serialize event to JSON (canonical form for consistent hashing)
-	eventJSON, err := json.Marshal(event)
+	eventForHashing := repository.PrepareEventForHashing(event)
+
+	eventJSON, err := json.Marshal(eventForHashing)
 	if err != nil {
 		return "", err
 	}
 
-	// Compute hash: SHA256(previous_hash + event_json)
 	hasher := sha256.New()
 	hasher.Write([]byte(previousHash))
 	hasher.Write(eventJSON)

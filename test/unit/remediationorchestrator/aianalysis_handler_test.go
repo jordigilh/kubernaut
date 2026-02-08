@@ -122,7 +122,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 			h                     *handler.AIAnalysisHandler
 			nc                    *creator.NotificationCreator
 			ctx                   context.Context
-			mockTransitionFailed  func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
+			mockTransitionFailed  func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
 			transitionFailedCalls int
 		)
 
@@ -131,7 +131,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 			ctx = context.Background()
 			// Default no-op callback for tests that don't trigger failure paths
 			transitionFailedCalls = 0
-			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase, reason string) (ctrl.Result, error) {
+			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase string, reason error) (ctrl.Result, error) {
 				transitionFailedCalls++
 				return ctrl.Result{}, nil
 			}
@@ -139,15 +139,16 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 		// createMockTransitionFailed creates a mock callback that persists status changes
 		// This must be called after the client is built to have access to the client instance
-		createMockTransitionFailed := func(c client.WithWatch) func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error) {
+		createMockTransitionFailed := func(c client.WithWatch) func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error) {
 			transitionFailedCalls = 0
-			return func(ctx context.Context, rr *remediationv1.RemediationRequest, phase, reason string) (ctrl.Result, error) {
+			return func(ctx context.Context, rr *remediationv1.RemediationRequest, phase string, reason error) (ctrl.Result, error) {
 				transitionFailedCalls++
 				// Simulate the transition by directly updating the phase and persisting to fake client
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
 				failurePhase := phase
 				rr.Status.FailurePhase = &failurePhase
-				rr.Status.FailureReason = &reason
+				reasonStr := reason.Error()
+				rr.Status.FailureReason = &reasonStr
 				// Persist to fake client
 				if err := c.Status().Update(ctx, rr); err != nil {
 					return ctrl.Result{}, err

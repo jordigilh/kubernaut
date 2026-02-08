@@ -28,7 +28,7 @@ except ImportError:
 
 class WorkflowExecutionWebhookAuditPayload(BaseModel):
     """
-    Type-safe audit event payload for WorkflowExecution webhooks (workflow.unblocked)
+    Type-safe audit event payload for WorkflowExecution webhooks (block.cleared)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     workflow_name: StrictStr = Field(description="Name of the WorkflowExecution")
@@ -41,8 +41,8 @@ class WorkflowExecutionWebhookAuditPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('webhook.workflow.unblocked'):
-            raise ValueError("must be one of enum values ('webhook.workflow.unblocked')")
+        if value not in ('workflowexecution.block.cleared'):
+            raise ValueError("must be one of enum values ('workflowexecution.block.cleared')")
         return value
 
     @field_validator('previous_state')

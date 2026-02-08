@@ -32,6 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("Routing Engine - Blocking Logic", func() {
@@ -81,7 +82,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 		}
 		// DD-STATUS-001: Pass fakeClient as both client and apiReader
 		// In unit tests, fake client implements both interfaces
-		engine = routing.NewRoutingEngine(fakeClient, fakeClient, "default", config)
+		// BR-SCOPE-010: AlwaysManagedScopeChecker so existing tests pass through scope check
+		engine = routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.AlwaysManagedScopeChecker{})
 	})
 
 	// ========================================

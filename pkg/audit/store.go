@@ -109,6 +109,8 @@ type BufferedAuditStore struct {
 	done       chan struct{}
 	wg         sync.WaitGroup
 	closed     int32 // Atomic flag to prevent double-close
+	ctx        context.Context    // Store-scoped context for retry loop cancellation
+	ctxCancel  context.CancelFunc // Cancel function for store-scoped context
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
@@ -143,6 +145,8 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 		config = DefaultConfig()
 	}
 
+	storeCtx, storeCancel := context.WithCancel(context.Background())
+
 	store := &BufferedAuditStore{
 		buffer:    make(chan *ogenclient.AuditEventRequest, config.BufferSize),
 		flushChan: make(chan chan error, 1), // Buffered to prevent deadlock
@@ -151,6 +155,8 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 		config:    config,
 		metrics:   MetricsLabels{Service: serviceName},
 		done:      make(chan struct{}),
+		ctx:       storeCtx,
+		ctxCancel: storeCancel,
 	}
 
 	// DD-AUDIT-004: Initialize buffer capacity metric for saturation monitoring
@@ -192,6 +198,13 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 	if err := ValidateAuditEventRequest(event); err != nil {
 		s.logger.Error(err, "Invalid audit event (OpenAPI validation)")
 		return fmt.Errorf("invalid audit event: %w", err)
+	}
+
+	// F-3 SOC2 Fix: Validate event_type matches EventData discriminator (prevents spec drift)
+	if event.EventType != string(event.EventData.Type) {
+		return fmt.Errorf("event_type mismatch: outer=%q, EventData.Type=%q — "+
+			"add event type to OpenAPI spec discriminator and use matching constructor",
+			event.EventType, event.EventData.Type)
 	}
 
 	// Check if store is closed before sending (prevents panic during test cleanup)
@@ -301,7 +314,11 @@ func (s *BufferedAuditStore) Close() error {
 
 	s.logger.Info("Closing audit store, flushing remaining events")
 
-	// Close buffer (signals background worker to stop)
+	// Close buffer FIRST (signals background writer to drain remaining events and stop).
+	// IMPORTANT: Do NOT cancel the store context yet -- the background writer's shutdown
+	// flush needs a valid context to write the final batch to DataStorage.
+	// Previously, ctxCancel() was called before close(s.buffer), which caused the
+	// shutdown flush to fail with "context canceled" and increment failedBatchCount.
 	close(s.buffer)
 
 	// Wait for background worker to finish (with timeout)
@@ -313,7 +330,9 @@ func (s *BufferedAuditStore) Close() error {
 
 	select {
 	case <-done:
-		// Background worker finished
+		// Background worker finished -- NOW cancel the store context for cleanup
+		s.ctxCancel()
+
 		dropped := atomic.LoadInt64(&s.droppedCount)
 		failedBatches := atomic.LoadInt64(&s.failedBatchCount)
 
@@ -334,7 +353,8 @@ func (s *BufferedAuditStore) Close() error {
 		return nil
 
 	case <-time.After(30 * time.Second):
-		// Timeout waiting for background worker
+		// Timeout waiting for background worker -- cancel context to abort any stuck retries
+		s.ctxCancel()
 		s.logger.Error(nil, "Timeout waiting for audit store to close")
 		return fmt.Errorf("timeout waiting for audit store to close")
 	}
@@ -531,8 +551,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 // - Attempt 4: 9 seconds delay
 // - After MaxRetries: Drop batch and log
 func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
-	ctx := context.Background()
-
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start).Seconds()
@@ -540,7 +558,13 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 	}()
 
 	for attempt := 1; attempt <= s.config.MaxRetries; attempt++ {
-		if err := s.client.StoreBatch(ctx, batch); err != nil {
+		// Use store-scoped context with per-attempt timeout
+		// During shutdown, s.ctx is cancelled so retry loops abort promptly
+		attemptCtx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+		err := s.client.StoreBatch(attemptCtx, batch)
+		cancel()
+
+		if err != nil {
 			s.logger.Error(err, "Failed to write audit batch",
 				"attempt", attempt,
 				"batch_size", len(batch),
@@ -564,7 +588,19 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 			if attempt < s.config.MaxRetries {
 				// Exponential backoff: 1s, 4s, 9s
 				backoff := time.Duration(attempt*attempt) * time.Second
-				time.Sleep(backoff)
+				// Context-aware sleep: abort retry if store is shutting down
+				select {
+				case <-time.After(backoff):
+				case <-s.ctx.Done():
+					// Shutdown requested, drop remaining retries
+					s.logger.Info("Shutdown during retry backoff, dropping batch",
+						"batch_size", len(batch),
+						"attempt", attempt,
+					)
+					atomic.AddInt64(&s.failedBatchCount, 1)
+					s.metrics.RecordBatchFailed()
+					return
+				}
 				continue
 			}
 

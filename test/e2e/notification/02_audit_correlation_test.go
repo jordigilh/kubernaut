@@ -31,6 +31,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	notifaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -250,7 +251,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			switch event.EventType {
 			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
 				notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
-			case "notification.message.acknowledged":
+			case notifaudit.EventTypeMessageAcknowledged:
 				notificationID = event.EventData.NotificationMessageAcknowledgedPayload.NotificationID
 			default:
 				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'notification.message.sent' or 'notification.message.acknowledged')", event.EventType))
@@ -268,7 +269,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			switch event.EventType {
 			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
 				notificationEvents[notificationID].sentCount++
-			case "notification.message.acknowledged":
+			case notifaudit.EventTypeMessageAcknowledged:
 				notificationEvents[notificationID].acknowledgedCount++
 			}
 		}

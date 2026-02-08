@@ -45,9 +45,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -63,8 +60,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
-
-	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test constants for timeout and polling intervals
@@ -327,45 +323,17 @@ var _ = SynchronizedAfterSuite(
 )
 
 // ============================================================================
-// Test Namespace Helpers
+// Test Namespace Helpers (delegates to shared helpers)
 // ============================================================================
 
+// createTestNamespace creates a managed test namespace and waits for Active.
+// Delegates to shared helpers.CreateTestNamespaceAndWait with kubernaut.ai/managed=true.
 func createTestNamespace(prefix string) string {
-	name := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				"kubernaut.io/test": "e2e-remediationorchestrator",
-			},
-		},
-	}
-	err := k8sClient.Create(ctx, ns)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Wait for namespace to be Active before proceeding
-	// This prevents race conditions where CRDs are created before namespace is fully ready
-	Eventually(func() bool {
-		updatedNS := &corev1.Namespace{}
-		err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, updatedNS)
-		if err != nil {
-			return false
-		}
-		return updatedNS.Status.Phase == corev1.NamespaceActive
-	}, timeout, interval).Should(BeTrue(), "Namespace should become Active")
-
-	GinkgoWriter.Printf("✅ Namespace ready: %s\n", name)
-	return name
+	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }
 
+// deleteTestNamespace cleans up a test namespace.
+// Delegates to shared helpers.DeleteTestNamespace.
 func deleteTestNamespace(name string) {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-	}
-	err := k8sClient.Delete(ctx, ns)
-	if err != nil && !apierrors.IsNotFound(err) {
-		GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", name, err)
-	}
+	helpers.DeleteTestNamespace(ctx, k8sClient, name)
 }

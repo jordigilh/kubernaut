@@ -49,8 +49,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -60,6 +58,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 func TestAIAnalysisE2E(t *testing.T) {
@@ -405,19 +404,8 @@ func randomSuffix() string {
 	return uuid.New().String()[:8]
 }
 
-// createTestNamespace creates a uniquely named namespace for test isolation.
-// Uses UUID to guarantee uniqueness across parallel Ginkgo processes.
+// createTestNamespace creates a managed test namespace for test isolation.
+// Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
 func createTestNamespace(prefix string) string {
-	name := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				"kubernaut.io/test": "e2e-aianalysis",
-			},
-		},
-	}
-	err := k8sClient.Create(ctx, ns)
-	Expect(err).ToNot(HaveOccurred())
-	return name
+	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
