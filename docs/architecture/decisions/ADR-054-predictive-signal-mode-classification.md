@@ -237,15 +237,19 @@ Expose a new `/api/v1/predictive-investigation` endpoint alongside the existing 
 
 | Component | File | Change |
 |---|---|---|
-| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `OriginalSignalType` to status |
-| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization during enrichment |
-| SP classifier | `pkg/signalprocessing/classifier/` (new) | Signal mode classification + normalization mapping logic |
+| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `SignalType`, `OriginalSignalType` to status |
+| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization in `reconcileClassifying()` |
+| SP classifier | `pkg/signalprocessing/classifier/signalmode.go` (new) | Signal mode classification + normalization mapping logic |
 | SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive signal type → base type mapping config |
+| SP main | `cmd/signalprocessing/main.go` | Wire classifier, load config, start hot-reload |
+| SP audit | `pkg/signalprocessing/audit/client.go` | Populate `signal_mode` in audit payloads |
+| DS OpenAPI | `api/openapi/data-storage-v1.yaml` | Add `signal_mode`, `original_signal_type` to `SignalProcessingAuditPayload` |
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
-| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Copy `SignalMode` in `buildSignalContext()` |
+| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalType` source to `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `holmesgpt-api/openapi.yaml` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy (reactive RCA vs. predictive prevention) |
+| HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
+| HAPI prompt | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |
+| Mock LLM | `test/services/mock-llm/src/server.py` | Predictive scenario variants + detection logic |
 | Deepcopy | `zz_generated.deepcopy.go` | `make generate` |
 
 ---

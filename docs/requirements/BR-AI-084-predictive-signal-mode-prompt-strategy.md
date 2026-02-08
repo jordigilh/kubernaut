@@ -34,6 +34,19 @@ Without this distinction, HolmesGPT would perform RCA on an incident that hasn't
 
 The AIAnalysis CRD spec MUST include a `SignalMode` field in `SignalContextInput`, populated by RO from the SP status (same copy pattern as severity, environment, priority).
 
+### R1.1: RO SignalType Source Change
+
+The RO creator's `buildSignalContext()` currently copies `SignalType` from `rr.Spec.SignalType` (RemediationRequest). This MUST change to `sp.Status.SignalType` (SP status) so the AA receives the **normalized** signal type. This is a behavioral change to existing code — the RR spec still contains the raw incoming type, but downstream consumers need the normalized value.
+
+```go
+// BEFORE (current):
+SignalType: rr.Spec.SignalType,
+
+// AFTER (required):
+SignalType: sp.Status.SignalType,  // Normalized type from SP status (BR-SP-106)
+SignalMode: sp.Status.SignalMode,  // NEW: Copy signal mode from SP status
+```
+
 ### R2: Request Builder Passes SignalMode to HAPI
 
 The AA request builder (`pkg/aianalysis/handlers/request_builder.go`) MUST include `signalMode` in the `IncidentRequest` sent to HAPI.
@@ -44,15 +57,23 @@ The HAPI OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequ
 
 ### R4: HAPI Prompt Strategy
 
-HAPI MUST switch its investigation prompt based on the `signal_mode` value.
+HAPI MUST switch its investigation prompt based on the `signal_mode` value. The current prompt (`holmesgpt-api/src/extensions/incident/prompt_builder.py`) uses a 5-phase investigation workflow. The predictive variant must adapt the relevant phases:
 
-**Reactive** (default):
+| Phase | Reactive (current) | Predictive (new) |
+|---|---|---|
+| **Phase 1: Investigate** | Investigate the incident: check pod status, events, logs, resource usage | Evaluate current environment: check resource utilization trends, recent deployments, current state |
+| **Phase 2: Root Cause** | Determine root cause — what happened and why? | Determine prevention strategy — is the prediction valid? Should we act preemptively? |
+| **Phase 3: Signal Type** | Identify signal type for workflow search | _(unchanged — uses normalized base signal type)_ |
+| **Phase 4: Search Workflow** | Search workflow catalog | _(unchanged — same catalog, same normalized type)_ |
+| **Phase 5: Summary** | Return RCA summary + workflow recommendation | Return prevention assessment + workflow recommendation OR "no action needed" |
+
+**Reactive** (default — Phases 1-2 investigation directive):
 > Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine why this happened and recommend remediation.
 
-**Predictive**:
+**Predictive** (Phases 1-2 investigation directive):
 > Evaluate current environment. This incident is **predicted** based on resource trend analysis but has not occurred yet. Assess resource utilization trends, recent deployments, and current state to determine if preemptive action is warranted and how to **prevent** this incident. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
 
-**Why this is clean**: Because SP normalizes the signal type (BR-SP-106), the agent receives `signal_type = "OOMKilled"` in both modes. It searches the same workflow catalog entry regardless of mode. The only difference is the investigation prompt: reactive asks "what happened and why?", predictive asks "this is about to happen, how do we prevent it?". The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP normalization.
+**Why this is clean**: Because SP normalizes the signal type (BR-SP-106), the agent receives `signal_type = "OOMKilled"` in both modes. It searches the same workflow catalog entry regardless of mode. Phases 3-4 are unchanged. The only difference is the investigation directive (Phases 1-2) and the summary format (Phase 5). The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP normalization.
 
 ### R5: Valid "No Action" Outcome
 
@@ -85,6 +106,7 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 
 - [ ] `SignalMode` field in `SignalContextInput` (`api/aianalysis/v1alpha1/aianalysis_types.go`)
 - [ ] RO copies `SignalMode` from SP status to AA spec (`pkg/remediationorchestrator/creator/aianalysis.go`, `buildSignalContext()`)
+- [ ] RO `SignalType` source changed from `rr.Spec.SignalType` to `sp.Status.SignalType` (normalized)
 - [ ] AA request builder passes `signalMode` to HAPI (`pkg/aianalysis/handlers/request_builder.go`)
 - [ ] HAPI OpenAPI spec includes `signal_mode` in `IncidentRequest`
 - [ ] Go client regenerated (`make generate-holmesgpt-client`)
@@ -101,11 +123,14 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 | Component | File(s) | Change |
 |---|---|---|
 | AA CRD spec | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
-| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Copy `sp.Status.SignalMode` in `buildSignalContext()` |
+| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalType` source from `rr.Spec` → `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA request builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `holmesgpt-api/openapi.yaml` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy |
-| Client regen | Generated clients | `make generate-holmesgpt-client` |
+| HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
+| HAPI Python model | `holmesgpt-api/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |
+| HAPI prompt builder | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy in `create_incident_investigation_prompt()` (Phases 1-2, 5) |
+| HAPI LLM integration | `holmesgpt-api/src/extensions/incident/llm_integration.py` | Pass `signal_mode` to prompt builder in `analyze_incident()` |
+| Go client regen | `pkg/holmesgpt/client/oas_schemas_gen.go` | `make generate-holmesgpt-client` |
+| Mock LLM | `test/services/mock-llm/src/server.py` | Add predictive scenario variants + detection logic (see Test Plan) |
 | Deepcopy | `api/aianalysis/v1alpha1/zz_generated.deepcopy.go` | `make generate` |
 
 ---
