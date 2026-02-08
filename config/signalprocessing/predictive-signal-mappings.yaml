@@ -1,0 +1,20 @@
+# Predictive Signal Type Mappings
+# BR-SP-106: Predictive Signal Mode Classification
+# ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+#
+# Maps predictive signal types to their base types for workflow catalog normalization.
+# Signals matching a key are classified as "predictive" with signalMode = "predictive".
+# Signals NOT in this map default to "reactive" with signalMode = "reactive".
+#
+# This file supports hot-reload (BR-SP-072 pattern): changes are picked up
+# automatically without restarting the SignalProcessing controller.
+#
+# Format: <PredictiveSignalType>: <BaseSignalType>
+#
+# Convention: Prometheus predict_linear() alerts use the "Predicted" prefix.
+# Operators can add mappings for any signal source naming convention.
+predictive_signal_mappings:
+  PredictedOOMKill: OOMKilled
+  PredictedCPUThrottling: CPUThrottling
+  PredictedDiskPressure: DiskPressure
+  PredictedNodeNotReady: NodeNotReady

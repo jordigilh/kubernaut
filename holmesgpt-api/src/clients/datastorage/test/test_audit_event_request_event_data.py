@@ -106,6 +106,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 has_pod = True,
                 has_deployment = True,
                 business_unit = '',
+                signal_mode = 'predictive',
+                original_signal_type = 'PredictedOOMKill',
                 error = '',
                 analysis_name = 'diagnose-payment-api-2025-12-17-abc123',
                 approval_required = True,

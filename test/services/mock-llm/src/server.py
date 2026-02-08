@@ -221,6 +221,37 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         parameters={"ACTION": "restart"}
     ),
     # ========================================
+    # BR-AI-084 / ADR-054: Predictive Signal Mode Scenarios
+    # ========================================
+    "oomkilled_predictive": MockScenario(
+        name="oomkilled_predictive",
+        workflow_name="oomkill-increase-memory-v1",  # Same workflow catalog entry as reactive (SP normalizes signal type)
+        signal_type="OOMKilled",  # Already normalized by SP from PredictedOOMKill
+        severity="critical",
+        workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Same as reactive oomkilled (same workflow)
+        workflow_title="OOMKill Recovery - Increase Memory Limits",
+        confidence=0.88,
+        root_cause="Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="api-server-abc123",
+        parameters={"MEMORY_LIMIT": "2Gi", "NAMESPACE": "production"}
+    ),
+    "predictive_no_action": MockScenario(
+        name="predictive_no_action",
+        workflow_name="",  # No workflow needed - prediction unlikely to materialize
+        signal_type="OOMKilled",  # Normalized signal type
+        severity="medium",
+        workflow_id="",  # Empty workflow_id - no action needed
+        workflow_title="",
+        confidence=0.82,
+        root_cause="Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="api-server-def456",
+        parameters={}
+    ),
+    # ========================================
     # Category F: Advanced Recovery Scenarios (Mock LLM)
     # E2E-HAPI-049 to E2E-HAPI-054
     # ========================================
@@ -639,6 +670,23 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
+
+        # BR-AI-084 / ADR-054: Detect predictive signal mode
+        # Predictive mode is indicated by "predictive" keyword in the prompt content,
+        # specifically from the signal_mode field passed through the investigation prompt.
+        is_predictive = ("predictive mode" in content or "predictive signal" in content or
+                         "predicted" in content and "not yet occurred" in content)
+
+        # Check for predictive-specific scenarios first
+        if is_predictive:
+            # Check for "no action" predictive scenario
+            if "predictive_no_action" in content or "mock_predictive_no_action" in content:
+                logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
+                return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
+            # Default predictive scenario with OOMKilled
+            if "oomkilled" in content:
+                logger.info("✅ SCENARIO DETECTED: OOMKILLED_PREDICTIVE")
+                return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
 
         # Check for signal types FIRST (most specific first to avoid false matches)
         # DD-TEST-010: Match exact signal types, not generic substrings

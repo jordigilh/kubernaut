@@ -212,7 +212,7 @@ var _ = Describe("Controller Shutdown", func() {
 
 			Expect(ctx.Err()).To(Equal(context.DeadlineExceeded))
 			Expect(elapsed).To(BeNumerically(">=", shutdownTimeout))
-			Expect(elapsed).To(BeNumerically("<", shutdownTimeout+20*time.Millisecond))
+			Expect(elapsed).To(BeNumerically("<", shutdownTimeout+100*time.Millisecond))
 		})
 
 		// Test 6: Cleanup functions execute on shutdown

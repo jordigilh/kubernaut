@@ -367,6 +367,166 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		})
 	})
 
+	// ========================================
+	// TEST SUITE: Predictive Signal Mode Propagation (BR-SP-106, ADR-054)
+	// Business Context: RO must copy signal mode and normalized type to AA
+	// ========================================
+
+	Context("IT-RO-084-001: Predictive Signal Mode Propagation", func() {
+		var (
+			namespace string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-signalmode")
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("[RO-INT-SM-001] should create AIAnalysis with signalMode=predictive and normalized signalType", func() {
+			By("1. Create RemediationRequest with OOMKilled signal type")
+			// Note: In production, RR has the original type (PredictedOOMKill) and SP normalizes it.
+			// For this integration test, we simulate the SP normalization step manually.
+			rrName := fmt.Sprintf("rr-predictive-%s", uuid.New().String()[:13])
+			now := metav1.Now()
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
+					SignalName: "PredictedOOMKill",
+					Severity:   "critical",
+					SignalType: "PredictedOOMKill",
+					TargetType: "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "api-server",
+						Namespace: namespace,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("2. Wait for RO to create SignalProcessing")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			sp := &signalprocessingv1.SignalProcessing{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed(),
+				"RO should create SignalProcessing when RR is created")
+
+			By("3. Simulate SignalProcessing predictive mode classification (BR-SP-106)")
+			// Simulate what the SignalModeClassifier would do:
+			// PredictedOOMKill → signalMode=predictive, signalType=OOMKilled, originalSignalType=PredictedOOMKill
+			Expect(updateSPStatusPredictive(namespace, spName, "OOMKilled", "PredictedOOMKill", "critical")).To(Succeed())
+
+			By("4. Wait for RO to create AIAnalysis")
+			var createdAA *aianalysisv1.AIAnalysis
+			Eventually(func() bool {
+				var aaList aianalysisv1.AIAnalysisList
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
+					client.InNamespace(namespace),
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
+				if err != nil || len(aaList.Items) == 0 {
+					return false
+				}
+				createdAA = &aaList.Items[0]
+				return true
+			}, timeout, interval).Should(BeTrue(),
+				"RO should create AIAnalysis when SignalProcessing reaches Completed phase")
+
+			By("5. Verify AIAnalysis has predictive signal mode from SP.Status")
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("predictive"),
+				"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=predictive from SP.Status.SignalMode")
+
+			By("6. Verify AIAnalysis has NORMALIZED signal type (not original)")
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+				"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status.SignalType (not 'PredictedOOMKill')")
+
+			GinkgoWriter.Printf("✅ Signal mode propagation validated: SP(predictive, OOMKilled) → AA(predictive, OOMKilled)\n")
+		})
+
+		It("[RO-INT-SM-002] should create AIAnalysis with signalMode=reactive for standard signals", func() {
+			By("1. Create RemediationRequest with standard reactive signal")
+			rrName := fmt.Sprintf("rr-reactive-%s", uuid.New().String()[:13])
+			now := metav1.Now()
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
+					SignalName: "OOMKilled",
+					Severity:   "critical",
+					SignalType: "OOMKilled",
+					TargetType: "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "worker-service",
+						Namespace: namespace,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("2. Wait for SignalProcessing and simulate reactive completion")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			sp := &signalprocessingv1.SignalProcessing{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+
+			// Use standard updateSPStatus which now sets reactive defaults
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+			By("3. Wait for AIAnalysis and verify reactive signal mode")
+			var createdAA *aianalysisv1.AIAnalysis
+			Eventually(func() bool {
+				var aaList aianalysisv1.AIAnalysisList
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
+					client.InNamespace(namespace),
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
+				if err != nil || len(aaList.Items) == 0 {
+					return false
+				}
+				createdAA = &aaList.Items[0]
+				return true
+			}, timeout, interval).Should(BeTrue())
+
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),
+				"Standard signals should have signalMode=reactive in AIAnalysis")
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+				"Reactive signal type should pass through unchanged")
+
+			GinkgoWriter.Printf("✅ Reactive signal mode propagation validated: SP(reactive, OOMKilled) → AA(reactive, OOMKilled)\n")
+		})
+	})
+
 	Context("Standard Severity Values (Backward Compatibility)", func() {
 		var (
 			namespace string
