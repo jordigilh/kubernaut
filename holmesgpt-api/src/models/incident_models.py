@@ -213,6 +213,15 @@ class IncidentRequest(BaseModel):
     # Enrichment results with DetectedLabels (DD-RECOVERY-003)
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
+    # Signal mode: reactive (incident occurred) or predictive (incident predicted)
+    # BR-AI-084: Predictive Signal Mode Prompt Strategy
+    # ADR-054: Predictive Signal Mode Classification
+    # Used by prompt builder to switch investigation strategy:
+    # - "reactive": RCA (root cause analysis) - the incident has occurred
+    # - "predictive": Predict & prevent - incident is predicted but not yet occurred
+    # Defaults to None (treated as "reactive" by prompt builder for backwards compatibility)
+    signal_mode: Optional[str] = Field(None, description="Signal mode: 'reactive' or 'predictive'. Controls prompt strategy.")
+
     @field_validator('remediation_id')
     @classmethod
     def validate_remediation_id(cls, v: str) -> str:

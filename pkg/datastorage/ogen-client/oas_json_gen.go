@@ -2155,6 +2155,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.SignalMode.Set {
+					e.FieldStart("signal_mode")
+					s.SignalMode.Encode(e)
+				}
+			}
+			{
+				if s.OriginalSignalType.Set {
+					e.FieldStart("original_signal_type")
+					s.OriginalSignalType.Encode(e)
+				}
+			}
+			{
 				if s.Error.Set {
 					e.FieldStart("error")
 					s.Error.Encode(e)
@@ -4343,6 +4355,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.ToPhase.Set {
 					e.FieldStart("to_phase")
 					s.ToPhase.Encode(e)
+				}
+			}
+			{
+				if s.SignalMode.Set {
+					e.FieldStart("signal_mode")
+					s.SignalMode.Encode(e)
+				}
+			}
+			{
+				if s.OriginalSignalType.Set {
+					e.FieldStart("original_signal_type")
+					s.OriginalSignalType.Encode(e)
 				}
 			}
 			{
@@ -15926,6 +15950,39 @@ func (s *OptSignalProcessingAuditPayloadSeverity) UnmarshalJSON(data []byte) err
 	return s.Decode(d)
 }
 
+// Encode encodes SignalProcessingAuditPayloadSignalMode as json.
+func (o OptSignalProcessingAuditPayloadSignalMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SignalProcessingAuditPayloadSignalMode from json.
+func (o *OptSignalProcessingAuditPayloadSignalMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSignalProcessingAuditPayloadSignalMode to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSignalProcessingAuditPayloadSignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSignalProcessingAuditPayloadSignalMode) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes string as json.
 func (o OptString) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -20723,6 +20780,18 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SignalMode.Set {
+			e.FieldStart("signal_mode")
+			s.SignalMode.Encode(e)
+		}
+	}
+	{
+		if s.OriginalSignalType.Set {
+			e.FieldStart("original_signal_type")
+			s.OriginalSignalType.Encode(e)
+		}
+	}
+	{
 		if s.Error.Set {
 			e.FieldStart("error")
 			s.Error.Encode(e)
@@ -20730,7 +20799,7 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSignalProcessingAuditPayload = [27]string{
+var jsonFieldsNameOfSignalProcessingAuditPayload = [29]string{
 	0:  "event_type",
 	1:  "phase",
 	2:  "signal",
@@ -20757,7 +20826,9 @@ var jsonFieldsNameOfSignalProcessingAuditPayload = [27]string{
 	23: "business_unit",
 	24: "from_phase",
 	25: "to_phase",
-	26: "error",
+	26: "signal_mode",
+	27: "original_signal_type",
+	28: "error",
 }
 
 // Decode decodes SignalProcessingAuditPayload from json.
@@ -21030,6 +21101,26 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"to_phase\"")
+			}
+		case "signal_mode":
+			if err := func() error {
+				s.SignalMode.Reset()
+				if err := s.SignalMode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_mode\"")
+			}
+		case "original_signal_type":
+			if err := func() error {
+				s.OriginalSignalType.Reset()
+				if err := s.OriginalSignalType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"original_signal_type\"")
 			}
 		case "error":
 			if err := func() error {
@@ -21542,6 +21633,46 @@ func (s SignalProcessingAuditPayloadSeverity) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SignalProcessingAuditPayloadSeverity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingAuditPayloadSignalMode as json.
+func (s SignalProcessingAuditPayloadSignalMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalProcessingAuditPayloadSignalMode from json.
+func (s *SignalProcessingAuditPayloadSignalMode) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingAuditPayloadSignalMode to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalProcessingAuditPayloadSignalMode(v) {
+	case SignalProcessingAuditPayloadSignalModeReactive:
+		*s = SignalProcessingAuditPayloadSignalModeReactive
+	case SignalProcessingAuditPayloadSignalModePredictive:
+		*s = SignalProcessingAuditPayloadSignalModePredictive
+	default:
+		*s = SignalProcessingAuditPayloadSignalMode(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalProcessingAuditPayloadSignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

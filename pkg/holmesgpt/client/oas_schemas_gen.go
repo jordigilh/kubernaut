@@ -567,11 +567,14 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) incid
 // Business Requirements:
 // - BR-HAPI-002: Incident analysis request schema
 // - BR-AUDIT-001: Unified audit trail (remediation_id)
+// - BR-AI-084: Predictive signal mode prompt strategy
 // Design Decision: DD-WORKFLOW-002 v2.2
 // - remediation_id is MANDATORY for audit trail correlation
 // - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
 // Design Decision: DD-RECOVERY-003
-// - enrichment_results contains DetectedLabels for workflow filtering.
+// - enrichment_results contains DetectedLabels for workflow filtering
+// Design Decision: ADR-054
+// - signal_mode enables HAPI to switch prompt strategy for predictive signals.
 // Ref: #/components/schemas/IncidentRequest
 type IncidentRequest struct {
 	// Unique incident identifier.
@@ -634,6 +637,10 @@ type IncidentRequest struct {
 	SignalLabels OptNilIncidentRequestSignalLabels `json:"signal_labels"`
 	// Enriched context from SignalProcessing.
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
+	// Signal mode: reactive (incident occurred) or predictive (incident predicted). BR-AI-084: Used by
+	// prompt builder to switch investigation strategy (RCA vs. predict & prevent). ADR-054: Predictive
+	// Signal Mode Classification.
+	SignalMode OptNilIncidentRequestSignalMode `json:"signal_mode"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -781,6 +788,11 @@ func (s *IncidentRequest) GetEnrichmentResults() OptNilEnrichmentResults {
 	return s.EnrichmentResults
 }
 
+// GetSignalMode returns the value of SignalMode.
+func (s *IncidentRequest) GetSignalMode() OptNilIncidentRequestSignalMode {
+	return s.SignalMode
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *IncidentRequest) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -926,6 +938,11 @@ func (s *IncidentRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 	s.EnrichmentResults = val
 }
 
+// SetSignalMode sets the value of SignalMode.
+func (s *IncidentRequest) SetSignalMode(val OptNilIncidentRequestSignalMode) {
+	s.SignalMode = val
+}
+
 type IncidentRequestSignalLabels map[string]string
 
 func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
@@ -935,6 +952,47 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 		*s = m
 	}
 	return m
+}
+
+type IncidentRequestSignalMode string
+
+const (
+	IncidentRequestSignalModeReactive   IncidentRequestSignalMode = "reactive"
+	IncidentRequestSignalModePredictive IncidentRequestSignalMode = "predictive"
+)
+
+// AllValues returns all IncidentRequestSignalMode values.
+func (IncidentRequestSignalMode) AllValues() []IncidentRequestSignalMode {
+	return []IncidentRequestSignalMode{
+		IncidentRequestSignalModeReactive,
+		IncidentRequestSignalModePredictive,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentRequestSignalMode) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentRequestSignalModeReactive:
+		return []byte(s), nil
+	case IncidentRequestSignalModePredictive:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentRequestSignalMode) UnmarshalText(data []byte) error {
+	switch IncidentRequestSignalMode(data) {
+	case IncidentRequestSignalModeReactive:
+		*s = IncidentRequestSignalModeReactive
+		return nil
+	case IncidentRequestSignalModePredictive:
+		*s = IncidentRequestSignalModePredictive
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Response model for incident analysis endpoint
@@ -1656,6 +1714,69 @@ func (o OptNilIncidentRequestSignalLabels) Get() (v IncidentRequestSignalLabels,
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilIncidentRequestSignalLabels) Or(d IncidentRequestSignalLabels) IncidentRequestSignalLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilIncidentRequestSignalMode returns new OptNilIncidentRequestSignalMode with value set to v.
+func NewOptNilIncidentRequestSignalMode(v IncidentRequestSignalMode) OptNilIncidentRequestSignalMode {
+	return OptNilIncidentRequestSignalMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilIncidentRequestSignalMode is optional nullable IncidentRequestSignalMode.
+type OptNilIncidentRequestSignalMode struct {
+	Value IncidentRequestSignalMode
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilIncidentRequestSignalMode was set.
+func (o OptNilIncidentRequestSignalMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilIncidentRequestSignalMode) Reset() {
+	var v IncidentRequestSignalMode
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilIncidentRequestSignalMode) SetTo(v IncidentRequestSignalMode) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilIncidentRequestSignalMode) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilIncidentRequestSignalMode) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v IncidentRequestSignalMode
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilIncidentRequestSignalMode) Get() (v IncidentRequestSignalMode, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilIncidentRequestSignalMode) Or(d IncidentRequestSignalMode) IncidentRequestSignalMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}

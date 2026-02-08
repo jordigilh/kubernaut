@@ -63,6 +63,8 @@ Name | Type | Description | Notes
 **has_pod** | **bool** | Whether pod context was enriched | [optional] 
 **has_deployment** | **bool** | Whether deployment context was enriched | [optional] 
 **business_unit** | **str** | Owning business unit | [optional] 
+**signal_mode** | **str** | Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification. | [optional] 
+**original_signal_type** | **str** | Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation. | [optional] 
 **error** | **str** |  | [optional] 
 **analysis_name** | **str** | Name of the AIAnalysis CRD | 
 **approval_required** | **bool** | Whether manual approval is required | 

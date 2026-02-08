@@ -210,6 +210,30 @@ type SignalProcessingStatus struct {
 	// +optional
 	PolicyHash string `json:"policyHash,omitempty"`
 
+	// SignalMode indicates whether this is a reactive or predictive signal.
+	// BR-SP-106: Predictive Signal Mode Classification
+	// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+	// Set during the Classifying phase alongside severity, environment, and priority.
+	// All signals MUST be classified — "reactive" is the default for unmapped types.
+	// +kubebuilder:validation:Enum=reactive;predictive
+	// +optional
+	SignalMode string `json:"signalMode,omitempty"`
+
+	// SignalType is the normalized signal type after predictive-to-base mapping.
+	// BR-SP-106: Signal Type Normalization
+	// For predictive signals (e.g., "PredictedOOMKill"), this is the base type (e.g., "OOMKilled").
+	// For reactive signals, this matches Spec.Signal.Type unchanged.
+	// This is the AUTHORITATIVE signal type for all downstream consumers (RO, AA, HAPI).
+	// +optional
+	SignalType string `json:"signalType,omitempty"`
+
+	// OriginalSignalType preserves the pre-normalization signal type for audit trail.
+	// BR-SP-106: Audit trail preservation (SOC2 CC7.4)
+	// Only populated for predictive signals (e.g., "PredictedOOMKill").
+	// Empty for reactive signals.
+	// +optional
+	OriginalSignalType string `json:"originalSignalType,omitempty"`
+
 	// Conditions for detailed status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
