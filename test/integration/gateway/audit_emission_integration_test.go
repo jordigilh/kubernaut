@@ -29,6 +29,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -315,7 +316,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.received"
+				eventType := gateway.EventTypeSignalReceived
 				var receivedEvents []ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -395,7 +396,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -408,7 +409,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"gateway.crd.created audit event should exist in DataStorage")
 
 				By("3. Validate audit event metadata")
-				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				Expect(crdCreatedEvent.EventType).To(Equal(gateway.EventTypeCRDCreated))
 				Expect(crdCreatedEvent.EventAction).To(Equal("created"))
 				Expect(crdCreatedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryGateway))
 				Expect(crdCreatedEvent.CorrelationID).To(Equal(correlationID))
@@ -472,7 +473,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -537,7 +538,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
@@ -678,7 +679,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Note: The deduplicated event uses the FIRST CRD's correlation ID (existing RR)
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &firstCRDName, &eventType, nil)
@@ -691,7 +692,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"gateway.signal.deduplicated audit event should exist")
 
 				By("4. Validate deduplication audit metadata")
-				Expect(dedupEvent.EventType).To(Equal("gateway.signal.deduplicated"))
+				Expect(dedupEvent.EventType).To(Equal(gateway.EventTypeSignalDeduplicated))
 				Expect(dedupEvent.EventAction).To(Equal("deduplicated"))
 				Expect(dedupEvent.CorrelationID).To(Equal(firstCRDName))
 
@@ -736,7 +737,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
@@ -796,7 +797,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Use actual RR name as correlation ID
 				actualCorrelationID := response.RemediationRequestName
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID, &eventType, nil)
@@ -860,7 +861,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
@@ -939,7 +940,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.signal.deduplicated"
+				eventType := gateway.EventTypeSignalDeduplicated
 				var dedupEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &rrNameA, &eventType, nil)
@@ -1026,7 +1027,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Use actual RR name as correlation ID
 				actualCorrelationID2 := response2.RemediationRequestName
-				eventType := "gateway.crd.created"
+				eventType := gateway.EventTypeCRDCreated
 				var crdCreatedEvent *ogenclient.AuditEvent
 				Eventually(func() bool {
 					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID2, &eventType, nil)
@@ -1038,7 +1039,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 				// Validate it's a creation event, not deduplication
-				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				Expect(crdCreatedEvent.EventType).To(Equal(gateway.EventTypeCRDCreated))
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
 				Expect(ok).To(BeTrue())
 				Expect(payload.Fingerprint).To(Equal(actualFingerprint))
@@ -1202,7 +1203,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
@@ -1224,7 +1225,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("3. Validate gateway.crd.failed audit event fields")
-				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventType).To(Equal(gateway.EventTypeCRDFailed))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID),
 					"BR-GATEWAY-058-A: Correlation ID should be readable format (alertname:namespace:kind:name)")
@@ -1277,7 +1278,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
@@ -1352,7 +1353,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
 					signal.AlertName,
 					signal.Namespace,
@@ -1374,7 +1375,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("3. Validate each event has unique EventID but same CorrelationID")
 				eventIDs := make(map[string]bool)
 				for _, event := range auditEvents {
-					Expect(event.EventType).To(Equal("gateway.crd.failed"))
+					Expect(event.EventType).To(Equal(gateway.EventTypeCRDFailed))
 					Expect(event.CorrelationID).To(Equal(readableCorrelationID),
 						"BR-GATEWAY-058: All retry events share the same CorrelationID")
 					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
@@ -1454,7 +1455,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
-				eventType := "gateway.crd.failed"
+				eventType := gateway.EventTypeCRDFailed
 				var failedEvent *ogenclient.AuditEvent
 
 				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
@@ -1477,7 +1478,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("5. Validate audit event includes circuit breaker error details")
-				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventType).To(Equal(gateway.EventTypeCRDFailed))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID))
 

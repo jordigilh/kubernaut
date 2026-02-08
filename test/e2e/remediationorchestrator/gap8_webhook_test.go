@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -232,7 +233,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 				// Filter for webhook.remediationrequest.timeout_modified events
 				webhookEvents = []ogenclient.AuditEvent{}
 				for _, evt := range events {
-					if evt.EventType == "webhook.remediationrequest.timeout_modified" {
+					if evt.EventType == authwebhook.EventTypeTimeoutModified {
 						webhookEvents = append(webhookEvents, evt)
 					}
 				}
@@ -250,7 +251,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			//   2. Operator modifies TimeoutConfig (defaults → custom)
 			// We validate the LAST event (operator modification)
 			webhookEvent := webhookEvents[len(webhookEvents)-1]
-			Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
+			Expect(webhookEvent.EventType).To(Equal(authwebhook.EventTypeTimeoutModified))
 			Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryOrchestration)) // Gap #8: Webhook is RR implementation detail
 			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
 			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))

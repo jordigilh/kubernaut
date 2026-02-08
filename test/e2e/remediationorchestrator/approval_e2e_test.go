@@ -31,7 +31,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -185,20 +187,20 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString("webhook"),
-					EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
-					Limit:         dsgen.NewOptInt(100),
-				})
-				if err != nil {
-					return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
-				}
-				webhookEvents = webhookResp.Data
+				EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+				EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			if err != nil {
+				return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
+			}
+			webhookEvents = webhookResp.Data
 
-				// Query orchestration approval events with all 3 required filters
-				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString("orchestration"),
-					EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
+			// Query orchestration approval events with all 3 required filters
+			orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
+				EventType:     dsgen.NewOptString(roaudit.EventTypeApprovalApproved),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
@@ -234,7 +236,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"COMPLIANCE: RO controller must emit approval audit event (BR-AUDIT-006)")
 
 			approvalEvent := orchestrationApprovalEvents[0]
-			Expect(approvalEvent.EventType).To(Equal("orchestrator.approval.approved"),
+			Expect(approvalEvent.EventType).To(Equal(roaudit.EventTypeApprovalApproved),
 				"BUSINESS OUTCOME: Event type indicates approval (ADR-034 v1.7)")
 			Expect(string(approvalEvent.EventOutcome)).To(Equal("success"),
 				"BUSINESS OUTCOME: Approved path is success outcome")
@@ -274,10 +276,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Eventually(func() bool {
 				// Query with all 3 required filters (correlationID, EventCategory, EventType)
 				// Prevents pagination overhead - ensures efficient query (BR-AUDIT-006)
-				resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString("orchestration"),
-					EventType:     dsgen.NewOptString("orchestrator.approval.rejected"),
+			resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
+				EventType:     dsgen.NewOptString(roaudit.EventTypeApprovalRejected),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
@@ -419,26 +421,26 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Eventually(func() ([2]int, error) {
 				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
 				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
-				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString("webhook"),
-					EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
-					Limit:         dsgen.NewOptInt(100),
-				})
-				if err != nil {
-					return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
-				}
-				GinkgoWriter.Printf("🔍 DEBUG: Webhook query returned %d events\n", len(webhookResp.Data))
-				for i, evt := range webhookResp.Data {
-					GinkgoWriter.Printf("  [%d] CorrelationID=%s, EventType=%s, EventCategory=%s\n",
-						i, evt.CorrelationID, evt.EventType, evt.EventCategory)
-				}
+			webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+				EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
+				Limit:         dsgen.NewOptInt(100),
+			})
+			if err != nil {
+				return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
+			}
+			GinkgoWriter.Printf("🔍 DEBUG: Webhook query returned %d events\n", len(webhookResp.Data))
+			for i, evt := range webhookResp.Data {
+				GinkgoWriter.Printf("  [%d] CorrelationID=%s, EventType=%s, EventCategory=%s\n",
+					i, evt.CorrelationID, evt.EventType, evt.EventCategory)
+			}
 
-				// Query orchestration approval events with all 3 required filters
-				orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-					CorrelationID: dsgen.NewOptString(correlationID),
-					EventCategory: dsgen.NewOptString("orchestration"),
-					EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
+			// Query orchestration approval events with all 3 required filters
+			orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
+				EventType:     dsgen.NewOptString(roaudit.EventTypeApprovalApproved),
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
@@ -503,22 +505,22 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// BUSINESS VALIDATION: Audit events still exist after CRD deletion
 			// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
 			// Prevents pagination overhead - ensures efficient query (BR-AUDIT-006)
-			webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-				CorrelationID: dsgen.NewOptString(correlationID),
-				EventCategory: dsgen.NewOptString("webhook"),
-				EventType:     dsgen.NewOptString("webhook.remediationapprovalrequest.decided"),
-				Limit:         dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred(), "DataStorage query for webhook events must succeed")
-			webhookEvents := webhookResp.Data
-			GinkgoWriter.Printf("🔍 DEBUG: Found %d webhook events\n", len(webhookEvents))
+		webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			EventCategory: dsgen.NewOptString(authwebhook.EventCategoryWebhook),
+			EventType:     dsgen.NewOptString(authwebhook.EventTypeRARDecided),
+			Limit:         dsgen.NewOptInt(100),
+		})
+		Expect(err).ToNot(HaveOccurred(), "DataStorage query for webhook events must succeed")
+		webhookEvents := webhookResp.Data
+		GinkgoWriter.Printf("🔍 DEBUG: Found %d webhook events\n", len(webhookEvents))
 
-			// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
-			// Note: We query for "approved" events only; test created an approval decision
-			orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-				CorrelationID: dsgen.NewOptString(correlationID),
-				EventCategory: dsgen.NewOptString("orchestration"),
-				EventType:     dsgen.NewOptString("orchestrator.approval.approved"),
+		// Query orchestration approval events with all 3 required filters (correlationID, EventCategory, EventType)
+		// Note: We query for "approved" events only; test created an approval decision
+		orchestrationResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
+			EventType:     dsgen.NewOptString(roaudit.EventTypeApprovalApproved),
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "DataStorage query for orchestration events must succeed")

@@ -68,6 +68,7 @@ const (
 // Event actions for RO audit events (per DD-AUDIT-003)
 const (
 	ActionStarted           = "started"
+	ActionCreated           = "created"
 	ActionTransitioned      = "transitioned"
 	ActionCompleted         = "completed"
 	ActionFailed            = "failed"

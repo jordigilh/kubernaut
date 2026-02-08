@@ -22,6 +22,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -109,7 +110,7 @@ correlationID := rr.Name
 	// BR-AUDIT-005 Gap #8: Must capture TimeoutConfig for RR reconstruction
 	// RCA FIX: Flush INSIDE Eventually to handle async HTTP write to DataStorage
 	var events []ogenclient.AuditEvent
-	eventType := "orchestrator.lifecycle.created"
+	eventType := roaudit.EventTypeLifecycleCreated
 	Eventually(func() []ogenclient.AuditEvent {
 			// Flush buffer on each retry (handles async HTTP POST timing)
 			_ = auditStore.Flush(ctx)
@@ -132,9 +133,9 @@ correlationID := rr.Name
 			event := events[0]
 
 			// Validate event structure (ADR-034 compliance)
-			Expect(event.EventType).To(Equal("orchestrator.lifecycle.created"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCreated))
 			Expect(event.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryOrchestration))
-			Expect(event.EventAction).To(Equal("created"))
+			Expect(event.EventAction).To(Equal(roaudit.ActionCreated))
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 			Expect(event.CorrelationID).To(Equal(correlationID))
 			Expect(event.Namespace.Value).To(Equal(testNamespace))
@@ -240,7 +241,7 @@ correlationID := rr.Name
 
 	// Then: Audit event should reflect initialized TimeoutConfig
 	// (not nil, proving event was emitted AFTER initialization)
-	eventType := "orchestrator.lifecycle.created"
+	eventType := roaudit.EventTypeLifecycleCreated
 	Eventually(func() bool {
 			events, _, err := helpers.QueryAuditEvents(
 				ctx,

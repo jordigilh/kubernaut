@@ -25,6 +25,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -100,7 +101,7 @@ func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admiss
 	// Write complete audit event (webhook.remediationrequest.timeout_modified)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeTimeoutModified)
-	audit.SetEventCategory(auditEvent, "orchestration") // Gap #8: Use orchestration category (webhook is RR implementation detail)
+	audit.SetEventCategory(auditEvent, roaudit.EventCategoryOrchestration) // Gap #8: Use orchestration category (webhook is RR implementation detail)
 	audit.SetEventAction(auditEvent, "timeout_modified")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)

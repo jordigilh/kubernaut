@@ -566,6 +566,16 @@ def merge_python_coverage_by_lines(
                 intersected_missing &= e.missing_lines
 
             max_stmts = max(e.total_stmts for e in entries)
+
+            # Filter out line numbers beyond the valid statement range.
+            # Different tiers may report different statement counts for
+            # the same module (e.g., code changes between test runs).
+            # Without this filter, len(intersected_missing) can exceed
+            # max_stmts, producing negative covered_stmts.
+            intersected_missing = {
+                line for line in intersected_missing if 1 <= line <= max_stmts
+            }
+
             merged[name] = PythonModuleCoverage(
                 name=name,
                 total_stmts=max_stmts,
