@@ -68,7 +68,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 	// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	// Pre-create managed namespace (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-prod")
 
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
@@ -86,7 +86,7 @@ AfterEach(func() {
 	}
 	// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
-	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	// Clean up test namespace (Pattern: RO E2E)
 	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 })
 

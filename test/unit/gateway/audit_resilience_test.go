@@ -120,9 +120,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					Deduplication: config.DeduplicationSettings{
 						TTL: 300 * time.Second,
 					},
-					CRD: config.CRDSettings{
-						FallbackNamespace: testNamespace,
-					},
+					CRD: config.CRDSettings{},
 					Retry: config.RetrySettings{
 						MaxAttempts:    3,
 						InitialBackoff: 100 * time.Millisecond,
@@ -193,9 +191,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					Deduplication: config.DeduplicationSettings{
 						TTL: 300 * time.Second,
 					},
-					CRD: config.CRDSettings{
-						FallbackNamespace: testNamespace,
-					},
+					CRD: config.CRDSettings{},
 					Retry: config.RetrySettings{
 						MaxAttempts:    3,
 						InitialBackoff: 100 * time.Millisecond,
@@ -247,9 +243,7 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					Deduplication: config.DeduplicationSettings{
 						TTL: 300 * time.Second,
 					},
-					CRD: config.CRDSettings{
-						FallbackNamespace: testNamespace,
-					},
+					CRD: config.CRDSettings{},
 					Retry: config.RetrySettings{
 						MaxAttempts:    3,
 						InitialBackoff: 100 * time.Millisecond,

@@ -49,7 +49,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
+		// Pre-create managed namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-resilience")
 
@@ -62,7 +62,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	if testCancel != nil {
 		testCancel()  // ← Only cancels test-local context
 	}
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
+		// Clean up test namespace
 		if testNamespace != "" {
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
@@ -229,7 +229,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
 			// Direct Get() is 4x faster (30s vs 120s) and bypasses cache/index issues
-			// BR-GATEWAY-NAMESPACE-FALLBACK: Use namespace from Gateway response (may be kubernaut-system if fallback occurred)
+			// Use namespace from Gateway response
 			var createdRR remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				return k8sClient.Get(testCtx, client.ObjectKey{
@@ -267,7 +267,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Then: Request should succeed with CRD creation (graceful degradation)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
+			// Parse response to get actual namespace
 			var gwResp GatewayResponse
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			_ = json.Unmarshal(bodyBytes, &gwResp)
@@ -317,7 +317,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Then: Processing succeeds with CRD creation
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
+			// Parse response to get actual namespace
 			var gwResp GatewayResponse
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			_ = json.Unmarshal(bodyBytes, &gwResp)

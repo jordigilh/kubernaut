@@ -48,7 +48,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+		// Pre-create managed namespace (Pattern: RO E2E)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-test")
 
 		// Get DataStorage URL from environment
@@ -59,7 +59,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		if testCancel != nil {
 			testCancel()  // ← Only cancels test-local context
 		}
-		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+		// Clean up test namespace (Pattern: RO E2E)
 		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 	})
 

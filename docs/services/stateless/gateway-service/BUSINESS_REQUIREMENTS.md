@@ -197,11 +197,12 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: `test/unit/gateway/crd_metadata_test.go`, `test/e2e/gateway/05_crd_name_length_test.go`
 
 ### **BR-GATEWAY-020: CRD Namespace Handling**
-**Description**: Gateway must create CRDs in target namespace or fallback namespace
+**Description**: Gateway must create CRDs in the target namespace. Signals to unmanaged namespaces are rejected by scope validation (BR-SCOPE-002) before CRD creation.
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit + Integration
 **Implementation**: `pkg/gateway/processing/crd_creator.go`
 **Tests**: `test/unit/gateway/crd_metadata_test.go`, `test/integration/gateway/crd_creation_test.go`
+**Note**: Namespace fallback to `kubernaut-system` was **DEPRECATED** (February 2026). See DD-GATEWAY-007 deprecation notice. ADR-053 scope validation now rejects signals to unmanaged/non-existent namespaces upstream.
 
 ### **BR-GATEWAY-021: CRD Creation**
 **Description**: Gateway must create RemediationRequest CRDs in Kubernetes

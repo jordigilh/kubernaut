@@ -11,7 +11,7 @@ package gateway
 // - Safe default values for production deployments (BR-GATEWAY-019)
 // - Configuration validation catches invalid values (BR-GATEWAY-082)
 // - Structured error messages for config errors (GAP-8)
-// - Auto-detection of fallback namespace from pod environment
+// - Configuration loading with safe defaults
 //
 // **NOT TESTED** (hot reload not applicable):
 // - Config reload triggers (CFG-001) - Gateway is stateless
@@ -89,27 +89,19 @@ infrastructure:
 			Expect(cfg.Processing.Retry.MaxBackoff).To(Equal(5*time.Second),
 				"BR-GATEWAY-111: Default max backoff must be 5s")
 
-			By("5. Verify fallback namespace auto-detection")
-			Expect(cfg.Processing.CRD.FallbackNamespace).ToNot(BeEmpty(),
-				"BR-GATEWAY-019: Fallback namespace must be auto-detected")
-			// In test environment, will default to "kubernaut-system"
-			Expect(cfg.Processing.CRD.FallbackNamespace).To(Equal("kubernaut-system"),
-				"BR-GATEWAY-019: Fallback namespace defaults to kubernaut-system in non-K8s env")
-
-			By("6. Verify DataStorage URL preserved")
+			By("5. Verify DataStorage URL preserved")
 			Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://data-storage:8080"),
 				"BR-GATEWAY-019: DataStorage URL must be preserved")
 
-			By("7. Validate config passes validation")
+			By("6. Validate config passes validation")
 			err = cfg.Validate()
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-019: Default config must pass validation")
 
-			GinkgoWriter.Printf("✅ Safe defaults validated: MaxAttempts=%d, InitialBackoff=%v, MaxBackoff=%v, FallbackNS=%s\n",
+			GinkgoWriter.Printf("✅ Safe defaults validated: MaxAttempts=%d, InitialBackoff=%v, MaxBackoff=%v\n",
 				cfg.Processing.Retry.MaxAttempts,
 				cfg.Processing.Retry.InitialBackoff,
-				cfg.Processing.Retry.MaxBackoff,
-				cfg.Processing.CRD.FallbackNamespace)
+				cfg.Processing.Retry.MaxBackoff)
 		})
 	})
 

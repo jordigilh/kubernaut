@@ -62,14 +62,8 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "gw-severity")
 		logger = GinkgoLogr
 
-		// Create kubernaut-system fallback namespace (if not already exists)
-		fallbackNs := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   "kubernaut-system",
-				Labels: map[string]string{"kubernaut.ai/managed": "true"},
-			},
-		}
-		_ = k8sClient.Create(ctx, fallbackNs) // Ignore error if already exists
+		// Note: Namespace fallback removed (DD-GATEWAY-007 DEPRECATED, February 2026)
+		// kubernaut-system namespace no longer needed for CRD fallback
 	})
 
 	AfterEach(func() {
