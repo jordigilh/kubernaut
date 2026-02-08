@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
-Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven investigation with automated remediation. It analyzes Kubernetes incidents, orchestrates multi-step remediation workflows, and executes validated actions—targeting mean time to resolution reduction from 60 minutes to under 5 minutes while maintaining operational safety.
+Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven investigation with automated remediation. It analyzes Kubernetes incidents and predictive signals, orchestrates multi-step remediation workflows, and executes validated actions—targeting mean time to resolution reduction from 60 minutes to under 5 minutes while maintaining operational safety.
 
 ---
 
@@ -16,14 +16,14 @@ Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven in
 
 Kubernaut automates the entire incident response lifecycle for Kubernetes:
 
-1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager and Kubernetes Events
+1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager (including predictive `predict_linear()` alerts) and Kubernetes Events
 2. **AI Analysis**: Uses HolmesGPT for root cause analysis and remediation recommendations
 3. **Workflow Orchestration**: Executes remediation workflows via Tekton Pipelines or Kubernetes Jobs
 4. **Continuous Learning**: Tracks effectiveness of workflow executions and successful remediations over time
 
 ### Key Capabilities
 
-- **Multi-Source Signal Processing**: Prometheus alerts, Kubernetes events with deduplication.
+- **Multi-Source Signal Processing**: Prometheus alerts (reactive and predictive), Kubernetes events with deduplication, signal mode classification, and signal type normalization (ADR-054).
 - **AI-Powered Root Cause Analysis**: HolmesGPT integration for intelligent investigation
 - **Remediation Workflows**: Flexible execution via Tekton Pipelines (multi-step) or Kubernetes Jobs (single-step), with OCI-containerized workflow definitions
 - **Resource Scope Management**: Label-based opt-in model (`kubernaut.ai/managed=true`) controls which namespaces and resources Kubernaut manages, with metadata-only informer caching for both Gateway and Remediation Orchestrator (ADR-053)
@@ -45,7 +45,7 @@ Kubernaut follows a microservices architecture with 10 production-ready services
 
 1. **Gateway Service** receives signals (Prometheus alerts, K8s events), validates resource scope via metadata-only informer cache (`kubernaut.ai/managed` label, ADR-053), and creates `RemediationRequest` CRDs
 2. **Remediation Orchestrator** (CRD controller) validates resource scope as Check #1 in the routing pipeline, then coordinates remediation lifecycle across 4 other CRD controllers:
-   - **Signal Processing Service**: Enriches signals with Kubernetes context
+   - **Signal Processing Service**: Enriches signals with Kubernetes context, classifies signal mode (reactive/predictive), and normalizes signal types (ADR-054)
    - **AI Analysis Service**: Performs HolmesGPT investigation and generates recommendations
    - **Workflow Execution**: Orchestrates Tekton Pipelines or Kubernetes Jobs for remediation workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)
@@ -69,7 +69,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 | Service | Status | Purpose | All Tiers Coverage |
 |---------|--------|---------|-------------------|
-| **Signal Processing** | ✅ v1.0 | Signal enrichment with K8s context | 84.9% |
+| **Signal Processing** | ✅ v1.0 | Signal enrichment, mode classification, type normalization | 84.9% |
 | **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 82.4% |
 | **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 81.8% |
 | **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 80.1% |
@@ -88,6 +88,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **CI/CD Coverage Pipeline** (February 2026): Per-tier analysis with line-by-line merging, automated PR comments
 - ✅ **SAR Authentication**: Middleware-based SubjectAccessReview for all stateless services (DD-AUTH-014)
 - ✅ **Resource Scope Management** (February 2026): `kubernaut.ai/managed` label-based opt-in for both Gateway and Remediation Orchestrator (BR-SCOPE-001, BR-SCOPE-010, ADR-053). Namespace fallback deprecated (DD-GATEWAY-007). ScopeChecker interface with mandatory DI, metadata-only informer caching, exponential backoff for unmanaged resources.
+- ✅ **Predictive Signal Mode** (February 2026): Signal mode classification and type normalization in SP, predictive prompt strategy in HAPI enabling preemptive remediation for `predict_linear()` alerts (BR-SP-106, BR-AI-084, ADR-054)
 - 🚧 **Remaining** (1 PR):
   1. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
 
