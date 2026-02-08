@@ -25,8 +25,13 @@ import (
 
 // Workflow Catalog E2E Tests
 // Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md
-// Scenarios: E2E-HAPI-030 through E2E-HAPI-044 (15 total)
+// Scenarios: E2E-HAPI-030 through E2E-HAPI-043 (12 total)
 // Business Requirements: BR-STORAGE-013, BR-HAPI-250, DD-WORKFLOW-004, DD-LLM-001, BR-AI-075
+//
+// Removed for v1.0 (not testable at E2E tier):
+//   - E2E-HAPI-035: Requires chaos/fault-injection (no chaos testing in v1.0)
+//   - E2E-HAPI-039: LLM-driven search refinement (non-deterministic, covered in integration tier)
+//   - E2E-HAPI-044: Tests DS API contract directly (covered in DS E2E suite)
 //
 // Purpose: Validate workflow catalog search functionality and DataStorage integration
 //
@@ -262,21 +267,6 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: LLM doesn't get overwhelmed with too many options
 		})
 
-		It("E2E-HAPI-035: Error handling - Service unavailable", func() {
-			// ========================================
-			// TEST PLAN MAPPING
-			// ========================================
-			// Scenario ID: E2E-HAPI-035
-			// Business Outcome: Tool handles DataStorage unavailability gracefully
-			// Python Source: test_workflow_catalog_data_storage_integration.py:428
-			// BR: BR-STORAGE-013
-
-			// NOTE: This test requires DataStorage to be unavailable, which is not the case in this E2E setup.
-			// In production, HAPI would return an error or fallback response.
-			// Skipping this test in E2E (would require infrastructure manipulation)
-
-			Skip("Skipping DataStorage unavailability test (requires infrastructure manipulation)")
-		})
 	})
 
 	Context("Critical user journeys", func() {
@@ -413,21 +403,6 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: AI informs operator "No workflows found for this incident"
 		})
 
-		It("E2E-HAPI-039: AI can refine search with keywords", func() {
-			// ========================================
-			// TEST PLAN MAPPING
-			// ========================================
-			// Scenario ID: E2E-HAPI-039
-			// Business Outcome: AI can perform broad search then refine with specific terms
-			// Python Source: test_workflow_catalog_e2e.py:244
-			// BR: BR-HAPI-250
-
-			// NOTE: This test would require multiple HAPI calls with different search terms
-			// HAPI's workflow catalog search is LLM-driven and doesn't expose direct search refinement
-			// Skipping this test (functionality validated at integration level)
-
-			Skip("Skipping search refinement test (LLM-driven search pattern)")
-		})
 	})
 
 	Context("BR-AI-075: Container image integration", func() {
@@ -600,20 +575,5 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			// BUSINESS IMPACT: Container runtime can pull images without format errors
 		})
 
-		It("E2E-HAPI-044: Direct API search returns container image", func() {
-			// ========================================
-			// TEST PLAN MAPPING
-			// ========================================
-			// Scenario ID: E2E-HAPI-044
-			// Business Outcome: DataStorage API contract includes container_image (validates tool transformation)
-			// Python Source: test_workflow_catalog_container_image_integration.py:338
-			// BR: BR-AI-075
-
-			// NOTE: This test requires calling DataStorage API directly, which is outside the scope of HAPI E2E tests
-			// DataStorage E2E tests already validate this contract
-			// Skipping this test (functionality validated at DataStorage E2E level)
-
-			Skip("Skipping direct DataStorage API test (validated at DataStorage E2E level)")
-		})
 	})
 })

@@ -19,7 +19,7 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List
-from pydantic import BaseModel, StrictInt, StrictStr
+from pydantic import BaseModel, StrictInt
 from pydantic import Field
 try:
     from typing import Self
@@ -28,7 +28,7 @@ except ImportError:
 
 class SearchExecutionMetadata(BaseModel):
     """
-    Search execution details (BR-AUDIT-028)
+    Search execution details (BR-AUDIT-028). V1.0 label-only (DD-WORKFLOW-015).
     """ # noqa: E501
     duration_ms: StrictInt = Field(description="Search execution time in milliseconds")
     __properties: ClassVar[List[str]] = ["duration_ms"]

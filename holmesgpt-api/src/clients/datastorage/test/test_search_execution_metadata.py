@@ -36,15 +36,11 @@ class TestSearchExecutionMetadata(unittest.TestCase):
         model = SearchExecutionMetadata()
         if include_optional:
             return SearchExecutionMetadata(
-                duration_ms = 150,
-                embedding_dimensions = 768,
-                embedding_model = 'text-embedding-3-small'
+                duration_ms = 150
             )
         else:
             return SearchExecutionMetadata(
                 duration_ms = 150,
-                embedding_dimensions = 768,
-                embedding_model = 'text-embedding-3-small',
         )
         """
 
