@@ -88,7 +88,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			Namespace: ns,
 		}, fetched)).To(Succeed())
 
-		if fetched.Status.OverallPhase == string(remediationv1.PhaseBlocked) {
+		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
 			Expect(fetched.Status.BlockReason).ToNot(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 				"RR in managed namespace should NOT be blocked for UnmanagedResource")
 		}

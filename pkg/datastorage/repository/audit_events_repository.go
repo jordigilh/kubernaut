@@ -309,6 +309,13 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		event.EventTimestamp = time.Now().UTC()
 	}
 
+	// Force UTC normalization before hash calculation.
+	// Export/Verify convert to UTC when recomputing hashes (audit_export.go:195,
+	// audit_verify_chain_handler.go:183). Without this, a caller-provided timestamp
+	// with a timezone offset (e.g., "-05:00") would produce a different JSON
+	// representation than the UTC version ("Z"), breaking hash verification.
+	event.EventTimestamp = event.EventTimestamp.UTC()
+
 	// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
 	// PostgreSQL stores timestamps with microsecond precision (6 decimal places).
 	// Go's time.Time has nanosecond precision (9 decimal places).
@@ -616,6 +623,9 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			if event.EventTimestamp.IsZero() {
 				event.EventTimestamp = time.Now().UTC()
 			}
+
+			// Force UTC normalization before hash calculation (see Create() for rationale)
+			event.EventTimestamp = event.EventTimestamp.UTC()
 
 			// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
 			// (see Create() function for detailed explanation)
