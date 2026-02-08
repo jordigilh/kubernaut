@@ -128,7 +128,19 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ---
 
-### 4. No CRD Label Changes
+### 4. Single HAPI Endpoint (No Separate Predictive Endpoint)
+
+**Chosen**: Reuse the existing HAPI investigation endpoint (`IncidentRequest`), adding `signal_mode` as a field. No new REST endpoint for predictive investigations.
+
+**Rationale**:
+- **Identical pipeline**: The investigation infrastructure is the same — same agent, same tools, same workflow catalog search, same response structure (analysis + workflow recommendation or "no action"). The only difference is the prompt preamble.
+- **One-field change**: Adding `signal_mode` to the existing `IncidentRequest` schema is minimal — a single `if` switches the prompt. A new endpoint would duplicate the entire handler chain (validation, auth, audit, error handling) for what amounts to a prompt switch.
+- **Single code path**: One endpoint means one code path to maintain, test, and version. Two endpoints for the same investigation with different prompts is over-engineering.
+- **Future extensibility**: If predictive investigations eventually need fundamentally different inputs (e.g., time-series data, prediction horizon, confidence intervals from Prometheus), a new endpoint can be introduced at that point. For v1.0, it's a prompt context flag.
+
+---
+
+### 5. No CRD Label Changes
 
 **Chosen**: `signalMode` is a CRD **status** field (SP) and **spec** field (AA), not a label.
 
@@ -173,6 +185,17 @@ HAPI checks if the signal type starts with "Predicted" and adjusts its prompt, w
 - Doesn't generalize to non-"Predicted" naming patterns
 - Violates separation of concerns (classification is SP's job, not the LLM's)
 
+### Alternative D: Separate HAPI REST Endpoint for Predictive Investigations
+
+Expose a new `/api/v1/predictive-investigation` endpoint alongside the existing investigation endpoint.
+
+**Rejected because**:
+- The investigation pipeline is identical: same agent, same tools, same workflow catalog search, same response structure. The only difference is the prompt preamble — a single `if` on `signal_mode`
+- A new endpoint duplicates the entire handler chain (validation, auth, audit, error handling) for what amounts to a prompt switch
+- Two endpoints means two code paths to maintain, test, and version
+- AA would need branching logic to call different endpoints based on signal mode, adding wiring complexity
+- If predictive investigations need fundamentally different inputs in the future (time-series data, prediction horizon, confidence intervals), a new endpoint can be introduced then. For v1.0, `signal_mode` in the existing `IncidentRequest` is sufficient
+
 ---
 
 ## Consequences
@@ -214,15 +237,15 @@ HAPI checks if the signal type starts with "Predicted" and adjusts its prompt, w
 
 | Component | File | Change |
 |---|---|---|
-| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode` to status |
-| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification during enrichment |
-| SP classifier | `pkg/signalprocessing/classifier/` (new) | Signal mode pattern matching logic |
-| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive pattern config |
+| SP CRD | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `OriginalSignalType` to status |
+| SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization during enrichment |
+| SP classifier | `pkg/signalprocessing/classifier/` (new) | Signal mode classification + normalization mapping logic |
+| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive signal type → base type mapping config |
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
 | HAPI OpenAPI | `holmesgpt-api/openapi.yaml` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy + workflow search guidance |
+| HAPI prompt | `holmesgpt-api/src/` | Conditional prompt strategy (reactive RCA vs. predictive prevention) |
 | Deepcopy | `zz_generated.deepcopy.go` | `make generate` |
 
 ---
