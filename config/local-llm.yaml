@@ -117,23 +117,6 @@ database:
   maxIdleConns: 5                  # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
   connMaxLifetime: "5m"            # CORRECTED: camelCase + proper duration format (was conn_max_lifetime_minutes: 5)
 
-# Vector Database - Using PostgreSQL with pgvector (✅ FULLY IMPLEMENTED)
-vectordb:
-  enabled: true
-  backend: "postgresql"            # Use PostgreSQL with pgvector extension
-  postgresql:
-    use_main_db: true              # Use same DB as action history
-    host: "localhost"              # Only needed if use_main_db: false
-    port: "5432"
-    database: "action_history"     # Same database as main application
-    username: "slm_user"
-    password: "slm_password"
-    index_lists: 100               # IVFFlat index parameter for up to 100K vectors
-  embedding:
-    provider: "local"              # Use local embedding generation
-    model: "all-MiniLM-L6-v2"     # 384-dimensional embeddings (matches migration)
-    dimensions: 384
-
 monitoring:
   use_production_clients: true     # Enable real monitoring integration
   prometheus_endpoint: "http://localhost:9090"

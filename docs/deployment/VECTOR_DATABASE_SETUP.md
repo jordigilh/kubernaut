@@ -1,3 +1,8 @@
+> **SUPERSEDED**: This document is superseded by DD-WORKFLOW-015 (V1.0 label-only architecture).
+> pgvector and semantic search are deferred to V1.1+. Retained for historical context.
+
+---
+
 # Vector Database Setup Guide
 
 This guide explains how to set up and configure the vector database features for AI-driven pattern recognition in kubernaut.
