@@ -122,12 +122,7 @@ var AllMigrations = []Migration{
 		Description: "Effectiveness assessment due column",
 		Tables:      []string{},
 	},
-	{
-		Name:        "vector_schema",
-		File:        "005_vector_schema.sql",
-		Description: "Vector schema for embeddings",
-		Tables:      []string{},
-	},
+	// NOTE: Migration 005 (vector_schema) removed - pgvector deferred to V1.1+ (DD-WORKFLOW-015)
 	// NOTE: Migration 006 (effectiveness_assessment) moved to migrations/v1.1/ (v1.1 feature)
 	// Removed 2026-01-07 to prevent v1.1 feature leakage into v1.0
 	// Also had CREATE INDEX CONCURRENTLY which breaks transaction-based E2E migrations
@@ -143,12 +138,7 @@ var AllMigrations = []Migration{
 		Description: "Context API compatibility",
 		Tables:      []string{},
 	},
-	{
-		Name:        "update_vector_dimensions",
-		File:        "009_update_vector_dimensions.sql",
-		Description: "Update vector dimensions",
-		Tables:      []string{},
-	},
+	// NOTE: Migration 009 (update_vector_dimensions) removed - pgvector deferred to V1.1+ (DD-WORKFLOW-015)
 	{
 		Name:        "audit_write_api_phase1",
 		File:        "010_audit_write_api_phase1.sql",
@@ -186,15 +176,10 @@ var AllMigrations = []Migration{
 	{
 		Name:        "workflow_catalog",
 		File:        "015_create_workflow_catalog_table.sql",
-		Description: "Workflow catalog for semantic search (AIAnalysis)",
+		Description: "Workflow catalog for label-based search (AIAnalysis, V1.0 DD-WORKFLOW-015)",
 		Tables:      []string{"remediation_workflow_catalog"},
 	},
-	{
-		Name:        "embedding_dimensions",
-		File:        "016_update_embedding_dimensions.sql",
-		Description: "Update embedding dimensions",
-		Tables:      []string{},
-	},
+	// NOTE: Migration 016 (embedding_dimensions) removed - pgvector deferred to V1.1+ (DD-WORKFLOW-015)
 	{
 		Name:        "workflow_schema_fields",
 		File:        "017_add_workflow_schema_fields.sql",
