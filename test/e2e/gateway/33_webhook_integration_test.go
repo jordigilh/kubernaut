@@ -49,27 +49,27 @@ import (
 
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests", func() {
 	var (
-		testCtx       context.Context      // ← Test-local context
-		testCancel    context.CancelFunc
+		testCtx    context.Context // ← Test-local context
+		testCancel context.CancelFunc
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
 	)
 
 	BeforeEach(func() {
-		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
-		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
-		_ = logger              // Suppress unused variable warning
+		testCtx, testCancel = context.WithCancel(context.Background()) // ← Uses local variable
+		logger = logr.Discard()                                        // DD-005: Use logr.Discard() for silent test logging
+		_ = logger                                                     // Suppress unused variable warning
 
 		// Setup test infrastructure using helpers
 
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for E2E tests")
 
-	// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
+		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 
-	// Pre-create managed namespace (Pattern: RO E2E)
-	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-prod")
+		// Pre-create managed namespace (Pattern: RO E2E)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-prod")
 
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
@@ -80,15 +80,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 		)
 	})
 
-AfterEach(func() {
-	if testCancel != nil {
-		testCancel()  // ← Only cancels test-local context
-	}
-	// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
+	AfterEach(func() {
+		if testCancel != nil {
+			testCancel() // ← Only cancels test-local context
+		}
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
-	// Clean up test namespace (Pattern: RO E2E)
-	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
-})
+		// Clean up test namespace (Pattern: RO E2E)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-GATEWAY-001: Prometheus Alert → CRD Creation
@@ -374,6 +374,7 @@ AfterEach(func() {
 			// BUSINESS SCENARIO: Pod OOMKilled event → AI analyzes memory issue
 			// Expected: CRD created with event details
 
+			nowTS := time.Now().Format(time.RFC3339)
 			payload := []byte(fmt.Sprintf(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
@@ -385,30 +386,31 @@ AfterEach(func() {
 				},
 				"metadata": {
 					"namespace": "%s"
-				}
-			}`, testNamespace, testNamespace))
+				},
+				"firstTimestamp": "%s",
+				"lastTimestamp": "%s"
+			}`, testNamespace, testNamespace, nowTS, nowTS))
 
 			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", gatewayURL)
-			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-
-			Expect(err).ToNot(HaveOccurred())
-
-			req.Header.Set("Content-Type", "application/json")
-
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			// BUSINESS OUTCOME 1: HTTP 201 Created
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+			// BR-GATEWAY-074: K8s Event adapter uses body-level freshness validation
+			// (EventFreshnessValidator) instead of X-Timestamp header.
+			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
+			var resp *http.Response
+			Eventually(func() int {
+				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+				Expect(err).ToNot(HaveOccurred())
+				req.Header.Set("Content-Type", "application/json")
+				resp, err = http.DefaultClient.Do(req)
+				Expect(err).ToNot(HaveOccurred())
+				return resp.StatusCode
+			}, "30s", "1s").Should(Equal(http.StatusCreated),
 				"Warning event must create CRD for AI analysis")
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
-			Expect(err).NotTo(HaveOccurred())
+			listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+			Expect(listErr).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 
 			crd := crdList.Items[0]
@@ -505,6 +507,7 @@ AfterEach(func() {
 			// RO needs resource info for workflow routing decisions
 			// NOTE: Gateway only processes Warning/Error events (Normal events are filtered)
 
+			nowTS2 := time.Now().Format(time.RFC3339)
 			payload := []byte(fmt.Sprintf(`{
 				"type": "Warning",
 				"reason": "FailedMount",
@@ -515,37 +518,35 @@ AfterEach(func() {
 					"namespace": "%s",
 					"apiVersion": "v1"
 				},
-				"firstTimestamp": "2025-10-22T12:00:00Z",
-				"lastTimestamp": "2025-10-22T12:00:00Z",
+				"firstTimestamp": "%s",
+				"lastTimestamp": "%s",
 				"count": 1,
 				"source": {
 					"component": "kubelet",
 					"host": "worker-node-1"
 				}
-			}`, testNamespace))
+			}`, testNamespace, nowTS2, nowTS2))
 
 			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", gatewayURL)
-			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-
-			Expect(err).ToNot(HaveOccurred())
-
-			req.Header.Set("Content-Type", "application/json")
-
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			// Warning events should create CRD
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+			// BR-GATEWAY-074: K8s Event adapter uses body-level freshness validation
+			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
+			var resp *http.Response
+			Eventually(func() int {
+				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+				Expect(err).ToNot(HaveOccurred())
+				req.Header.Set("Content-Type", "application/json")
+				resp, err = http.DefaultClient.Do(req)
+				Expect(err).ToNot(HaveOccurred())
+				return resp.StatusCode
+			}, "30s", "1s").Should(Equal(http.StatusCreated),
 				"Warning event should create CRD")
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify CRD was created with TargetResource
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
-				Expect(err).NotTo(HaveOccurred())
+				listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+				Expect(listErr).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")
 

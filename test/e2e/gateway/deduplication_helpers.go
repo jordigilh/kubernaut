@@ -185,6 +185,26 @@ func sendWebhook(baseURL, path string, payload []byte) *WebhookResponse {
 	}
 }
 
+// sendWebhookExpectCreated sends a webhook and retries until HTTP 201 is received.
+// This handles the race condition where the Gateway's scope checker informer cache
+// hasn't yet synced the newly-created test namespace (BR-SCOPE-002).
+//
+// When the informer cache hasn't synced:
+//   - Scope checker returns "unmanaged" (namespace not found in cache)
+//   - Gateway responds with HTTP 200 (StatusRejected - scope rejection)
+//   - No CRD is created, so retrying is safe (no duplicate CRDs)
+//
+// The retry loop polls until the informer catches up and the signal is accepted (201).
+func sendWebhookExpectCreated(baseURL, path string, payload []byte) *WebhookResponse {
+	var resp *WebhookResponse
+	Eventually(func() int {
+		resp = sendWebhook(baseURL, path, payload)
+		return resp.StatusCode
+	}, "30s", "1s").Should(Equal(http.StatusCreated),
+		"First alert should create CRD (retries handle scope informer cache propagation delay)")
+	return resp
+}
+
 // sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
 // with mandatory X-Timestamp header for replay attack prevention
 func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse { //nolint:unused

@@ -590,9 +590,11 @@ func (s *Server) setupRoutes() chi.Router {
 	r.Use(chimiddleware.RequestID) // Chi's built-in request ID
 	r.Use(chimiddleware.RealIP)    // Extract real IP from X-Forwarded-For
 
-	// BR-GATEWAY-074, BR-GATEWAY-075: Security middleware
-	// Timestamp validation prevents replay attacks by rejecting old/future timestamps
-	r.Use(middleware.TimestampValidator(5 * time.Minute))
+	// BR-GATEWAY-074, BR-GATEWAY-075: Replay prevention middleware
+	// Moved from global to per-adapter in RegisterAdapter() via ReplayValidator().
+	// Each adapter declares its own replay prevention strategy:
+	// - Prometheus: header-based (X-Timestamp via TimestampValidator)
+	// - K8s Events: body-based (event timestamps via EventFreshnessValidator)
 
 	// Security headers middleware (OWASP best practices)
 	// Prevents: MIME sniffing, clickjacking, XSS attacks, enforces HTTPS
@@ -728,10 +730,16 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Rejects non-JSON payloads early, before processing
 	wrappedHandler := middleware.ValidateContentType(handler)
 
+	// BR-GATEWAY-074, BR-GATEWAY-075: Apply adapter-specific replay prevention middleware
+	// Each adapter declares its own strategy via ReplayValidator():
+	// - Header-based (e.g., Prometheus): middleware.TimestampValidator (X-Timestamp header)
+	// - Body-based (e.g., K8s Events): middleware.EventFreshnessValidator (event timestamp)
+	finalHandler := adapter.ReplayValidator(5 * time.Minute)(wrappedHandler)
+
 	// Register route using chi with full path
 	// Chi automatically enforces POST method (returns 405 for other methods)
 	// Note: chi.Router.Post() accepts http.HandlerFunc, so we use HandlerFunc wrapper
-	s.router.Post(adapter.GetRoute(), wrappedHandler.ServeHTTP)
+	s.router.Post(adapter.GetRoute(), finalHandler.ServeHTTP)
 
 	s.logger.Info("Registered adapter route",
 		"adapter", adapter.Name(),

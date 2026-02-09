@@ -18,6 +18,8 @@ package adapters
 
 import (
 	"context"
+	"net/http"
+	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -146,6 +148,23 @@ type RoutableAdapter interface {
 	// Returns:
 	// - string: HTTP route path (must start with /api/v1/signals/)
 	GetRoute() string
+
+	// ReplayValidator returns the middleware that validates replay prevention
+	// for this adapter's route (BR-GATEWAY-074, BR-GATEWAY-075).
+	//
+	// Each adapter declares its own replay prevention strategy:
+	// - Header-based (Prometheus): Validates X-Timestamp header via TimestampValidator.
+	//   Webhook sources that control their HTTP headers include a fresh Unix epoch timestamp.
+	// - Body-based (K8s Events): Validates event timestamps in the request body via
+	//   EventFreshnessValidator. Used when the source (e.g., kubernetes-event-exporter)
+	//   cannot set dynamic HTTP headers.
+	//
+	// Parameters:
+	// - tolerance: Maximum age of a timestamp before it is considered stale
+	//
+	// Returns:
+	// - func(http.Handler) http.Handler: Middleware that wraps the next handler
+	ReplayValidator(tolerance time.Duration) func(http.Handler) http.Handler
 }
 
 // AdapterMetadata provides adapter information for observability

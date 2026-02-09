@@ -160,32 +160,38 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Use the package-level gatewayURL variable (set in gateway_e2e_suite_test.go)
 		// gatewayURL = "http://127.0.0.1:8080" (extraPortMapping hostPort - Use 127.0.0.1 for CI/CD IPv4 compatibility)
-		resp, err := func() (*http.Response, error) {
-			req23, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
-			if err != nil {
-				return nil, err
-			}
-			req23.Header.Set("Content-Type", "application/json")
-			req23.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			return httpClient.Do(req23)
-		}()
-		Expect(err).ToNot(HaveOccurred())
+		// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
+		// New test namespaces may not be visible in the Gateway's informer cache immediately,
+		// resulting in HTTP 200 (scope rejection) until the cache syncs.
+		var resp *http.Response
+		Eventually(func() int {
+			var err error
+			resp, err = func() (*http.Response, error) {
+				req23, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
+				if err != nil {
+					return nil, err
+				}
+				req23.Header.Set("Content-Type", "application/json")
+				req23.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req23)
+			}()
+			Expect(err).ToNot(HaveOccurred())
+			return resp.StatusCode
+		}, "30s", "1s").Should(Equal(http.StatusCreated),
+			"Signal should be processed successfully (retries handle scope cache propagation delay)")
 		defer func() { _ = resp.Body.Close() }()
 
 		testLogger.Info("Gateway response received",
 			"status", resp.StatusCode,
 			"expected", http.StatusCreated)
 
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-			"Signal should be processed successfully")
-
 		var gatewayResp struct {
 			Status                 string `json:"status"`
 			RemediationRequestName string `json:"remediationRequestName"`
 			Fingerprint            string `json:"fingerprint"`
 		}
-		err = json.NewDecoder(resp.Body).Decode(&gatewayResp)
-		Expect(err).ToNot(HaveOccurred())
+		decodeErr := json.NewDecoder(resp.Body).Decode(&gatewayResp)
+		Expect(decodeErr).ToNot(HaveOccurred())
 		Expect(gatewayResp.RemediationRequestName).ToNot(BeEmpty(),
 			"Gateway should return RR name")
 
