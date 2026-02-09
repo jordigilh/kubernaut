@@ -547,6 +547,13 @@ type SelectedWorkflow struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
+	// ExecutionEngine specifies the backend engine for workflow execution.
+	// Populated from HolmesGPT-API workflow recommendation.
+	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+	// When empty, defaults to "tekton" for backwards compatibility.
+	// +kubebuilder:validation:Enum=tekton;job
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

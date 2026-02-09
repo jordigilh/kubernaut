@@ -144,6 +144,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 			}
 			// Map parameters if present (map[string]string)
 			if paramsRaw, ok := swMap["parameters"]; ok {
@@ -262,6 +263,7 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 			}
 			// Map parameters if present (map[string]string)
 			if paramsRaw, ok := swMap["parameters"]; ok {
@@ -418,10 +420,11 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
 		if swMap != nil {
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     GetStringFromMap(swMap, "workflow_id"),
-				ContainerImage: GetStringFromMap(swMap, "container_image"),
-				Confidence:     GetFloat64FromMap(swMap, "confidence"),
-				Rationale:      GetStringFromMap(swMap, "rationale"),
+				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+				ContainerImage:  GetStringFromMap(swMap, "container_image"),
+				Confidence:      GetFloat64FromMap(swMap, "confidence"),
+				Rationale:       GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 			}
 		}
 	}
@@ -584,6 +587,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 			}
 			// Map parameters if present
 			if paramsRaw, ok := swMap["parameters"]; ok {
@@ -792,6 +796,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.C
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
+				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 			}
 			// Map parameters if present
 			if paramsRaw, ok := swMap["parameters"]; ok {
