@@ -1327,6 +1327,7 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
+	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
 	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 
@@ -1518,6 +1519,7 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
+	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
 	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 

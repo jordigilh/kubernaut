@@ -21,8 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
@@ -55,6 +57,13 @@ func (a *PrometheusAdapter) Name() string {
 // GetRoute returns the HTTP route for this adapter
 func (a *PrometheusAdapter) GetRoute() string {
 	return "/api/v1/signals/prometheus"
+}
+
+// ReplayValidator returns header-based replay prevention middleware (BR-GATEWAY-074).
+// Prometheus AlertManager webhook sources include X-Timestamp header with
+// a fresh Unix epoch timestamp on each request.
+func (a *PrometheusAdapter) ReplayValidator(tolerance time.Duration) func(http.Handler) http.Handler {
+	return middleware.TimestampValidator(tolerance)
 }
 
 // GetSourceService returns the monitoring system name (BR-GATEWAY-027)

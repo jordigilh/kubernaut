@@ -33,8 +33,8 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // =============================================================================
@@ -106,8 +106,8 @@ func extractCorrelationID(resp *http.Response) (string, error) {
 
 var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func() {
 	var (
-		testCtx       context.Context      // ← Test-local context
-		testCancel    context.CancelFunc
+		testCtx         context.Context // ← Test-local context
+		testCancel      context.CancelFunc
 		testClient      client.Client
 		dsClient        *ogenclient.Client
 		dataStorageURL  string
@@ -115,9 +115,9 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 	)
 
 	BeforeEach(func() {
-		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
-		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
-		_ = testClient          // TODO (GW Team): Use for K8s operations
+		testCtx, testCancel = context.WithCancel(context.Background()) // ← Uses local variable
+		testClient = k8sClient                                         // Use suite-level client (DD-E2E-K8S-CLIENT-001)
+		_ = testClient                                                 // TODO (GW Team): Use for K8s operations
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
@@ -139,7 +139,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-		
+
 		// Get token for E2E ServiceAccount
 		e2eToken, err := infrastructure.GetServiceAccountToken(
 			ctx,
@@ -186,9 +186,9 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 	})
 
 	AfterEach(func() {
-	if testCancel != nil {
-		testCancel()  // ← Only cancels test-local context
-	}
+		if testCancel != nil {
+			testCancel() // ← Only cancels test-local context
+		}
 		// Clean up test namespace (Pattern: RO E2E)
 		helpers.DeleteTestNamespace(ctx, k8sClient, sharedNamespace)
 	})
@@ -243,23 +243,18 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}`, sharedNamespace)
 
 			// Send alert to Gateway webhook
-			// BR-SCOPE-002: Wrap in Eventually to tolerate informer cache warm-up delays.
-			// The managed namespace label may not be visible to the Gateway's scope cache
-			// immediately after namespace creation (same pattern as Gap #4 test below).
-			var resp *http.Response
-			Eventually(func() int {
-				var postErr error
-				resp, postErr = postToGateway(gatewayURL+"/api/v1/signals/prometheus", alertPayload)
-				Expect(postErr).ToNot(HaveOccurred(), "Failed to send Prometheus alert to Gateway")
-				statusCode := resp.StatusCode
-				if statusCode != http.StatusCreated {
-					bodyBytes, _ := io.ReadAll(resp.Body)
-					GinkgoWriter.Printf("⚠️  Gateway returned %d (retrying for scope cache sync): %s\n", statusCode, string(bodyBytes))
-					_ = resp.Body.Close()
-				}
-				return statusCode
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
-				"Gateway should create RR from Prometheus alert (may retry while scope cache syncs)")
+			resp, err := postToGateway(gatewayURL+"/api/v1/signals/prometheus", alertPayload)
+			Expect(err).ToNot(HaveOccurred(), "Failed to send Prometheus alert to Gateway")
+
+			// Debug: If not 201, read the error response
+			if resp.StatusCode != http.StatusCreated {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				GinkgoWriter.Printf("❌ Gateway returned %d: %s\n", resp.StatusCode, string(bodyBytes))
+				GinkgoWriter.Printf("📋 Alert payload sent:\n%s\n", alertPayload)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should create RR from Prometheus alert")
 
 			// Extract correlation_id from response body
 			correlationID, err := extractCorrelationID(resp)
@@ -903,9 +898,14 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"groupKey": "{}"
 			}`, sharedNamespace)
 
-			respProm, err := postToGateway(gatewayURL+"/api/v1/signals/prometheus", prometheusAlert)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(respProm.StatusCode).To(Equal(http.StatusCreated), "Prometheus alert should create new RR")
+			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay
+			var respProm *http.Response
+			Eventually(func() int {
+				var err error
+				respProm, err = postToGateway(gatewayURL+"/api/v1/signals/prometheus", prometheusAlert)
+				Expect(err).ToNot(HaveOccurred())
+				return respProm.StatusCode
+			}, "30s", "1s").Should(Equal(http.StatusCreated), "Prometheus alert should create new RR")
 			correlationIDProm, err := extractCorrelationID(respProm)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(correlationIDProm).ToNot(BeEmpty())
@@ -938,17 +938,22 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"source": map[string]interface{}{
 					"component": "kubelet",
 				},
-				"firstTimestamp": "2025-01-04T10:00:00Z",
-				"lastTimestamp":  "2025-01-04T10:00:00Z",
+				"firstTimestamp": time.Now().Format(time.RFC3339),
+				"lastTimestamp":  time.Now().Format(time.RFC3339),
 				"count":          1,
 			}
 
 			k8sEventJSON, err := json.Marshal(k8sEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			respK8s, err := postToGateway(gatewayURL+"/api/v1/signals/kubernetes-event", string(k8sEventJSON))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(respK8s.StatusCode).To(Equal(http.StatusCreated), "K8s Event should create new RR")
+			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay
+			var respK8s *http.Response
+			Eventually(func() int {
+				var err error
+				respK8s, err = postToGateway(gatewayURL+"/api/v1/signals/kubernetes-event", string(k8sEventJSON))
+				Expect(err).ToNot(HaveOccurred())
+				return respK8s.StatusCode
+			}, "30s", "1s").Should(Equal(http.StatusCreated), "K8s Event should create new RR")
 			correlationIDK8s, err := extractCorrelationID(respK8s)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(correlationIDK8s).ToNot(BeEmpty())

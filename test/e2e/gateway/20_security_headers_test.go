@@ -105,21 +105,28 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			})
 
 			testLogger.Info("Step 2: Send request to Gateway")
-			resp, err := func() (*http.Response, error) {
-				req29, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
-				if err != nil {
-					return nil, err
-				}
-				req29.Header.Set("Content-Type", "application/json")
-				req29.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-				return httpClient.Do(req29)
-			}()
-			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
+			// New test namespaces may not be visible in the Gateway's informer cache immediately,
+			// resulting in HTTP 200 (scope rejection) until the cache syncs.
+			var resp *http.Response
+			Eventually(func() int {
+				var err error
+				resp, err = func() (*http.Response, error) {
+					req29, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+					if err != nil {
+						return nil, err
+					}
+					req29.Header.Set("Content-Type", "application/json")
+					req29.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					return httpClient.Do(req29)
+				}()
+				Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+				return resp.StatusCode
+			}, "30s", "1s").Should(Equal(http.StatusCreated),
+				"Request should succeed (retries handle scope cache propagation delay)")
 			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 201 Created response")
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-				"Request should succeed")
 
 			testLogger.Info("Step 4: Validate security headers present")
 

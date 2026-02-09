@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
@@ -101,6 +103,14 @@ func (a *KubernetesEventAdapter) Name() string {
 // - Test/integration scenarios
 func (a *KubernetesEventAdapter) GetRoute() string {
 	return "/api/v1/signals/kubernetes-event"
+}
+
+// ReplayValidator returns body-based replay prevention middleware (BR-GATEWAY-075).
+// Kubernetes Event sources (e.g., kubernetes-event-exporter) cannot set dynamic
+// HTTP headers. Instead, event freshness is validated from the event's
+// lastTimestamp/firstTimestamp fields in the request body.
+func (a *KubernetesEventAdapter) ReplayValidator(tolerance time.Duration) func(http.Handler) http.Handler {
+	return middleware.EventFreshnessValidator(tolerance)
 }
 
 // GetSourceService returns the monitoring system name (BR-GATEWAY-027)
