@@ -1,0 +1,377 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fullpipeline
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+)
+
+// BR-E2E-001: Full Remediation Lifecycle E2E Test
+// Validates the complete pipeline from K8s Event to Notification delivery.
+//
+// Pipeline:
+//
+//	OOMKill Event → Gateway → RemediationRequest → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification
+//
+// This test uses the memory-eater pod to generate a real OOMKill event.
+// The kubernetes-event-exporter watches for this event and POSTs to Gateway.
+// From there, the full controller pipeline processes the signal.
+var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
+
+	var (
+		testNamespace string
+		testCtx       context.Context
+		testCancel    context.CancelFunc
+	)
+
+	BeforeAll(func() {
+		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
+
+		By("Step 0: Seeding test workflows in DataStorage")
+		// Seed a workflow that uses the Job execution engine
+		workflows := []infrastructure.TestWorkflow{
+			{
+				Name:            "oom-kill-remediation",
+				Description:     "OOMKill remediation workflow for full pipeline E2E",
+				SignalType:      "OOMKilled",
+				Severity:        "critical",
+				Component:       "pod",
+				Environment:     "test",
+				Priority:        "P0",
+				ContainerImage:  "busybox:latest",
+				ExecutionEngine: "job",
+			},
+		}
+		workflowUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
+			dataStorageClient, workflows, "fullpipeline-e2e", GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
+		Expect(workflowUUIDs).To(HaveKey("oom-kill-remediation"))
+		GinkgoWriter.Printf("  ✅ Workflow seeded: oom-kill-remediation → %s\n", workflowUUIDs["oom-kill-remediation"])
+
+		By("Step 0b: Updating Mock LLM with workflow UUIDs")
+		// Restart Mock LLM with the seeded workflow UUIDs so it returns them in responses
+		err = updateMockLLMScenarios(testCtx, workflowUUIDs)
+		Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM scenarios")
+	})
+
+	AfterAll(func() {
+		if testNamespace != "" {
+			By("Cleaning up test namespace")
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
+			_ = k8sClient.Delete(ctx, ns)
+		}
+		testCancel()
+	})
+
+	It("should process a K8s OOMKill event through the complete remediation pipeline", func() {
+		// ================================================================
+		// Step 1: Create a managed namespace
+		// ================================================================
+		By("Step 1: Creating managed test namespace")
+		testNamespace = fmt.Sprintf("fp-e2e-%d", time.Now().Unix())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespace,
+				Labels: map[string]string{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		GinkgoWriter.Printf("  ✅ Namespace created: %s\n", testNamespace)
+
+		// ================================================================
+		// Step 2: Deploy memory-eater to trigger OOMKill
+		// ================================================================
+		By("Step 2: Deploying memory-eater pod (will trigger OOMKill)")
+		err := infrastructure.DeployMemoryEater(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
+
+		// Wait for OOMKill event to occur
+		By("Step 2b: Waiting for OOMKill event...")
+		Eventually(func() bool {
+			pods := &corev1.PodList{}
+			if err := apiReader.List(ctx, pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{"app": "memory-eater"}); err != nil {
+				return false
+			}
+			for _, pod := range pods.Items {
+				for _, cs := range pod.Status.ContainerStatuses {
+					// Check last terminated state for OOMKilled reason
+					if cs.LastTerminationState.Terminated != nil &&
+						cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+						GinkgoWriter.Printf("  ✅ OOMKill detected: restarts=%d\n", cs.RestartCount)
+						return true
+					}
+					// Also check current terminated state
+					if cs.State.Terminated != nil &&
+						cs.State.Terminated.Reason == "OOMKilled" {
+						GinkgoWriter.Println("  ✅ OOMKill terminated state detected")
+						return true
+					}
+					// Fallback: CrashLoopBackOff after restarts
+					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
+						cs.State.Waiting.Reason == "CrashLoopBackOff" {
+						GinkgoWriter.Println("  ✅ CrashLoopBackOff detected (OOMKill)")
+						return true
+					}
+				}
+			}
+			return false
+		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should OOMKill")
+
+		// ================================================================
+		// Step 3: Verify RemediationRequest created by Gateway
+		// ================================================================
+		By("Step 3: Waiting for RemediationRequest to be created by Gateway")
+		var remediationRequest *remediationv1.RemediationRequest
+		Eventually(func() bool {
+			rrList := &remediationv1.RemediationRequestList{}
+			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			// Find one related to our test namespace's OOMKill via TargetResource.Namespace
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace == testNamespace {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
+
+		// ================================================================
+		// Step 4: Verify SignalProcessing enriched the signal
+		// ================================================================
+		By("Step 4: Waiting for SignalProcessing to complete")
+		Eventually(func() string {
+			spList := &signalprocessingv1.SignalProcessingList{}
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for _, sp := range spList.Items {
+				if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					GinkgoWriter.Printf("  SP %s phase: %s\n", sp.Name, sp.Status.Phase)
+					return string(sp.Status.Phase)
+				}
+			}
+			return ""
+		}, timeout, interval).Should(Equal("Completed"),
+			"SignalProcessing should reach Completed phase")
+
+		// ================================================================
+		// Step 5: Verify AIAnalysis created and completed
+		// ================================================================
+		By("Step 5: Waiting for AIAnalysis to complete")
+		var aaName string
+		Eventually(func() string {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					aaName = aa.Name
+					GinkgoWriter.Printf("  AA %s phase: %s\n", aa.Name, aa.Status.Phase)
+					return aa.Status.Phase
+				}
+			}
+			return ""
+		}, timeout, interval).Should(Equal("Completed"),
+			"AIAnalysis should reach Completed phase")
+
+		// Verify AIAnalysis selected a workflow with job engine
+		By("Step 5b: Verifying AIAnalysis selected workflow with job engine")
+		aa := &aianalysisv1.AIAnalysis{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
+		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
+			"AIAnalysis should select job execution engine")
+
+		// ================================================================
+		// Step 6: Verify WorkflowExecution created with executionEngine: job
+		// ================================================================
+		By("Step 6: Waiting for WorkflowExecution to be created")
+		var weName string
+		Eventually(func() string {
+			weList := &workflowexecutionv1.WorkflowExecutionList{}
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for _, we := range weList.Items {
+				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					weName = we.Name
+					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
+						we.Name, we.Status.Phase, we.Spec.ExecutionEngine)
+					return we.Spec.ExecutionEngine
+				}
+			}
+			return ""
+		}, timeout, interval).Should(Equal("job"),
+			"WorkflowExecution should use job execution engine")
+
+		// ================================================================
+		// Step 7: Verify K8s Job ran and completed
+		// ================================================================
+		By("Step 7: Waiting for K8s Job to complete")
+		Eventually(func() bool {
+			jobList := &batchv1.JobList{}
+			if err := apiReader.List(ctx, jobList,
+				client.InNamespace("kubernaut-workflows")); err != nil {
+				return false
+			}
+			for _, job := range jobList.Items {
+				if job.Status.Succeeded > 0 {
+					GinkgoWriter.Printf("  ✅ Job completed: %s\n", job.Name)
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(), "K8s Job should complete successfully")
+
+		// ================================================================
+		// Step 8: Verify WorkflowExecution reached Completed phase
+		// ================================================================
+		By("Step 8: Waiting for WorkflowExecution to complete")
+		Eventually(func() string {
+			we := &workflowexecutionv1.WorkflowExecution{}
+			if err := apiReader.Get(ctx, client.ObjectKey{
+				Name: weName, Namespace: namespace,
+			}, we); err != nil {
+				return ""
+			}
+			return we.Status.Phase
+		}, timeout, interval).Should(Equal("Completed"),
+			"WorkflowExecution should reach Completed phase")
+
+		// ================================================================
+		// Step 9: Verify NotificationRequest created (BR-ORCH-045: completion)
+		// ================================================================
+		By("Step 9: Waiting for completion NotificationRequest")
+		Eventually(func() bool {
+			nrList := &notificationv1.NotificationRequestList{}
+			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for _, nr := range nrList.Items {
+				if nr.Spec.RemediationRequestRef != nil &&
+					nr.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
+					nr.Spec.Type == notificationv1.NotificationTypeCompletion {
+					GinkgoWriter.Printf("  ✅ Completion NotificationRequest: %s\n", nr.Name)
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(),
+			"Completion NotificationRequest should be created (BR-ORCH-045)")
+
+		// ================================================================
+		// Step 10: Verify RemediationRequest reached Completed phase
+		// ================================================================
+		By("Step 10: Verifying RemediationRequest completed")
+		Eventually(func() string {
+			rr := &remediationv1.RemediationRequest{}
+			if err := apiReader.Get(ctx, client.ObjectKey{
+				Name: remediationRequest.Name, Namespace: namespace,
+			}, rr); err != nil {
+				return ""
+			}
+			return string(rr.Status.OverallPhase)
+		}, timeout, interval).Should(Equal("Completed"),
+			"RemediationRequest should reach Completed phase")
+
+		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE")
+		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification ✅")
+	})
+})
+
+// updateMockLLMScenarios updates the Mock LLM ConfigMap with workflow UUIDs
+// and restarts the Mock LLM pod so it picks up the new configuration.
+func updateMockLLMScenarios(ctx context.Context, workflowUUIDs map[string]string) error {
+	// Build scenarios YAML
+	scenariosYAML := "scenarios:\n"
+	for key, uuid := range workflowUUIDs {
+		scenariosYAML += fmt.Sprintf("  %s: %s\n", key, uuid)
+	}
+
+	// Update the ConfigMap
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := fmt.Sprintf("kubectl --kubeconfig %s apply -f -", kubeconfigPath)
+	applyCmd := execCommand(cmd)
+	applyCmd.Stdin = bytes.NewBufferString(configMap)
+	if output, err := applyCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w (output: %s)", err, output)
+	}
+
+	// Restart Mock LLM pod to pick up new config
+	restartCmd := execCommand(fmt.Sprintf(
+		"kubectl --kubeconfig %s rollout restart deployment/mock-llm -n %s",
+		kubeconfigPath, namespace))
+	if output, err := restartCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart Mock LLM: %w (output: %s)", err, output)
+	}
+
+	// Wait for rollout to complete
+	waitCmd := execCommand(fmt.Sprintf(
+		"kubectl --kubeconfig %s rollout status deployment/mock-llm -n %s --timeout=120s",
+		kubeconfigPath, namespace))
+	if output, err := waitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("Mock LLM rollout not ready: %w (output: %s)", err, output)
+	}
+
+	return nil
+}
+
+// execCommand is a helper to create exec.Command from a string command line.
+func execCommand(cmdLine string) *exec.Cmd {
+	parts := strings.Split(cmdLine, " ")
+	return exec.Command(parts[0], parts[1:]...) //nolint:gosec
+}

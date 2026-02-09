@@ -648,6 +648,20 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 	@podman network rm authwebhook_test-network 2>/dev/null || true
 	@echo "✅ Cleanup complete"
 
+# Full Pipeline E2E: Complete remediation lifecycle test (Issue #39)
+# Deploys ALL services in a single Kind cluster - requires ~6GB RAM
+# CI/CD: Set IMAGE_REGISTRY + IMAGE_TAG to use pre-built images (fast)
+# Local: Builds 3 images at a time (slow, ~20-30 min)
+.PHONY: test-e2e-fullpipeline
+test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E tests (all services, Kind cluster, ~30 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Full Pipeline E2E Tests (Issue #39)"
+	@echo "   All Kubernaut services in a single Kind cluster"
+	@echo "   Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=50m --procs=1 ./test/e2e/fullpipeline/...
+	@echo "✅ Full Pipeline E2E tests completed!"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway

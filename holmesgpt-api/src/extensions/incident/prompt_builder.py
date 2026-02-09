@@ -478,6 +478,7 @@ Based on your RCA, determine the signal_type that best describes the effect:
     "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
+    "execution_engine": "tekton|job",
     "parameters": {{
       "PARAM_NAME": "value-from-investigation"
     }}
@@ -647,7 +648,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
 [{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]

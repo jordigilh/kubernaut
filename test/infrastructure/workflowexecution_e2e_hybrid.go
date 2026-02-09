@@ -1076,6 +1076,46 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 	}
 	_, _ = fmt.Fprintf(output, "   ✅ RoleBinding created\n")
 
+	// ADR-030: Create ConfigMap with YAML configuration (replaces CLI flags)
+	_, _ = fmt.Fprintf(output, "   📋 Creating WorkflowExecution ConfigMap (ADR-030)...\n")
+	weConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workflowexecution-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"workflowexecution.yaml": `# WorkflowExecution E2E Configuration (ADR-030)
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: workflowexecution.kubernaut.ai
+execution:
+  namespace: kubernaut-workflows
+  cooldownPeriod: 1m
+  serviceAccount: kubernaut-workflow-runner
+backoff:
+  baseCooldown: 1m
+  maxCooldown: 10m
+  maxExponent: 4
+  maxConsecutiveFailures: 5
+audit:
+  dataStorageUrl: "http://data-storage-service.kubernaut-system:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 50
+    flushInterval: 100ms
+    maxRetries: 3
+`,
+		},
+	}
+	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, weConfigMap, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create WorkflowExecution ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(output, "   ✅ ConfigMap created\n")
+
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1119,12 +1159,8 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 							Image:           imageName,              // Per Consolidated API Migration (January 2026)
 							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
 							Args: []string{
-								"--metrics-bind-address=:9090",
-								"--health-probe-bind-address=:8081",
-								"--execution-namespace=kubernaut-workflows",
-								"--cooldown-period=1", // Short cooldown for E2E tests (1 minute)
-								"--service-account=kubernaut-workflow-runner",
-								"--datastorage-url=http://data-storage-service.kubernaut-system:8080", // BR-WE-005: DD-AUTH-011: Match Service name
+								"--config=/etc/config/workflowexecution.yaml",
+								"--zap-devel=true", // E2E: verbose logging
 							},
 							Ports: []corev1.ContainerPort{
 								{
@@ -1155,7 +1191,13 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 								return envVars
 							}(),
 							VolumeMounts: func() []corev1.VolumeMount {
-								mounts := []corev1.VolumeMount{}
+								mounts := []corev1.VolumeMount{
+									{
+										Name:      "config",
+										MountPath: "/etc/config",
+										ReadOnly:  true,
+									},
+								}
 								// DD-TEST-007: Add coverage volume mount if enabled
 								// MUST match Kind extraMounts path: /coverdata
 								if os.Getenv("E2E_COVERAGE") == "true" {
@@ -1200,7 +1242,18 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 						},
 					},
 					Volumes: func() []corev1.Volume {
-						volumes := []corev1.Volume{}
+						volumes := []corev1.Volume{
+							{
+								Name: "config",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "workflowexecution-config",
+										},
+									},
+								},
+							},
+						}
 						// DD-TEST-007: Add hostPath volume for coverage if enabled
 						// MUST match Kind extraMounts path: /coverdata
 						if os.Getenv("E2E_COVERAGE") == "true" {

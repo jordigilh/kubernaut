@@ -31,15 +31,16 @@ import (
 // Pattern: Shared data structure for AIAnalysis integration tests and HAPI E2E tests
 // This struct consolidates workflow definitions from both test suites
 type TestWorkflow struct {
-	WorkflowID     string // Must match Mock LLM workflow_id or Python fixture workflow_name
-	Name           string
-	Description    string
-	SignalType     string // Must match test scenarios (e.g., "OOMKilled")
-	Severity       string // "critical", "high", "medium", "low"
-	Component      string // "deployment", "pod", "node", etc.
-	Environment    string // "staging", "production", "test"
-	Priority       string // "P0", "P1", "P2", "P3"
-	ContainerImage string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
+	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
+	Name            string
+	Description     string
+	SignalType      string // Must match test scenarios (e.g., "OOMKilled")
+	Severity        string // "critical", "high", "medium", "low"
+	Component       string // "deployment", "pod", "node", etc.
+	Environment     string // "staging", "production", "test"
+	Priority        string // "P0", "P1", "P2", "P3"
+	ContainerImage  string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
+	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 }
 
 // SeedWorkflowsInDataStorage registers test workflows in DataStorage
@@ -157,6 +158,12 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		}
 	}
 
+	// BR-WE-014: Use ExecutionEngine from TestWorkflow, default to "tekton" for backwards compatibility
+	executionEngine := wf.ExecutionEngine
+	if executionEngine == "" {
+		executionEngine = "tekton"
+	}
+
 	// Build workflow request using OpenAPI generated types (compile-time validation)
 	workflowReq := &ogenclient.RemediationWorkflow{
 		// Note: WorkflowID is NOT set - DataStorage auto-generates it
@@ -166,7 +173,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		Description:     wf.Description,
 		Content:         content,
 		ContentHash:     contentHash,
-		ExecutionEngine: "tekton",
+		ExecutionEngine: executionEngine,
 		ContainerImage:  ogenclient.NewOptString(containerImage),
 		ContainerDigest: containerDigest, // BR-AI-075: Extract from ContainerImage
 		Labels: ogenclient.MandatoryLabels{

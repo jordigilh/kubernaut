@@ -35,8 +35,9 @@ type ExecutionEngine string
 
 const (
 	// ExecutionEngineTekton represents Tekton Pipelines execution engine
-	// Currently the only supported engine (ADR-043)
 	ExecutionEngineTekton ExecutionEngine = "tekton"
+	// ExecutionEngineJob represents Kubernetes Job execution engine
+	ExecutionEngineJob ExecutionEngine = "job"
 )
 
 // RemediationWorkflow represents a workflow in the catalog

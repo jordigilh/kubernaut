@@ -55,6 +55,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
@@ -178,6 +179,7 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
+
 
 	// ========================================
 	// DEPRECATED: EXPONENTIAL BACKOFF CONFIGURATION (BR-WE-012, DD-WE-004)
@@ -844,56 +846,68 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Index already exists - safe to continue
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
 		// WE-BUG-001: Prevent duplicate reconciles from status-only updates
 		// Use GenerationChangedPredicate to only reconcile on spec changes
 		// Status updates (PipelineRunStatus) are informational and don't require reconciliation
 		// Rationale: Controller only needs to act on spec changes, not status updates
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
-		// Watch PipelineRuns in execution namespace (cross-namespace via label)
-		// Only watch PipelineRuns with our label to avoid unnecessary reconciles
-		// Watch for status updates (not just metadata changes)
-		Watches(
-			&tektonv1.PipelineRun{},
-			handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
-			builder.WithPredicates(predicate.Funcs{
-				CreateFunc: func(e event.CreateEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					// Watch for status updates on labeled PipelineRuns
-					labels := e.ObjectNew.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-			}),
-		).
-		Complete(r)
+		WithEventFilter(predicate.GenerationChangedPredicate{})
+
+	// BR-WE-014: Only watch PipelineRuns if Tekton CRDs are installed.
+	// This is a runtime optimization - if Tekton is not installed, the controller
+	// still works for "job" engine workflows via polling (RequeueAfter).
+	// If a workflow uses executionEngine: "tekton", the operator must ensure Tekton is installed.
+	_, tektonDiscoveryErr := mgr.GetRESTMapper().RESTMapping(
+		schema.GroupKind{Group: "tekton.dev", Kind: "PipelineRun"}, "v1",
+	)
+	if tektonDiscoveryErr == nil {
+		ctrlBuilder = ctrlBuilder.
+			// Watch PipelineRuns in execution namespace (cross-namespace via label)
+			// Only watch PipelineRuns with our label to avoid unnecessary reconciles
+			// Watch for status updates (not just metadata changes)
+			Watches(
+				&tektonv1.PipelineRun{},
+				handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
+				builder.WithPredicates(predicate.Funcs{
+					CreateFunc: func(e event.CreateEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					UpdateFunc: func(e event.UpdateEvent) bool {
+						// Watch for status updates on labeled PipelineRuns
+						labels := e.ObjectNew.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					DeleteFunc: func(e event.DeleteEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					GenericFunc: func(e event.GenericEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+				}),
+			)
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 // ========================================

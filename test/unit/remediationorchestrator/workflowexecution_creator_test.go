@@ -158,6 +158,71 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
+	Describe("ExecutionEngine pass-through", func() {
+		// BR-WE-014: ExecutionEngine must be derived from AIAnalysis.Status.SelectedWorkflow,
+		// NOT hardcoded. This ensures the workflow catalog controls the execution backend.
+		It("should use executionEngine from AIAnalysis SelectedWorkflow when set to 'job'", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-engine-job", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-job", "default")
+			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionEngine).To(Equal("job"))
+		})
+
+		It("should use executionEngine from AIAnalysis SelectedWorkflow when set to 'tekton'", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-engine-tekton", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-tekton", "default")
+			ai.Status.SelectedWorkflow.ExecutionEngine = "tekton"
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionEngine).To(Equal("tekton"))
+		})
+
+		It("should default to 'tekton' when executionEngine is empty (backwards compatibility)", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-engine-default", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-default", "default")
+			// Explicitly clear - NewCompletedAIAnalysis doesn't set ExecutionEngine
+			ai.Status.SelectedWorkflow.ExecutionEngine = ""
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionEngine).To(Equal("tekton"))
+		})
+	})
+
 	Describe("BuildTargetResourceString", func() {
 		It("should format namespaced resources as 'namespace/kind/name' per BR-ORCH-025", func() {
 			// Arrange

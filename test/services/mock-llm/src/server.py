@@ -74,6 +74,7 @@ class MockScenario:
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
     include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
     parameters: Dict[str, str] = field(default_factory=dict)
+    execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
 
 
 # Pre-defined scenarios for common test cases
@@ -976,6 +977,7 @@ The problem has self-resolved. No remediation workflow is needed.
                 "version": "1.0.0",
                 "confidence": scenario.confidence,  # 0.35 - triggers human review
                 "rationale": "Multiple possible causes identified, confidence is low",
+                "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
             # E2E-HAPI-002: Add alternative workflows for human review
@@ -1104,6 +1106,7 @@ No suitable alternative workflow found. Human review required.
                 "version": "1.0.0",
                 "confidence": scenario.confidence,
                 "rationale": f"Selected based on {scenario.signal_type} signal analysis",
+                "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
             # Format as markdown with JSON block (like real LLM would)
@@ -1263,7 +1266,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "workflow_id": "{scenario.workflow_id}",
     "version": "1.0.0",
     "confidence": {scenario.confidence},
-    "rationale": "Alternative approach after failed attempt"
+    "rationale": "Alternative approach after failed attempt",
+    "execution_engine": "{scenario.execution_engine}"
   }},
   "alternative_workflows": {json.dumps(alternatives_list)}
 }}
@@ -1309,7 +1313,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "workflow_id": "{scenario.workflow_id}",
     "version": "1.0.0",
     "confidence": {scenario.confidence},
-    "rationale": "Selected based on signal analysis"
+    "rationale": "Selected based on signal analysis",
+    "execution_engine": "{scenario.execution_engine}"
   }}
 }}
 ```

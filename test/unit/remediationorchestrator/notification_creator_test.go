@@ -733,4 +733,218 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// BR-ORCH-045: COMPLETION NOTIFICATION
+	// ========================================
+	Describe("CreateCompletionNotification", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-045 AC-045-1: Successful WE completion creates NotificationRequest", func() {
+			It("should create NotificationRequest with type=completion", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-completion-test-rr"))
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
+			})
+		})
+
+		Context("BR-ORCH-045: Deterministic naming", func() {
+			It("should generate deterministic name nr-completion-{rr.Name}", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("my-remediation", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-completion-my-remediation"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-3: Idempotency", func() {
+			It("should be idempotent - return existing name without creating duplicate", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				// First call creates the notification
+				name1, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Second call should return same name without error
+				name2, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1))
+
+				// Verify only one notification exists
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-4: Owner reference for cascade deletion (BR-ORCH-031)", func() {
+			It("should set owner reference to RemediationRequest", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+				Expect(nr.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+			})
+
+			It("should return error when RemediationRequest UID is empty", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				rr.UID = "" // Clear UID
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("UID is required"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-5: Channels include file and slack", func() {
+			It("should include file and slack channels for completion notification", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Channels).To(ConsistOf(
+					notificationv1.ChannelSlack,
+					notificationv1.ChannelFile,
+				))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-2: Notification content", func() {
+			It("should contain signal name, RCA summary, workflow ID in body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.RootCause = "Memory exhaustion in container"
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Subject should contain signal name
+				Expect(nr.Spec.Subject).To(ContainSubstring(rr.Spec.SignalName))
+
+				// Body should contain RCA and workflow ID
+				Expect(nr.Spec.Body).To(ContainSubstring("Memory exhaustion in container"))
+				Expect(nr.Spec.Body).To(ContainSubstring(ai.Status.SelectedWorkflow.WorkflowID))
+			})
+
+			It("should include metadata with remediation context", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("workflowId", ai.Status.SelectedWorkflow.WorkflowID))
+			})
+		})
+
+		Context("BR-ORCH-045: Labels for routing", func() {
+			It("should set kubernaut.ai labels for routing", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "completion"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+			})
+		})
+
+		Context("BR-ORCH-045: Priority mapping for completions", func() {
+			It("should use low priority for successful completions (informational)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow))
+			})
+		})
+	})
 })

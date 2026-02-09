@@ -34,7 +34,7 @@ import (
 )
 
 // NotificationCreator creates NotificationRequest CRDs for the Remediation Orchestrator.
-// Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review)
+// Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review), BR-ORCH-045 (completion)
 type NotificationCreator struct {
 	client  client.Client
 	scheme  *runtime.Scheme
@@ -226,6 +226,136 @@ Please review and approve/reject the remediation.`,
 		ai.Status.SelectedWorkflow.Confidence*100,
 		ai.Status.SelectedWorkflow.WorkflowID,
 		approvalReason,
+	)
+}
+
+// CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
+// This is triggered when WorkflowExecution completes successfully and the RemediationRequest transitions to Completed.
+// Reference: BR-ORCH-045 (completion notification), BR-ORCH-031 (cascade deletion), BR-ORCH-035 (ref tracking)
+func (c *NotificationCreator) CreateCompletionNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+	)
+
+	// Generate deterministic name
+	name := fmt.Sprintf("nr-completion-%s", rr.Name)
+
+	// Check if already exists (idempotency)
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Completion notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing NotificationRequest")
+		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	}
+
+	// Build completion notification body
+	rootCause := ai.Status.RootCause
+	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
+		rootCause = ai.Status.RootCauseAnalysis.Summary
+	}
+
+	workflowID := ""
+	executionEngine := ""
+	if ai.Status.SelectedWorkflow != nil {
+		workflowID = ai.Status.SelectedWorkflow.WorkflowID
+		executionEngine = ai.Status.SelectedWorkflow.ExecutionEngine
+	}
+
+	// Build NotificationRequest for completion
+	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "completion",
+				"kubernaut.ai/severity":            rr.Spec.Severity,
+				"kubernaut.ai/component":           "remediation-orchestrator",
+			},
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			Type:     notificationv1.NotificationTypeCompletion,
+			Priority: notificationv1.NotificationPriorityLow, // Completion is informational
+			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
+			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine),
+			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelFile},
+			Metadata: map[string]string{
+				"remediationRequest": rr.Name,
+				"aiAnalysis":         ai.Name,
+				"workflowId":         workflowID,
+				"executionEngine":    executionEngine,
+				"rootCause":          rootCause,
+				"outcome":            string(rr.Status.Outcome),
+			},
+		},
+	}
+
+	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
+	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	// Set owner reference for cascade deletion (BR-ORCH-031)
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create the CRD
+	if err := c.client.Create(ctx, nr); err != nil {
+		logger.Error(err, "Failed to create completion NotificationRequest")
+		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created completion NotificationRequest",
+		"name", name,
+		"workflowId", workflowID,
+	)
+
+	// BR-ORCH-045 AC-045-6: Track completion notification creation (DD-METRICS-001)
+	c.metrics.CompletionNotificationsTotal.WithLabelValues(rr.Namespace).Inc()
+
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	return name, nil
+}
+
+// buildCompletionBody builds the completion notification body.
+func (c *NotificationCreator) buildCompletionBody(
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+	rootCause, workflowID, executionEngine string,
+) string {
+	return fmt.Sprintf(`Remediation Completed Successfully
+
+**Signal**: %s
+**Severity**: %s
+
+**Root Cause Analysis**:
+%s
+
+**Workflow Executed**: %s
+**Execution Engine**: %s
+**Outcome**: %s
+
+This incident was automatically detected and remediated by Kubernaut.`,
+		rr.Spec.SignalName,
+		rr.Spec.Severity,
+		rootCause,
+		workflowID,
+		executionEngine,
+		rr.Status.Outcome,
 	)
 }
 

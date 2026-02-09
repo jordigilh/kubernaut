@@ -127,8 +127,9 @@ func (c *WorkflowExecutionCreator) Create(
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.SelectedWorkflow.Confidence,
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,
-			// BR-WE-014: Execution backend engine (default: tekton)
-			ExecutionEngine: "tekton",
+			// BR-WE-014: Execution backend engine from AIAnalysis workflow recommendation.
+			// Defaults to "tekton" for backwards compatibility when not specified by HAPI.
+			ExecutionEngine: executionEngineWithDefault(ai.Status.SelectedWorkflow.ExecutionEngine),
 			// ExecutionConfig: Optional timeout from RemediationRequest
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
@@ -180,6 +181,15 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 		return fmt.Sprintf("%s/%s/%s", tr.Namespace, tr.Kind, tr.Name)
 	}
 	return fmt.Sprintf("%s/%s", tr.Kind, tr.Name)
+}
+
+// executionEngineWithDefault returns the execution engine, defaulting to "tekton"
+// when the value is empty (backwards compatibility for HAPI responses without the field).
+func executionEngineWithDefault(engine string) string {
+	if engine == "" {
+		return "tekton"
+	}
+	return engine
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.

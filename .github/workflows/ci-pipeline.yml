@@ -664,7 +664,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api, fullpipeline]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -693,6 +693,9 @@ jobs:
           - service: holmesgpt-api
             service_name: "HolmesGPT API"
             timeout: 35
+          - service: fullpipeline
+            service_name: "Full Pipeline"
+            timeout: 50
     steps:
       - uses: actions/checkout@v4
         with:

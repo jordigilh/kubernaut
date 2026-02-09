@@ -1383,6 +1383,39 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		r.emitCompletionAudit(ctx, rr, outcome, durationMs)
 	}
 
+	// ========================================
+	// BR-ORCH-045: COMPLETION NOTIFICATION
+	// Notify operators of successful remediation
+	// ========================================
+	if oldPhaseBeforeTransition != phase.Completed {
+		// Fetch AIAnalysis for RCA and workflow context
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
+			// Non-fatal: Log and continue - completion succeeded even if notification fails
+			logger.Error(err, "Failed to fetch AIAnalysis for completion notification", "aiAnalysis", aiName)
+		} else {
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
+			if notifErr != nil {
+				// Non-fatal: Log and continue - completion succeeded even if notification fails
+				logger.Error(notifErr, "Failed to create completion notification")
+			} else {
+				logger.Info("Created completion notification", "notification", notifName)
+			}
+		}
+
+		// BR-ORCH-034: Create bulk duplicate notification if duplicates exist
+		if rr.Status.DuplicateCount > 0 {
+			bulkName, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
+			if bulkErr != nil {
+				// Non-fatal: Log and continue
+				logger.Error(bulkErr, "Failed to create bulk duplicate notification")
+			} else {
+				logger.Info("Created bulk duplicate notification", "notification", bulkName)
+			}
+		}
+	}
+
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
 }

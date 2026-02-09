@@ -1098,6 +1098,16 @@ spec:
                   containerImage:
                     description: Container image (OCI bundle) - resolved by HolmesGPT-API
                     type: string
+                  executionEngine:
+                    description: |-
+                      ExecutionEngine specifies the backend engine for workflow execution.
+                      Populated from HolmesGPT-API workflow recommendation.
+                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                      When empty, defaults to "tekton" for backwards compatibility.
+                    enum:
+                    - tekton
+                    - job
+                    type: string
                   parameters:
                     additionalProperties:
                       type: string
