@@ -148,7 +148,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		})
 	}
 
-	kindConfigPath := filepath.Join(projectRoot, "test/infrastructure/kind-fullpipeline-config.yaml")
+	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
 	if err := CreateKindClusterWithExtraMounts(
 		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
 	); err != nil {
