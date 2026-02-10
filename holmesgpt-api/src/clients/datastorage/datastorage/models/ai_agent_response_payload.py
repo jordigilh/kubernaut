@@ -27,9 +27,9 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class HolmesGPTResponsePayload(BaseModel):
+class AIAgentResponsePayload(BaseModel):
     """
-    HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
+    AI Agent response completion event payload (aiagent.response.complete) - Provider perspective (DD-AUDIT-005)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
@@ -40,8 +40,8 @@ class HolmesGPTResponsePayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('holmesgpt.response.complete'):
-            raise ValueError("must be one of enum values ('holmesgpt.response.complete')")
+        if value not in ('aiagent.response.complete'):
+            raise ValueError("must be one of enum values ('aiagent.response.complete')")
         return value
 
     model_config = {
@@ -62,7 +62,7 @@ class HolmesGPTResponsePayload(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of HolmesGPTResponsePayload from a JSON string"""
+        """Create an instance of AIAgentResponsePayload from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -88,7 +88,7 @@ class HolmesGPTResponsePayload(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of HolmesGPTResponsePayload from a dict"""
+        """Create an instance of AIAgentResponsePayload from a dict"""
         if obj is None:
             return None
 

@@ -13,6 +13,94 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI Agent response completion event payload (aiagent.response.complete) - Provider perspective
+// (DD-AUDIT-005).
+// Ref: #/components/schemas/AIAgentResponsePayload
+type AIAgentResponsePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentResponsePayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID   string               `json:"incident_id"`
+	ResponseData IncidentResponseData `json:"response_data"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentResponsePayload) GetEventType() AIAgentResponsePayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentResponsePayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentResponsePayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetResponseData returns the value of ResponseData.
+func (s *AIAgentResponsePayload) GetResponseData() IncidentResponseData {
+	return s.ResponseData
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentResponsePayload) SetEventType(val AIAgentResponsePayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentResponsePayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentResponsePayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetResponseData sets the value of ResponseData.
+func (s *AIAgentResponsePayload) SetResponseData(val IncidentResponseData) {
+	s.ResponseData = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentResponsePayloadEventType string
+
+const (
+	AIAgentResponsePayloadEventTypeAiagentResponseComplete AIAgentResponsePayloadEventType = "aiagent.response.complete"
+)
+
+// AllValues returns all AIAgentResponsePayloadEventType values.
+func (AIAgentResponsePayloadEventType) AllValues() []AIAgentResponsePayloadEventType {
+	return []AIAgentResponsePayloadEventType{
+		AIAgentResponsePayloadEventTypeAiagentResponseComplete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentResponsePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentResponsePayloadEventTypeAiagentResponseComplete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentResponsePayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentResponsePayloadEventType(data) {
+	case AIAgentResponsePayloadEventTypeAiagentResponseComplete:
+		*s = AIAgentResponsePayloadEventTypeAiagentResponseComplete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Approval decision event payload (aianalysis.approval.decision).
 // Ref: #/components/schemas/AIAnalysisApprovalDecisionPayload
 type AIAnalysisApprovalDecisionPayload struct {
@@ -947,7 +1035,7 @@ type AuditEventEventData struct {
 	NotificationMessageFailedPayload       NotificationMessageFailedPayload
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
-	HolmesGPTResponsePayload               HolmesGPTResponsePayload
+	AIAgentResponsePayload                 AIAgentResponsePayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -1004,11 +1092,11 @@ const (
 	NotificationMessageFailedPayloadAuditEventEventData                          AuditEventEventDataType = "notification.message.failed"
 	NotificationMessageAcknowledgedPayloadAuditEventEventData                    AuditEventEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventEventData                       AuditEventEventDataType = "notification.message.escalated"
-	HolmesGPTResponsePayloadAuditEventEventData                                  AuditEventEventDataType = "holmesgpt.response.complete"
-	LLMRequestPayloadAuditEventEventData                                         AuditEventEventDataType = "llm_request"
-	LLMResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "llm_response"
-	LLMToolCallPayloadAuditEventEventData                                        AuditEventEventDataType = "llm_tool_call"
-	WorkflowValidationPayloadAuditEventEventData                                 AuditEventEventDataType = "workflow_validation_attempt"
+	AIAgentResponsePayloadAuditEventEventData                                    AuditEventEventDataType = "aiagent.response.complete"
+	LLMRequestPayloadAuditEventEventData                                         AuditEventEventDataType = "aiagent.llm.request"
+	LLMResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.llm.response"
+	LLMToolCallPayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.llm.tool_call"
+	WorkflowValidationPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                     AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 )
 
@@ -1147,9 +1235,9 @@ func (s AuditEventEventData) IsNotificationMessageEscalatedPayload() bool {
 	return s.Type == NotificationMessageEscalatedPayloadAuditEventEventData
 }
 
-// IsHolmesGPTResponsePayload reports whether AuditEventEventData is HolmesGPTResponsePayload.
-func (s AuditEventEventData) IsHolmesGPTResponsePayload() bool {
-	return s.Type == HolmesGPTResponsePayloadAuditEventEventData
+// IsAIAgentResponsePayload reports whether AuditEventEventData is AIAgentResponsePayload.
+func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
+	return s.Type == AIAgentResponsePayloadAuditEventEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventEventData is LLMRequestPayload.
@@ -1803,24 +1891,24 @@ func NewNotificationMessageEscalatedPayloadAuditEventEventData(v NotificationMes
 	return s
 }
 
-// SetHolmesGPTResponsePayload sets AuditEventEventData to HolmesGPTResponsePayload.
-func (s *AuditEventEventData) SetHolmesGPTResponsePayload(v HolmesGPTResponsePayload) {
-	s.Type = HolmesGPTResponsePayloadAuditEventEventData
-	s.HolmesGPTResponsePayload = v
+// SetAIAgentResponsePayload sets AuditEventEventData to AIAgentResponsePayload.
+func (s *AuditEventEventData) SetAIAgentResponsePayload(v AIAgentResponsePayload) {
+	s.Type = AIAgentResponsePayloadAuditEventEventData
+	s.AIAgentResponsePayload = v
 }
 
-// GetHolmesGPTResponsePayload returns HolmesGPTResponsePayload and true boolean if AuditEventEventData is HolmesGPTResponsePayload.
-func (s AuditEventEventData) GetHolmesGPTResponsePayload() (v HolmesGPTResponsePayload, ok bool) {
-	if !s.IsHolmesGPTResponsePayload() {
+// GetAIAgentResponsePayload returns AIAgentResponsePayload and true boolean if AuditEventEventData is AIAgentResponsePayload.
+func (s AuditEventEventData) GetAIAgentResponsePayload() (v AIAgentResponsePayload, ok bool) {
+	if !s.IsAIAgentResponsePayload() {
 		return v, false
 	}
-	return s.HolmesGPTResponsePayload, true
+	return s.AIAgentResponsePayload, true
 }
 
-// NewHolmesGPTResponsePayloadAuditEventEventData returns new AuditEventEventData from HolmesGPTResponsePayload.
-func NewHolmesGPTResponsePayloadAuditEventEventData(v HolmesGPTResponsePayload) AuditEventEventData {
+// NewAIAgentResponsePayloadAuditEventEventData returns new AuditEventEventData from AIAgentResponsePayload.
+func NewAIAgentResponsePayloadAuditEventEventData(v AIAgentResponsePayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetHolmesGPTResponsePayload(v)
+	s.SetAIAgentResponsePayload(v)
 	return s
 }
 
@@ -2323,7 +2411,7 @@ type AuditEventRequestEventData struct {
 	NotificationMessageFailedPayload       NotificationMessageFailedPayload
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
-	HolmesGPTResponsePayload               HolmesGPTResponsePayload
+	AIAgentResponsePayload                 AIAgentResponsePayload
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
@@ -2380,11 +2468,11 @@ const (
 	NotificationMessageFailedPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "notification.message.failed"
 	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                           AuditEventRequestEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                              AuditEventRequestEventDataType = "notification.message.escalated"
-	HolmesGPTResponsePayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "holmesgpt.response.complete"
-	LLMRequestPayloadAuditEventRequestEventData                                                AuditEventRequestEventDataType = "llm_request"
-	LLMResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_response"
-	LLMToolCallPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_tool_call"
-	WorkflowValidationPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "workflow_validation_attempt"
+	AIAgentResponsePayloadAuditEventRequestEventData                                           AuditEventRequestEventDataType = "aiagent.response.complete"
+	LLMRequestPayloadAuditEventRequestEventData                                                AuditEventRequestEventDataType = "aiagent.llm.request"
+	LLMResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.llm.response"
+	LLMToolCallPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.llm.tool_call"
+	WorkflowValidationPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 )
 
@@ -2523,9 +2611,9 @@ func (s AuditEventRequestEventData) IsNotificationMessageEscalatedPayload() bool
 	return s.Type == NotificationMessageEscalatedPayloadAuditEventRequestEventData
 }
 
-// IsHolmesGPTResponsePayload reports whether AuditEventRequestEventData is HolmesGPTResponsePayload.
-func (s AuditEventRequestEventData) IsHolmesGPTResponsePayload() bool {
-	return s.Type == HolmesGPTResponsePayloadAuditEventRequestEventData
+// IsAIAgentResponsePayload reports whether AuditEventRequestEventData is AIAgentResponsePayload.
+func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
+	return s.Type == AIAgentResponsePayloadAuditEventRequestEventData
 }
 
 // IsLLMRequestPayload reports whether AuditEventRequestEventData is LLMRequestPayload.
@@ -3179,24 +3267,24 @@ func NewNotificationMessageEscalatedPayloadAuditEventRequestEventData(v Notifica
 	return s
 }
 
-// SetHolmesGPTResponsePayload sets AuditEventRequestEventData to HolmesGPTResponsePayload.
-func (s *AuditEventRequestEventData) SetHolmesGPTResponsePayload(v HolmesGPTResponsePayload) {
-	s.Type = HolmesGPTResponsePayloadAuditEventRequestEventData
-	s.HolmesGPTResponsePayload = v
+// SetAIAgentResponsePayload sets AuditEventRequestEventData to AIAgentResponsePayload.
+func (s *AuditEventRequestEventData) SetAIAgentResponsePayload(v AIAgentResponsePayload) {
+	s.Type = AIAgentResponsePayloadAuditEventRequestEventData
+	s.AIAgentResponsePayload = v
 }
 
-// GetHolmesGPTResponsePayload returns HolmesGPTResponsePayload and true boolean if AuditEventRequestEventData is HolmesGPTResponsePayload.
-func (s AuditEventRequestEventData) GetHolmesGPTResponsePayload() (v HolmesGPTResponsePayload, ok bool) {
-	if !s.IsHolmesGPTResponsePayload() {
+// GetAIAgentResponsePayload returns AIAgentResponsePayload and true boolean if AuditEventRequestEventData is AIAgentResponsePayload.
+func (s AuditEventRequestEventData) GetAIAgentResponsePayload() (v AIAgentResponsePayload, ok bool) {
+	if !s.IsAIAgentResponsePayload() {
 		return v, false
 	}
-	return s.HolmesGPTResponsePayload, true
+	return s.AIAgentResponsePayload, true
 }
 
-// NewHolmesGPTResponsePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from HolmesGPTResponsePayload.
-func NewHolmesGPTResponsePayloadAuditEventRequestEventData(v HolmesGPTResponsePayload) AuditEventRequestEventData {
+// NewAIAgentResponsePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentResponsePayload.
+func NewAIAgentResponsePayloadAuditEventRequestEventData(v AIAgentResponsePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetHolmesGPTResponsePayload(v)
+	s.SetAIAgentResponsePayload(v)
 	return s
 }
 
@@ -5092,94 +5180,6 @@ func (s *HealthCheckServiceUnavailableStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider
-// perspective (DD-AUDIT-005).
-// Ref: #/components/schemas/HolmesGPTResponsePayload
-type HolmesGPTResponsePayload struct {
-	// Event type for discriminator (matches parent event_type).
-	EventType HolmesGPTResponsePayloadEventType `json:"event_type"`
-	// Unique event identifier.
-	EventID string `json:"event_id"`
-	// Incident correlation ID from request.
-	IncidentID   string               `json:"incident_id"`
-	ResponseData IncidentResponseData `json:"response_data"`
-}
-
-// GetEventType returns the value of EventType.
-func (s *HolmesGPTResponsePayload) GetEventType() HolmesGPTResponsePayloadEventType {
-	return s.EventType
-}
-
-// GetEventID returns the value of EventID.
-func (s *HolmesGPTResponsePayload) GetEventID() string {
-	return s.EventID
-}
-
-// GetIncidentID returns the value of IncidentID.
-func (s *HolmesGPTResponsePayload) GetIncidentID() string {
-	return s.IncidentID
-}
-
-// GetResponseData returns the value of ResponseData.
-func (s *HolmesGPTResponsePayload) GetResponseData() IncidentResponseData {
-	return s.ResponseData
-}
-
-// SetEventType sets the value of EventType.
-func (s *HolmesGPTResponsePayload) SetEventType(val HolmesGPTResponsePayloadEventType) {
-	s.EventType = val
-}
-
-// SetEventID sets the value of EventID.
-func (s *HolmesGPTResponsePayload) SetEventID(val string) {
-	s.EventID = val
-}
-
-// SetIncidentID sets the value of IncidentID.
-func (s *HolmesGPTResponsePayload) SetIncidentID(val string) {
-	s.IncidentID = val
-}
-
-// SetResponseData sets the value of ResponseData.
-func (s *HolmesGPTResponsePayload) SetResponseData(val IncidentResponseData) {
-	s.ResponseData = val
-}
-
-// Event type for discriminator (matches parent event_type).
-type HolmesGPTResponsePayloadEventType string
-
-const (
-	HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete HolmesGPTResponsePayloadEventType = "holmesgpt.response.complete"
-)
-
-// AllValues returns all HolmesGPTResponsePayloadEventType values.
-func (HolmesGPTResponsePayloadEventType) AllValues() []HolmesGPTResponsePayloadEventType {
-	return []HolmesGPTResponsePayloadEventType{
-		HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s HolmesGPTResponsePayloadEventType) MarshalText() ([]byte, error) {
-	switch s {
-	case HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *HolmesGPTResponsePayloadEventType) UnmarshalText(data []byte) error {
-	switch HolmesGPTResponsePayloadEventType(data) {
-	case HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete:
-		*s = HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no
 // additionalProperties).
 // Ref: #/components/schemas/IncidentResponseData
@@ -5589,7 +5589,7 @@ func (s *IncidentResponseDataSelectedWorkflowParameters) init() IncidentResponse
 	return m
 }
 
-// LLM API request event payload (llm_request).
+// LLM API request event payload (aiagent.llm.request).
 // Ref: #/components/schemas/LLMRequestPayload
 type LLMRequestPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -5706,20 +5706,20 @@ func (s *LLMRequestPayload) SetMcpServers(val []string) {
 type LLMRequestPayloadEventType string
 
 const (
-	LLMRequestPayloadEventTypeLlmRequest LLMRequestPayloadEventType = "llm_request"
+	LLMRequestPayloadEventTypeAiagentLlmRequest LLMRequestPayloadEventType = "aiagent.llm.request"
 )
 
 // AllValues returns all LLMRequestPayloadEventType values.
 func (LLMRequestPayloadEventType) AllValues() []LLMRequestPayloadEventType {
 	return []LLMRequestPayloadEventType{
-		LLMRequestPayloadEventTypeLlmRequest,
+		LLMRequestPayloadEventTypeAiagentLlmRequest,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s LLMRequestPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
-	case LLMRequestPayloadEventTypeLlmRequest:
+	case LLMRequestPayloadEventTypeAiagentLlmRequest:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5729,15 +5729,15 @@ func (s LLMRequestPayloadEventType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *LLMRequestPayloadEventType) UnmarshalText(data []byte) error {
 	switch LLMRequestPayloadEventType(data) {
-	case LLMRequestPayloadEventTypeLlmRequest:
-		*s = LLMRequestPayloadEventTypeLlmRequest
+	case LLMRequestPayloadEventTypeAiagentLlmRequest:
+		*s = LLMRequestPayloadEventTypeAiagentLlmRequest
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-// LLM API response event payload (llm_response).
+// LLM API response event payload (aiagent.llm.response).
 // Ref: #/components/schemas/LLMResponsePayload
 type LLMResponsePayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -5842,20 +5842,20 @@ func (s *LLMResponsePayload) SetToolCallCount(val OptInt) {
 type LLMResponsePayloadEventType string
 
 const (
-	LLMResponsePayloadEventTypeLlmResponse LLMResponsePayloadEventType = "llm_response"
+	LLMResponsePayloadEventTypeAiagentLlmResponse LLMResponsePayloadEventType = "aiagent.llm.response"
 )
 
 // AllValues returns all LLMResponsePayloadEventType values.
 func (LLMResponsePayloadEventType) AllValues() []LLMResponsePayloadEventType {
 	return []LLMResponsePayloadEventType{
-		LLMResponsePayloadEventTypeLlmResponse,
+		LLMResponsePayloadEventTypeAiagentLlmResponse,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s LLMResponsePayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
-	case LLMResponsePayloadEventTypeLlmResponse:
+	case LLMResponsePayloadEventTypeAiagentLlmResponse:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5865,15 +5865,15 @@ func (s LLMResponsePayloadEventType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *LLMResponsePayloadEventType) UnmarshalText(data []byte) error {
 	switch LLMResponsePayloadEventType(data) {
-	case LLMResponsePayloadEventTypeLlmResponse:
-		*s = LLMResponsePayloadEventTypeLlmResponse
+	case LLMResponsePayloadEventTypeAiagentLlmResponse:
+		*s = LLMResponsePayloadEventTypeAiagentLlmResponse
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-// LLM tool call event payload (llm_tool_call).
+// LLM tool call event payload (aiagent.llm.tool_call).
 // Ref: #/components/schemas/LLMToolCallPayload
 type LLMToolCallPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -5978,20 +5978,20 @@ func (s *LLMToolCallPayload) SetToolResultPreview(val OptString) {
 type LLMToolCallPayloadEventType string
 
 const (
-	LLMToolCallPayloadEventTypeLlmToolCall LLMToolCallPayloadEventType = "llm_tool_call"
+	LLMToolCallPayloadEventTypeAiagentLlmToolCall LLMToolCallPayloadEventType = "aiagent.llm.tool_call"
 )
 
 // AllValues returns all LLMToolCallPayloadEventType values.
 func (LLMToolCallPayloadEventType) AllValues() []LLMToolCallPayloadEventType {
 	return []LLMToolCallPayloadEventType{
-		LLMToolCallPayloadEventTypeLlmToolCall,
+		LLMToolCallPayloadEventTypeAiagentLlmToolCall,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s LLMToolCallPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
-	case LLMToolCallPayloadEventTypeLlmToolCall:
+	case LLMToolCallPayloadEventTypeAiagentLlmToolCall:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6001,8 +6001,8 @@ func (s LLMToolCallPayloadEventType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *LLMToolCallPayloadEventType) UnmarshalText(data []byte) error {
 	switch LLMToolCallPayloadEventType(data) {
-	case LLMToolCallPayloadEventTypeLlmToolCall:
-		*s = LLMToolCallPayloadEventTypeLlmToolCall
+	case LLMToolCallPayloadEventTypeAiagentLlmToolCall:
+		*s = LLMToolCallPayloadEventTypeAiagentLlmToolCall
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -16149,7 +16149,7 @@ func (s *WorkflowUpdateRequestStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// Workflow validation attempt event payload (workflow_validation_attempt).
+// Workflow validation attempt event payload (aiagent.workflow.validation_attempt).
 // Ref: #/components/schemas/WorkflowValidationPayload
 type WorkflowValidationPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -16302,20 +16302,20 @@ func (s *WorkflowValidationPayload) SetIsFinalAttempt(val OptBool) {
 type WorkflowValidationPayloadEventType string
 
 const (
-	WorkflowValidationPayloadEventTypeWorkflowValidationAttempt WorkflowValidationPayloadEventType = "workflow_validation_attempt"
+	WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt WorkflowValidationPayloadEventType = "aiagent.workflow.validation_attempt"
 )
 
 // AllValues returns all WorkflowValidationPayloadEventType values.
 func (WorkflowValidationPayloadEventType) AllValues() []WorkflowValidationPayloadEventType {
 	return []WorkflowValidationPayloadEventType{
-		WorkflowValidationPayloadEventTypeWorkflowValidationAttempt,
+		WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s WorkflowValidationPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
-	case WorkflowValidationPayloadEventTypeWorkflowValidationAttempt:
+	case WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -16325,8 +16325,8 @@ func (s WorkflowValidationPayloadEventType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *WorkflowValidationPayloadEventType) UnmarshalText(data []byte) error {
 	switch WorkflowValidationPayloadEventType(data) {
-	case WorkflowValidationPayloadEventTypeWorkflowValidationAttempt:
-		*s = WorkflowValidationPayloadEventTypeWorkflowValidationAttempt
+	case WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt:
+		*s = WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

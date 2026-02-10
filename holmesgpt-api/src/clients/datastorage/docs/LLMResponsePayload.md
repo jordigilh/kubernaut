@@ -1,6 +1,6 @@
 # LLMResponsePayload
 
-LLM API response event payload (llm_response)
+LLM API response event payload (aiagent.llm.response)
 
 ## Properties
 

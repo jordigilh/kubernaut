@@ -29,7 +29,7 @@ except ImportError:
 
 class LLMResponsePayload(BaseModel):
     """
-    LLM API response event payload (llm_response)
+    LLM API response event payload (aiagent.llm.response)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
@@ -44,8 +44,8 @@ class LLMResponsePayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('llm_response'):
-            raise ValueError("must be one of enum values ('llm_response')")
+        if value not in ('aiagent.llm.response'):
+            raise ValueError("must be one of enum values ('aiagent.llm.response')")
         return value
 
     model_config = {

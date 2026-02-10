@@ -35,6 +35,7 @@ from datastorage.exceptions import ApiAttributeError
 from datastorage.exceptions import ApiException
 
 # import models into sdk package
+from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 from datastorage.models.ai_analysis_approval_decision_payload import AIAnalysisApprovalDecisionPayload
 from datastorage.models.ai_analysis_audit_payload import AIAnalysisAuditPayload
 from datastorage.models.ai_analysis_error_payload import AIAnalysisErrorPayload
@@ -60,7 +61,6 @@ from datastorage.models.error_details import ErrorDetails
 from datastorage.models.gateway_audit_payload import GatewayAuditPayload
 from datastorage.models.health_check200_response import HealthCheck200Response
 from datastorage.models.health_check503_response import HealthCheck503Response
-from datastorage.models.holmes_gpt_response_payload import HolmesGPTResponsePayload
 from datastorage.models.incident_response_data import IncidentResponseData
 from datastorage.models.incident_response_data_alternative_workflows_inner import IncidentResponseDataAlternativeWorkflowsInner
 from datastorage.models.incident_response_data_root_cause_analysis import IncidentResponseDataRootCauseAnalysis

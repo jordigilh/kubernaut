@@ -1,6 +1,6 @@
-# HolmesGPTResponsePayload
+# AIAgentResponsePayload
 
-HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
+AI Agent response completion event payload (aiagent.response.complete) - Provider perspective (DD-AUDIT-005)
 
 ## Properties
 
@@ -14,19 +14,19 @@ Name | Type | Description | Notes
 ## Example
 
 ```python
-from datastorage.models.holmes_gpt_response_payload import HolmesGPTResponsePayload
+from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 
 # TODO update the JSON string below
 json = "{}"
-# create an instance of HolmesGPTResponsePayload from a JSON string
-holmes_gpt_response_payload_instance = HolmesGPTResponsePayload.from_json(json)
+# create an instance of AIAgentResponsePayload from a JSON string
+ai_agent_response_payload_instance = AIAgentResponsePayload.from_json(json)
 # print the JSON string representation of the object
-print HolmesGPTResponsePayload.to_json()
+print AIAgentResponsePayload.to_json()
 
 # convert the object into a dict
-holmes_gpt_response_payload_dict = holmes_gpt_response_payload_instance.to_dict()
-# create an instance of HolmesGPTResponsePayload from a dict
-holmes_gpt_response_payload_form_dict = holmes_gpt_response_payload.from_dict(holmes_gpt_response_payload_dict)
+ai_agent_response_payload_dict = ai_agent_response_payload_instance.to_dict()
+# create an instance of AIAgentResponsePayload from a dict
+ai_agent_response_payload_form_dict = ai_agent_response_payload.from_dict(ai_agent_response_payload_dict)
 ```
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 
