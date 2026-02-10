@@ -215,8 +215,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rr.Spec.SignalFingerprint).To(Equal("dedup-test-fingerprint-unique"),
 				"Fingerprint enables deduplication tracking (BR-GATEWAY-185)")
-			Expect(rr.Labels["kubernaut.ai/signal-fingerprint"]).NotTo(BeEmpty(),
-				"Fingerprint label enables filtering duplicate signals")
+			// Note: signal-fingerprint label removed — lookups use spec.signalFingerprint
+			// field selector (BR-GATEWAY-185 v1.1). SHA256 fingerprints exceed 63-char label limit.
 		})
 
 		It("creates CRD with timestamp-based naming for unique occurrences", func() {

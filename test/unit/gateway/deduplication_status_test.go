@@ -298,9 +298,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "pending-rr",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": fp[:63],
-						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
 						SignalFingerprint: fp,
@@ -341,9 +338,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "processing-rr",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": fp[:63],
-						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
 						SignalFingerprint: fp,
@@ -381,9 +375,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "completed-rr",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": fp[:63],
-						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
 						SignalFingerprint: fp,
@@ -423,9 +414,6 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "failed-rr",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": fp[:63],
-						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
 						SignalFingerprint: fp,

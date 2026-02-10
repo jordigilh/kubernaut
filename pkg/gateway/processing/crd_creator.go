@@ -260,7 +260,6 @@ func getErrorTypeString(err error) string {
 //	  namespace: <signal-namespace>
 //	  labels:
 //	    kubernaut.ai/signal-type: prometheus-alert
-//	    kubernaut.ai/signal-fingerprint: <full-fingerprint>
 //	    kubernaut.ai/severity: critical
 //	spec:
 //	  signalFingerprint: <fingerprint>
@@ -341,9 +340,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 				// Kubernaut-specific labels for filtering and routing
 				"kubernaut.ai/signal-type": signal.SourceType,
-				// Truncate fingerprint to 63 chars (K8s label value max length)
-				"kubernaut.ai/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
-				"kubernaut.ai/severity":           signal.Severity,
+				"kubernaut.ai/severity":    signal.Severity,
+				// Note: signal-fingerprint label removed — SHA256 fingerprints are 64 chars,
+				// exceeding K8s 63-char label value limit. All lookups use the immutable
+				// spec.signalFingerprint field selector instead (BR-GATEWAY-185 v1.1).
 				// Note: kubernaut.ai/environment and kubernaut.ai/priority removed (2025-12-06)
 				// Signal Processing service now owns classification per DD-CATEGORIZATION-001
 			},
