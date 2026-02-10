@@ -5431,8 +5431,8 @@ func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error
 type IncidentResponseDataRootCauseAnalysis struct {
 	// Brief RCA summary.
 	Summary string `json:"summary"`
-	// Incident severity.
-	Severity string `json:"severity"`
+	// Incident severity (BR-SEVERITY-001).
+	Severity IncidentResponseDataRootCauseAnalysisSeverity `json:"severity"`
 	// List of contributing factors.
 	ContributingFactors []string `json:"contributing_factors"`
 }
@@ -5443,7 +5443,7 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetSummary() string {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *IncidentResponseDataRootCauseAnalysis) GetSeverity() string {
+func (s *IncidentResponseDataRootCauseAnalysis) GetSeverity() IncidentResponseDataRootCauseAnalysisSeverity {
 	return s.Severity
 }
 
@@ -5458,13 +5458,76 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *IncidentResponseDataRootCauseAnalysis) SetSeverity(val string) {
+func (s *IncidentResponseDataRootCauseAnalysis) SetSeverity(val IncidentResponseDataRootCauseAnalysisSeverity) {
 	s.Severity = val
 }
 
 // SetContributingFactors sets the value of ContributingFactors.
 func (s *IncidentResponseDataRootCauseAnalysis) SetContributingFactors(val []string) {
 	s.ContributingFactors = val
+}
+
+// Incident severity (BR-SEVERITY-001).
+type IncidentResponseDataRootCauseAnalysisSeverity string
+
+const (
+	IncidentResponseDataRootCauseAnalysisSeverityCritical IncidentResponseDataRootCauseAnalysisSeverity = "critical"
+	IncidentResponseDataRootCauseAnalysisSeverityHigh     IncidentResponseDataRootCauseAnalysisSeverity = "high"
+	IncidentResponseDataRootCauseAnalysisSeverityMedium   IncidentResponseDataRootCauseAnalysisSeverity = "medium"
+	IncidentResponseDataRootCauseAnalysisSeverityLow      IncidentResponseDataRootCauseAnalysisSeverity = "low"
+	IncidentResponseDataRootCauseAnalysisSeverityUnknown  IncidentResponseDataRootCauseAnalysisSeverity = "unknown"
+)
+
+// AllValues returns all IncidentResponseDataRootCauseAnalysisSeverity values.
+func (IncidentResponseDataRootCauseAnalysisSeverity) AllValues() []IncidentResponseDataRootCauseAnalysisSeverity {
+	return []IncidentResponseDataRootCauseAnalysisSeverity{
+		IncidentResponseDataRootCauseAnalysisSeverityCritical,
+		IncidentResponseDataRootCauseAnalysisSeverityHigh,
+		IncidentResponseDataRootCauseAnalysisSeverityMedium,
+		IncidentResponseDataRootCauseAnalysisSeverityLow,
+		IncidentResponseDataRootCauseAnalysisSeverityUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataRootCauseAnalysisSeverity) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataRootCauseAnalysisSeverityCritical:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisSeverityLow:
+		return []byte(s), nil
+	case IncidentResponseDataRootCauseAnalysisSeverityUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataRootCauseAnalysisSeverity(data) {
+	case IncidentResponseDataRootCauseAnalysisSeverityCritical:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityCritical
+		return nil
+	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityHigh
+		return nil
+	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityMedium
+		return nil
+	case IncidentResponseDataRootCauseAnalysisSeverityLow:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityLow
+		return nil
+	case IncidentResponseDataRootCauseAnalysisSeverityUnknown:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Selected workflow with workflow_id, containerImage, confidence, parameters (optional).

@@ -26,8 +26,8 @@ Design Decision: DD-RECOVERY-002, DD-RECOVERY-003 (Recovery prompt design)
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
 
-# Import EnrichmentResults and AlternativeWorkflow for type hints
-from src.models.incident_models import EnrichmentResults, AlternativeWorkflow
+# Import shared types from incident_models
+from src.models.incident_models import EnrichmentResults, AlternativeWorkflow, Severity
 
 
 class RecoveryStrategy(BaseModel):
@@ -48,7 +48,7 @@ class OriginalRCA(BaseModel):
     """Summary of the original root cause analysis from initial AIAnalysis"""
     summary: str = Field(..., description="Brief RCA summary from initial investigation")
     signal_type: str = Field(..., description="Signal type determined by original RCA (e.g., 'OOMKilled')")
-    severity: str = Field(..., description="Severity determined by original RCA")
+    severity: Severity = Field(..., description="Severity determined by original RCA (BR-SEVERITY-001)")
     contributing_factors: List[str] = Field(default_factory=list, description="Factors that contributed to the issue")
 
 
@@ -150,7 +150,7 @@ class RecoveryRequest(BaseModel):
 
     # Standard signal fields
     signal_type: Optional[str] = Field(None, description="Current signal type (may have changed)")
-    severity: Optional[str] = Field(None, description="Current severity")
+    severity: Optional[Severity] = Field(None, description="Current severity (BR-SEVERITY-001)")
     resource_namespace: Optional[str] = Field(None, description="Kubernetes namespace")
     resource_kind: Optional[str] = Field(None, description="Kubernetes resource kind")
     resource_name: Optional[str] = Field(None, description="Kubernetes resource name")

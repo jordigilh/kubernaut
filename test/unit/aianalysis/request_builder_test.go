@@ -105,7 +105,7 @@ var _ = Describe("RequestBuilder", func() {
 			req := builder.BuildIncidentRequest(analysis)
 
 			Expect(req.SignalType).To(Equal("OOMKilled"))
-			Expect(req.Severity).To(Equal("critical"))
+			Expect(req.Severity).To(Equal(client.Severity("critical")))
 			Expect(req.Environment).To(Equal("production"))
 			Expect(req.Priority).To(Equal("P0"))
 			Expect(req.ResourceKind).To(Equal("Pod"))

@@ -57,6 +57,34 @@ class HumanReviewReason(str, Enum):
 
 
 # ========================================
+# SEVERITY LEVEL ENUM (BR-SEVERITY-001, DD-SEVERITY-001 v1.1)
+# ========================================
+
+class Severity(str, Enum):
+    """
+    Canonical severity levels for Kubernaut.
+
+    Business Requirement: BR-SEVERITY-001 (Standardized Severity Levels)
+    Design Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)
+
+    These are the ONLY valid severity values across all internal components
+    (CRDs, LLM prompts, workflow catalog labels, metrics, audit events).
+
+    Levels (most to least severe):
+    - critical: Immediate remediation required (>50% users affected)
+    - high: Urgent remediation needed (10-50% users affected)
+    - medium: Remediation recommended (<10% users affected)
+    - low: Remediation optional (no user impact)
+    - unknown: Human triage required (investigation inconclusive)
+    """
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
+# ========================================
 # SIGNAL MODE ENUM (ADR-054)
 # ========================================
 
@@ -202,7 +230,7 @@ class IncidentRequest(BaseModel):
         )
     )
     signal_type: str = Field(..., description="Canonical signal type")
-    severity: str = Field(..., description="Signal severity")
+    severity: Severity = Field(..., description="Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown)")
     signal_source: str = Field(..., description="Monitoring system")
     resource_namespace: str = Field(..., description="Kubernetes namespace")
     resource_kind: str = Field(..., description="Kubernetes resource kind")

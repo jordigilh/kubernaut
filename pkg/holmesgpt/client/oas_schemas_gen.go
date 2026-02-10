@@ -987,8 +987,8 @@ type IncidentRequest struct {
 	RemediationID string `json:"remediation_id"`
 	// Canonical signal type.
 	SignalType string `json:"signal_type"`
-	// Signal severity.
-	Severity string `json:"severity"`
+	// Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown).
+	Severity Severity `json:"severity"`
 	// Monitoring system.
 	SignalSource string `json:"signal_source"`
 	// Kubernetes namespace.
@@ -1059,7 +1059,7 @@ func (s *IncidentRequest) GetSignalType() string {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *IncidentRequest) GetSeverity() string {
+func (s *IncidentRequest) GetSeverity() Severity {
 	return s.Severity
 }
 
@@ -1209,7 +1209,7 @@ func (s *IncidentRequest) SetSignalType(val string) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *IncidentRequest) SetSeverity(val string) {
+func (s *IncidentRequest) SetSeverity(val Severity) {
 	s.Severity = val
 }
 
@@ -2394,6 +2394,69 @@ func (o OptNilRecoveryResponseSelectedWorkflow) Or(d RecoveryResponseSelectedWor
 	return d
 }
 
+// NewOptNilSeverity returns new OptNilSeverity with value set to v.
+func NewOptNilSeverity(v Severity) OptNilSeverity {
+	return OptNilSeverity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSeverity is optional nullable Severity.
+type OptNilSeverity struct {
+	Value Severity
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSeverity was set.
+func (o OptNilSeverity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSeverity) Reset() {
+	var v Severity
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSeverity) SetTo(v Severity) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSeverity) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSeverity) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v Severity
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSeverity) Get() (v Severity, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSeverity) Or(d Severity) Severity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilSignalMode returns new OptNilSignalMode with value set to v.
 func NewOptNilSignalMode(v SignalMode) OptNilSignalMode {
 	return OptNilSignalMode{
@@ -2728,8 +2791,8 @@ type OriginalRCA struct {
 	Summary string `json:"summary"`
 	// Signal type determined by original RCA (e.g., 'OOMKilled').
 	SignalType string `json:"signal_type"`
-	// Severity determined by original RCA.
-	Severity string `json:"severity"`
+	// Severity determined by original RCA (BR-SEVERITY-001).
+	Severity Severity `json:"severity"`
 	// Factors that contributed to the issue.
 	ContributingFactors []string `json:"contributing_factors"`
 }
@@ -2745,7 +2808,7 @@ func (s *OriginalRCA) GetSignalType() string {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *OriginalRCA) GetSeverity() string {
+func (s *OriginalRCA) GetSeverity() Severity {
 	return s.Severity
 }
 
@@ -2765,7 +2828,7 @@ func (s *OriginalRCA) SetSignalType(val string) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *OriginalRCA) SetSeverity(val string) {
+func (s *OriginalRCA) SetSeverity(val Severity) {
 	s.Severity = val
 }
 
@@ -3297,8 +3360,8 @@ type RecoveryRequest struct {
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
 	// Current signal type (may have changed).
 	SignalType OptNilString `json:"signal_type"`
-	// Current severity.
-	Severity OptNilString `json:"severity"`
+	// Current severity (BR-SEVERITY-001).
+	Severity OptNilSeverity `json:"severity"`
 	// Kubernetes namespace.
 	ResourceNamespace OptNilString `json:"resource_namespace"`
 	// Kubernetes resource kind.
@@ -3357,7 +3420,7 @@ func (s *RecoveryRequest) GetSignalType() OptNilString {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *RecoveryRequest) GetSeverity() OptNilString {
+func (s *RecoveryRequest) GetSeverity() OptNilSeverity {
 	return s.Severity
 }
 
@@ -3447,7 +3510,7 @@ func (s *RecoveryRequest) SetSignalType(val OptNilString) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *RecoveryRequest) SetSeverity(val OptNilString) {
+func (s *RecoveryRequest) SetSeverity(val OptNilSeverity) {
 	s.Severity = val
 }
 
@@ -3894,6 +3957,80 @@ func (s *SelectedWorkflowSummaryParameters) init() SelectedWorkflowSummaryParame
 		*s = m
 	}
 	return m
+}
+
+// Canonical severity levels for Kubernaut.
+// Business Requirement: BR-SEVERITY-001 (Standardized Severity Levels)
+// Design Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)
+// These are the ONLY valid severity values across all internal components
+// (CRDs, LLM prompts, workflow catalog labels, metrics, audit events).
+// Levels (most to least severe):
+// - critical: Immediate remediation required (>50% users affected)
+// - high: Urgent remediation needed (10-50% users affected)
+// - medium: Remediation recommended (<10% users affected)
+// - low: Remediation optional (no user impact)
+// - unknown: Human triage required (investigation inconclusive).
+// Ref: #/components/schemas/Severity
+type Severity string
+
+const (
+	SeverityCritical Severity = "critical"
+	SeverityHigh     Severity = "high"
+	SeverityMedium   Severity = "medium"
+	SeverityLow      Severity = "low"
+	SeverityUnknown  Severity = "unknown"
+)
+
+// AllValues returns all Severity values.
+func (Severity) AllValues() []Severity {
+	return []Severity{
+		SeverityCritical,
+		SeverityHigh,
+		SeverityMedium,
+		SeverityLow,
+		SeverityUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s Severity) MarshalText() ([]byte, error) {
+	switch s {
+	case SeverityCritical:
+		return []byte(s), nil
+	case SeverityHigh:
+		return []byte(s), nil
+	case SeverityMedium:
+		return []byte(s), nil
+	case SeverityLow:
+		return []byte(s), nil
+	case SeverityUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *Severity) UnmarshalText(data []byte) error {
+	switch Severity(data) {
+	case SeverityCritical:
+		*s = SeverityCritical
+		return nil
+	case SeverityHigh:
+		*s = SeverityHigh
+		return nil
+	case SeverityMedium:
+		*s = SeverityMedium
+		return nil
+	case SeverityLow:
+		*s = SeverityLow
+		return nil
+	case SeverityUnknown:
+		*s = SeverityUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Signal processing mode for investigation strategy selection.

@@ -19,7 +19,7 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 try:
     from typing import Self
@@ -31,9 +31,16 @@ class IncidentResponseDataRootCauseAnalysis(BaseModel):
     Structured RCA with summary, severity, contributing_factors
     """ # noqa: E501
     summary: StrictStr = Field(description="Brief RCA summary")
-    severity: StrictStr = Field(description="Incident severity")
+    severity: StrictStr = Field(description="Incident severity (BR-SEVERITY-001)")
     contributing_factors: List[StrictStr] = Field(description="List of contributing factors")
     __properties: ClassVar[List[str]] = ["summary", "severity", "contributing_factors"]
+
+    @field_validator('severity')
+    def severity_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('critical', 'high', 'medium', 'low', 'unknown'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', 'unknown')")
+        return value
 
     model_config = {
         "populate_by_name": True,

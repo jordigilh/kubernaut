@@ -10093,7 +10093,7 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		e.Str(s.Severity)
+		s.Severity.Encode(e)
 	}
 	{
 		e.FieldStart("contributing_factors")
@@ -10135,9 +10135,7 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.Severity = string(v)
-				if err != nil {
+				if err := s.Severity.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -10216,6 +10214,52 @@ func (s *IncidentResponseDataRootCauseAnalysis) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataRootCauseAnalysis) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataRootCauseAnalysisSeverity as json.
+func (s IncidentResponseDataRootCauseAnalysisSeverity) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisSeverity from json.
+func (s *IncidentResponseDataRootCauseAnalysisSeverity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysisSeverity to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch IncidentResponseDataRootCauseAnalysisSeverity(v) {
+	case IncidentResponseDataRootCauseAnalysisSeverityCritical:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityCritical
+	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityHigh
+	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityMedium
+	case IncidentResponseDataRootCauseAnalysisSeverityLow:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityLow
+	case IncidentResponseDataRootCauseAnalysisSeverityUnknown:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityUnknown
+	default:
+		*s = IncidentResponseDataRootCauseAnalysisSeverity(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentResponseDataRootCauseAnalysisSeverity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -3620,7 +3620,8 @@ components:
               description: Brief RCA summary
             severity:
               type: string
-              description: Incident severity
+              enum: [critical, high, medium, low, unknown]
+              description: Incident severity (BR-SEVERITY-001)
               example: "high"
             contributing_factors:
               type: array

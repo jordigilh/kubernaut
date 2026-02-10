@@ -470,7 +470,7 @@ Based on your RCA, determine the signal_type that best describes the effect:
 {{
   "root_cause_analysis": {{
     "summary": "Brief summary of root cause from investigation",
-    "severity": "critical|high|medium|low",
+    "severity": "critical|high|medium|low|unknown",
     "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": {{
@@ -499,7 +499,7 @@ Based on your RCA, determine the signal_type that best describes the effect:
 {{
   "root_cause_analysis": {{
     "summary": "Root cause from investigation",
-    "severity": "critical|high|medium|low",
+    "severity": "critical|high|medium|low|unknown",
     "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": null,
@@ -564,7 +564,7 @@ After your investigation, assess the severity of the root cause using these leve
 
 **IMPORTANT**: Your RCA severity may differ from the input signal severity. Use your analysis to determine the actual severity based on business impact.
 
-### Severity Levels (DD-SEVERITY-001):
+### Severity Levels (BR-SEVERITY-001, DD-SEVERITY-001 v1.1):
 
 **critical** - Immediate remediation required
 - Production service completely unavailable
@@ -573,24 +573,38 @@ After your investigation, assess the severity of the root cause using these leve
 - SLA violation in progress
 - Revenue-impacting outage
 - Affects >50% of users
-- High error rate (>10% of requests failing)
+- Example: All replicas of a Deployment are in CrashLoopBackOff — zero available endpoints, requests fail with 503
 
-**warning** - Remediation needed
+**high** - Urgent remediation needed
 - Significant service degradation (>50% performance loss)
-- Moderate error rate (1-10% of requests failing)
-- Production issue that needs attention
+- High error rate (>10% of requests failing)
+- Production issue escalating toward critical
 - Affects 10-50% of users
 - SLA at risk
-- Non-production critical issues
+- Example: 1 of 3 replicas OOMKilled and restarting — service degraded, another failure would cause outage
 
-**info** - Remediation recommended or informational
+**medium** - Remediation recommended
 - Minor service degradation (<50% performance loss)
-- Low error rate (<1% of requests failing)
-- Development/staging environment issues
+- Moderate error rate (1-10% of requests failing)
+- Non-production critical issues
 - Affects <10% of users
+- Staging/development critical issues
+- Example: 1 of 5 replicas in CrashLoopBackOff — 4 healthy replicas handle load, but headroom is reduced
+
+**low** - Remediation optional
+- Informational issues
 - Optimization opportunities
+- Development environment issues
+- No user impact
 - Capacity planning alerts
-- No immediate user impact
+- Example: Pod is over-provisioned (using 40% of CPU request with 10x limit) — no impact, wasted capacity
+
+**unknown** - Human triage required
+- Root cause could not be determined
+- Conflicting signals prevent confident assessment
+- Insufficient monitoring data or logs to evaluate impact
+- Novel condition with no precedent in the system
+- Example: Pod in CrashLoopBackOff but container logs are empty and no events provide context
 
 ## MCP Workflow Search Guidance
 
@@ -642,7 +656,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 **REQUIRED FORMAT** - Each field must be on its own line with section header:
 
 # root_cause_analysis
-{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low", "contributing_factors": ["factor1", "factor2"]}}
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"]}}
 
 # confidence
 0.95
