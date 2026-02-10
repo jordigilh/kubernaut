@@ -176,7 +176,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				AlertName: "TestAlertRequestID",
 				Namespace: testNamespace,
 				Severity:  "info",
-				PodName:   "test-pod",
+				PodName:   "test-pod-request-id",
 				Labels: map[string]string{
 					"scenario": "request-id-tracing",
 				},
