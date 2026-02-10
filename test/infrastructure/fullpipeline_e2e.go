@@ -84,7 +84,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "datastorage", ImageName: "kubernaut/datastorage", DockerfilePath: "docker/data-storage.Dockerfile"},
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "holmesgpt-api", ImageName: "kubernaut/holmesgpt-api", DockerfilePath: "holmesgpt-api/Dockerfile"},
-	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile"},
+	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile", BuildContextPath: "test/services/mock-llm"},
 }
 
 // SetupFullPipelineInfrastructure deploys the complete Kubernaut service pipeline
@@ -216,7 +216,6 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"data-storage-service",
 		"remediationorchestrator-controller",
 		"authwebhook",
-		"notification-controller",
 		"workflowexecution-controller",
 		"holmesgpt-api-sa",
 	}
@@ -495,9 +494,10 @@ func loadFullPipelineImages(builtImages map[string]string, clusterName string, w
 // deployFullPipelineSPController deploys the SignalProcessing controller with
 // Rego policy ConfigMap for the full pipeline E2E.
 func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
-	// Install Rego policy ConfigMap (required by SP)
-	if err := createInlineRegoPolicyConfigMap(kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create Rego policy ConfigMap: %w", err)
+	// Install all SP-specific Rego policy ConfigMaps and predictive signal mappings
+	// (5 policies + 1 predictive mapping ConfigMap required by SP controller)
+	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy SP policies: %w", err)
 	}
 
 	// Deploy SP controller using coverage manifest (handles both coverage and non-coverage modes)
@@ -510,6 +510,11 @@ func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPa
 // deployFullPipelineAAController deploys the AIAnalysis controller with
 // Rego policy and proper RBAC for the full pipeline E2E.
 func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
+	// Install AA-specific Rego policy ConfigMap (aianalysis-policies)
+	if err := createInlineRegoPolicyConfigMap(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create AA Rego policy ConfigMap: %w", err)
+	}
+
 	// Deploy AA controller using the manifest helper
 	if err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy AA controller: %w", err)
@@ -611,8 +616,11 @@ rules:
   resources: ["events"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get"]
+  resources: ["pods", "configmaps", "namespaces"]
+  verbs: ["get", "list"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list"]
 ---
 # ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -636,8 +644,11 @@ metadata:
   namespace: %[1]s
 data:
   config.yaml: |
-    logLevel: info
+    logLevel: debug
     logFormat: json
+    maxEventAgeSeconds: 300
+    kubeQPS: 50
+    kubeBurst: 100
     route:
       routes:
         - match:
@@ -647,7 +658,7 @@ data:
     receivers:
       - name: gateway-webhook
         webhook:
-          endpoint: "http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/alerts/kubernetes-events"
+          endpoint: "http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
           headers:
             Content-Type: application/json
 ---
@@ -773,7 +784,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 
 	// List of deployments that must be ready
 	deployments := []string{
-		"data-storage-service",
+		"datastorage",
 		"mock-llm",
 		"holmesgpt-api",
 		"gateway",

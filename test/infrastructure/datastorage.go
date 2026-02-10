@@ -155,6 +155,34 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	return nil
 }
 
+// ExportMustGatherLogs exports Kind cluster logs to a local directory for debugging.
+// This is a standalone function that can be called independently of DeleteCluster,
+// e.g., by test suites that use IMAGE_REGISTRY for remote images but still run locally.
+//
+// Parameters:
+//   - clusterName: Name of the Kind cluster
+//   - serviceName: Service name for log directory naming (e.g., "fullpipeline")
+//   - writer: Output writer for logging
+//
+// Exports to: /tmp/{serviceName}-e2e-logs-{timestamp}
+func ExportMustGatherLogs(clusterName, serviceName string, writer io.Writer) {
+	_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
+	_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
+
+	logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
+	exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+
+	if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
+	} else {
+		_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
+		_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
+		_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+
+		extractKubernautServiceLogs(logsDir, serviceName, writer)
+	}
+}
+
 // extractKubernautServiceLogs finds and displays logs from kubernaut services
 // This helps with immediate debugging without manually navigating Kind log directories
 func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) {
@@ -571,8 +599,11 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 			Labels: map[string]string{
-				"kubernaut.ai/managed": "true",
-				"test":                 "datastorage-e2e",
+				// BR-SCOPE-002: Infrastructure namespaces must NOT be labeled as managed.
+				// Only application/workload namespaces should have kubernaut.ai/managed=true.
+				// Otherwise the Gateway processes events from Kubernaut's own pods
+				// (FailedScheduling, FailedCreate) as signals, creating spurious RRs.
+				"test": "datastorage-e2e",
 			},
 		},
 	}
