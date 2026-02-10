@@ -1436,6 +1436,17 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.Severity.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "severity",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if s.ContributingFactors == nil {
 			return errors.New("nil is invalid value")
 		}
@@ -1450,6 +1461,23 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s IncidentResponseDataRootCauseAnalysisSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *IncidentResponseDataSelectedWorkflow) Validate() error {

@@ -1089,9 +1089,8 @@
             "description": "Canonical signal type"
           },
           "severity": {
-            "type": "string",
-            "title": "Severity",
-            "description": "Signal severity"
+            "$ref": "#/components/schemas/Severity",
+            "description": "Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown)"
           },
           "signal_source": {
             "type": "string",
@@ -1479,9 +1478,8 @@
             "description": "Signal type determined by original RCA (e.g., 'OOMKilled')"
           },
           "severity": {
-            "type": "string",
-            "title": "Severity",
-            "description": "Severity determined by original RCA"
+            "$ref": "#/components/schemas/Severity",
+            "description": "Severity determined by original RCA (BR-SEVERITY-001)"
           },
           "contributing_factors": {
             "items": {
@@ -1612,14 +1610,13 @@
           "severity": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/Severity"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Severity",
-            "description": "Current severity"
+            "description": "Current severity (BR-SEVERITY-001)"
           },
           "resource_namespace": {
             "anyOf": [
@@ -2013,6 +2010,18 @@
         ],
         "title": "SelectedWorkflowSummary",
         "description": "Summary of the workflow that was executed and failed"
+      },
+      "Severity": {
+        "type": "string",
+        "enum": [
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "unknown"
+        ],
+        "title": "Severity",
+        "description": "Canonical severity levels for Kubernaut.\n\nBusiness Requirement: BR-SEVERITY-001 (Standardized Severity Levels)\nDesign Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)\n\nThese are the ONLY valid severity values across all internal components\n(CRDs, LLM prompts, workflow catalog labels, metrics, audit events).\n\nLevels (most to least severe):\n- critical: Immediate remediation required (>50% users affected)\n- high: Urgent remediation needed (10-50% users affected)\n- medium: Remediation recommended (<10% users affected)\n- low: Remediation optional (no user impact)\n- unknown: Human triage required (investigation inconclusive)"
       },
       "SignalMode": {
         "type": "string",

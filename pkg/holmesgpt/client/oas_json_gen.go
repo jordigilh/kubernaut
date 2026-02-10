@@ -2161,7 +2161,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		e.Str(s.Severity)
+		s.Severity.Encode(e)
 	}
 	{
 		e.FieldStart("signal_source")
@@ -2383,9 +2383,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := d.Str()
-				s.Severity = string(v)
-				if err != nil {
+				if err := s.Severity.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -3889,6 +3887,55 @@ func (s *OptNilRecoveryResponseSelectedWorkflow) UnmarshalJSON(data []byte) erro
 	return s.Decode(d)
 }
 
+// Encode encodes Severity as json.
+func (o OptNilSeverity) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes Severity from json.
+func (o *OptNilSeverity) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilSeverity to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v Severity
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilSeverity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilSeverity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SignalMode as json.
 func (o OptNilSignalMode) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -4174,7 +4221,7 @@ func (s *OriginalRCA) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		e.Str(s.Severity)
+		s.Severity.Encode(e)
 	}
 	{
 		if s.ContributingFactors != nil {
@@ -4231,9 +4278,7 @@ func (s *OriginalRCA) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				v, err := d.Str()
-				s.Severity = string(v)
-				if err != nil {
+				if err := s.Severity.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -6900,6 +6945,52 @@ func (s SelectedWorkflowSummaryParameters) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SelectedWorkflowSummaryParameters) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Severity as json.
+func (s Severity) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes Severity from json.
+func (s *Severity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode Severity to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch Severity(v) {
+	case SeverityCritical:
+		*s = SeverityCritical
+	case SeverityHigh:
+		*s = SeverityHigh
+	case SeverityMedium:
+		*s = SeverityMedium
+	case SeverityLow:
+		*s = SeverityLow
+	case SeverityUnknown:
+		*s = SeverityUnknown
+	default:
+		*s = Severity(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s Severity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *Severity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
