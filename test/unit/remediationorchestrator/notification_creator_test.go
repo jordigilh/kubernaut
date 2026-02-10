@@ -928,6 +928,32 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 
+		Context("BR-ORCH-045: RemediationRequestRef for audit correlation (BR-NOT-064)", func() {
+			It("should set RemediationRequestRef with RR details for lineage tracking", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// BR-NOT-064: RemediationRequestRef must be set for audit correlation
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil(),
+					"RemediationRequestRef must be set for audit correlation (BR-NOT-064)")
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+				Expect(nr.Spec.RemediationRequestRef.Namespace).To(Equal(rr.Namespace))
+				Expect(nr.Spec.RemediationRequestRef.UID).To(Equal(rr.UID))
+				Expect(nr.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+				Expect(nr.Spec.RemediationRequestRef.APIVersion).To(Equal(remediationv1.GroupVersion.String()))
+			})
+		})
+
 		Context("BR-ORCH-045: Priority mapping for completions", func() {
 			It("should use low priority for successful completions (informational)", func() {
 				client := fakeClient.Build()
