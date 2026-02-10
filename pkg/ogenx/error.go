@@ -244,6 +244,10 @@ func extractErrorDetail(resp any) string {
 	if val.Kind() == reflect.Struct {
 		detailField := val.FieldByName("Detail")
 		if detailField.IsValid() {
+			// HAPI RFC 7807: Detail can be plain string (not OptString)
+			if detailField.Kind() == reflect.String {
+				return detailField.String()
+			}
 			// Detail is likely an OptString (struct with Value and Set)
 			// Check if it has IsSet() method
 			if detailField.CanInterface() {
