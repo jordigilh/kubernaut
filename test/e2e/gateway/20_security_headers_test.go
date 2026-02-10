@@ -236,15 +236,15 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			initialMetricsStr := string(initialMetrics)
 
 			testLogger.Info("Step 2: Send test request to Gateway")
-			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-				AlertName: "TestAlertMetrics",
-				Namespace: testNamespace,
-				Severity:  "warning",
-				PodName:   "test-pod",
-				Labels: map[string]string{
-					"scenario": "http-metrics",
-				},
-			})
+		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+			AlertName: "TestAlertMetrics",
+			Namespace: testNamespace,
+			Severity:  "warning",
+			PodName:   "test-pod-metrics",
+			Labels: map[string]string{
+				"scenario": "http-metrics",
+			},
+		})
 
 			resp, err := func() (*http.Response, error) {
 				req31, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))

@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -212,14 +213,15 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 
 			// Create workflows via API with ADR-043 compliant content
 			for i, wf := range workflows {
-				// V1.0: Only 4 mandatory labels
+				// V1.0: 6 mandatory labels (signal_type, severity, risk_tolerance, component, priority, environment)
 				severity := wf.labels["severity"]
 				environment := wf.labels["environment"]
 				priority := wf.labels["priority"]
 				component := wf.labels["component"]
+				// ADR-043: WorkflowSchema labels.priority must be lowercase (p0, p1, p2, p3, p4)
+				prioritySchema := strings.ToLower(priority.(string))
 
 				// Generate ADR-043 compliant workflow-schema.yaml content
-				// V1.0: Simplified 4-label schema
 				workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
@@ -227,7 +229,9 @@ metadata:
   version: "1.0.0"
   description: %s
 labels:
+  signal_type: %s
   severity: %s
+  risk_tolerance: medium
   environment: %s
   priority: %s
   component: %s
@@ -243,7 +247,7 @@ parameters:
 execution:
   engine: tekton
   bundle: ghcr.io/kubernaut/workflows/test:v1.0.0
-`, wf.workflowID, wf.description, severity, environment, priority, component)
+`, wf.workflowID, wf.description, wf.labels["signal_type"], severity, environment, prioritySchema, component)
 
 				// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
 				containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/%s:v1.0.0@sha256:%064d", wf.workflowID, i+1)

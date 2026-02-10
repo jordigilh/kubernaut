@@ -141,7 +141,30 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			// DD-WORKFLOW-002 v3.0: Create workflow request
 			// DD-API-001: Use typed OpenAPI struct
-			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch"
+			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
+			workflowID := fmt.Sprintf("%s-v1-0-0", workflowName)
+			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: Increases memory limits conservatively for OOMKilled pods
+labels:
+  signal_type: OOMKilled
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: P0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0
+`, workflowID)
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456"
 
@@ -190,7 +213,30 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("📝 Creating workflow v1.1.0...")
 
 			// DD-API-001: Use typed OpenAPI struct
-			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v1.1\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch-v2"
+			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
+			workflowID := fmt.Sprintf("%s-v1-1-0", workflowName)
+			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.1.0"
+  description: Improved version with better memory calculation
+labels:
+  signal_type: OOMKilled
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: P0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.1.0
+`, workflowID)
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789"
 			previousVersion := "v1.0.0"
@@ -249,7 +295,30 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			testLogger.Info("📝 Creating workflow v2.0.0...")
 
 			// DD-API-001: Use typed OpenAPI struct
-			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v2\nspec:\n  tasks:\n  - name: scale-horizontal\n    taskRef:\n      name: kubectl-scale"
+			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
+			workflowID := fmt.Sprintf("%s-v2-0-0", workflowName)
+			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v2.0.0"
+  description: Major version with horizontal scaling support
+labels:
+  signal_type: OOMKilled
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: P0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v2.0.0
+`, workflowID)
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012"
 			previousVersion := "v1.1.0"
