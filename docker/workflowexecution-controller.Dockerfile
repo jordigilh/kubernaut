@@ -1,40 +1,38 @@
-# Multi-stage build for WorkflowExecution controller
-# CRITICAL (Jan 9, 2026): ALL Red Hat UBI9 go-toolset versions crash on ARM64
-# - go-toolset:1.24 (Go 1.24.6) → taggedPointerPack fatal error ❌
-# - go-toolset:1.25 (Go 1.25.3) → taggedPointerPack fatal error ❌
-# - golang:1.25-bookworm (Go 1.25.5) → Works ✅
-#
-# Root cause: Red Hat's ARM64 Go runtime has pointer tagging bug
-# Workaround: Use upstream Go builder mirrored to quay.io (avoids Docker Hub rate limits)
-# ADR-028 Compliance: Image mirrored to approved quay.io/jordigilh/* registry
-# Runtime stage still uses UBI9 for full Red Hat compliance
-# See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
-FROM quay.io/jordigilh/golang:1.25-bookworm AS builder
+# WorkflowExecution Controller - Multi-Architecture Dockerfile using Red Hat UBI9
+# Supports: linux/amd64, linux/arm64
+# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+
+# Build arguments for multi-architecture support
+ARG GOFLAGS=""
+ARG GOOS=linux
+ARG GOARCH=amd64
+
+# Switch to root for package installation
+USER root
 
 # Install build dependencies
-RUN apt-get update && \
-	apt-get install -y git ca-certificates tzdata && \
-	apt-get clean && \
-	rm -rf /var/lib/apt/lists/*
+RUN dnf update -y && \
+	dnf install -y git ca-certificates tzdata && \
+	dnf clean all
+
+# Switch back to default user for security
+USER 1001
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /opt/app-root/src
 
 # Copy go mod files
-COPY go.mod go.sum ./
+COPY --chown=1001:0 go.mod go.sum ./
 
 # Copy source code
-COPY . .
+COPY --chown=1001:0 . .
 
 # Build the WorkflowExecution controller binary
 # -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
 # DD-TEST-007: Support E2E coverage instrumentation
 # When GOFLAGS=-cover, use simple build (no aggressive flags that break coverage)
 # Otherwise, use production build with all optimizations
-ARG GOFLAGS=""
-ARG GOOS=linux
-ARG GOARCH=amd64
-
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "🔬 Building with E2E coverage instrumentation (DD-TEST-007)..."; \
 	echo "   Simple build (no -a, -installsuffix, -extldflags)"; \
@@ -64,7 +62,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root workflowexecution-user
 
 # Copy the binary from builder stage
-COPY --from=builder /workspace/workflowexecution /usr/local/bin/workflowexecution
+COPY --from=builder /opt/app-root/src/workflowexecution /usr/local/bin/workflowexecution
 
 # Set proper permissions
 RUN chmod +x /usr/local/bin/workflowexecution
@@ -95,5 +93,3 @@ LABEL name="kubernaut-workflowexecution" \
 	io.k8s.description="Kubernaut WorkflowExecution Controller for Kubernetes workflow execution" \
 	io.k8s.display-name="Kubernaut WorkflowExecution Controller" \
 	io.openshift.tags="kubernaut,kubernetes,controller,workflow,execution,tekton"
-
-
