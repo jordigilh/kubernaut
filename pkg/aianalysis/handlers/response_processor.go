@@ -81,23 +81,26 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.Confidence)
 
-	// BR-HAPI-200 Outcome A: Problem confidently resolved, no workflow needed
-	// CRITICAL: Check this BEFORE needs_human_review to correctly handle the "problem resolved" case
-	// When confidence >= 0.7 and no workflow is selected, HAPI has determined the problem is resolved
-	// and no remediation is needed. This is a SUCCESS case, not a failure.
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 {
-		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
-	}
-
-	// BR-HAPI-197: Check if workflow resolution failed (validation failures)
-	// This handles cases where HAPI flagged validation failures explicitly
+	// BR-HAPI-197: Check if HAPI explicitly requires human review (Layer 1 - Primary)
+	// CRITICAL: This MUST be checked FIRST. HAPI's explicit needs_human_review=true
+	// takes priority over all other classification logic.
 	if needsHumanReview {
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
 	}
 
-	// BR-AI-050 + Issue #29: No workflow found (terminal failure)
-	// When confidence < 0.7 and no workflow, this is a terminal failure (not "problem resolved")
-	// Note: The "problem resolved" case (confidence >= 0.7, no workflow) was already handled above
+	// BR-HAPI-200.6 Outcome A: Problem confidently resolved, no workflow needed
+	// Detection per BR-HAPI-200.6: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
+	// Defense-in-depth (Layer 2): also verify no warning signals that indicate an active
+	// problem (inconclusive investigation, no matching workflows). This catches edge cases
+	// where the LLM incorrectly overrides needs_human_review=false but HAPI still appends
+	// diagnostic warnings from its investigation_outcome parsing.
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) {
+		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
+	}
+
+	// BR-AI-050 + Issue #29: No workflow found (terminal failure requiring human review)
+	// Reached when: (a) confidence < 0.7 with no workflow, OR
+	// (b) confidence >= 0.7 but warning signals indicate an active problem (defense-in-depth)
 	if !hasSelectedWorkflow {
 		return p.handleNoWorkflowTerminalFailure(ctx, analysis, resp)
 	}
@@ -878,6 +881,30 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 	return "WorkflowNotFound"
 }
 
+// hasNoWorkflowWarningSignal checks if HAPI's warnings contain signals that indicate
+// the absence of a selected workflow is due to an active problem (inconclusive investigation
+// or no matching workflows in the catalog), NOT because the problem self-resolved.
+//
+// This is a defense-in-depth check (Layer 2) for BR-HAPI-200.6. It catches edge cases
+// where the LLM incorrectly sets needs_human_review=false but HAPI's result_parser
+// still appends diagnostic warnings from investigation_outcome processing.
+//
+// Warning signals checked (from HAPI result_parser.py):
+//   - "inconclusive": investigation_outcome == "inconclusive"
+//   - "no workflows matched": selected_workflow is None and outcome is not "resolved"
+//   - "human review recommended": general HAPI safety signal
+func hasNoWorkflowWarningSignal(warnings []string) bool {
+	for _, w := range warnings {
+		lower := strings.ToLower(w)
+		if strings.Contains(lower, "inconclusive") ||
+			strings.Contains(lower, "no workflows matched") ||
+			strings.Contains(lower, "human review recommended") {
+			return true
+		}
+	}
+	return false
+}
+
 // mapWarningsToSubReason extracts SubReason from HAPI warnings
 // DEPRECATED: Use mapEnumToSubReason when HumanReviewReason is available
 // Kept for backward compatibility with older HAPI versions
@@ -901,3 +928,4 @@ func mapWarningsToSubReason(warnings []string) string {
 		return "WorkflowNotFound" // Default to most common case
 	}
 }
+
