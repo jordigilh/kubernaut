@@ -1892,6 +1892,8 @@ func (s MandatoryLabelsSeverity) Validate() error {
 		return nil
 	case "low":
 		return nil
+	case "*":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

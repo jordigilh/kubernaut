@@ -1900,8 +1900,8 @@ components:
           example: "OOMKilled"
         severity:
           type: string
-          description: "Severity level this workflow is designed for"
-          enum: [critical, high, medium, low]
+          description: "Severity level this workflow is designed for ('*' matches any severity)"
+          enum: [critical, high, medium, low, "*"]
           example: "critical"
         component:
           type: string
@@ -2050,6 +2050,10 @@ components:
           $ref: '#/components/schemas/CustomLabels'
         detected_labels:
           $ref: '#/components/schemas/DetectedLabels'
+        parameters:
+          type: object
+          additionalProperties: true
+          description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
     RemediationWorkflow:
       type: object
@@ -2102,6 +2106,7 @@ components:
           description: "SHA-256 hash of content"
         parameters:
           type: object
+          additionalProperties: true
           description: "Workflow parameters (JSONB)"
         execution_engine:
           type: string

@@ -11794,14 +11794,16 @@ func (s *MandatoryLabelsSeverity) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch MandatoryLabelsSeverity(v) {
-	case MandatoryLabelsSeverityCritical:
-		*s = MandatoryLabelsSeverityCritical
-	case MandatoryLabelsSeverityHigh:
-		*s = MandatoryLabelsSeverityHigh
-	case MandatoryLabelsSeverityMedium:
-		*s = MandatoryLabelsSeverityMedium
-	case MandatoryLabelsSeverityLow:
-		*s = MandatoryLabelsSeverityLow
+	case MandatoryLabelsSeverity_critical:
+		*s = MandatoryLabelsSeverity_critical
+	case MandatoryLabelsSeverity_high:
+		*s = MandatoryLabelsSeverity_high
+	case MandatoryLabelsSeverity_medium:
+		*s = MandatoryLabelsSeverity_medium
+	case MandatoryLabelsSeverity_low:
+		*s = MandatoryLabelsSeverity_low
+	case MandatoryLabelsSeverity_:
+		*s = MandatoryLabelsSeverity_
 	default:
 		*s = MandatoryLabelsSeverity(v)
 	}
@@ -15734,6 +15736,40 @@ func (s *OptRemediationOrchestratorAuditPayloadOutcome) UnmarshalJSON(data []byt
 	return s.Decode(d)
 }
 
+// Encode encodes RemediationWorkflowParameters as json.
+func (o OptRemediationWorkflowParameters) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes RemediationWorkflowParameters from json.
+func (o *OptRemediationWorkflowParameters) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationWorkflowParameters to nil")
+	}
+	o.Set = true
+	o.Value = make(RemediationWorkflowParameters)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationWorkflowParameters) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationWorkflowParameters) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SignalProcessingAuditPayloadCriticality as json.
 func (o OptSignalProcessingAuditPayloadCriticality) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -16332,6 +16368,40 @@ func (s OptWorkflowSearchFilters) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptWorkflowSearchFilters) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowSearchResultParameters as json.
+func (o OptWorkflowSearchResultParameters) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes WorkflowSearchResultParameters from json.
+func (o *OptWorkflowSearchResultParameters) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptWorkflowSearchResultParameters to nil")
+	}
+	o.Set = true
+	o.Value = make(WorkflowSearchResultParameters)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptWorkflowSearchResultParameters) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptWorkflowSearchResultParameters) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -19531,7 +19601,7 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 		e.Str(s.ContentHash)
 	}
 	{
-		if s.Parameters != nil {
+		if s.Parameters.Set {
 			e.FieldStart("parameters")
 			s.Parameters.Encode(e)
 		}
@@ -19840,12 +19910,10 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 			}
 		case "parameters":
 			if err := func() error {
-				s.Parameters = nil
-				var elem RemediationWorkflowParameters
-				if err := elem.Decode(d); err != nil {
+				s.Parameters.Reset()
+				if err := s.Parameters.Decode(d); err != nil {
 					return err
 				}
-				s.Parameters = &elem
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"parameters\"")
@@ -20173,29 +20241,43 @@ func (s *RemediationWorkflow) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *RemediationWorkflowParameters) Encode(e *jx.Encoder) {
+func (s RemediationWorkflowParameters) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
-// encodeFields encodes fields.
-func (s *RemediationWorkflowParameters) encodeFields(e *jx.Encoder) {
-}
+// encodeFields implements json.Marshaler.
+func (s RemediationWorkflowParameters) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
 
-var jsonFieldsNameOfRemediationWorkflowParameters = [0]string{}
+		if len(elem) != 0 {
+			e.Raw(elem)
+		}
+	}
+}
 
 // Decode decodes RemediationWorkflowParameters from json.
 func (s *RemediationWorkflowParameters) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationWorkflowParameters to nil")
 	}
-
+	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		default:
-			return d.Skip()
+		var elem jx.Raw
+		if err := func() error {
+			v, err := d.RawAppend(nil)
+			elem = jx.Raw(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
 		}
+		m[string(k)] = elem
+		return nil
 	}); err != nil {
 		return errors.Wrap(err, "decode RemediationWorkflowParameters")
 	}
@@ -20204,7 +20286,7 @@ func (s *RemediationWorkflowParameters) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RemediationWorkflowParameters) MarshalJSON() ([]byte, error) {
+func (s RemediationWorkflowParameters) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
@@ -24772,9 +24854,15 @@ func (s *WorkflowSearchResult) encodeFields(e *jx.Encoder) {
 			s.DetectedLabels.Encode(e)
 		}
 	}
+	{
+		if s.Parameters.Set {
+			e.FieldStart("parameters")
+			s.Parameters.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkflowSearchResult = [13]string{
+var jsonFieldsNameOfWorkflowSearchResult = [14]string{
 	0:  "workflow_id",
 	1:  "title",
 	2:  "description",
@@ -24788,6 +24876,7 @@ var jsonFieldsNameOfWorkflowSearchResult = [13]string{
 	10: "rank",
 	11: "custom_labels",
 	12: "detected_labels",
+	13: "parameters",
 }
 
 // Decode decodes WorkflowSearchResult from json.
@@ -24943,6 +25032,16 @@ func (s *WorkflowSearchResult) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"detected_labels\"")
 			}
+		case "parameters":
+			if err := func() error {
+				s.Parameters.Reset()
+				if err := s.Parameters.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameters\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -24996,6 +25095,64 @@ func (s *WorkflowSearchResult) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowSearchResult) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s WorkflowSearchResultParameters) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s WorkflowSearchResultParameters) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		if len(elem) != 0 {
+			e.Raw(elem)
+		}
+	}
+}
+
+// Decode decodes WorkflowSearchResultParameters from json.
+func (s *WorkflowSearchResultParameters) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowSearchResultParameters to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem jx.Raw
+		if err := func() error {
+			v, err := d.RawAppend(nil)
+			elem = jx.Raw(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowSearchResultParameters")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowSearchResultParameters) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowSearchResultParameters) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

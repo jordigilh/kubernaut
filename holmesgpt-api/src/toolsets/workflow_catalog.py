@@ -970,6 +970,9 @@ class SearchWorkflowCatalogTool(Tool):
                 # Container execution fields (DD-WORKFLOW-002 v2.4, DD-CONTRACT-001 v1.2)
                 "container_image": api_wf.get("container_image"),
                 "container_digest": api_wf.get("container_digest"),
+                # BR-HAPI-191: Include parameter schema so LLM knows expected parameters
+                # Format: {"schema": {"parameters": [{"name": "PARAM", "type": "string", ...}]}}
+                "parameters": api_wf.get("parameters"),
             }
 
             results.append(tool_workflow)

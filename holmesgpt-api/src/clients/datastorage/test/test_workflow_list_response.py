@@ -47,7 +47,7 @@ class TestWorkflowListResponse(unittest.TestCase):
                         maintainer = '', 
                         content = '', 
                         content_hash = '0123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263', 
-                        parameters = datastorage.models.parameters.parameters(), 
+                        parameters = { }, 
                         execution_engine = '', 
                         container_image = 'ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123...', 
                         container_digest = 'sha256:abc123...', 

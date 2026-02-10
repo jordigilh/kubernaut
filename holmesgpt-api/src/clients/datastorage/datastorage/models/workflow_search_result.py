@@ -45,7 +45,8 @@ class WorkflowSearchResult(BaseModel):
     rank: Annotated[int, Field(strict=True, ge=1)] = Field(description="Position in result set (1-based)")
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format")
     detected_labels: Optional[DetectedLabels] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "title", "description", "signal_type", "container_image", "container_digest", "confidence", "label_boost", "label_penalty", "final_score", "rank", "custom_labels", "detected_labels"]
+    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameter schema (JSONB) - describes expected parameters")
+    __properties: ClassVar[List[str]] = ["workflow_id", "title", "description", "signal_type", "container_image", "container_digest", "confidence", "label_boost", "label_penalty", "final_score", "rank", "custom_labels", "detected_labels", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -111,7 +112,8 @@ class WorkflowSearchResult(BaseModel):
             "final_score": obj.get("final_score"),
             "rank": obj.get("rank"),
             "custom_labels": obj.get("custom_labels"),
-            "detected_labels": DetectedLabels.from_dict(obj.get("detected_labels")) if obj.get("detected_labels") is not None else None
+            "detected_labels": DetectedLabels.from_dict(obj.get("detected_labels")) if obj.get("detected_labels") is not None else None,
+            "parameters": obj.get("parameters")
         })
         return _obj
 
