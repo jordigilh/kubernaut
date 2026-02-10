@@ -77,3 +77,39 @@ func CalculateFingerprint(identifier string, resource ResourceIdentifier) string
 	// Example: "bd773c9f25ac1e4d6f8a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e"
 	return fmt.Sprintf("%x", hash)
 }
+
+// CalculateOwnerFingerprint generates a fingerprint based on the owner resource,
+// without including the signal reason/identifier.
+//
+// **Business Requirement**: Prevents duplicate remediation workflows for events that
+// originate from the same root cause (same Deployment/StatefulSet/DaemonSet).
+//
+// **Fingerprint Algorithm**:
+//   - Format: SHA256(namespace:ownerKind:ownerName)
+//   - Deterministic: Same owner → same fingerprint regardless of event reason
+//   - Used by KubernetesEventAdapter when OwnerResolver is configured
+//
+// **Examples**:
+//   - Pod crash event: SHA256("prod:Deployment:payment-api")
+//   - OOM event from same deployment: SHA256("prod:Deployment:payment-api") ← same!
+//
+// **Parameters**:
+//   - resource: The owner resource (namespace, kind, name)
+//
+// **Returns**:
+//   - string: Hex-encoded SHA256 hash (64 characters)
+func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
+	// Build fingerprint input string WITHOUT reason/identifier
+	// Format: namespace:kind:name
+	// Example: "prod:Deployment:payment-api"
+	input := fmt.Sprintf("%s:%s:%s",
+		resource.Namespace,
+		resource.Kind,
+		resource.Name,
+	)
+
+	// Generate SHA256 hash
+	hash := sha256.Sum256([]byte(input))
+
+	return fmt.Sprintf("%x", hash)
+}

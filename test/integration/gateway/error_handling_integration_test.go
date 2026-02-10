@@ -142,7 +142,8 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			}
 
 			By("5. Verify Gateway continues processing after timeout")
-			validAlert := createPrometheusAlert(testNamespace, "AfterDataStorageTimeout", "info", "", "")
+			// Issue #63: alertname excluded from fingerprint — use different pod for a distinct signal
+			validAlert := createPrometheusAlertForPod(testNamespace, "AfterDataStorageTimeout", "info", "", "", "recovery-pod-456")
 			validSignal, err := prometheusAdapter.Parse(ctx, validAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -173,7 +174,8 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 
 			for i := 0; i < 5; i++ {
 				alertName := fmt.Sprintf("CascadeTest-%d", i)
-				alert := createPrometheusAlert(uniqueNs, alertName, "warning", "", "")
+				// Issue #63: alertname excluded from fingerprint — use different pods for distinct signals
+				alert := createPrometheusAlertForPod(uniqueNs, alertName, "warning", "", "", fmt.Sprintf("cascade-pod-%d", i))
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 

@@ -699,6 +699,18 @@ func (s *Server) Handler() http.Handler {
 	return s.httpServer.Handler
 }
 
+// GetCachedClient returns the controller-runtime cached client used by the Gateway.
+// This client uses metadata-only informers (PartialObjectMetadata) for resource lookups.
+//
+// Used by:
+//   - scope.Manager (ADR-053): label-based resource opt-in filtering
+//   - K8sOwnerResolver (BR-GATEWAY-004): owner chain resolution for K8s event deduplication
+//
+// Both consumers share the same informer cache — zero additional API calls.
+func (s *Server) GetCachedClient() client.Client {
+	return s.ctrlClient
+}
+
 // RegisterAdapter registers a RoutableAdapter using chi router
 //
 // This method:
