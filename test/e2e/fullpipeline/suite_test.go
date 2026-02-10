@@ -240,8 +240,15 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		By("Deleting KIND cluster (with must-gather on failure)")
-		if err := infrastructure.DeleteCluster(clusterName, "fullpipeline", anyFailure, GinkgoWriter); err != nil {
+		// Full Pipeline E2E: Always collect must-gather locally on failure,
+		// regardless of IMAGE_REGISTRY (we run locally with registry images).
+		if anyFailure && !setupFailed {
+			By("Collecting must-gather logs (full pipeline always exports locally)")
+			infrastructure.ExportMustGatherLogs(clusterName, "fullpipeline", GinkgoWriter)
+		}
+
+		By("Deleting KIND cluster")
+		if err := infrastructure.DeleteCluster(clusterName, "fullpipeline", false, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
 		}
 

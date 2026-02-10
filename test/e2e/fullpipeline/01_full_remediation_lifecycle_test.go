@@ -63,9 +63,27 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 
 		By("Step 0: Seeding test workflows in DataStorage")
 		// Seed a workflow that uses the Job execution engine
+		// WorkflowID MUST match Mock LLM's scenario workflow_name for UUID sync.
+		// The event-exporter forwards a "BackOff" Warning event (CrashLoopBackOff),
+		// not the OOMKilled terminated state, so Mock LLM matches the "crashloop"
+		// scenario (workflow_name="crashloop-config-fix-v1").
+		// We also seed the oomkilled workflow for completeness.
 		workflows := []infrastructure.TestWorkflow{
 			{
-				Name:            "oom-kill-remediation",
+				WorkflowID:      "crashloop-config-fix-v1",
+				Name:            "CrashLoopBackOff - Configuration Fix",
+				Description:     "CrashLoop remediation workflow for full pipeline E2E",
+				SignalType:      "CrashLoopBackOff",
+				Severity:        "high",
+				Component:       "pod",
+				Environment:     "test",
+				Priority:        "P0",
+				ContainerImage:  "busybox:latest",
+				ExecutionEngine: "job",
+			},
+			{
+				WorkflowID:      "oomkill-increase-memory-v1",
+				Name:            "OOMKill Recovery - Increase Memory Limits",
 				Description:     "OOMKill remediation workflow for full pipeline E2E",
 				SignalType:      "OOMKilled",
 				Severity:        "critical",
@@ -80,8 +98,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			dataStorageClient, workflows, "fullpipeline-e2e", GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
-		Expect(workflowUUIDs).To(HaveKey("oom-kill-remediation"))
-		GinkgoWriter.Printf("  ✅ Workflow seeded: oom-kill-remediation → %s\n", workflowUUIDs["oom-kill-remediation"])
+		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:test"))
+		GinkgoWriter.Printf("  ✅ Workflow seeded: crashloop-config-fix-v1 → %s\n", workflowUUIDs["crashloop-config-fix-v1:test"])
 
 		By("Step 0b: Updating Mock LLM with workflow UUIDs")
 		// Restart Mock LLM with the seeded workflow UUIDs so it returns them in responses
@@ -162,17 +180,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
 			rrList := &remediationv1.RemediationRequestList{}
-			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			// Gateway creates RR in the signal's namespace (testNamespace), not the infrastructure namespace
+			if err := apiReader.List(ctx, rrList, client.InNamespace(testNamespace)); err != nil {
 				return false
 			}
-			// Find one related to our test namespace's OOMKill via TargetResource.Namespace
 			for i := range rrList.Items {
 				rr := &rrList.Items[i]
-				if rr.Spec.TargetResource.Namespace == testNamespace {
-					remediationRequest = rr
-					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
-					return true
-				}
+				remediationRequest = rr
+				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
+				return true
 			}
 			return false
 		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
@@ -183,7 +199,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		By("Step 4: Waiting for SignalProcessing to complete")
 		Eventually(func() string {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+			if err := apiReader.List(ctx, spList, client.InNamespace(testNamespace)); err != nil {
 				return ""
 			}
 			for _, sp := range spList.Items {
@@ -203,7 +219,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		var aaName string
 		Eventually(func() string {
 			aaList := &aianalysisv1.AIAnalysisList{}
-			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
+			if err := apiReader.List(ctx, aaList, client.InNamespace(testNamespace)); err != nil {
 				return ""
 			}
 			for _, aa := range aaList.Items {
@@ -220,7 +236,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		// Verify AIAnalysis selected a workflow with job engine
 		By("Step 5b: Verifying AIAnalysis selected workflow with job engine")
 		aa := &aianalysisv1.AIAnalysis{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: testNamespace}, aa)).To(Succeed())
 		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
 		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
@@ -232,7 +248,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		var weName string
 		Eventually(func() string {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+			if err := apiReader.List(ctx, weList, client.InNamespace(testNamespace)); err != nil {
 				return ""
 			}
 			for _, we := range weList.Items {
@@ -273,7 +289,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		Eventually(func() string {
 			we := &workflowexecutionv1.WorkflowExecution{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: weName, Namespace: namespace,
+				Name: weName, Namespace: testNamespace,
 			}, we); err != nil {
 				return ""
 			}
@@ -285,10 +301,30 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		// Step 9: Verify NotificationRequest created (BR-ORCH-045: completion)
 		// ================================================================
 		By("Step 9: Waiting for completion NotificationRequest")
+		pollCount := 0
 		Eventually(func() bool {
+			pollCount++
 			nrList := &notificationv1.NotificationRequestList{}
-			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
+			if listErr := apiReader.List(ctx, nrList, client.InNamespace(testNamespace)); listErr != nil {
+				GinkgoWriter.Printf("  [Step 9 poll %d] List NR error: %v\n", pollCount, listErr)
 				return false
+			}
+			// Diagnostic: every 10 polls, dump RR phase and all NRs
+			if pollCount%10 == 1 {
+				rr := &remediationv1.RemediationRequest{}
+				if getErr := apiReader.Get(ctx, client.ObjectKey{Name: remediationRequest.Name, Namespace: testNamespace}, rr); getErr == nil {
+					GinkgoWriter.Printf("  [Step 9 poll %d] RR %s phase=%s outcome=%s\n", pollCount, rr.Name, rr.Status.OverallPhase, rr.Status.Outcome)
+				} else {
+					GinkgoWriter.Printf("  [Step 9 poll %d] RR Get error: %v\n", pollCount, getErr)
+				}
+				GinkgoWriter.Printf("  [Step 9 poll %d] Found %d NotificationRequests in %s\n", pollCount, len(nrList.Items), testNamespace)
+				for _, nr := range nrList.Items {
+					refName := "<nil>"
+					if nr.Spec.RemediationRequestRef != nil {
+						refName = nr.Spec.RemediationRequestRef.Name
+					}
+					GinkgoWriter.Printf("    NR %s type=%s ref=%s\n", nr.Name, nr.Spec.Type, refName)
+				}
 			}
 			for _, nr := range nrList.Items {
 				if nr.Spec.RemediationRequestRef != nil &&
@@ -309,7 +345,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: remediationRequest.Name, Namespace: namespace,
+				Name: remediationRequest.Name, Namespace: testNamespace,
 			}, rr); err != nil {
 				return ""
 			}
@@ -327,11 +363,18 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 // updateMockLLMScenarios updates the Mock LLM ConfigMap with workflow UUIDs
 // and restarts the Mock LLM pod so it picks up the new configuration.
 func updateMockLLMScenarios(ctx context.Context, workflowUUIDs map[string]string) error {
-	// Build scenarios YAML
-	scenariosYAML := "scenarios:\n"
+	// Build scenarios YAML with proper indentation for ConfigMap block scalar
+	// Each line must be indented by 4 spaces to align with the `|` block scalar
+	scenariosYAML := "    scenarios:\n"
 	for key, uuid := range workflowUUIDs {
-		scenariosYAML += fmt.Sprintf("  %s: %s\n", key, uuid)
+		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
 	}
+	// Full pipeline E2E uses job execution engine (no Tekton installed)
+	scenariosYAML += "    overrides:\n"
+	scenariosYAML += "      crashloop:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      oomkilled:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
 
 	// Update the ConfigMap
 	configMap := fmt.Sprintf(`apiVersion: v1
@@ -341,8 +384,7 @@ metadata:
   namespace: %s
 data:
   scenarios.yaml: |
-    %s
-`, namespace, scenariosYAML)
+%s`, namespace, scenariosYAML)
 
 	cmd := fmt.Sprintf("kubectl --kubeconfig %s apply -f -", kubeconfigPath)
 	applyCmd := execCommand(cmd)

@@ -619,9 +619,8 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/managed": "true",
-			},
+			// BR-SCOPE-002: Infrastructure/test namespaces must NOT be labeled as managed.
+			// Only application namespaces explicitly opted-in should have kubernaut.ai/managed=true.
 		},
 	}
 	_, err = clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})

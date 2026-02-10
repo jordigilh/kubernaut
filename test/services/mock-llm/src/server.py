@@ -393,6 +393,11 @@ def load_scenarios_from_file(config_path: str):
         scenarios:
           oomkill-increase-memory-v1:production: "uuid1"
           crashloop-config-fix-v1:test: "uuid2"
+        overrides:                          # Optional: per-scenario field overrides
+          crashloop:
+            execution_engine: "job"         # Override execution_engine for this scenario
+          oomkilled:
+            execution_engine: "job"
     """
     try:
         import yaml
@@ -452,7 +457,30 @@ def load_scenarios_from_file(config_path: str):
                 print(f"  ⚠️  No matching scenario for config entry: {workflow_key}")
 
         print(f"✅ Mock LLM loaded {synced_count}/{len(MOCK_SCENARIOS)} scenarios from file")
-        
+
+        # Apply scenario-level overrides (e.g., execution_engine)
+        # Format: overrides:
+        #           crashloop:
+        #             execution_engine: "job"
+        overrides_config = config.get('overrides', {})
+        if overrides_config:
+            for scenario_name, overrides in overrides_config.items():
+                if scenario_name in MOCK_SCENARIOS:
+                    scenario = MOCK_SCENARIOS[scenario_name]
+                    for key, value in overrides.items():
+                        if hasattr(scenario, key):
+                            setattr(scenario, key, value)
+                            print(f"  ✅ Override {scenario_name}.{key} = {value}")
+                        else:
+                            print(f"  ⚠️  Unknown override field: {scenario_name}.{key}")
+                elif scenario_name == "default" and DEFAULT_SCENARIO:
+                    for key, value in overrides.items():
+                        if hasattr(DEFAULT_SCENARIO, key):
+                            setattr(DEFAULT_SCENARIO, key, value)
+                            print(f"  ✅ Override default.{key} = {value}")
+                else:
+                    print(f"  ⚠️  Unknown scenario for override: {scenario_name}")
+
         # Validate that all scenarios with workflow_name matched successfully
         # This prevents silent failures from workflow name drift between Mock LLM and test fixtures
         # Check both MOCK_SCENARIOS and DEFAULT_SCENARIO
