@@ -368,7 +368,7 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 
 	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
-	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("%s", reviewCtx.Message))
+	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("AIAnalysis failed: %s", reviewCtx.Message))
 }
 
 // propagateFailure propagates AIAnalysis failure to RemediationRequest.
