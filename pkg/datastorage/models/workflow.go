@@ -386,6 +386,14 @@ type WorkflowSearchResult struct {
 	DetectedLabels DetectedLabels `json:"detected_labels,omitempty"`
 
 	// ========================================
+	// PARAMETER SCHEMA (BR-HAPI-191)
+	// ========================================
+	// Parameters contains the workflow parameter schema (JSONB)
+	// Used by HAPI for parameter validation and by LLM for correct parameter names
+	// Format: {"schema": {"parameters": [{"name": "PARAM_NAME", "type": "string", ...}]}}
+	Parameters *json.RawMessage `json:"parameters,omitempty"`
+
+	// ========================================
 	// INTERNAL: Full workflow data (not serialized to JSON)
 	// ========================================
 	// Workflow contains the full workflow data for internal processing

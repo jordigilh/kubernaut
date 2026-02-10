@@ -6167,7 +6167,7 @@ type LivenessCheckOK struct{}
 type MandatoryLabels struct {
 	// Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff).
 	SignalType string `json:"signal_type"`
-	// Severity level this workflow is designed for.
+	// Severity level this workflow is designed for ('*' matches any severity).
 	Severity MandatoryLabelsSeverity `json:"severity"`
 	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
 	Component string `json:"component"`
@@ -6352,36 +6352,40 @@ func (s *MandatoryLabelsPriority) UnmarshalText(data []byte) error {
 	}
 }
 
-// Severity level this workflow is designed for.
+// Severity level this workflow is designed for ('*' matches any severity).
 type MandatoryLabelsSeverity string
 
 const (
-	MandatoryLabelsSeverityCritical MandatoryLabelsSeverity = "critical"
-	MandatoryLabelsSeverityHigh     MandatoryLabelsSeverity = "high"
-	MandatoryLabelsSeverityMedium   MandatoryLabelsSeverity = "medium"
-	MandatoryLabelsSeverityLow      MandatoryLabelsSeverity = "low"
+	MandatoryLabelsSeverity_critical MandatoryLabelsSeverity = "critical"
+	MandatoryLabelsSeverity_high     MandatoryLabelsSeverity = "high"
+	MandatoryLabelsSeverity_medium   MandatoryLabelsSeverity = "medium"
+	MandatoryLabelsSeverity_low      MandatoryLabelsSeverity = "low"
+	MandatoryLabelsSeverity_         MandatoryLabelsSeverity = "*"
 )
 
 // AllValues returns all MandatoryLabelsSeverity values.
 func (MandatoryLabelsSeverity) AllValues() []MandatoryLabelsSeverity {
 	return []MandatoryLabelsSeverity{
-		MandatoryLabelsSeverityCritical,
-		MandatoryLabelsSeverityHigh,
-		MandatoryLabelsSeverityMedium,
-		MandatoryLabelsSeverityLow,
+		MandatoryLabelsSeverity_critical,
+		MandatoryLabelsSeverity_high,
+		MandatoryLabelsSeverity_medium,
+		MandatoryLabelsSeverity_low,
+		MandatoryLabelsSeverity_,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s MandatoryLabelsSeverity) MarshalText() ([]byte, error) {
 	switch s {
-	case MandatoryLabelsSeverityCritical:
+	case MandatoryLabelsSeverity_critical:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityHigh:
+	case MandatoryLabelsSeverity_high:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityMedium:
+	case MandatoryLabelsSeverity_medium:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityLow:
+	case MandatoryLabelsSeverity_low:
+		return []byte(s), nil
+	case MandatoryLabelsSeverity_:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6391,17 +6395,20 @@ func (s MandatoryLabelsSeverity) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *MandatoryLabelsSeverity) UnmarshalText(data []byte) error {
 	switch MandatoryLabelsSeverity(data) {
-	case MandatoryLabelsSeverityCritical:
-		*s = MandatoryLabelsSeverityCritical
+	case MandatoryLabelsSeverity_critical:
+		*s = MandatoryLabelsSeverity_critical
 		return nil
-	case MandatoryLabelsSeverityHigh:
-		*s = MandatoryLabelsSeverityHigh
+	case MandatoryLabelsSeverity_high:
+		*s = MandatoryLabelsSeverity_high
 		return nil
-	case MandatoryLabelsSeverityMedium:
-		*s = MandatoryLabelsSeverityMedium
+	case MandatoryLabelsSeverity_medium:
+		*s = MandatoryLabelsSeverity_medium
 		return nil
-	case MandatoryLabelsSeverityLow:
-		*s = MandatoryLabelsSeverityLow
+	case MandatoryLabelsSeverity_low:
+		*s = MandatoryLabelsSeverity_low
+		return nil
+	case MandatoryLabelsSeverity_:
+		*s = MandatoryLabelsSeverity_
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -10037,6 +10044,52 @@ func (o OptRemediationOrchestratorAuditPayloadOutcome) Or(d RemediationOrchestra
 	return d
 }
 
+// NewOptRemediationWorkflowParameters returns new OptRemediationWorkflowParameters with value set to v.
+func NewOptRemediationWorkflowParameters(v RemediationWorkflowParameters) OptRemediationWorkflowParameters {
+	return OptRemediationWorkflowParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowParameters is optional RemediationWorkflowParameters.
+type OptRemediationWorkflowParameters struct {
+	Value RemediationWorkflowParameters
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowParameters was set.
+func (o OptRemediationWorkflowParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowParameters) Reset() {
+	var v RemediationWorkflowParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowParameters) SetTo(v RemediationWorkflowParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowParameters) Get() (v RemediationWorkflowParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowParameters) Or(d RemediationWorkflowParameters) RemediationWorkflowParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSignalProcessingAuditPayloadCriticality returns new OptSignalProcessingAuditPayloadCriticality with value set to v.
 func NewOptSignalProcessingAuditPayloadCriticality(v SignalProcessingAuditPayloadCriticality) OptSignalProcessingAuditPayloadCriticality {
 	return OptSignalProcessingAuditPayloadCriticality{
@@ -10859,6 +10912,52 @@ func (o OptWorkflowSearchFilters) Get() (v WorkflowSearchFilters, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptWorkflowSearchFilters) Or(d WorkflowSearchFilters) WorkflowSearchFilters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptWorkflowSearchResultParameters returns new OptWorkflowSearchResultParameters with value set to v.
+func NewOptWorkflowSearchResultParameters(v WorkflowSearchResultParameters) OptWorkflowSearchResultParameters {
+	return OptWorkflowSearchResultParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkflowSearchResultParameters is optional WorkflowSearchResultParameters.
+type OptWorkflowSearchResultParameters struct {
+	Value WorkflowSearchResultParameters
+	Set   bool
+}
+
+// IsSet returns true if OptWorkflowSearchResultParameters was set.
+func (o OptWorkflowSearchResultParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkflowSearchResultParameters) Reset() {
+	var v WorkflowSearchResultParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkflowSearchResultParameters) SetTo(v WorkflowSearchResultParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkflowSearchResultParameters) Get() (v WorkflowSearchResultParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkflowSearchResultParameters) Or(d WorkflowSearchResultParameters) WorkflowSearchResultParameters {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12622,7 +12721,7 @@ type RemediationWorkflow struct {
 	// SHA-256 hash of content.
 	ContentHash string `json:"content_hash"`
 	// Workflow parameters (JSONB).
-	Parameters *RemediationWorkflowParameters `json:"parameters"`
+	Parameters OptRemediationWorkflowParameters `json:"parameters"`
 	// Execution engine (e.g., argo-workflows).
 	ExecutionEngine string `json:"execution_engine"`
 	// OCI image reference.
@@ -12716,7 +12815,7 @@ func (s *RemediationWorkflow) GetContentHash() string {
 }
 
 // GetParameters returns the value of Parameters.
-func (s *RemediationWorkflow) GetParameters() *RemediationWorkflowParameters {
+func (s *RemediationWorkflow) GetParameters() OptRemediationWorkflowParameters {
 	return s.Parameters
 }
 
@@ -12896,7 +12995,7 @@ func (s *RemediationWorkflow) SetContentHash(val string) {
 }
 
 // SetParameters sets the value of Parameters.
-func (s *RemediationWorkflow) SetParameters(val *RemediationWorkflowParameters) {
+func (s *RemediationWorkflow) SetParameters(val OptRemediationWorkflowParameters) {
 	s.Parameters = val
 }
 
@@ -13036,7 +13135,16 @@ func (*RemediationWorkflow) getWorkflowByIDRes() {}
 func (*RemediationWorkflow) updateWorkflowRes()  {}
 
 // Workflow parameters (JSONB).
-type RemediationWorkflowParameters struct{}
+type RemediationWorkflowParameters map[string]jx.Raw
+
+func (s *RemediationWorkflowParameters) init() RemediationWorkflowParameters {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // Workflow lifecycle status.
 type RemediationWorkflowStatus string
@@ -15788,6 +15896,8 @@ type WorkflowSearchResult struct {
 	Rank           int               `json:"rank"`
 	CustomLabels   OptCustomLabels   `json:"custom_labels"`
 	DetectedLabels OptDetectedLabels `json:"detected_labels"`
+	// Workflow parameter schema (JSONB) - describes expected parameters.
+	Parameters OptWorkflowSearchResultParameters `json:"parameters"`
 }
 
 // GetWorkflowID returns the value of WorkflowID.
@@ -15855,6 +15965,11 @@ func (s *WorkflowSearchResult) GetDetectedLabels() OptDetectedLabels {
 	return s.DetectedLabels
 }
 
+// GetParameters returns the value of Parameters.
+func (s *WorkflowSearchResult) GetParameters() OptWorkflowSearchResultParameters {
+	return s.Parameters
+}
+
 // SetWorkflowID sets the value of WorkflowID.
 func (s *WorkflowSearchResult) SetWorkflowID(val uuid.UUID) {
 	s.WorkflowID = val
@@ -15918,6 +16033,23 @@ func (s *WorkflowSearchResult) SetCustomLabels(val OptCustomLabels) {
 // SetDetectedLabels sets the value of DetectedLabels.
 func (s *WorkflowSearchResult) SetDetectedLabels(val OptDetectedLabels) {
 	s.DetectedLabels = val
+}
+
+// SetParameters sets the value of Parameters.
+func (s *WorkflowSearchResult) SetParameters(val OptWorkflowSearchResultParameters) {
+	s.Parameters = val
+}
+
+// Workflow parameter schema (JSONB) - describes expected parameters.
+type WorkflowSearchResultParameters map[string]jx.Raw
+
+func (s *WorkflowSearchResultParameters) init() WorkflowSearchResultParameters {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
 }
 
 // Update mutable workflow fields only (DD-WORKFLOW-012).

@@ -165,27 +165,24 @@ class TestEndpointValidation:
 
     def test_invalid_severity_raises_error(self):
         """E2E-HAPI-007: Invalid severity should raise ValidationError"""
-        # Note: This test checks if Pydantic has enum validation
-        # The endpoint has additional validation for this
-        request = IncidentRequest(
-            incident_id="test-001",
-            remediation_id="test-rem-001",
-            signal_type="CrashLoopBackOff",
-            severity="invalid_severity",  # This might pass Pydantic but fail endpoint validation
-            signal_source="kubernetes",
-            resource_namespace="default",
-            resource_kind="Pod",
-            resource_name="test-pod",
-            error_message="Container crashed",
-            environment="production",
-            priority="high",
-            risk_tolerance="low",
-            business_category="critical",
-            cluster_name="prod-cluster-1"
-        )
-        # If this passes, it means Pydantic doesn't validate severity enum
-        # and we rely on endpoint validation (which we added in Phase 2)
-        assert request.severity == "invalid_severity"
+        # BR-SEVERITY-001: severity is a Severity enum — Pydantic rejects invalid values
+        with pytest.raises(ValidationError, match="severity"):
+            IncidentRequest(
+                incident_id="test-001",
+                remediation_id="test-rem-001",
+                signal_type="CrashLoopBackOff",
+                severity="invalid_severity",
+                signal_source="kubernetes",
+                resource_namespace="default",
+                resource_kind="Pod",
+                resource_name="test-pod",
+                error_message="Container crashed",
+                environment="production",
+                priority="high",
+                risk_tolerance="low",
+                business_category="critical",
+                cluster_name="prod-cluster-1"
+            )
 
 
 if __name__ == "__main__":

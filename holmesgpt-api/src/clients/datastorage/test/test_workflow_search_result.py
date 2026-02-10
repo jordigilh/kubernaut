@@ -57,7 +57,8 @@ class TestWorkflowSearchResult(unittest.TestCase):
                     stateful = True, 
                     helm_managed = True, 
                     network_isolated = True, 
-                    service_mesh = 'istio', )
+                    service_mesh = 'istio', ),
+                parameters = { }
             )
         else:
             return WorkflowSearchResult(

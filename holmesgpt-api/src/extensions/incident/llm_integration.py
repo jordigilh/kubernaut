@@ -366,6 +366,7 @@ async def analyze_incident(
         # ========================================
         validation_errors_history: List[List[str]] = []
         validation_attempts_history: List[Dict[str, Any]] = []  # For response
+        last_schema_hint: Optional[str] = None  # BR-HAPI-191: schema hint for self-correction
         result = None
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
@@ -375,7 +376,8 @@ async def analyze_incident(
             if validation_errors_history:
                 investigation_prompt = base_prompt + build_validation_error_feedback(
                     validation_errors_history[-1],
-                    attempt
+                    attempt,
+                    schema_hint=last_schema_hint  # BR-HAPI-191: include parameter schema
                 )
             else:
                 investigation_prompt = base_prompt
@@ -549,6 +551,9 @@ async def analyze_incident(
             else:
                 # Validation failed - log and prepare for retry
                 validation_errors_history.append(validation_errors)
+                # BR-HAPI-191: Capture schema_hint for next retry's feedback prompt
+                if validation_result and validation_result.schema_hint:
+                    last_schema_hint = validation_result.schema_hint
                 logger.warning({
                     "event": "workflow_validation_retry",
                     "incident_id": incident_id,

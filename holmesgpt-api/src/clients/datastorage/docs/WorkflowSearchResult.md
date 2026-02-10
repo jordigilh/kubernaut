@@ -19,6 +19,7 @@ Name | Type | Description | Notes
 **rank** | **int** | Position in result set (1-based) | 
 **custom_labels** | **Dict[str, List[str]]** | Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format | [optional] 
 **detected_labels** | [**DetectedLabels**](DetectedLabels.md) |  | [optional] 
+**parameters** | **Dict[str, object]** | Workflow parameter schema (JSONB) - describes expected parameters | [optional] 
 
 ## Example
 
