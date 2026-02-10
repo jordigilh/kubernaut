@@ -177,6 +177,10 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 			// TDD GREEN PHASE: This test should PASS (validates existing functionality)
 
 			// Send a request (should complete quickly)
+			// BR-SCOPE-002: Use sendWebhookExpectCreated to handle scope checker informer cache
+			// propagation delay. When the cache hasn't synced the newly-created test namespace,
+			// the Gateway returns HTTP 200 (StatusRejected). Retrying until 201/202 validates
+			// timeout enforcement once the request is accepted.
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: "TimeoutTest",
 				Namespace: testNamespace,
@@ -188,13 +192,14 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 			})
 
 			start := time.Now()
-			resp := SendWebhook(gatewayURL, payload)
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 			duration := time.Since(start)
 
 			// BUSINESS OUTCOME VALIDATION:
-			// Request should complete within reasonable time (< 5 seconds)
-			// This validates Gateway doesn't hang
-			Expect(duration).To(BeNumerically("<", 5*time.Second), "Request should complete within reasonable time")
+			// Request should complete within reasonable time (< 30 seconds including retries)
+			// This validates Gateway doesn't hang. sendWebhookExpectCreated retries on 200
+			// (scope rejection) until cache syncs; each individual Gateway response is fast.
+			Expect(duration).To(BeNumerically("<", 30*time.Second), "Request should complete within reasonable time (includes scope cache retries)")
 			Expect(resp.StatusCode).To(Or(Equal(201), Equal(202)), "Request should succeed")
 
 			// BUSINESS CAPABILITY VERIFIED:

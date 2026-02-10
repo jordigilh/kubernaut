@@ -14,11 +14,12 @@ name: CI Pipeline
 #   - Automatic fallback to local build if registry pull fails
 #   - Saves ~60% disk space and ~30% build time in CI
 #
-# Trigger Strategy (paths-ignore):
-#   - CI runs for ALL PRs except pure documentation/asset changes
-#   - Uses paths-ignore blocklist (docs, images, presentations, IDE config)
-#   - Ensures required checks always appear on PRs with code changes
-#   - Non-code PRs (docs-only) skip CI entirely — no wasted minutes
+# Trigger Strategy (merge-gate pattern):
+#   - CI runs on ALL PRs (no paths-ignore filter)
+#   - detect-changes job uses dorny/paths-filter to detect code changes
+#   - Code PRs: all CI jobs run; merge-gate checks results
+#   - Docs-only PRs: all CI jobs skipped; merge-gate auto-passes
+#   - Single required check in branch protection: "Merge Gate"
 #   - Push to main → always runs (full validation)
 #
 # Optimization Strategy:
@@ -35,18 +36,6 @@ name: CI Pipeline
 on:
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - '**.svg'
-      - '**.excalidraw'
-      - '**.png'
-      - '**.jpg'
-      - 'kubernaut-presentation/**'
-      - 'LICENSE'
-      - '.beads/**'
-      - '.cursor/**'
-      - '.vscode/**'
   push:
     branches: [ main ]
   workflow_dispatch:
@@ -63,13 +52,50 @@ env:
 
 jobs:
   # ========================================
+  # CHANGE DETECTION (runs on every PR)
+  # Determines if code files changed; all CI jobs are conditional on this.
+  # Docs-only PRs skip all CI jobs; the merge-gate auto-passes.
+  # ========================================
+
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.go'
+              - '**.py'
+              - 'go.mod'
+              - 'go.sum'
+              - 'test/**'
+              - 'cmd/**'
+              - 'pkg/**'
+              - 'internal/**'
+              - 'api/**'
+              - 'migrations/**'
+              - 'Makefile'
+              - 'holmesgpt-api/**'
+              - '.github/workflows/**'
+              - 'docker/**'
+              - 'config/**'
+
+  # ========================================
   # STAGE 1: LINT & UNIT TESTS (ALL PARALLEL)
   # 11 parallel jobs (2 lint + 9 unit tests) ~2 min total
   # Note: Code compilation happens in Stage 2 (image builds)
+  # Skipped for docs-only PRs (detect-changes.code_changed == false)
   # ========================================
 
   lint-go:
     name: Lint (Go Services)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -99,6 +125,8 @@ jobs:
 
   lint-python:
     name: Lint (Python Services)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -127,10 +155,10 @@ jobs:
           make lint-holmesgpt-api
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
-  # TEMPORARILY DISABLED: Focus on INT/E2E test fixes
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
-    # No dependencies - runs immediately in parallel with lint-go, lint-python, build-and-push-images
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -345,7 +373,8 @@ jobs:
 
   build-and-push-images:
     name: Build & Push (${{ matrix.service }})
-    # No dependencies - runs immediately in parallel with lint-go, lint-python, unit-tests
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -480,7 +509,8 @@ jobs:
 
   integration-tests:
     name: Integration (${{ matrix.service }})
-    needs: [unit-tests, build-and-push-images]  # Wait for both unit tests AND images
+    needs: [detect-changes, unit-tests, build-and-push-images]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
@@ -650,7 +680,8 @@ jobs:
 
   e2e-tests:
     name: E2E (${{ matrix.service }})
-    needs: [unit-tests, build-and-push-images]  # Wait for both unit tests AND images
+    needs: [detect-changes, unit-tests, build-and-push-images]
+    if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
@@ -873,10 +904,8 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [lint-go, lint-python, integration-tests, e2e-tests]
-    # Note: unit-tests and build-and-push-images are transitive dependencies
-    # (INT and E2E already depend on them, no need to duplicate)
-    if: always()
+    needs: [detect-changes, lint-go, lint-python, integration-tests, e2e-tests]
+    if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1130,3 +1159,57 @@ jobs:
             echo "⚠️  Some tests were skipped or had issues (see above)"
             exit 1
           fi
+
+  # ========================================
+  # MERGE GATE (single required check)
+  # This is the ONLY job required in branch protection.
+  # - Code PRs: checks that all CI jobs passed
+  # - Docs-only PRs: all CI jobs are skipped → no failures → auto-passes
+  # - Replaces the previous 3-check + ci-skip-checks.yml approach
+  # ========================================
+
+  merge-gate:
+    name: Merge Gate
+    if: always()
+    needs: [detect-changes, lint-go, lint-python, unit-tests, build-and-push-images,
+            integration-tests, e2e-tests, summary]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI results
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Merge Gate - Evaluating CI Pipeline Results"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "Code changed: ${{ needs.detect-changes.outputs.code_changed }}"
+          echo ""
+          echo "Job results:"
+          echo "  detect-changes:       ${{ needs.detect-changes.result }}"
+          echo "  lint-go:              ${{ needs.lint-go.result }}"
+          echo "  lint-python:          ${{ needs.lint-python.result }}"
+          echo "  unit-tests:           ${{ needs.unit-tests.result }}"
+          echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
+          echo "  integration-tests:    ${{ needs.integration-tests.result }}"
+          echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
+          echo "  summary:              ${{ needs.summary.result }}"
+          echo ""
+
+          # Fail if any job failed
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "❌ One or more CI jobs failed — merge blocked"
+            exit 1
+          fi
+
+          # Fail if any job was cancelled (except for docs-only PRs where jobs are skipped)
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "❌ One or more CI jobs were cancelled — merge blocked"
+            exit 1
+          fi
+
+          echo "═══════════════════════════════════════════════════════════"
+          if [[ "${{ needs.detect-changes.outputs.code_changed }}" == "true" ]]; then
+            echo "✅ All CI checks passed — merge allowed"
+          else
+            echo "✅ Docs-only PR — no CI checks required — merge allowed"
+          fi
+          echo "═══════════════════════════════════════════════════════════"
