@@ -10054,6 +10054,10 @@ func (s *IncidentResponseDataHumanReviewReason) Decode(d *jx.Decoder) error {
 		*s = IncidentResponseDataHumanReviewReasonLowConfidence
 	case IncidentResponseDataHumanReviewReasonLlmParsingError:
 		*s = IncidentResponseDataHumanReviewReasonLlmParsingError
+	case IncidentResponseDataHumanReviewReasonInvestigationInconclusive:
+		*s = IncidentResponseDataHumanReviewReasonInvestigationInconclusive
+	case IncidentResponseDataHumanReviewReasonRcaIncomplete:
+		*s = IncidentResponseDataHumanReviewReasonRcaIncomplete
 	default:
 		*s = IncidentResponseDataHumanReviewReason(v)
 	}

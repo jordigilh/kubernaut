@@ -53,7 +53,7 @@ var _ = Describe("RequestBuilder", func() {
 				// Assert
 				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
-				Expect(req.SignalMode.Value).To(Equal(client.IncidentRequestSignalMode("reactive")))
+				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("reactive")))
 				Expect(req.SignalType).To(Equal("OOMKilled"))
 			})
 
@@ -69,7 +69,7 @@ var _ = Describe("RequestBuilder", func() {
 				// Assert
 				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
-				Expect(req.SignalMode.Value).To(Equal(client.IncidentRequestSignalMode("predictive")))
+				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("predictive")))
 				// SignalType should be the normalized type from SP (not PredictedOOMKill)
 				Expect(req.SignalType).To(Equal("OOMKilled"))
 			})

@@ -66,8 +66,8 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ErrorMessage:      "Predicted memory exhaustion based on trend analysis",
 			}
 			// BR-AI-084: Set signal_mode to predictive
-			req.SignalMode = hapiclient.NewOptNilIncidentRequestSignalMode(
-				hapiclient.IncidentRequestSignalModePredictive,
+			req.SignalMode = hapiclient.NewOptNilSignalMode(
+				hapiclient.SignalModePredictive,
 			)
 
 			// ========================================
@@ -145,8 +145,8 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ErrorMessage:      "Container killed due to OOM",
 			}
 			// Set explicit reactive mode
-			req.SignalMode = hapiclient.NewOptNilIncidentRequestSignalMode(
-				hapiclient.IncidentRequestSignalModeReactive,
+			req.SignalMode = hapiclient.NewOptNilSignalMode(
+				hapiclient.SignalModeReactive,
 			)
 
 			// ========================================

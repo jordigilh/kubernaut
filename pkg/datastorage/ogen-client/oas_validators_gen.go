@@ -1420,6 +1420,10 @@ func (s IncidentResponseDataHumanReviewReason) Validate() error {
 		return nil
 	case "llm_parsing_error":
 		return nil
+	case "investigation_inconclusive":
+		return nil
+	case "rca_incomplete":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

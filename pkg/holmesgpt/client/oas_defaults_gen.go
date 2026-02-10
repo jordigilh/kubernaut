@@ -64,9 +64,6 @@ func (s *IncidentRequest) setDefaults() {
 		val := int(0)
 		s.StormSignalCount.SetTo(val)
 	}
-	{
-		s.SignalMode.Null = true
-	}
 }
 
 // setDefaults set default value of fields.

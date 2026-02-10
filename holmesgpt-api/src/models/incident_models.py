@@ -57,6 +57,24 @@ class HumanReviewReason(str, Enum):
 
 
 # ========================================
+# SIGNAL MODE ENUM (ADR-054)
+# ========================================
+
+class SignalMode(str, Enum):
+    """
+    Signal processing mode for investigation strategy selection.
+
+    Architecture Decision: ADR-054 (Predictive Signal Mode Classification)
+    Business Requirement: BR-AI-084 (Predictive signal mode prompt strategy)
+
+    - reactive: Incident has occurred, perform RCA (root cause analysis)
+    - predictive: Incident is predicted, perform predict & prevent strategy
+    """
+    REACTIVE = "reactive"
+    PREDICTIVE = "predictive"
+
+
+# ========================================
 # TYPE ALIASES (DD-HAPI-001)
 # ========================================
 
@@ -220,7 +238,7 @@ class IncidentRequest(BaseModel):
     # - "reactive": RCA (root cause analysis) - the incident has occurred
     # - "predictive": Predict & prevent - incident is predicted but not yet occurred
     # Defaults to None (treated as "reactive" by prompt builder for backwards compatibility)
-    signal_mode: Optional[str] = Field(None, description="Signal mode: 'reactive' or 'predictive'. Controls prompt strategy.")
+    signal_mode: Optional[SignalMode] = Field(None, description="Signal mode: 'reactive' or 'predictive'. Controls prompt strategy (ADR-054).")
 
     @field_validator('remediation_id')
     @classmethod

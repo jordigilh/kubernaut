@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # RFC 7807 PROBLEM DETAILS FOR HTTP APIs
 # ========================================
 
-class RFC7807Error(BaseModel):
+class HTTPError(BaseModel):
     """
     RFC 7807 Problem Details for HTTP APIs
 
@@ -48,13 +48,15 @@ class RFC7807Error(BaseModel):
     Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
     Reference: Context API (pkg/contextapi/errors/rfc7807.go)
     Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+
+    Named HTTPError in OpenAPI spec for compatibility with existing Go client.
     """
     type: str  # URI reference identifying the problem type
     title: str  # Short, human-readable summary
     detail: str  # Detailed explanation
     status: int  # HTTP status code
     instance: str  # URI reference to specific occurrence
-    request_id: Optional[str] = None  # Request tracing (extension member)
+    request_id: Optional[str] = None  # Request tracing identifier (RFC 7807 extension member)
 
     class Config:
         json_schema_extra = {
@@ -67,6 +69,58 @@ class RFC7807Error(BaseModel):
                 "request_id": "abc-123-def-456"
             }
         }
+
+
+# Backward-compatible alias
+RFC7807Error = HTTPError
+
+
+# Shared error responses for OpenAPI spec (application/problem+json)
+# Used by incident and recovery endpoints to ensure consistent error schema
+# Authority: BR-HAPI-200 (RFC 7807 Error Response Standard), DD-AUTH-014 (Middleware-Based SAR Authentication)
+PROBLEM_JSON_ERROR_RESPONSES = {
+    401: {
+        "description": "Authentication failed - Invalid or missing Bearer token.\n\n"
+                       "**Source**: HAPI middleware (DD-AUTH-014)\n\n"
+                       "**Cause**: No Authorization header, invalid token, expired token, or malformed token.\n\n"
+                       "**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+        "model": HTTPError,
+        "content": {"application/problem+json": {"schema": HTTPError.model_json_schema()}},
+    },
+    403: {
+        "description": "Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.\n\n"
+                       "**Source**: HAPI middleware (DD-AUTH-014)\n\n"
+                       "**Cause**: ServiceAccount lacks required SAR permissions.\n\n"
+                       "**Resolution**: Grant ServiceAccount the holmesgpt-api-client ClusterRole.\n\n"
+                       "**Authority**: DD-AUTH-014 (Middleware-Based SAR Authentication)",
+        "model": HTTPError,
+        "content": {"application/problem+json": {"schema": HTTPError.model_json_schema()}},
+    },
+    400: {
+        "description": "Bad Request - Invalid request parameters or validation failure.\n\n"
+                       "**Source**: HAPI middleware (RFC 7807)\n\n"
+                       "**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n"
+                       "**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+        "model": HTTPError,
+        "content": {"application/problem+json": {"schema": HTTPError.model_json_schema()}},
+    },
+    422: {
+        "description": "Unprocessable Entity - Request validation failed.\n\n"
+                       "**Source**: HAPI middleware (RFC 7807)\n\n"
+                       "**Cause**: Pydantic validation error.\n\n"
+                       "**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+        "model": HTTPError,
+        "content": {"application/problem+json": {"schema": HTTPError.model_json_schema()}},
+    },
+    500: {
+        "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n"
+                       "**Source**: HAPI application\n\n"
+                       "**Causes**: LLM provider API failure, database error, unhandled exception.\n\n"
+                       "**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+        "model": HTTPError,
+        "content": {"application/problem+json": {"schema": HTTPError.model_json_schema()}},
+    },
+}
 
 
 # Error type URI constants

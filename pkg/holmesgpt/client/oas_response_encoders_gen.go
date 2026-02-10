@@ -58,7 +58,20 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(400)
 		span.SetStatus(codes.Error, http.StatusText(400))
@@ -71,7 +84,20 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(401)
+		span.SetStatus(codes.Error, http.StatusText(401))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(401)
 		span.SetStatus(codes.Error, http.StatusText(401))
@@ -84,7 +110,20 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(403)
+		span.SetStatus(codes.Error, http.StatusText(403))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(403)
 		span.SetStatus(codes.Error, http.StatusText(403))
@@ -97,7 +136,20 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(422)
 		span.SetStatus(codes.Error, http.StatusText(422))
@@ -110,7 +162,20 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 
 		return nil
 
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))
@@ -159,7 +224,20 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(400)
 		span.SetStatus(codes.Error, http.StatusText(400))
@@ -172,7 +250,20 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(401)
+		span.SetStatus(codes.Error, http.StatusText(401))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(401)
 		span.SetStatus(codes.Error, http.StatusText(401))
@@ -185,7 +276,20 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(403)
+		span.SetStatus(codes.Error, http.StatusText(403))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(403)
 		span.SetStatus(codes.Error, http.StatusText(403))
@@ -198,7 +302,20 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(422)
 		span.SetStatus(codes.Error, http.StatusText(422))
@@ -211,7 +328,20 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 
 		return nil
 
-	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))

@@ -31,6 +31,7 @@ from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_hapi_response_complete_event  # DD-AUDIT-005
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
+from src.errors import PROBLEM_JSON_ERROR_RESPONSES  # BR-HAPI-200: Shared RFC 7807 error responses
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,14 +42,7 @@ logger = logging.getLogger(__name__)
     status_code=status.HTTP_200_OK,
     response_model=IncidentResponse,
     response_model_exclude_none=True,  # E2E-HAPI-002/003: Exclude None values (selected_workflow, human_review_reason). Note: alternative_workflows always included per BR-AUDIT-005
-    responses={
-        200: {"description": "Successful Response - Incident analyzed with RCA and workflow selection"},
-        400: {"description": "Bad Request - Invalid input format or missing required fields"},
-        401: {"description": "Unauthorized - Missing or invalid authentication token"},
-        403: {"description": "Forbidden - Insufficient permissions (SAR check failed)"},
-        422: {"description": "Validation Error - Request body validation failed"},
-        500: {"description": "Internal Server Error - LLM or workflow catalog failure"}
-    }
+    responses=PROBLEM_JSON_ERROR_RESPONSES
 )
 async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Request) -> IncidentResponse:
     """

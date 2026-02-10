@@ -264,7 +264,7 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				Severity:              hapiclient.NewOptNilString("high"),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec), EnrichmentResults: hapiclient.NewOptNilRecoveryRequestEnrichmentResults(hapiclient.RecoveryRequestEnrichmentResults{}),
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec), EnrichmentResults: hapiclient.NewOptNilEnrichmentResults(hapiclient.EnrichmentResults{}),
 				// Note: EnrichmentResults is map[string]jx.Raw, so detailed field validation skipped in E2E
 				// DetectedLabels workflow filtering validated in integration tests
 			}
