@@ -156,7 +156,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
 					Component:   "deployment",                                                                               // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
@@ -207,7 +207,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
 					Component:   "deployment",                                                                               // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
@@ -266,7 +266,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
 					Component:   "deployment",                                                                               // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory

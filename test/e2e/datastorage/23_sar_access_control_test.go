@@ -321,7 +321,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 				ContentHash:     "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
 				ExecutionEngine: "argo-workflows",
 				Labels: dsgen.MandatoryLabels{
-					Severity:    dsgen.MandatoryLabelsSeverityHigh,
+					Severity:    dsgen.MandatoryLabelsSeverity_high,
 					SignalType:  "prometheus-alert",
 					Component:   "pod",
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("test")},
@@ -400,7 +400,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 				ContentHash:     "def456def456def456def456def456def456def456def456def456def456def4",
 				ExecutionEngine: "argo-workflows",
 				Labels: dsgen.MandatoryLabels{
-					Severity:    dsgen.MandatoryLabelsSeverityLow,
+					Severity:    dsgen.MandatoryLabelsSeverity_low,
 					SignalType:  "prometheus-alert",
 					Component:   "pod",
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("test")},

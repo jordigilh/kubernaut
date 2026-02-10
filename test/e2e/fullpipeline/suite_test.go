@@ -68,7 +68,7 @@ import (
 )
 
 const (
-	timeout  = 180 * time.Second // Longer timeout for full pipeline E2E
+	timeout  = 10 * time.Minute // Longer timeout for full pipeline E2E (real LLM needs more time)
 	interval = 1 * time.Second
 
 	clusterName = "fullpipeline-e2e"

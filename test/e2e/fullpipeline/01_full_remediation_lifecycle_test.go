@@ -17,11 +17,8 @@ limitations under the License.
 package fullpipeline
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,6 +34,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -68,43 +66,92 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		// not the OOMKilled terminated state, so Mock LLM matches the "crashloop"
 		// scenario (workflow_name="crashloop-config-fix-v1").
 		// We also seed the oomkilled workflow for completeness.
-		workflows := []infrastructure.TestWorkflow{
-			{
-				WorkflowID:      "crashloop-config-fix-v1",
-				Name:            "CrashLoopBackOff - Configuration Fix",
-				Description:     "CrashLoop remediation workflow for full pipeline E2E",
-				SignalType:      "CrashLoopBackOff",
-				Severity:        "high",
-				Component:       "pod",
-				Environment:     "test",
-				Priority:        "P0",
-				ContainerImage:  "busybox:latest",
-				ExecutionEngine: "job",
+		// Workflow labels use wildcards (*) for severity, environment, and priority
+		// because a real LLM's severity assessment is non-deterministic — the same
+		// OOMKill may be classified as "medium", "high", or "critical" across runs.
+		// Similarly, environment comes from SP enrichment (namespace → env mapping)
+		// which may resolve to "unknown" in test clusters.
+		// Wildcard labels ensure the workflow matches regardless of LLM variability.
+	workflows := []infrastructure.TestWorkflow{
+		{
+			WorkflowID:      "crashloop-config-fix-v1",
+			Name:            "CrashLoopBackOff - Configuration Fix",
+			Description:     "CrashLoop remediation workflow for full pipeline E2E",
+			SignalType:      "CrashLoopBackOff",
+			Severity:        "*",
+			Component:       "deployment",
+			Environment:     "*",
+			Priority:        "*",
+			ContainerImage:  "busybox:latest",
+			ExecutionEngine: "job",
+			// BR-HAPI-191: Parameter schema for LLM guidance and HAPI validation
+			SchemaParameters: []models.WorkflowParameter{
+				{
+					Name:        "CONFIG_MAP",
+					Type:        "string",
+					Required:    true,
+					Description: "Name of the ConfigMap to fix",
+				},
+				{
+					Name:        "TARGET_NAMESPACE",
+					Type:        "string",
+					Required:    true,
+					Description: "Namespace of the target resource",
+				},
 			},
-			{
-				WorkflowID:      "oomkill-increase-memory-v1",
-				Name:            "OOMKill Recovery - Increase Memory Limits",
-				Description:     "OOMKill remediation workflow for full pipeline E2E",
-				SignalType:      "OOMKilled",
-				Severity:        "critical",
-				Component:       "pod",
-				Environment:     "test",
-				Priority:        "P0",
-				ContainerImage:  "busybox:latest",
-				ExecutionEngine: "job",
+		},
+		{
+			WorkflowID:      "oomkill-increase-memory-v1",
+			Name:            "OOMKill Recovery - Increase Memory Limits",
+			Description:     "OOMKill remediation workflow for full pipeline E2E",
+			SignalType:      "OOMKilled",
+			Severity:        "*",
+			Component:       "deployment",
+			Environment:     "*",
+			Priority:        "*",
+			ContainerImage:  "busybox:latest",
+			ExecutionEngine: "job",
+			// BR-HAPI-191: Parameter schema matching oomkill-increase-memory.sh expectations
+			SchemaParameters: []models.WorkflowParameter{
+				{
+					Name:        "MEMORY_LIMIT_NEW",
+					Type:        "string",
+					Required:    true,
+					Description: "New memory limit to apply (e.g., 256Mi, 1Gi)",
+				},
+				{
+					Name:        "TARGET_RESOURCE_KIND",
+					Type:        "string",
+					Required:    true,
+					Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
+					Enum:        []string{"Deployment", "StatefulSet", "DaemonSet"},
+				},
+				{
+					Name:        "TARGET_RESOURCE_NAME",
+					Type:        "string",
+					Required:    true,
+					Description: "Name of the resource to patch",
+				},
+				{
+					Name:        "TARGET_NAMESPACE",
+					Type:        "string",
+					Required:    true,
+					Description: "Namespace of the target resource",
+				},
 			},
+		},
 		}
 		workflowUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
 			dataStorageClient, workflows, "fullpipeline-e2e", GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
-		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:test"))
-		GinkgoWriter.Printf("  ✅ Workflow seeded: crashloop-config-fix-v1 → %s\n", workflowUUIDs["crashloop-config-fix-v1:test"])
+		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:*"))
+		GinkgoWriter.Printf("  ✅ Workflow seeded: crashloop-config-fix-v1 → %s\n", workflowUUIDs["crashloop-config-fix-v1:*"])
 
-		By("Step 0b: Updating Mock LLM with workflow UUIDs")
-		// Restart Mock LLM with the seeded workflow UUIDs so it returns them in responses
-		err = updateMockLLMScenarios(testCtx, workflowUUIDs)
-		Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM scenarios")
+		// Note: No Mock LLM setup needed — HAPI uses Vertex AI (real LLM).
+		// The LLM discovers workflows dynamically via search_workflow_catalog MCP tool.
+		// BR-HAPI-191: DataStorage now returns parameter schemas in search results,
+		// so the LLM sees expected parameter names/types when selecting a workflow.
 	})
 
 	AfterAll(func() {
@@ -360,60 +407,3 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 	})
 })
 
-// updateMockLLMScenarios updates the Mock LLM ConfigMap with workflow UUIDs
-// and restarts the Mock LLM pod so it picks up the new configuration.
-func updateMockLLMScenarios(ctx context.Context, workflowUUIDs map[string]string) error {
-	// Build scenarios YAML with proper indentation for ConfigMap block scalar
-	// Each line must be indented by 4 spaces to align with the `|` block scalar
-	scenariosYAML := "    scenarios:\n"
-	for key, uuid := range workflowUUIDs {
-		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
-	}
-	// Full pipeline E2E uses job execution engine (no Tekton installed)
-	scenariosYAML += "    overrides:\n"
-	scenariosYAML += "      crashloop:\n"
-	scenariosYAML += "        execution_engine: \"job\"\n"
-	scenariosYAML += "      oomkilled:\n"
-	scenariosYAML += "        execution_engine: \"job\"\n"
-
-	// Update the ConfigMap
-	configMap := fmt.Sprintf(`apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: mock-llm-scenarios
-  namespace: %s
-data:
-  scenarios.yaml: |
-%s`, namespace, scenariosYAML)
-
-	cmd := fmt.Sprintf("kubectl --kubeconfig %s apply -f -", kubeconfigPath)
-	applyCmd := execCommand(cmd)
-	applyCmd.Stdin = bytes.NewBufferString(configMap)
-	if output, err := applyCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w (output: %s)", err, output)
-	}
-
-	// Restart Mock LLM pod to pick up new config
-	restartCmd := execCommand(fmt.Sprintf(
-		"kubectl --kubeconfig %s rollout restart deployment/mock-llm -n %s",
-		kubeconfigPath, namespace))
-	if output, err := restartCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to restart Mock LLM: %w (output: %s)", err, output)
-	}
-
-	// Wait for rollout to complete
-	waitCmd := execCommand(fmt.Sprintf(
-		"kubectl --kubeconfig %s rollout status deployment/mock-llm -n %s --timeout=120s",
-		kubeconfigPath, namespace))
-	if output, err := waitCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("Mock LLM rollout not ready: %w (output: %s)", err, output)
-	}
-
-	return nil
-}
-
-// execCommand is a helper to create exec.Command from a string command line.
-func execCommand(cmdLine string) *exec.Cmd {
-	parts := strings.Split(cmdLine, " ")
-	return exec.Command(parts[0], parts[1:]...) //nolint:gosec
-}

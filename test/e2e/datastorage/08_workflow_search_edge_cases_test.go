@@ -246,7 +246,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "First workflow (oldest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -272,7 +272,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Second workflow (middle)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -298,7 +298,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Third workflow (newest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -396,7 +396,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Accepts any component",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   "*", // Wildcard
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
@@ -425,7 +425,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Only accepts deployment component",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   "deployment", // Specific
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
