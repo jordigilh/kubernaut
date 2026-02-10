@@ -573,12 +573,27 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Allow overriding mock Slack webhook with real URL for local testing
+	// Priority: 1) SLACK_WEBHOOK_URL env var, 2) ~/.kubernaut/notification/slack-webhook.url file
 	// Usage: SLACK_WEBHOOK_URL="https://hooks.slack.com/..." make test-e2e-fullpipeline
-	if slackURL := os.Getenv("SLACK_WEBHOOK_URL"); slackURL != "" {
+	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
+	if slackURL != "" {
+		_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from SLACK_WEBHOOK_URL env var\n")
+	} else {
+		homeDir, _ := os.UserHomeDir()
+		if homeDir != "" {
+			slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
+			if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
+				slackURL = strings.TrimSpace(string(data))
+				if slackURL != "" {
+					_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
+				}
+			}
+		}
+	}
+	if slackURL != "" {
 		updatedContent = strings.ReplaceAll(updatedContent,
 			`"http://mock-slack:8080/webhook"`,
 			fmt.Sprintf(`"%s"`, slackURL))
-		_, _ = fmt.Fprintf(writer, "   Slack webhook URL overridden from SLACK_WEBHOOK_URL env var\n")
 	}
 
 	// DD-TEST-007: Inject GOCOVERDIR env var and /coverdata volume when E2E_COVERAGE=true

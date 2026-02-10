@@ -241,17 +241,18 @@ echo "Migrations complete!"`)
 	// STEP 7: Build DataStorage image (using GenerateInfraImageName for consistency)
 	// ============================================================================
 	dsImageTag := GenerateInfraImageName("datastorage", "notification")
-	_, _ = fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
-	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
+	_, _ = fmt.Fprintf(writer, "🏗️  Resolving DataStorage image (%s)...\n", dsImageTag)
+	actualDSImage, err := buildDataStorageImageWithTag(dsImageTag, writer)
+	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image ready: %s\n\n", actualDSImage)
 
 	// ============================================================================
 	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startNotificationDataStorage(dsImageTag, writer); err != nil {
+	if err := startNotificationDataStorage(actualDSImage, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 

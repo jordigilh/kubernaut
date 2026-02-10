@@ -24,7 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"gopkg.in/yaml.v3"
 )
 
 // TestWorkflow represents a workflow for test seeding in DataStorage
@@ -41,6 +43,10 @@ type TestWorkflow struct {
 	Priority        string // "P0", "P1", "P2", "P3"
 	ContainerImage  string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
+	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
+	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
+	// and store in the parameters JSONB column for HAPI validation and MCP tool results
+	SchemaParameters []models.WorkflowParameter
 }
 
 // SeedWorkflowsInDataStorage registers test workflows in DataStorage
@@ -100,7 +106,14 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
 func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
 	version := "1.0.0"
-	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", wf.WorkflowID, version, wf.Description)
+
+	// ADR-043: Generate valid workflow-schema.yaml content
+	// DataStorage HandleCreateWorkflow will parse this content, validate it,
+	// and extract parameters into the parameters JSONB column (BR-HAPI-191)
+	content, err := buildWorkflowSchemaContent(wf, version)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate workflow-schema.yaml content for %s: %w", wf.WorkflowID, err)
+	}
 	contentBytes := []byte(content)
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
@@ -109,21 +122,11 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	defer cancel()
 
 	// Convert string severity to OpenAPI enum type
-	var severity ogenclient.MandatoryLabelsSeverity
-	switch wf.Severity {
-	case "critical":
-		severity = ogenclient.MandatoryLabelsSeverityCritical
-	case "high":
-		severity = ogenclient.MandatoryLabelsSeverityHigh
-	case "medium":
-		severity = ogenclient.MandatoryLabelsSeverityMedium
-	case "low":
-		severity = ogenclient.MandatoryLabelsSeverityLow
-	default:
-		severity = ogenclient.MandatoryLabelsSeverityCritical // Default to critical
-	}
+	// Accepts "*" for wildcard matching (any severity)
+	severity := ogenclient.MandatoryLabelsSeverity(wf.Severity)
 
 	// Convert string priority to OpenAPI enum type
+	// Supports "*" wildcard (matches any priority during search)
 	var priority ogenclient.MandatoryLabelsPriority
 	switch wf.Priority {
 	case "P0":
@@ -134,6 +137,8 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		priority = ogenclient.MandatoryLabelsPriority_P2
 	case "P3":
 		priority = ogenclient.MandatoryLabelsPriority_P3
+	case "*":
+		priority = ogenclient.MandatoryLabelsPriority_ // Wildcard: matches any priority
 	default:
 		priority = ogenclient.MandatoryLabelsPriority_P2 // Default to P2
 	}
@@ -233,4 +238,69 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	default:
 		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
 	}
+}
+
+// buildWorkflowSchemaContent generates valid workflow-schema.yaml content per ADR-043
+// from a TestWorkflow definition. This content is what DataStorage's HandleCreateWorkflow
+// will parse to extract and store parameter schemas (BR-HAPI-191).
+func buildWorkflowSchemaContent(wf TestWorkflow, version string) (string, error) {
+	// Map severity to risk_tolerance (sensible defaults for test workflows)
+	riskTolerance := "medium"
+	switch wf.Severity {
+	case "critical":
+		riskTolerance = "low"
+	case "high":
+		riskTolerance = "low"
+	case "low":
+		riskTolerance = "high"
+	}
+
+	// Build execution engine config
+	executionEngine := wf.ExecutionEngine
+	if executionEngine == "" {
+		executionEngine = "tekton"
+	}
+
+	// Ensure at least one parameter exists (ADR-043 requires min=1)
+	params := wf.SchemaParameters
+	if len(params) == 0 {
+		// Provide a minimal default parameter for workflows that don't define any
+		params = []models.WorkflowParameter{
+			{
+				Name:        "TARGET_RESOURCE",
+				Type:        "string",
+				Required:    true,
+				Description: "Target resource being remediated",
+			},
+		}
+	}
+
+	schema := models.WorkflowSchema{
+		APIVersion: "kubernaut.io/v1alpha1",
+		Kind:       "WorkflowSchema",
+		Metadata: models.WorkflowSchemaMetadata{
+			WorkflowID:  wf.WorkflowID,
+			Version:     version,
+			Description: wf.Description,
+		},
+		Labels: models.WorkflowSchemaLabels{
+			SignalType:    wf.SignalType,
+			Severity:      wf.Severity,
+			RiskTolerance: riskTolerance,
+			Environment:   wf.Environment,
+			Component:     wf.Component,
+			Priority:      strings.ToLower(wf.Priority),
+		},
+		Execution: &models.WorkflowExecution{
+			Engine: executionEngine,
+		},
+		Parameters: params,
+	}
+
+	yamlBytes, err := yaml.Marshal(&schema)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal workflow schema to YAML: %w", err)
+	}
+
+	return string(yamlBytes), nil
 }

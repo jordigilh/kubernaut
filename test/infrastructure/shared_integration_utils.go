@@ -633,13 +633,15 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
 
-	// STEP 2: Build DataStorage image using shared utility
+	// STEP 2: Build or resolve DataStorage image using shared utility
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
-	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
-	if err := buildDataStorageImageWithTag(cfg.ImageTag, writer); err != nil {
+	// CI/CD Optimization: If IMAGE_REGISTRY + IMAGE_TAG are set, uses registry image (podman auto-pulls)
+	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", cfg.ImageTag)
+	actualImage, err := buildDataStorageImageWithTag(cfg.ImageTag, writer)
+	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image ready: %s\n", actualImage)
 
 	// STEP 3: Start DataStorage container
 	runArgs := []string{"run", "-d",
@@ -670,8 +672,8 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 		runArgs = append(runArgs, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Add image
-	runArgs = append(runArgs, cfg.ImageTag)
+	// Add image (may be registry image if IMAGE_REGISTRY/IMAGE_TAG are set)
+	runArgs = append(runArgs, actualImage)
 
 	cmd := exec.Command("podman", runArgs...)
 	cmd.Stdout = writer
