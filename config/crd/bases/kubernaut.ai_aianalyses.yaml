@@ -1053,6 +1053,28 @@ spec:
               rootCauseAnalysis:
                 description: Root cause analysis details
                 properties:
+                  affectedResource:
+                    description: |-
+                      AffectedResource identifies the actual resource the LLM determined should be remediated.
+                      BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+                      the Pod that generated the signal. The WFE creator should prefer this over the RR's
+                      TargetResource when available to ensure the correct resource is patched.
+                    properties:
+                      kind:
+                        description: Kind is the Kubernetes resource kind (e.g., "Deployment",
+                          "StatefulSet", "DaemonSet")
+                        type: string
+                      name:
+                        description: Name is the resource name
+                        type: string
+                      namespace:
+                        description: Namespace is the resource namespace
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    - namespace
+                    type: object
                   contributingFactors:
                     description: Contributing factors
                     items:

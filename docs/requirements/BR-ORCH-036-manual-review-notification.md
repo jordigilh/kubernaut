@@ -1,10 +1,10 @@
-# BR-ORCH-036: Manual Review Notification
+# BR-ORCH-036: Manual Review & Escalation Notification
 
 **Service**: RemediationOrchestrator Controller
 **Category**: V1.0 Core Requirements
 **Priority**: P0 (CRITICAL)
-**Version**: 2.0
-**Date**: 2025-12-07
+**Version**: 3.0
+**Date**: 2026-02-09
 **Status**: 🚧 Planned
 **Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive)
 **Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-AIANALYSIS-003 (Completion Substates)
@@ -13,9 +13,12 @@
 
 ## Overview
 
-RemediationOrchestrator MUST create NotificationRequest CRDs with `type=manual-review` when:
-1. **WorkflowExecution** enters a state requiring operator intervention (exhausted retries, execution failures)
-2. **AIAnalysis** fails to produce a valid workflow recommendation (`WorkflowResolutionFailed`)
+RemediationOrchestrator MUST create NotificationRequest CRDs when:
+1. **WorkflowExecution** enters a state requiring operator intervention (exhausted retries, execution failures) → `type=manual-review`
+2. **AIAnalysis** fails to produce a valid workflow recommendation (`WorkflowResolutionFailed`) → `type=manual-review`
+3. **(v3.0) AIAnalysis** fails with unrecoverable infrastructure errors (APIError, Timeout, MaxRetriesExceeded) → `type=manual-review` (escalation)
+
+**Principle (v3.0)**: Any failure without automatic recovery in the remediation pipeline MUST be notified as an escalation. No failure should silently transition to Failed without operator notification.
 
 **Business Value**: Ensures operators are immediately notified of remediation failures that cannot be automatically resolved, reducing MTTR for critical infrastructure issues by 40-60%.
 
@@ -41,6 +44,16 @@ RemediationOrchestrator MUST create NotificationRequest CRDs with `type=manual-r
 | `LowConfidence` | Confidence below 70% threshold | Medium | BR-HAPI-197 |
 | `LLMParsingError` | Cannot parse LLM response (after 3 HAPI retries) | High | BR-HAPI-197 |
 | `InvestigationInconclusive` | LLM couldn't determine root cause or state | Medium | BR-HAPI-200 |
+
+### Source: AIAnalysis Unrecoverable Infrastructure Failures (v3.0)
+
+| Reason / SubReason | Description | Priority | Source |
+|--------------------|-------------|----------|--------|
+| `APIError` / `MaxRetriesExceeded` | HAPI request failed after 5 retry attempts (timeout, network error, 5xx) | High | BR-ORCH-036 v3.0 |
+| `APIError` / `TransientError` | Transient HAPI error that exceeded retry budget | High | BR-ORCH-036 v3.0 |
+| `APIError` / `PermanentError` | Non-retryable HAPI error (4xx, auth failure, bad request) | High | BR-ORCH-036 v3.0 |
+
+**Rationale (v3.0)**: Prior to this version, infrastructure failures in AIAnalysis (e.g., HAPI timeout after all retries) silently transitioned the RemediationRequest to `Failed` without creating a NotificationRequest. This left operators unaware that a remediation attempt had failed due to infrastructure issues. The principle is: **any failure without automatic recovery MUST generate an escalation notification**.
 
 ---
 
@@ -73,6 +86,19 @@ if ai.Status.Phase == "Failed" && ai.Status.Reason == "WorkflowResolutionFailed"
 }
 ```
 
+### AIAnalysis Infrastructure Failure Detection (v3.0)
+
+```go
+// v3.0: Detect unrecoverable infrastructure failures
+// Triggered when AIAnalysis fails with APIError, Timeout, etc.
+// (after exhausting retry budget in the AA controller)
+if ai.Status.Phase == "Failed" && ai.Status.Reason != "WorkflowResolutionFailed" && !ai.Status.NeedsHumanReview {
+    // Reason: APIError, SubReason: MaxRetriesExceeded, TransientError, PermanentError
+    // Principle: No failure without recovery goes unnotified
+    return c.CreateManualReviewNotification(ctx, rr, reviewCtx)
+}
+```
+
 ### Priority Mapping
 
 | Source | Reason/SubReason | Notification Priority |
@@ -87,6 +113,9 @@ if ai.Status.Phase == "Failed" && ai.Status.Reason == "WorkflowResolutionFailed"
 | AI | `NoMatchingWorkflows` | `medium` |
 | AI | `LowConfidence` | `medium` |
 | AI | `InvestigationInconclusive` | `medium` |
+| AI (v3.0) | `APIError` / `MaxRetriesExceeded` | `high` |
+| AI (v3.0) | `APIError` / `TransientError` | `high` |
+| AI (v3.0) | `APIError` / `PermanentError` | `high` |
 
 ---
 
@@ -193,6 +222,17 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-18 | Label `kubernaut.ai/failure-source=AIAnalysis` set | Unit |
 | AC-036-19 | Label `kubernaut.ai/failure-reason=WorkflowResolutionFailed` set | Unit |
 
+### AIAnalysis Infrastructure Failures (v3.0)
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-30 | NotificationRequest created for `APIError` / `MaxRetriesExceeded` | Unit |
+| AC-036-31 | NotificationRequest created for `APIError` / `TransientError` | Unit |
+| AC-036-32 | NotificationRequest created for `APIError` / `PermanentError` | Unit |
+| AC-036-33 | Priority is `high` for infrastructure failures | Unit |
+| AC-036-34 | Label `kubernaut.ai/failure-source=AIAnalysis` set | Unit |
+| AC-036-35 | No failure transitions to RR `Failed` without a notification | Integration |
+
 ### Common
 
 | ID | Criterion | Test Coverage |
@@ -258,6 +298,34 @@ Scenario: Manual review notification for AIAnalysis InvestigationInconclusive
     | type | manual-review |
     | priority | medium |
   And notification body should contain "investigation inconclusive"
+
+# v3.0: Infrastructure Failures
+Scenario: Escalation notification for AIAnalysis HAPI timeout (MaxRetriesExceeded)
+  Given AIAnalysis "ai-1" has:
+    | phase | Failed |
+    | reason | APIError |
+    | subReason | MaxRetriesExceeded |
+    | message | Transient error exceeded max retries (5 attempts): HAPI request timeout |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | high |
+    | labels.kubernaut.ai/failure-source | AIAnalysis |
+  And notification body should contain "APIError"
+  And notification body should contain "MaxRetriesExceeded"
+  And RemediationRequest "rr-1" should have requiresManualReview = true
+
+Scenario: Escalation notification for AIAnalysis permanent HAPI error
+  Given AIAnalysis "ai-1" has:
+    | phase | Failed |
+    | reason | APIError |
+    | subReason | PermanentError |
+    | message | HolmesGPT-API returned 401 Unauthorized |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | high |
+  And notification body should contain "PermanentError"
 ```
 
 ---
@@ -322,6 +390,35 @@ spec:
     - InvestigationInconclusive: Manual investigation required
 ```
 
+### AIAnalysis Infrastructure Failure Template (v3.0)
+
+```yaml
+spec:
+  type: manual-review
+  priority: high
+  subject: "⚠️ Manual Review Required: {signalName} - AI Analysis Infrastructure Failure"
+  body: |
+    AI analysis failed due to infrastructure issues. The remediation pipeline could not
+    complete because the HolmesGPT-API backend was unreachable or returned errors.
+
+    **Signal**: {signalName}
+    **Severity**: {severity}
+
+    **Affected Resource**:
+    {targetResource}
+
+    **Failure Source**: AIAnalysis
+    **Reason**: {reason} (e.g., APIError)
+    **SubReason**: {subReason} (e.g., MaxRetriesExceeded, TransientError, PermanentError)
+    **Details**: {message}
+
+    **Action Required**:
+    - MaxRetriesExceeded: Check HAPI pod health, LLM backend availability, network connectivity
+    - TransientError: Verify LLM provider (Vertex AI / Anthropic) is operational
+    - PermanentError: Check HAPI configuration, authentication credentials, API keys
+    - Review HAPI logs: kubectl logs -n kubernaut-system -l app=holmesgpt-api --tail=100
+```
+
 ---
 
 ## API Change
@@ -349,8 +446,8 @@ const (
 # Counter for manual review notifications sent
 kubernaut_remediationorchestrator_manual_review_notifications_total{
   source="WorkflowExecution|AIAnalysis",
-  reason="ExhaustedRetries|PreviousExecutionFailed|ExecutionFailure|WorkflowResolutionFailed",
-  sub_reason="WorkflowNotFound|ImageMismatch|ParameterValidationFailed|NoMatchingWorkflows|LowConfidence|LLMParsingError|InvestigationInconclusive",
+  reason="ExhaustedRetries|PreviousExecutionFailed|ExecutionFailure|WorkflowResolutionFailed|APIError",
+  sub_reason="WorkflowNotFound|ImageMismatch|ParameterValidationFailed|NoMatchingWorkflows|LowConfidence|LLMParsingError|InvestigationInconclusive|MaxRetriesExceeded|TransientError|PermanentError",
   namespace="<rr_namespace>"
 }
 ```
@@ -376,11 +473,12 @@ kubernaut_remediationorchestrator_manual_review_notifications_total{
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.0 | 2026-02-09 | **Escalation principle**: Any failure without automatic recovery MUST be notified. Added AIAnalysis infrastructure failures (APIError/MaxRetriesExceeded, TransientError, PermanentError) as notification triggers. Previously, these failures silently transitioned RR to Failed without operator notification. Also increased AA controller default HAPI timeout from 60s to 10m to accommodate real LLM response times (temporary; will be replaced by session-based pulling design). |
 | 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-HAPI-200 InvestigationInconclusive |
 | 1.0 | 2025-12-06 | Initial BR creation for WE failures only |
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: December 7, 2025
+**Document Version**: 3.0
+**Last Updated**: February 9, 2026
 **Maintained By**: Kubernaut Architecture Team

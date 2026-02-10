@@ -523,6 +523,27 @@ type RootCauseAnalysis struct {
 	SignalType string `json:"signalType"`
 	// Contributing factors
 	ContributingFactors []string `json:"contributingFactors,omitempty"`
+	// AffectedResource identifies the actual resource the LLM determined should be remediated.
+	// BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+	// the Pod that generated the signal. The WFE creator should prefer this over the RR's
+	// TargetResource when available to ensure the correct resource is patched.
+	// +optional
+	AffectedResource *AffectedResource `json:"affectedResource,omitempty"`
+}
+
+// AffectedResource identifies the Kubernetes resource identified by the LLM as the
+// actual target for remediation. This may differ from the signal's source resource
+// (e.g., the signal comes from a Pod, but the Deployment should be patched).
+type AffectedResource struct {
+	// Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet", "DaemonSet")
+	// +kubebuilder:validation:Required
+	Kind string `json:"kind"`
+	// Name is the resource name
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// Namespace is the resource namespace
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
 }
 
 // SelectedWorkflow contains the AI-selected workflow for execution

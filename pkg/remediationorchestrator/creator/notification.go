@@ -34,6 +34,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
+// formatTargetResource formats a ResourceIdentifier for notification bodies.
+// Returns a multi-line string with Kind, Name, and Namespace (if namespaced).
+func formatTargetResource(r remediationv1.ResourceIdentifier) string {
+	result := fmt.Sprintf("- **Kind**: %s\n- **Name**: %s", r.Kind, r.Name)
+	if r.Namespace != "" {
+		result += fmt.Sprintf("\n- **Namespace**: %s", r.Namespace)
+	}
+	return result
+}
+
 // NotificationCreator creates NotificationRequest CRDs for the Remediation Orchestrator.
 // Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review), BR-ORCH-045 (completion)
 type NotificationCreator struct {
@@ -219,6 +229,9 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 **Signal**: %s
 **Severity**: %s
 
+**Affected Resource**:
+%s
+
 **Root Cause Analysis**:
 %s
 
@@ -231,6 +244,7 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 Please review and approve/reject the remediation.`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
+		formatTargetResource(rr.Spec.TargetResource),
 		rootCause,
 		ai.Status.SelectedWorkflow.Confidence*100,
 		ai.Status.SelectedWorkflow.WorkflowID,
@@ -359,6 +373,9 @@ func (c *NotificationCreator) buildCompletionBody(
 **Signal**: %s
 **Severity**: %s
 
+**Affected Resource**:
+%s
+
 **Root Cause Analysis**:
 %s
 
@@ -369,6 +386,7 @@ func (c *NotificationCreator) buildCompletionBody(
 This incident was automatically detected and remediated by Kubernaut.`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
+		formatTargetResource(rr.Spec.TargetResource),
 		rootCause,
 		workflowID,
 		executionEngine,
@@ -469,11 +487,15 @@ func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.Remediati
 **Signal**: %s
 **Result**: %s
 
+**Affected Resource**:
+%s
+
 **Duplicate Remediations**: %d
 
 All duplicate signals have been handled by this remediation.`,
 		rr.Spec.SignalName,
 		rr.Status.OverallPhase,
+		formatTargetResource(rr.Spec.TargetResource),
 		rr.Status.DuplicateCount,
 	)
 }
@@ -642,6 +664,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 // - WE failures (ExhaustedRetries, PreviousExecutionFailed, ExecutionFailure) → critical
 // - AI WorkflowNotFound, ImageMismatch, ParameterValidationFailed, LLMParsingError → high
 // - AI NoMatchingWorkflows, LowConfidence, InvestigationInconclusive → medium
+// - BR-ORCH-036 v3.0: AI infrastructure failures (MaxRetriesExceeded, TransientError, PermanentError) → high
 func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) notificationv1.NotificationPriority {
 	if ctx.Source == ManualReviewSourceWorkflowExecution {
 		// All WE failures are critical (cluster state may be unknown)
@@ -650,10 +673,14 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 
 	// AIAnalysis failures - map by SubReason
 	switch ctx.SubReason {
+	// Workflow resolution failures
 	case "WorkflowNotFound", "ImageMismatch", "ParameterValidationFailed", "LLMParsingError":
 		return notificationv1.NotificationPriorityHigh
 	case "NoMatchingWorkflows", "LowConfidence", "InvestigationInconclusive":
 		return notificationv1.NotificationPriorityMedium
+	// BR-ORCH-036 v3.0: Infrastructure failures (APIError, Timeout, etc.)
+	case "MaxRetriesExceeded", "TransientError", "PermanentError":
+		return notificationv1.NotificationPriorityHigh
 	default:
 		return notificationv1.NotificationPriorityMedium
 	}
@@ -722,12 +749,16 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 **Signal**: %s
 **Severity**: %s
 
+**Affected Resource**:
+%s
+
 ---
 
 **Failure Source**: %s
 **Reason**: %s`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
+		formatTargetResource(rr.Spec.TargetResource),
 		ctx.Source,
 		ctx.Reason,
 	)
