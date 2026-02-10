@@ -162,14 +162,11 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 
 		Context("field selector usage", func() {
 			It("should use spec.signalFingerprint not labels", func() {
-				// Given: RR with fingerprint in spec but wrong label
+				// Given: RR with fingerprint in spec (label no longer exists per BR-GATEWAY-185 v1.1)
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-field-selector-" + generateRandomString(5),
 						Namespace: namespace,
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": "wrong-fingerprint-in-label",
-						},
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint, // Correct value in spec

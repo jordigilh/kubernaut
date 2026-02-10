@@ -155,14 +155,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 
-			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
-			fingerprintLabel := crd.Labels["kubernaut.ai/signal-fingerprint"]
-			expectedLabel := fingerprint
-			if len(expectedLabel) > 63 {
-				expectedLabel = expectedLabel[:63] // K8s label value max length
-			}
-			Expect(fingerprintLabel).To(Equal(expectedLabel),
-				"CRD fingerprint label must match response fingerprint (truncated to 63 chars for K8s)")
+			// Verify fingerprint is stored in spec (not as label — SHA256 exceeds 63-char label limit)
+			Expect(crd.Spec.SignalFingerprint).To(Equal(fingerprint),
+				"Full fingerprint stored in spec.signalFingerprint (BR-GATEWAY-185 v1.1)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Prometheus alert → Gateway → CRD created
@@ -313,7 +308,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(err).NotTo(HaveOccurred(), "Should send first alert")
 			defer func() { _ = resp1.Body.Close() }()
 
-			// Parse response to get full fingerprint (before K8s label truncation)
+			// Parse response to get full fingerprint
 			var response map[string]interface{}
 			err = json.NewDecoder(resp1.Body).Decode(&response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
