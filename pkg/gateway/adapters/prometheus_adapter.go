@@ -39,14 +39,28 @@ import (
 // Key responsibilities:
 // 1. Parse AlertManager JSON payload
 // 2. Extract alert fields (labels, annotations, timestamps)
-// 3. Generate fingerprint for deduplication
+// 3. Generate fingerprint for deduplication (owner-chain based, alertname excluded)
 // 4. Determine severity, namespace, resource
 // 5. Convert to NormalizedSignal format
-type PrometheusAdapter struct{}
+//
+// Deduplication strategy (Issue #63):
+// - alertname is EXCLUDED from fingerprint (LLM investigates resource state, not signal type)
+// - OwnerResolver resolves Pod→Deployment for consistent fingerprinting across pod restarts
+// - Fallback to resource-level fingerprint (without alertname) when resolution fails
+type PrometheusAdapter struct {
+	ownerResolver OwnerResolver
+}
 
-// NewPrometheusAdapter creates a new Prometheus adapter
-func NewPrometheusAdapter() *PrometheusAdapter {
-	return &PrometheusAdapter{}
+// NewPrometheusAdapter creates a new Prometheus adapter.
+// Optionally accepts an OwnerResolver for owner-chain-based fingerprinting.
+// When provided, Pod-level alerts are fingerprinted at the Deployment level.
+// When not provided, resource-level fingerprinting is used (alertname still excluded).
+func NewPrometheusAdapter(ownerResolver ...OwnerResolver) *PrometheusAdapter {
+	adapter := &PrometheusAdapter{}
+	if len(ownerResolver) > 0 && ownerResolver[0] != nil {
+		adapter.ownerResolver = ownerResolver[0]
+	}
+	return adapter
 }
 
 // Name returns the adapter identifier
@@ -104,7 +118,7 @@ func (a *PrometheusAdapter) GetSourceType() string {
 // 1. Unmarshal JSON payload
 // 2. Extract first alert (AlertManager groups multiple alerts, Gateway processes one at a time)
 // 3. Determine resource (Pod, Deployment, Node) from labels
-// 4. Generate fingerprint: SHA256(alertname:namespace:kind:name)
+// 4. Generate fingerprint: SHA256(namespace:ownerKind:ownerName) — alertname excluded (Issue #63)
 // 5. Merge alert labels with common labels
 // 6. Convert to NormalizedSignal
 //
@@ -140,10 +154,29 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Namespace: extractNamespace(alert.Labels),
 	}
 
-	// Generate fingerprint for deduplication (shared utility)
-	// Format: SHA256(alertname:namespace:kind:name)
-	// Example: "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-	fingerprint := types.CalculateFingerprint(alert.Labels["alertname"], resource)
+	// Generate fingerprint for deduplication (Issue #63: alertname excluded)
+	// LLM investigates resource state, not signal type — multiple alertnames for
+	// the same resource are redundant work.
+	// With OwnerResolver: SHA256(namespace:ownerKind:ownerName) e.g., SHA256(prod:Deployment:payment-api)
+	// Without OwnerResolver: SHA256(namespace:kind:name) e.g., SHA256(prod:Pod:payment-api-789)
+	var fingerprint string
+	if a.ownerResolver != nil {
+		ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
+			ctx, resource.Namespace, resource.Kind, resource.Name)
+		if err == nil && ownerKind != "" && ownerName != "" {
+			fingerprint = types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: resource.Namespace,
+				Kind:      ownerKind,
+				Name:      ownerName,
+			})
+		} else {
+			// Fallback: resource-level fingerprint (alertname excluded)
+			fingerprint = types.CalculateOwnerFingerprint(resource)
+		}
+	} else {
+		// No OwnerResolver: resource-level fingerprint (alertname excluded)
+		fingerprint = types.CalculateOwnerFingerprint(resource)
+	}
 
 	// Merge alert-specific labels with common labels
 	// Common labels are shared across all alerts in the webhook group
@@ -215,22 +248,22 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 	}
 }
 
-// calculateFingerprint generates SHA256 hash for deduplication
+// Fingerprint generation: SHA256 hash for deduplication (Issue #63)
 //
-// Fingerprint format: SHA256(alertname:namespace:kind:name)
+// Fingerprint format: SHA256(namespace:ownerKind:ownerName) — alertname EXCLUDED
 //
-// Examples:
-// - "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-// - "NodeNotReady:default:Node:worker-node-1"
-// - "DeploymentReplicasUnavailable:prod-api:Deployment:api-server"
+// Examples (with OwnerResolver):
+// - Pod "payment-api-789" owned by Deployment "payment-api" → SHA256(prod:Deployment:payment-api)
+// - Node "worker-node-1" (no owner) → SHA256(default:Node:worker-node-1)
 //
-// Why SHA256:
-// - Collision probability: 2^-256 (astronomically unlikely)
-// - Fixed 64-character hex string (easy storage, indexing)
-// - Fast: ~1-2μs per hash (negligible overhead)
+// Examples (without OwnerResolver):
+// - SHA256(prod:Pod:payment-api-789) — resource from labels, no alertname
 //
-// Returns:
-// - string: 64-character hex string (e.g., "a1b2c3d4e5f6...")
+// Why alertname is excluded:
+// - LLM investigates resource state, not signal type
+// - Multiple alertnames (KubePodCrashLooping, KubePodNotReady) for the same
+//   resource produce redundant RemediationRequests
+// - RCA outcome is independent of which alert triggered it
 
 // extractResourceKind determines Kubernetes resource type from labels
 //

@@ -575,10 +575,10 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 				"status":      "created",
 			})
 
-			By("2. Create 2 CRDs via ProcessSignal")
+			By("2. Create 2 CRDs via ProcessSignal (different pods for different fingerprints, Issue #63)")
 			for i := 1; i <= 2; i++ {
 				alertName := fmt.Sprintf("PhaseAlert%d", i)
-				alert := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
+				alert := createPrometheusAlertForPod(testNamespace, alertName, "critical", "", "", fmt.Sprintf("pod-phase-%d", i))
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -706,32 +706,32 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 				"signal_name": "Alert2",
 			})
 
-			By("2. Process signals with different alert names")
+			By("2. Process signals with different alert names (different pods for different fingerprints, Issue #63)")
 			// Create initial for Alert1
-			alert1 := createPrometheusAlert(testNamespace, "Alert1", "critical", "", "")
+			alert1 := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "", "pod-alert1")
 			signal1, err := prometheusAdapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1)
 			Expect(err).ToNot(HaveOccurred())
 			time.Sleep(300 * time.Millisecond)
 
-			// Duplicate Alert1
-			alert1Dup := createPrometheusAlert(testNamespace, "Alert1", "critical", "", "")
+			// Duplicate Alert1 (same pod → same fingerprint → dedup)
+			alert1Dup := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "", "pod-alert1")
 			signal1Dup, err := prometheusAdapter.Parse(ctx, alert1Dup)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1Dup)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create initial for Alert2
-			alert2 := createPrometheusAlert(testNamespace, "Alert2", "warning", "", "")
+			// Create initial for Alert2 (different pod → different fingerprint)
+			alert2 := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "", "pod-alert2")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2)
 			Expect(err).ToNot(HaveOccurred())
 			time.Sleep(300 * time.Millisecond)
 
-			// Duplicate Alert2
-			alert2Dup := createPrometheusAlert(testNamespace, "Alert2", "warning", "", "")
+			// Duplicate Alert2 (same pod → same fingerprint → dedup)
+			alert2Dup := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "", "pod-alert2")
 			signal2Dup, err := prometheusAdapter.Parse(ctx, alert2Dup)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2Dup)

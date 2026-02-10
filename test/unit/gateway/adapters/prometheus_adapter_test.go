@@ -86,10 +86,11 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"Fingerprint must be valid SHA256 hex string")
 		})
 
-		It("generates different fingerprints for different alerts", func() {
-			// BR-GATEWAY-006: Fingerprint uniqueness enables alert differentiation
-			// BUSINESS LOGIC: Different alerts → Different fingerprints
-			// Unit Test (70% tier): Tests algorithm distinguishes different inputs
+		It("generates same fingerprint for different alertnames targeting the same resource (Issue #63)", func() {
+			// Issue #63: alertname EXCLUDED from fingerprint.
+			// LLM investigates resource state, not signal type — multiple alertnames
+			// for the same resource are redundant work.
+			// BUSINESS LOGIC: Different alertnames + same resource → Same fingerprint
 
 			payload1 := []byte(`{
 				"alerts": [{
@@ -117,9 +118,10 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			Expect(err1).NotTo(HaveOccurred())
 			Expect(err2).NotTo(HaveOccurred())
 
-			// BUSINESS RULE: Different alerts must produce different fingerprints
-			Expect(signal1.Fingerprint).NotTo(Equal(signal2.Fingerprint),
-				"Different alerts must be distinguishable for deduplication")
+			// BUSINESS RULE: Same resource → same fingerprint (alertname excluded)
+			// LLM determines RCA from resource state, not from which alert fired
+			Expect(signal1.Fingerprint).To(Equal(signal2.Fingerprint),
+				"Different alertnames for the same resource must produce the same fingerprint (Issue #63)")
 		})
 
 		It("generates different fingerprints for same alert in different namespaces", func() {

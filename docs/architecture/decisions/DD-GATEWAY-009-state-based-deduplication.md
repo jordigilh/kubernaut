@@ -748,19 +748,28 @@ TTL: 5 minutes (fallback only)
 
 ### Example Scenarios
 
-**Scenario 1: Deduplication (Same Pod Crashes 5 Times)**
-- Pod A crashes at T=0s, T=30s, T=60s, T=90s, T=120s
-- **Fingerprint**: Same (`pod-a-crashloop`)
-- **Result**: 1 CRD with `occurrenceCount=5` (DEDUPLICATION)
+**Scenario 1: Deduplication — K8s Events (Same Deployment, Multiple Pod Crashes/Reasons)**
+- Pod A (owned by Deployment D) crashes at T=0s (BackOff), T=30s (OOMKilling)
+- Pod B (also owned by Deployment D, recreated) crashes at T=60s (BackOff)
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, reason excluded (BR-GATEWAY-004, updated 2026-02-09)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
 
-**Scenario 2: Storm Buffering (5 Different Pods Crash)**
-- Pods A, B, C, D, E crash at T=0s, T=5s, T=10s, T=15s, T=20s
-- **Fingerprints**: Different (each pod has unique fingerprint)
+**Scenario 1b: Deduplication — Prometheus Alerts (Multiple Alertnames for Same Resource)**
+- Alert "KubePodCrashLooping" for Pod A (owned by Deployment D) fires at T=0s
+- Alert "KubePodNotReady" for Pod A (owned by Deployment D) fires at T=30s
+- Alert "KubeContainerOOMKilled" for Pod B (also owned by Deployment D, recreated) fires at T=60s
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, alertname excluded (BR-GATEWAY-004, updated 2026-02-09, Issue #63)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
+- **Rationale**: LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
+
+**Scenario 2: Storm Buffering (5 Different Deployments Crash)**
+- Deployments D1, D2, D3, D4, D5 each produce events at T=0s, T=5s, T=10s, T=15s, T=20s
+- **Fingerprints**: Different (each Deployment produces unique fingerprint)
 - **Result**: 1 aggregated CRD with 5 resources (STORM BUFFERING)
 
-**Scenario 3: Both (5 Pods Crash, Each Crashes Twice)**
-- Pods A, B, C, D, E crash at T=0s, then all crash again at T=30s
-- **Fingerprints**: 5 different fingerprints, each appears twice
+**Scenario 3: Both (5 Deployments Crash, Each Produces Multiple Events)**
+- Deployments D1-D5 each produce BackOff + OOMKilling events
+- **Fingerprints**: 5 different fingerprints (one per Deployment), each appears twice
 - **Result**: 1 aggregated CRD with 5 resources, each with `occurrenceCount=2` (BOTH)
 
 ### Processing Flow
@@ -1049,19 +1058,28 @@ TTL: 5 minutes (fallback only)
 
 ### Example Scenarios
 
-**Scenario 1: Deduplication (Same Pod Crashes 5 Times)**
-- Pod A crashes at T=0s, T=30s, T=60s, T=90s, T=120s
-- **Fingerprint**: Same (`pod-a-crashloop`)
-- **Result**: 1 CRD with `occurrenceCount=5` (DEDUPLICATION)
+**Scenario 1: Deduplication — K8s Events (Same Deployment, Multiple Pod Crashes/Reasons)**
+- Pod A (owned by Deployment D) crashes at T=0s (BackOff), T=30s (OOMKilling)
+- Pod B (also owned by Deployment D, recreated) crashes at T=60s (BackOff)
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, reason excluded (BR-GATEWAY-004, updated 2026-02-09)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
 
-**Scenario 2: Storm Buffering (5 Different Pods Crash)**
-- Pods A, B, C, D, E crash at T=0s, T=5s, T=10s, T=15s, T=20s
-- **Fingerprints**: Different (each pod has unique fingerprint)
+**Scenario 1b: Deduplication — Prometheus Alerts (Multiple Alertnames for Same Resource)**
+- Alert "KubePodCrashLooping" for Pod A (owned by Deployment D) fires at T=0s
+- Alert "KubePodNotReady" for Pod A (owned by Deployment D) fires at T=30s
+- Alert "KubeContainerOOMKilled" for Pod B (also owned by Deployment D, recreated) fires at T=60s
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, alertname excluded (BR-GATEWAY-004, updated 2026-02-09, Issue #63)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
+- **Rationale**: LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
+
+**Scenario 2: Storm Buffering (5 Different Deployments Crash)**
+- Deployments D1, D2, D3, D4, D5 each produce events at T=0s, T=5s, T=10s, T=15s, T=20s
+- **Fingerprints**: Different (each Deployment produces unique fingerprint)
 - **Result**: 1 aggregated CRD with 5 resources (STORM BUFFERING)
 
-**Scenario 3: Both (5 Pods Crash, Each Crashes Twice)**
-- Pods A, B, C, D, E crash at T=0s, then all crash again at T=30s
-- **Fingerprints**: 5 different fingerprints, each appears twice
+**Scenario 3: Both (5 Deployments Crash, Each Produces Multiple Events)**
+- Deployments D1-D5 each produce BackOff + OOMKilling events
+- **Fingerprints**: 5 different fingerprints (one per Deployment), each appears twice
 - **Result**: 1 aggregated CRD with 5 resources, each with `occurrenceCount=2` (BOTH)
 
 ### Processing Flow
@@ -1341,19 +1359,28 @@ type InFlightCRDMetadata struct {
 
 ### Example Scenarios
 
-**Scenario 1: Deduplication (Same Pod Crashes 5 Times)**
-- Pod A crashes at T=0s, T=30s, T=60s, T=90s, T=120s
-- **Fingerprint**: Same (`pod-a-crashloop`)
-- **Result**: 1 CRD with `occurrenceCount=5` (DEDUPLICATION)
+**Scenario 1: Deduplication — K8s Events (Same Deployment, Multiple Pod Crashes/Reasons)**
+- Pod A (owned by Deployment D) crashes at T=0s (BackOff), T=30s (OOMKilling)
+- Pod B (also owned by Deployment D, recreated) crashes at T=60s (BackOff)
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, reason excluded (BR-GATEWAY-004, updated 2026-02-09)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
 
-**Scenario 2: Storm Buffering (5 Different Pods Crash)**
-- Pods A, B, C, D, E crash at T=0s, T=5s, T=10s, T=15s, T=20s
-- **Fingerprints**: Different (each pod has unique fingerprint)
+**Scenario 1b: Deduplication — Prometheus Alerts (Multiple Alertnames for Same Resource)**
+- Alert "KubePodCrashLooping" for Pod A (owned by Deployment D) fires at T=0s
+- Alert "KubePodNotReady" for Pod A (owned by Deployment D) fires at T=30s
+- Alert "KubeContainerOOMKilled" for Pod B (also owned by Deployment D, recreated) fires at T=60s
+- **Fingerprint**: Same — `SHA256(namespace:Deployment:D)` — owner-chain-based, alertname excluded (BR-GATEWAY-004, updated 2026-02-09, Issue #63)
+- **Result**: 1 CRD with `occurrenceCount=3` (DEDUPLICATION)
+- **Rationale**: LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
+
+**Scenario 2: Storm Buffering (5 Different Deployments Crash)**
+- Deployments D1, D2, D3, D4, D5 each produce events at T=0s, T=5s, T=10s, T=15s, T=20s
+- **Fingerprints**: Different (each Deployment produces unique fingerprint)
 - **Result**: 1 aggregated CRD with 5 resources (STORM BUFFERING)
 
-**Scenario 3: Both (5 Pods Crash, Each Crashes Twice)**
-- Pods A, B, C, D, E crash at T=0s, then all crash again at T=30s
-- **Fingerprints**: 5 different fingerprints, each appears twice
+**Scenario 3: Both (5 Deployments Crash, Each Produces Multiple Events)**
+- Deployments D1-D5 each produce BackOff + OOMKilling events
+- **Fingerprints**: 5 different fingerprints (one per Deployment), each appears twice
 - **Result**: 1 aggregated CRD with 5 resources, each with `occurrenceCount=2` (BOTH)
 
 ### Processing Flow

@@ -1,8 +1,13 @@
 # Gateway Service - Deduplication & Storm Detection
 
-**Version**: v1.0
-**Last Updated**: October 4, 2025
+**Version**: v1.2
+**Last Updated**: February 9, 2026
 **Status**: ✅ Design Complete
+
+**Changelog**:
+- **v1.2** (2026-02-09): Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Fingerprint now uses `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (same pattern as K8s event adapter). This ensures multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint. Rationale: LLM investigates resource state, not signal type.
+- **v1.1** (2026-02-09): Updated fingerprint generation to document adapter-specific strategies. Kubernetes events now use owner-chain-based fingerprinting (`SHA256(namespace:ownerKind:ownerName)`) to deduplicate events across pod restarts and different event reasons.
+- **v1.0** (2025-10-04): Initial design.
 
 ---
 
@@ -112,27 +117,92 @@ EXPIRE ratelimit:source:192.168.1.100 60  # Refill after 1 minute
 
 ### Algorithm
 
-**SHA256 Hash** of canonical alert identifier:
+Fingerprint generation uses **adapter-specific strategies** to ensure correct deduplication
+for each signal source:
+
+#### Prometheus Alerts (Owner-Based Fingerprint)
+
+Prometheus alerts use **owner chain resolution** to fingerprint at the controller level
+(e.g., Deployment, StatefulSet, DaemonSet), similar to Kubernetes events. This is critical because:
+
+- **Different alertnames** (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource should produce the same fingerprint.
+- **Different pod names** (after pod recreation by ReplicaSet) from the same Deployment should produce the same fingerprint.
+- **Architectural rationale**: The LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
+
+The `PrometheusAdapter` resolves the top-level controller owner via the optional
+`OwnerResolver` interface, which traverses Kubernetes `ownerReferences`:
+
+```
+Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "payment-api"
+```
 
 ```go
-func generateFingerprint(alert NormalizedSignal) string {
-    // Components: alertname + namespace + resource kind + resource name
-    key := fmt.Sprintf("%s:%s:%s:%s",
-        alert.AlertName,
-        alert.Namespace,
-        alert.Resource.Kind,
-        alert.Resource.Name,
+// Format: SHA256(namespace:ownerKind:ownerName) with OwnerResolver
+// Format: SHA256(namespace:kind:name) without OwnerResolver
+// alertname is NEVER included in the fingerprint.
+func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
+    key := fmt.Sprintf("%s:%s:%s",
+        resource.Namespace,
+        resource.Kind,  // e.g., "Deployment" (resolved owner) or "Pod" (fallback)
+        resource.Name,  // e.g., "payment-api" (resolved owner) or "payment-api-789abc" (fallback)
     )
     hash := sha256.Sum256([]byte(key))
     return fmt.Sprintf("%x", hash)
 }
 ```
 
-**Example**:
+**Examples** (all produce the same fingerprint):
 ```
-Input:  "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-Output: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+Alert: KubePodCrashLooping on Pod "payment-api-789abc" → Owner: Deployment "payment-api"
+Alert: KubePodNotReady     on Pod "payment-api-789abc" → Owner: Deployment "payment-api"
+Alert: KubeContainerOOMKilled on Pod "payment-api-def456" → Owner: Deployment "payment-api"
+All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplicated
 ```
+
+**Fallback**: If OwnerResolver is not configured or resolution fails (RBAC error, timeout), the adapter falls back to fingerprinting with the resource directly (without alertname): `SHA256(namespace:kind:name)`.
+
+#### Kubernetes Events (Owner-Based Fingerprint)
+
+Kubernetes events use **owner chain resolution** to fingerprint at the controller level
+(e.g., Deployment, StatefulSet, DaemonSet). This is critical because:
+
+- **Different reasons** (BackOff, OOMKilling, Failed) from the same root cause should
+  produce the same fingerprint.
+- **Different pod names** (after pod recreation by ReplicaSet) from the same Deployment
+  should produce the same fingerprint.
+
+The `KubernetesEventAdapter` resolves the top-level controller owner via the
+`OwnerResolver` interface, which traverses Kubernetes `ownerReferences`:
+
+```
+Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "payment-api"
+```
+
+```go
+// Format: SHA256(namespace:ownerKind:ownerName)
+// Reason is EXCLUDED from the fingerprint.
+func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
+    key := fmt.Sprintf("%s:%s:%s",
+        resource.Namespace,
+        resource.Kind,  // e.g., "Deployment"
+        resource.Name,  // e.g., "payment-api"
+    )
+    hash := sha256.Sum256([]byte(key))
+    return fmt.Sprintf("%x", hash)
+}
+```
+
+**Examples** (all produce the same fingerprint):
+```
+Event: BackOff     on Pod "payment-api-789abc" → Owner: Deployment "payment-api"
+Event: OOMKilling  on Pod "payment-api-789abc" → Owner: Deployment "payment-api"
+Event: BackOff     on Pod "payment-api-def456" → Owner: Deployment "payment-api"
+All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplicated
+```
+
+**Fallback**: If owner resolution fails (RBAC error, timeout), the adapter falls back
+to fingerprinting with the involvedObject directly (without reason):
+`SHA256(namespace:involvedObjectKind:involvedObjectName)`.
 
 ### Why SHA256 (Not MD5)
 

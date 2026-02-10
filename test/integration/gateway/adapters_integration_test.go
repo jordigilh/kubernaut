@@ -186,14 +186,14 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(signal1.Fingerprint).To(Equal(signal2.Fingerprint),
 				"BR-GATEWAY-004: Identical alerts must generate identical fingerprints")
 
-			By("4. Create alert with different alertname")
-			alertPayload3 := createPrometheusAlert(testNamespace, "DifferentAlert", "warning", "", "")
+			By("4. Create alert targeting a different pod (Issue #63: alertname excluded from fingerprint)")
+			alertPayload3 := createPrometheusAlertForPod(testNamespace, "DifferentAlert", "warning", "", "", "different-pod-456")
 			signal3, err3 := prometheusAdapter.Parse(ctx, alertPayload3)
 			Expect(err3).ToNot(HaveOccurred())
 
-			By("5. Verify different alert has different fingerprint")
+			By("5. Verify different resource has different fingerprint")
 			Expect(signal3.Fingerprint).ToNot(Equal(signal1.Fingerprint),
-				"BR-GATEWAY-004: Different alerts must generate different fingerprints")
+				"BR-GATEWAY-004: Different resources must generate different fingerprints")
 
 			GinkgoWriter.Printf("✅ Fingerprint stability validated: identical alerts → identical fingerprints\n")
 		})
