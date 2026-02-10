@@ -111,9 +111,10 @@ func main() {
 	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
 	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
 	// ========================================
-	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL)
+	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL, "timeout", holmesGPTTimeout.String())
 	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
 		BaseURL: holmesGPTURL,
+		Timeout: holmesGPTTimeout,
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create HolmesGPT-API client")
