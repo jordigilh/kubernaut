@@ -88,10 +88,14 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="OOMKill Recovery - Increase Memory Limits",
         confidence=0.95,
         root_cause="Container exceeded memory limits due to traffic spike",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource (not the Pod)
+        # The WFE creator will use this to set TargetResource to the Deployment
+        rca_resource_kind="Deployment",
         rca_resource_namespace="production",
-        rca_resource_name="api-server-abc123",
-        parameters={"MEMORY_LIMIT": "1Gi", "NAMESPACE": "production"}
+        rca_resource_name="api-server",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
+        parameters={"MEMORY_LIMIT_NEW": "1Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"}
     ),
     "crashloop": MockScenario(
         name="crashloop",
@@ -102,10 +106,12 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="CrashLoopBackOff - Configuration Fix",
         confidence=0.88,
         root_cause="Container failing due to missing configuration",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource (not the Pod)
+        rca_resource_kind="Deployment",
         rca_resource_namespace="staging",
-        rca_resource_name="worker-xyz789",
-        parameters={"CONFIG_MAP": "app-config", "NAMESPACE": "staging"}
+        rca_resource_name="worker",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        parameters={"CONFIG_MAP": "app-config", "TARGET_NAMESPACE": "staging"}
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
@@ -233,10 +239,12 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="OOMKill Recovery - Increase Memory Limits",
         confidence=0.88,
         root_cause="Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource
+        rca_resource_kind="Deployment",
         rca_resource_namespace="production",
-        rca_resource_name="api-server-abc123",
-        parameters={"MEMORY_LIMIT": "2Gi", "NAMESPACE": "production"}
+        rca_resource_name="api-server",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"}
     ),
     "predictive_no_action": MockScenario(
         name="predictive_no_action",

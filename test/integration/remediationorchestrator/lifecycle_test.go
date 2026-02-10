@@ -264,6 +264,85 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		})
 	})
 
+	// =====================================================
+	// BR-ORCH-036 v3.0: Infrastructure Failure Escalation
+	// AC-036-35: No failure transitions to RR Failed without a notification
+	// =====================================================
+	Context("BR-ORCH-036 v3.0: Infrastructure failure creates escalation notification", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-infra-fail")
+			rrName = fmt.Sprintf("rr-if-%s", uuid.New().String()[:13])
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should create escalation notification when AIAnalysis fails with APIError/MaxRetriesExceeded", func() {
+			By("Creating a RemediationRequest")
+			_ = createRemediationRequest(namespace, rrName)
+
+			By("Waiting for SignalProcessing to be created")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating SignalProcessing completion")
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+			By("Waiting for AIAnalysis to be created")
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating AIAnalysis failure with APIError/MaxRetriesExceeded")
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+
+			ai.Status.Phase = "Failed"
+			ai.Status.Reason = "APIError"
+			ai.Status.SubReason = "MaxRetriesExceeded"
+			ai.Status.Message = "Transient error exceeded max retries (5 attempts): HAPI request timeout"
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			By("Waiting for escalation NotificationRequest to be created (BR-ORCH-036 v3.0)")
+			nrName := fmt.Sprintf("nr-manual-review-%s", rrName)
+			Eventually(func() error {
+				nr := &notificationv1.NotificationRequest{}
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying NotificationRequest properties")
+			nr := &notificationv1.NotificationRequest{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
+
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
+			Expect(nr.Labels["kubernaut.ai/notification-type"]).To(Equal("manual-review"))
+			Expect(nr.Labels["kubernaut.ai/remediation-request"]).To(Equal(rrName))
+			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
+			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
+
+			By("Verifying RR status updated to Failed with ManualReviewRequired")
+			rr := &remediationv1.RemediationRequest{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
+			Expect(rr.Status.RequiresManualReview).To(BeTrue())
+
+			GinkgoWriter.Printf("✅ BR-ORCH-036 v3.0: Escalation notification created for APIError/MaxRetriesExceeded\n")
+		})
+	})
+
 	Context("BR-ORCH-037: WorkflowNotNeeded completes with NoActionRequired", func() {
 		var (
 			namespace string
