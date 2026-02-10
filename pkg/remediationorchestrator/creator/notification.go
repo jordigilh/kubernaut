@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -112,6 +113,14 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type: notificationv1.NotificationTypeApproval,
 			// Priority now from AIAnalysis.Spec.SignalContext.BusinessPriority (set by SP, not RR.Spec)
 			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
@@ -284,6 +293,14 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeCompletion,
 			Priority: notificationv1.NotificationPriorityLow, // Completion is informational
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
@@ -400,6 +417,14 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeSimple, // Informational
 			Priority: notificationv1.NotificationPriorityLow,
 			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
@@ -553,6 +578,14 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeManualReview,
 			Priority: priority,
 			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
