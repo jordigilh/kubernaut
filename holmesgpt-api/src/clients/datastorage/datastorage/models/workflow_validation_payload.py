@@ -29,7 +29,7 @@ except ImportError:
 
 class WorkflowValidationPayload(BaseModel):
     """
-    Workflow validation attempt event payload (workflow_validation_attempt)
+    Workflow validation attempt event payload (aiagent.workflow.validation_attempt)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
@@ -48,8 +48,8 @@ class WorkflowValidationPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('workflow_validation_attempt'):
-            raise ValueError("must be one of enum values ('workflow_validation_attempt')")
+        if value not in ('aiagent.workflow.validation_attempt'):
+            raise ValueError("must be one of enum values ('aiagent.workflow.validation_attempt')")
         return value
 
     model_config = {

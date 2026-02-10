@@ -165,6 +165,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AIAgentResponsePayload](docs/AIAgentResponsePayload.md)
  - [AIAnalysisApprovalDecisionPayload](docs/AIAnalysisApprovalDecisionPayload.md)
  - [AIAnalysisAuditPayload](docs/AIAnalysisAuditPayload.md)
  - [AIAnalysisErrorPayload](docs/AIAnalysisErrorPayload.md)
@@ -190,7 +191,6 @@ Class | Method | HTTP request | Description
  - [GatewayAuditPayload](docs/GatewayAuditPayload.md)
  - [HealthCheck200Response](docs/HealthCheck200Response.md)
  - [HealthCheck503Response](docs/HealthCheck503Response.md)
- - [HolmesGPTResponsePayload](docs/HolmesGPTResponsePayload.md)
  - [IncidentResponseData](docs/IncidentResponseData.md)
  - [IncidentResponseDataAlternativeWorkflowsInner](docs/IncidentResponseDataAlternativeWorkflowsInner.md)
  - [IncidentResponseDataRootCauseAnalysis](docs/IncidentResponseDataRootCauseAnalysis.md)

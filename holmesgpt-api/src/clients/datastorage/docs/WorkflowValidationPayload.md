@@ -1,6 +1,6 @@
 # WorkflowValidationPayload
 
-Workflow validation attempt event payload (workflow_validation_attempt)
+Workflow validation attempt event payload (aiagent.workflow.validation_attempt)
 
 ## Properties
 

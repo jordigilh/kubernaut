@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.holmes_gpt_response_payload import HolmesGPTResponsePayload
+from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 
-class TestHolmesGPTResponsePayload(unittest.TestCase):
-    """HolmesGPTResponsePayload unit test stubs"""
+class TestAIAgentResponsePayload(unittest.TestCase):
+    """AIAgentResponsePayload unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,17 +26,17 @@ class TestHolmesGPTResponsePayload(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> HolmesGPTResponsePayload:
-        """Test HolmesGPTResponsePayload
+    def make_instance(self, include_optional) -> AIAgentResponsePayload:
+        """Test AIAgentResponsePayload
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `HolmesGPTResponsePayload`
+        # uncomment below to create an instance of `AIAgentResponsePayload`
         """
-        model = HolmesGPTResponsePayload()
+        model = AIAgentResponsePayload()
         if include_optional:
-            return HolmesGPTResponsePayload(
-                event_type = 'holmesgpt.response.complete',
+            return AIAgentResponsePayload(
+                event_type = 'aiagent.response.complete',
                 event_id = 'evt-hapi-123-abc',
                 incident_id = 'incident-payment-api-2025-12-17-abc123',
                 response_data = datastorage.models.incident_response_data.IncidentResponseData(
@@ -68,8 +68,8 @@ class TestHolmesGPTResponsePayload(unittest.TestCase):
                         ], )
             )
         else:
-            return HolmesGPTResponsePayload(
-                event_type = 'holmesgpt.response.complete',
+            return AIAgentResponsePayload(
+                event_type = 'aiagent.response.complete',
                 event_id = 'evt-hapi-123-abc',
                 incident_id = 'incident-payment-api-2025-12-17-abc123',
                 response_data = datastorage.models.incident_response_data.IncidentResponseData(
@@ -102,8 +102,8 @@ class TestHolmesGPTResponsePayload(unittest.TestCase):
         )
         """
 
-    def testHolmesGPTResponsePayload(self):
-        """Test HolmesGPTResponsePayload"""
+    def testAIAgentResponsePayload(self):
+        """Test AIAgentResponsePayload"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

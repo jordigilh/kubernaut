@@ -36,7 +36,7 @@ class TestLLMToolCallPayload(unittest.TestCase):
         model = LLMToolCallPayload()
         if include_optional:
             return LLMToolCallPayload(
-                event_type = 'llm_tool_call',
+                event_type = 'aiagent.llm.tool_call',
                 event_id = '',
                 incident_id = '',
                 tool_call_index = 0,
@@ -47,7 +47,7 @@ class TestLLMToolCallPayload(unittest.TestCase):
             )
         else:
             return LLMToolCallPayload(
-                event_type = 'llm_tool_call',
+                event_type = 'aiagent.llm.tool_call',
                 event_id = '',
                 incident_id = '',
                 tool_call_index = 0,

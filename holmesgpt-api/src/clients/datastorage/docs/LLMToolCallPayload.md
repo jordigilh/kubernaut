@@ -1,6 +1,6 @@
 # LLMToolCallPayload
 
-LLM tool call event payload (llm_tool_call)
+LLM tool call event payload (aiagent.llm.tool_call)
 
 ## Properties
 
