@@ -531,13 +531,18 @@ var _ = Describe("NotificationCreator", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(nr.Spec.Priority).To(Equal(expectedPriority))
 				},
-				Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
-				Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
-				Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
-				Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
-				Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
-				Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
-			)
+			// Workflow resolution failures
+			Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
+			Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
+			Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
+			Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
+			Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
+			Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
+			// BR-ORCH-036 v3.0: Infrastructure failures
+			Entry("AC-036-30: MaxRetriesExceeded → High", "MaxRetriesExceeded", notificationv1.NotificationPriorityHigh),
+			Entry("AC-036-31: TransientError → High", "TransientError", notificationv1.NotificationPriorityHigh),
+			Entry("AC-036-32: PermanentError → High", "PermanentError", notificationv1.NotificationPriorityHigh),
+		)
 		})
 
 		Context("BR-ORCH-036: WorkflowExecution Source (Critical Priority)", func() {

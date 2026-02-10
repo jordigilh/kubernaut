@@ -339,9 +339,13 @@ var _ = Describe("AIAnalysisHandler", func() {
 			})
 		})
 
-		Context("Other Failures", func() {
-			// Test #18: Propagates non-WorkflowResolutionFailed failures
-			It("should propagate failure to RR for non-WorkflowResolutionFailed", func() {
+		// =====================================================
+		// BR-ORCH-036 v3.0: Infrastructure Failure Escalation
+		// Any failure without automatic recovery MUST be notified
+		// =====================================================
+		Context("BR-ORCH-036 v3.0: Infrastructure Failure Escalation", func() {
+			// AC-036-30: NotificationRequest created for APIError/MaxRetriesExceeded
+			It("should create escalation notification for APIError/MaxRetriesExceeded", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
@@ -351,7 +355,58 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
-				ai.Status.Message = "LLM API timeout"
+				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Message = "Transient error exceeded max retries (5 attempts): HAPI request timeout"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify escalation notification was created
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1), "Expected escalation notification for infrastructure failure")
+				Expect(nrList.Items[0].Name).To(Equal("nr-manual-review-test-rr"))
+				Expect(nrList.Items[0].Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+
+			// AC-036-33: Priority is high for infrastructure failures
+			It("should set high priority for infrastructure failure notifications", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Message = "HAPI timeout after 5 retries"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
+			})
+
+			// AC-036-34: RR status updated with ManualReviewRequired
+			It("should set RR status to Failed with Outcome=ManualReviewRequired", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.SubReason = "TransientError"
+				ai.Status.Message = "Network timeout calling HAPI"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -361,14 +416,83 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
 				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
-				Expect(*updatedRR.Status.FailureReason).To(ContainSubstring("APIError"))
+				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			})
 
-				// No notification created for non-manual-review failures
+			// AC-036-31: NotificationRequest created for APIError/TransientError
+			It("should create escalation notification for APIError/TransientError", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.SubReason = "TransientError"
+				ai.Status.Message = "HAPI returned 503 Service Unavailable"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
 				nrList := &notificationv1.NotificationRequestList{}
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nrList.Items).To(BeEmpty())
+				Expect(nrList.Items).To(HaveLen(1), "Expected escalation notification for TransientError")
+				Expect(nrList.Items[0].Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+
+			// AC-036-32: NotificationRequest created for APIError/PermanentError
+			It("should create escalation notification for APIError/PermanentError", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.SubReason = "PermanentError"
+				ai.Status.Message = "HAPI returned 401 Unauthorized"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1), "Expected escalation notification for PermanentError")
+				Expect(nrList.Items[0].Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+
+			// Notification metadata contains reason and subReason
+			It("should include reason and subReason in notification metadata", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "APIError"
+				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Message = "HAPI timeout after 5 retries"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("source", "AIAnalysis"))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
 			})
 		})
 

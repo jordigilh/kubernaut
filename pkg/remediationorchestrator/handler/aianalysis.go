@@ -209,19 +209,14 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 }
 
 // handleFailed processes AIAnalysis Failed phase.
-// Handles NeedsHumanReview (BR-HAPI-197), WorkflowResolutionFailed (BR-ORCH-036), and other failure scenarios.
+// Handles NeedsHumanReview (BR-HAPI-197), WorkflowResolutionFailed (BR-ORCH-036),
+// and infrastructure failures (BR-ORCH-036 v3.0: APIError, Timeout, MaxRetriesExceeded).
+// All failure paths create escalation notifications before transitioning to Failed.
 func (h *AIAnalysisHandler) handleFailed(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"aiAnalysis", ai.Name,
-		"reason", ai.Status.Reason,
-		"subReason", ai.Status.SubReason,
-	)
-
 	// BR-HAPI-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
 	// This flag is set by HAPI when AI cannot produce a reliable result
 	if ai.Status.NeedsHumanReview {
@@ -233,8 +228,8 @@ func (h *AIAnalysisHandler) handleFailed(
 		return h.handleWorkflowResolutionFailed(ctx, rr, ai)
 	}
 
-	// Other failures (APIError, Timeout, etc.) - propagate failure to RR
-	logger.Info("AIAnalysis failed with non-recoverable error")
+	// BR-ORCH-036 v3.0: Other failures (APIError, Timeout, MaxRetriesExceeded, etc.)
+	// Create escalation notification and propagate failure to RR
 	return h.propagateFailure(ctx, rr, ai)
 }
 
@@ -377,6 +372,8 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 }
 
 // propagateFailure propagates AIAnalysis failure to RemediationRequest.
+// BR-ORCH-036 v3.0: Creates an escalation notification for unrecoverable infrastructure failures
+// (APIError, Timeout, MaxRetriesExceeded) before transitioning to Failed.
 func (h *AIAnalysisHandler) propagateFailure(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -385,30 +382,30 @@ func (h *AIAnalysisHandler) propagateFailure(
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"aiAnalysis", ai.Name,
+		"reason", ai.Status.Reason,
+		"subReason", ai.Status.SubReason,
 	)
 
-	// Prepare failure reason with comprehensive tracking
-	failureReason := fmt.Sprintf("AIAnalysis failed: %s: %s", ai.Status.Reason, ai.Status.Message)
+	logger.Info("AIAnalysis infrastructure failure - creating escalation notification",
+		"reason", ai.Status.Reason,
+		"subReason", ai.Status.SubReason,
+	)
 
-	// Update RR message field (DD-GATEWAY-011)
-	// Note: Phase transition and audit emission handled by transitionToFailed() callback below
-	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.Message = failureReason
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to update RR message for AIAnalysis failure")
-		// Continue to transitionToFailed even if message update fails
+	// BR-ORCH-036 v3.0: Build manual review context for infrastructure failures
+	// (APIError, Timeout, MaxRetriesExceeded, etc.)
+	reviewCtx := &creator.ManualReviewContext{
+		Source:    creator.ManualReviewSourceAIAnalysis,
+		Reason:    ai.Status.Reason,    // e.g., "APIError"
+		SubReason: ai.Status.SubReason, // e.g., "MaxRetriesExceeded", "TransientError"
+		Message:   ai.Status.Message,
 	}
 
-	logger.Info("Propagating AIAnalysis failure to RemediationRequest",
-		"reason", ai.Status.Reason,
-	)
+	// Populate root cause and warnings if available (common pattern)
+	h.populateManualReviewContext(reviewCtx, ai)
 
-	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
-	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
-	return h.transitionToFailed(ctx, rr, "ai_analysis", fmt.Errorf("%s", failureReason))
+	// Create notification and update RR status, then transition to Failed
+	// Reuses the same pattern as handleWorkflowResolutionFailed and handleHumanReviewRequired
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, ai.Status.Reason, ai.Status.SubReason)
 }
 
 // IsWorkflowResolutionFailed checks if AIAnalysis failed due to workflow resolution issues.
