@@ -3,8 +3,6 @@
 package client
 
 import (
-	"net/url"
-
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 )
@@ -379,26 +377,26 @@ func (s *ExecutionFailure) SetExecutionTime(val string) {
 	s.ExecutionTime = val
 }
 
-// RFC 7807 Problem Details for HTTP APIs - Authentication/Authorization errors.
-// See: https://www.rfc-editor.org/rfc/rfc7807.html.
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
 // Ref: #/components/schemas/HTTPError
 type HTTPError struct {
-	// URI reference identifying the problem type.
-	Type url.URL `json:"type"`
-	// Short, human-readable summary of the problem type.
-	Title string `json:"title"`
-	// HTTP status code for this occurrence.
-	Status int32 `json:"status"`
-	// Human-readable explanation specific to this occurrence.
-	Detail OptString `json:"detail"`
-	// URI reference identifying the specific occurrence of the problem.
-	Instance OptURI `json:"instance"`
-	// Request tracing identifier (RFC 7807 extension member).
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
 	RequestID OptNilString `json:"request_id"`
 }
 
 // GetType returns the value of Type.
-func (s *HTTPError) GetType() url.URL {
+func (s *HTTPError) GetType() string {
 	return s.Type
 }
 
@@ -407,18 +405,18 @@ func (s *HTTPError) GetTitle() string {
 	return s.Title
 }
 
-// GetStatus returns the value of Status.
-func (s *HTTPError) GetStatus() int32 {
-	return s.Status
-}
-
 // GetDetail returns the value of Detail.
-func (s *HTTPError) GetDetail() OptString {
+func (s *HTTPError) GetDetail() string {
 	return s.Detail
 }
 
+// GetStatus returns the value of Status.
+func (s *HTTPError) GetStatus() int {
+	return s.Status
+}
+
 // GetInstance returns the value of Instance.
-func (s *HTTPError) GetInstance() OptURI {
+func (s *HTTPError) GetInstance() string {
 	return s.Instance
 }
 
@@ -428,7 +426,7 @@ func (s *HTTPError) GetRequestID() OptNilString {
 }
 
 // SetType sets the value of Type.
-func (s *HTTPError) SetType(val url.URL) {
+func (s *HTTPError) SetType(val string) {
 	s.Type = val
 }
 
@@ -437,18 +435,18 @@ func (s *HTTPError) SetTitle(val string) {
 	s.Title = val
 }
 
-// SetStatus sets the value of Status.
-func (s *HTTPError) SetStatus(val int32) {
-	s.Status = val
-}
-
 // SetDetail sets the value of Detail.
-func (s *HTTPError) SetDetail(val OptString) {
+func (s *HTTPError) SetDetail(val string) {
 	s.Detail = val
 }
 
+// SetStatus sets the value of Status.
+func (s *HTTPError) SetStatus(val int) {
+	s.Status = val
+}
+
 // SetInstance sets the value of Instance.
-func (s *HTTPError) SetInstance(val OptURI) {
+func (s *HTTPError) SetInstance(val string) {
 	s.Instance = val
 }
 
@@ -458,7 +456,7 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 }
 
 // Structured reason for needs_human_review=true.
-// Business Requirements: BR-HAPI-197, BR-HAPI-200
+// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-HAPI-212
 // Design Decision: DD-HAPI-002 v1.2
 // AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
 // Ref: #/components/schemas/HumanReviewReason
@@ -472,6 +470,7 @@ const (
 	HumanReviewReasonLowConfidence             HumanReviewReason = "low_confidence"
 	HumanReviewReasonLlmParsingError           HumanReviewReason = "llm_parsing_error"
 	HumanReviewReasonInvestigationInconclusive HumanReviewReason = "investigation_inconclusive"
+	HumanReviewReasonRcaIncomplete             HumanReviewReason = "rca_incomplete"
 )
 
 // AllValues returns all HumanReviewReason values.
@@ -484,6 +483,7 @@ func (HumanReviewReason) AllValues() []HumanReviewReason {
 		HumanReviewReasonLowConfidence,
 		HumanReviewReasonLlmParsingError,
 		HumanReviewReasonInvestigationInconclusive,
+		HumanReviewReasonRcaIncomplete,
 	}
 }
 
@@ -503,6 +503,8 @@ func (s HumanReviewReason) MarshalText() ([]byte, error) {
 	case HumanReviewReasonLlmParsingError:
 		return []byte(s), nil
 	case HumanReviewReasonInvestigationInconclusive:
+		return []byte(s), nil
+	case HumanReviewReasonRcaIncomplete:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -533,48 +535,448 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	case HumanReviewReasonInvestigationInconclusive:
 		*s = HumanReviewReasonInvestigationInconclusive
 		return nil
+	case HumanReviewReasonRcaIncomplete:
+		*s = HumanReviewReasonRcaIncomplete
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest HTTPError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest HTTPError
 
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden HTTPError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden HTTPError
 
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError HTTPError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError HTTPError
 
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized HTTPError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized HTTPError
 
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity HTTPError
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity HTTPError
 
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 // Request model for initial incident analysis endpoint
 // Business Requirements:
 // - BR-HAPI-002: Incident analysis request schema
 // - BR-AUDIT-001: Unified audit trail (remediation_id)
-// - BR-AI-084: Predictive signal mode prompt strategy
 // Design Decision: DD-WORKFLOW-002 v2.2
 // - remediation_id is MANDATORY for audit trail correlation
 // - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
 // Design Decision: DD-RECOVERY-003
-// - enrichment_results contains DetectedLabels for workflow filtering
-// Design Decision: ADR-054
-// - signal_mode enables HAPI to switch prompt strategy for predictive signals.
+// - enrichment_results contains DetectedLabels for workflow filtering.
 // Ref: #/components/schemas/IncidentRequest
 type IncidentRequest struct {
 	// Unique incident identifier.
@@ -637,10 +1039,8 @@ type IncidentRequest struct {
 	SignalLabels OptNilIncidentRequestSignalLabels `json:"signal_labels"`
 	// Enriched context from SignalProcessing.
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
-	// Signal mode: reactive (incident occurred) or predictive (incident predicted). BR-AI-084: Used by
-	// prompt builder to switch investigation strategy (RCA vs. predict & prevent). ADR-054: Predictive
-	// Signal Mode Classification.
-	SignalMode OptNilIncidentRequestSignalMode `json:"signal_mode"`
+	// Signal mode: 'reactive' or 'predictive'. Controls prompt strategy (ADR-054).
+	SignalMode OptNilSignalMode `json:"signal_mode"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -789,7 +1189,7 @@ func (s *IncidentRequest) GetEnrichmentResults() OptNilEnrichmentResults {
 }
 
 // GetSignalMode returns the value of SignalMode.
-func (s *IncidentRequest) GetSignalMode() OptNilIncidentRequestSignalMode {
+func (s *IncidentRequest) GetSignalMode() OptNilSignalMode {
 	return s.SignalMode
 }
 
@@ -939,7 +1339,7 @@ func (s *IncidentRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 }
 
 // SetSignalMode sets the value of SignalMode.
-func (s *IncidentRequest) SetSignalMode(val OptNilIncidentRequestSignalMode) {
+func (s *IncidentRequest) SetSignalMode(val OptNilSignalMode) {
 	s.SignalMode = val
 }
 
@@ -952,47 +1352,6 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 		*s = m
 	}
 	return m
-}
-
-type IncidentRequestSignalMode string
-
-const (
-	IncidentRequestSignalModeReactive   IncidentRequestSignalMode = "reactive"
-	IncidentRequestSignalModePredictive IncidentRequestSignalMode = "predictive"
-)
-
-// AllValues returns all IncidentRequestSignalMode values.
-func (IncidentRequestSignalMode) AllValues() []IncidentRequestSignalMode {
-	return []IncidentRequestSignalMode{
-		IncidentRequestSignalModeReactive,
-		IncidentRequestSignalModePredictive,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s IncidentRequestSignalMode) MarshalText() ([]byte, error) {
-	switch s {
-	case IncidentRequestSignalModeReactive:
-		return []byte(s), nil
-	case IncidentRequestSignalModePredictive:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *IncidentRequestSignalMode) UnmarshalText(data []byte) error {
-	switch IncidentRequestSignalMode(data) {
-	case IncidentRequestSignalModeReactive:
-		*s = IncidentRequestSignalModeReactive
-		return nil
-	case IncidentRequestSignalModePredictive:
-		*s = IncidentRequestSignalModePredictive
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Response model for incident analysis endpoint
@@ -1720,69 +2079,6 @@ func (o OptNilIncidentRequestSignalLabels) Or(d IncidentRequestSignalLabels) Inc
 	return d
 }
 
-// NewOptNilIncidentRequestSignalMode returns new OptNilIncidentRequestSignalMode with value set to v.
-func NewOptNilIncidentRequestSignalMode(v IncidentRequestSignalMode) OptNilIncidentRequestSignalMode {
-	return OptNilIncidentRequestSignalMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilIncidentRequestSignalMode is optional nullable IncidentRequestSignalMode.
-type OptNilIncidentRequestSignalMode struct {
-	Value IncidentRequestSignalMode
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilIncidentRequestSignalMode was set.
-func (o OptNilIncidentRequestSignalMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilIncidentRequestSignalMode) Reset() {
-	var v IncidentRequestSignalMode
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilIncidentRequestSignalMode) SetTo(v IncidentRequestSignalMode) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilIncidentRequestSignalMode) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilIncidentRequestSignalMode) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v IncidentRequestSignalMode
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilIncidentRequestSignalMode) Get() (v IncidentRequestSignalMode, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilIncidentRequestSignalMode) Or(d IncidentRequestSignalMode) IncidentRequestSignalMode {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilIncidentResponseSelectedWorkflow returns new OptNilIncidentResponseSelectedWorkflow with value set to v.
 func NewOptNilIncidentResponseSelectedWorkflow(v IncidentResponseSelectedWorkflow) OptNilIncidentResponseSelectedWorkflow {
 	return OptNilIncidentResponseSelectedWorkflow{
@@ -1972,69 +2268,6 @@ func (o OptNilPreviousExecution) Or(d PreviousExecution) PreviousExecution {
 	return d
 }
 
-// NewOptNilRecoveryRequestEnrichmentResults returns new OptNilRecoveryRequestEnrichmentResults with value set to v.
-func NewOptNilRecoveryRequestEnrichmentResults(v RecoveryRequestEnrichmentResults) OptNilRecoveryRequestEnrichmentResults {
-	return OptNilRecoveryRequestEnrichmentResults{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilRecoveryRequestEnrichmentResults is optional nullable RecoveryRequestEnrichmentResults.
-type OptNilRecoveryRequestEnrichmentResults struct {
-	Value RecoveryRequestEnrichmentResults
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilRecoveryRequestEnrichmentResults was set.
-func (o OptNilRecoveryRequestEnrichmentResults) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilRecoveryRequestEnrichmentResults) Reset() {
-	var v RecoveryRequestEnrichmentResults
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilRecoveryRequestEnrichmentResults) SetTo(v RecoveryRequestEnrichmentResults) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilRecoveryRequestEnrichmentResults) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilRecoveryRequestEnrichmentResults) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v RecoveryRequestEnrichmentResults
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilRecoveryRequestEnrichmentResults) Get() (v RecoveryRequestEnrichmentResults, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilRecoveryRequestEnrichmentResults) Or(d RecoveryRequestEnrichmentResults) RecoveryRequestEnrichmentResults {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilRecoveryResponseRecoveryAnalysis returns new OptNilRecoveryResponseRecoveryAnalysis with value set to v.
 func NewOptNilRecoveryResponseRecoveryAnalysis(v RecoveryResponseRecoveryAnalysis) OptNilRecoveryResponseRecoveryAnalysis {
 	return OptNilRecoveryResponseRecoveryAnalysis{
@@ -2155,6 +2388,69 @@ func (o OptNilRecoveryResponseSelectedWorkflow) Get() (v RecoveryResponseSelecte
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilRecoveryResponseSelectedWorkflow) Or(d RecoveryResponseSelectedWorkflow) RecoveryResponseSelectedWorkflow {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilSignalMode returns new OptNilSignalMode with value set to v.
+func NewOptNilSignalMode(v SignalMode) OptNilSignalMode {
+	return OptNilSignalMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSignalMode is optional nullable SignalMode.
+type OptNilSignalMode struct {
+	Value SignalMode
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSignalMode was set.
+func (o OptNilSignalMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSignalMode) Reset() {
+	var v SignalMode
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSignalMode) SetTo(v SignalMode) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSignalMode) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSignalMode) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v SignalMode
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSignalMode) Get() (v SignalMode, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSignalMode) Or(d SignalMode) SignalMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2425,52 +2721,6 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
-// NewOptURI returns new OptURI with value set to v.
-func NewOptURI(v url.URL) OptURI {
-	return OptURI{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptURI is optional url.URL.
-type OptURI struct {
-	Value url.URL
-	Set   bool
-}
-
-// IsSet returns true if OptURI was set.
-func (o OptURI) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptURI) Reset() {
-	var v url.URL
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptURI) SetTo(v url.URL) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptURI) Get() (v url.URL, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptURI) Or(d url.URL) url.URL {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // Summary of the original root cause analysis from initial AIAnalysis.
 // Ref: #/components/schemas/OriginalRCA
 type OriginalRCA struct {
@@ -2593,29 +2843,429 @@ func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest HTTPError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest HTTPError
 
-func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden HTTPError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden HTTPError
 
-func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError HTTPError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError HTTPError
 
-func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized HTTPError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized HTTPError
 
-func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity HTTPError
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity HTTPError
 
-func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
+// RFC 7807 Problem Details for HTTP APIs
+// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+// Design Decision: DD-004 - RFC 7807 Problem Details
+// Reference: https://tools.ietf.org/html/rfc7807
+// Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+// Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+// Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+// Named HTTPError in OpenAPI spec for compatibility with existing Go client.
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON struct {
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Detail    string       `json:"detail"`
+	Status    int          `json:"status"`
+	Instance  string       `json:"instance"`
+	RequestID OptNilString `json:"request_id"`
+}
+
+// GetType returns the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetType() string {
+	return s.Type
+}
+
+// GetTitle returns the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetTitle() string {
+	return s.Title
+}
+
+// GetDetail returns the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetDetail() string {
+	return s.Detail
+}
+
+// GetStatus returns the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetStatus() int {
+	return s.Status
+}
+
+// GetInstance returns the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetInstance() string {
+	return s.Instance
+}
+
+// GetRequestID returns the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) GetRequestID() OptNilString {
+	return s.RequestID
+}
+
+// SetType sets the value of Type.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetType(val string) {
+	s.Type = val
+}
+
+// SetTitle sets the value of Title.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetTitle(val string) {
+	s.Title = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetDetail(val string) {
+	s.Detail = val
+}
+
+// SetStatus sets the value of Status.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetInstance(val string) {
+	s.Instance = val
+}
+
+// SetRequestID sets the value of RequestID.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) SetRequestID(val OptNilString) {
+	s.RequestID = val
+}
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
 // Request model for recovery analysis endpoint
@@ -2644,7 +3294,7 @@ type RecoveryRequest struct {
 	// Context from previous failed attempt.
 	PreviousExecution OptNilPreviousExecution `json:"previous_execution"`
 	// Enriched context including DetectedLabels for workflow filtering.
-	EnrichmentResults OptNilRecoveryRequestEnrichmentResults `json:"enrichment_results"`
+	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
 	// Current signal type (may have changed).
 	SignalType OptNilString `json:"signal_type"`
 	// Current severity.
@@ -2697,7 +3347,7 @@ func (s *RecoveryRequest) GetPreviousExecution() OptNilPreviousExecution {
 }
 
 // GetEnrichmentResults returns the value of EnrichmentResults.
-func (s *RecoveryRequest) GetEnrichmentResults() OptNilRecoveryRequestEnrichmentResults {
+func (s *RecoveryRequest) GetEnrichmentResults() OptNilEnrichmentResults {
 	return s.EnrichmentResults
 }
 
@@ -2787,7 +3437,7 @@ func (s *RecoveryRequest) SetPreviousExecution(val OptNilPreviousExecution) {
 }
 
 // SetEnrichmentResults sets the value of EnrichmentResults.
-func (s *RecoveryRequest) SetEnrichmentResults(val OptNilRecoveryRequestEnrichmentResults) {
+func (s *RecoveryRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 	s.EnrichmentResults = val
 }
 
@@ -2851,17 +3501,6 @@ func (s *RecoveryRequest) SetSignalSource(val OptNilString) {
 	s.SignalSource = val
 }
 
-type RecoveryRequestEnrichmentResults map[string]jx.Raw
-
-func (s *RecoveryRequestEnrichmentResults) init() RecoveryRequestEnrichmentResults {
-	m := *s
-	if m == nil {
-		m = map[string]jx.Raw{}
-		*s = m
-	}
-	return m
-}
-
 // Response model for recovery analysis endpoint
 // Business Requirement: BR-HAPI-002 (Recovery response schema)
 // Business Requirement: BR-AI-080 (Recovery attempt support)
@@ -2886,9 +3525,12 @@ type RecoveryResponse struct {
 	SelectedWorkflow OptNilRecoveryResponseSelectedWorkflow `json:"selected_workflow"`
 	// Recovery-specific analysis including previous attempt assessment (BR-AI-081).
 	RecoveryAnalysis OptNilRecoveryResponseRecoveryAnalysis `json:"recovery_analysis"`
-	// Whether human review is needed (BR-HAPI-197).
+	// True when AI recovery analysis could not produce a reliable result. Reasons include: no recovery
+	// workflow found, low confidence, or issue resolved itself. When true, AIAnalysis should NOT create
+	// WorkflowExecution - requires human intervention. Check 'human_review_reason' for structured reason.
 	NeedsHumanReview OptBool `json:"needs_human_review"`
-	// Reason why human review is needed (BR-HAPI-197).
+	// Structured reason when needs_human_review=true. Values: no_matching_workflows, low_confidence,
+	// signal_not_reproducible.
 	HumanReviewReason OptNilString `json:"human_review_reason"`
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
 	// automatic execution. Helps operators understand AI reasoning and decision alternatives.
@@ -3064,6 +3706,8 @@ type RecoveryStrategy struct {
 	EstimatedRisk RecoveryStrategyEstimatedRisk `json:"estimated_risk"`
 	// Prerequisites for execution.
 	Prerequisites []string `json:"prerequisites"`
+	// Kubectl command if action_type is kubectl_command.
+	KubectlCommand OptNilString `json:"kubectl_command"`
 }
 
 // GetActionType returns the value of ActionType.
@@ -3091,6 +3735,11 @@ func (s *RecoveryStrategy) GetPrerequisites() []string {
 	return s.Prerequisites
 }
 
+// GetKubectlCommand returns the value of KubectlCommand.
+func (s *RecoveryStrategy) GetKubectlCommand() OptNilString {
+	return s.KubectlCommand
+}
+
 // SetActionType sets the value of ActionType.
 func (s *RecoveryStrategy) SetActionType(val string) {
 	s.ActionType = val
@@ -3114,6 +3763,11 @@ func (s *RecoveryStrategy) SetEstimatedRisk(val RecoveryStrategyEstimatedRisk) {
 // SetPrerequisites sets the value of Prerequisites.
 func (s *RecoveryStrategy) SetPrerequisites(val []string) {
 	s.Prerequisites = val
+}
+
+// SetKubectlCommand sets the value of KubectlCommand.
+func (s *RecoveryStrategy) SetKubectlCommand(val OptNilString) {
+	s.KubectlCommand = val
 }
 
 // Risk level.
@@ -3240,6 +3894,53 @@ func (s *SelectedWorkflowSummaryParameters) init() SelectedWorkflowSummaryParame
 		*s = m
 	}
 	return m
+}
+
+// Signal processing mode for investigation strategy selection.
+// Architecture Decision: ADR-054 (Predictive Signal Mode Classification)
+// Business Requirement: BR-AI-084 (Predictive signal mode prompt strategy)
+// - reactive: Incident has occurred, perform RCA (root cause analysis)
+// - predictive: Incident is predicted, perform predict & prevent strategy.
+// Ref: #/components/schemas/SignalMode
+type SignalMode string
+
+const (
+	SignalModeReactive   SignalMode = "reactive"
+	SignalModePredictive SignalMode = "predictive"
+)
+
+// AllValues returns all SignalMode values.
+func (SignalMode) AllValues() []SignalMode {
+	return []SignalMode{
+		SignalModeReactive,
+		SignalModePredictive,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalMode) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalModeReactive:
+		return []byte(s), nil
+	case SignalModePredictive:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalMode) UnmarshalText(data []byte) error {
+	switch SignalMode(data) {
+	case SignalModeReactive:
+		*s = SignalModeReactive
+		return nil
+	case SignalModePredictive:
+		*s = SignalModePredictive
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Record of a single validation attempt during LLM self-correction.

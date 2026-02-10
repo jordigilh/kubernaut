@@ -97,7 +97,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	// BR-AI-084: Pass signal mode to HAPI for prompt strategy switching (ADR-054)
 	// "reactive" triggers RCA investigation; "predictive" triggers predict & prevent strategy
 	if spec.SignalMode != "" {
-		req.SignalMode.SetTo(client.IncidentRequestSignalMode(spec.SignalMode))
+		req.SignalMode.SetTo(client.SignalMode(spec.SignalMode))
 	}
 
 	return req

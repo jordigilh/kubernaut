@@ -3662,8 +3662,8 @@ components:
           description: True when AI could not produce reliable result
         human_review_reason:
           type: string
-          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error]
-          description: Structured reason when needs_human_review=true
+          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete]
+          description: Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)
         target_in_owner_chain:
           type: boolean
           default: true

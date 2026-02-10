@@ -13,7 +13,7 @@ Name | Type | Description | Notes
 **confidence** | **float** | Overall confidence in analysis | 
 **timestamp** | **datetime** | ISO timestamp of analysis completion | 
 **needs_human_review** | **bool** | True when AI could not produce reliable result | [optional] [default to False]
-**human_review_reason** | **str** | Structured reason when needs_human_review&#x3D;true | [optional] 
+**human_review_reason** | **str** | Structured reason when needs_human_review&#x3D;true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212) | [optional] 
 **target_in_owner_chain** | **bool** | Whether RCA target was found in OwnerChain | [optional] [default to True]
 **warnings** | **List[str]** | Non-fatal warnings (e.g., OwnerChain validation issues) | [optional] 
 **alternative_workflows** | [**List[IncidentResponseDataAlternativeWorkflowsInner]**](IncidentResponseDataAlternativeWorkflowsInner.md) | Other workflows considered but not selected | [optional] 

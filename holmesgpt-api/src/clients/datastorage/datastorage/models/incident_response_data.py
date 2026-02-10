@@ -41,7 +41,7 @@ class IncidentResponseData(BaseModel):
     confidence: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Overall confidence in analysis")
     timestamp: datetime = Field(description="ISO timestamp of analysis completion")
     needs_human_review: Optional[StrictBool] = Field(default=False, description="True when AI could not produce reliable result")
-    human_review_reason: Optional[StrictStr] = Field(default=None, description="Structured reason when needs_human_review=true")
+    human_review_reason: Optional[StrictStr] = Field(default=None, description="Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)")
     target_in_owner_chain: Optional[StrictBool] = Field(default=True, description="Whether RCA target was found in OwnerChain")
     warnings: Optional[List[StrictStr]] = Field(default=None, description="Non-fatal warnings (e.g., OwnerChain validation issues)")
     alternative_workflows: Optional[List[IncidentResponseDataAlternativeWorkflowsInner]] = Field(default=None, description="Other workflows considered but not selected")
@@ -53,8 +53,8 @@ class IncidentResponseData(BaseModel):
         if value is None:
             return value
 
-        if value not in ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error'):
-            raise ValueError("must be one of enum values ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error')")
+        if value not in ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete'):
+            raise ValueError("must be one of enum values ('workflow_not_found', 'image_mismatch', 'parameter_validation_failed', 'no_matching_workflows', 'low_confidence', 'llm_parsing_error', 'investigation_inconclusive', 'rca_incomplete')")
         return value
 
     model_config = {
