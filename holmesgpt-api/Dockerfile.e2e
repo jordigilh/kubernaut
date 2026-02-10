@@ -46,10 +46,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM registry.access.redhat.com/ubi9/python-312:latest
 
 # Install only essential runtime dependencies (skip dnf update to reduce size)
+# kubectl is required for HolmesGPT kubernetes/core toolset (pod investigation)
 USER root
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.31.4
 RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
 	dnf clean all && \
-	rm -rf /var/cache/dnf /var/cache/yum
+	rm -rf /var/cache/dnf /var/cache/yum && \
+	curl -fsSL -o /usr/local/bin/kubectl \
+		"https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
+	chmod +x /usr/local/bin/kubectl
 
 # Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src

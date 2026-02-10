@@ -58,3 +58,45 @@ subjects:
 - kind: ServiceAccount
   name: holmesgpt-api-sa
   namespace: kubernaut-system
+
+---
+# ClusterRole: K8s investigation permissions for HolmesGPT kubernetes/core toolset
+# Required for kubectl-based pod/event investigation during incident analysis
+# Without this, the LLM cannot gather evidence and skips workflow catalog search
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-investigator
+  labels:
+    app: holmesgpt-api
+    component: investigation
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["events.k8s.io"]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-investigator-binding
+  labels:
+    app: holmesgpt-api
+    component: investigation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-investigator
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api-sa
+  namespace: kubernaut-system
