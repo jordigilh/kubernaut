@@ -95,7 +95,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        parameters={"MEMORY_LIMIT_NEW": "1Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"}
+        parameters={"MEMORY_LIMIT_NEW": "128Mi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "memory-eater", "TARGET_NAMESPACE": "default"},
+        # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
+        execution_engine="job",
     ),
     "crashloop": MockScenario(
         name="crashloop",
@@ -244,7 +246,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"}
+        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"},
+        # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
+        execution_engine="job",
     ),
     "predictive_no_action": MockScenario(
         name="predictive_no_action",

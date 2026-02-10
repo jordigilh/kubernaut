@@ -980,6 +980,87 @@ spec:
 	return nil
 }
 
+// UpdateMockLLMConfigMap updates the Mock LLM ConfigMap with workflow UUIDs
+// obtained after seeding workflows in DataStorage, then restarts the Mock LLM
+// deployment to pick up the new configuration.
+//
+// This solves the ordering problem: SetupFullPipelineInfrastructure deploys
+// Mock LLM with empty scenarios (PHASE 7), then tests seed workflows in
+// BeforeAll. After seeding, this function updates the ConfigMap with actual
+// UUIDs and restarts the Mock LLM so it returns correct workflow_id values.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - namespace: Kubernetes namespace (e.g., "kubernaut-system")
+//   - kubeconfigPath: Path to kubeconfig for kubectl commands
+//   - workflowUUIDs: Map of "workflow_name:environment" → "uuid" from SeedWorkflowsInDataStorage
+//   - writer: Output writer for progress logging
+func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
+
+	// Build the scenarios YAML with actual workflow UUIDs
+	scenariosYAML := "scenarios:\n"
+	for key, uuid := range workflowUUIDs {
+		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
+	}
+	// Add overrides section: ensure oomkilled scenario uses job execution engine
+	// This is redundant with the hardcoded default in server.py but ensures
+	// CI/CD ConfigMap-based configuration is explicit and self-documenting
+	scenariosYAML += "    overrides:\n"
+	scenariosYAML += "      oomkilled:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      oomkilled_predictive:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      crashloop:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
+
+	// Restart Mock LLM deployment to pick up the new ConfigMap
+	// The Mock LLM reads scenarios.yaml at startup only (no hot-reload)
+	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
+	restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+	restartCmd.Stdout = writer
+	restartCmd.Stderr = writer
+	if err := restartCmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment: %w", err)
+	}
+
+	// Wait for rollout to complete
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("Mock LLM rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
+
+	return nil
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LLM PROVIDER CONFIGURATION (Multi-Provider)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
