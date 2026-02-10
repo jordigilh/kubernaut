@@ -87,9 +87,6 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
-            - name: rego-policy
-              mountPath: /config.app/gateway/policies
-              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
@@ -99,12 +96,6 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
-        - name: rego-policy
-          configMap:
-            name: gateway-config
-            items:
-              - key: priority.rego
-                path: priority.rego
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

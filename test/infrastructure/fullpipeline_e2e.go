@@ -230,8 +230,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	// Create DataStorage access RoleBindings for all services that need audit trail
+	// NOTE: Every ServiceAccount that writes audit events to DataStorage MUST be listed here.
+	// Missing entries cause HTTP 403 from DataStorage's SAR check, silently dropping audit data.
 	auditServices := []string{
 		"data-storage-service",
+		"gateway",
 		"remediationorchestrator-controller",
 		"authwebhook",
 		"workflowexecution-controller",
@@ -570,9 +573,9 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 
 	// Replace image name and pull policy
 	updatedContent := strings.ReplaceAll(string(deploymentContent),
-		"localhost/kubernaut-gateway:e2e-test", gatewayImageName)
+		"quay.io/jordigilh/kubernaut-gateway:fullpipeline-e2e-arm64", gatewayImageName)
 	updatedContent = strings.ReplaceAll(updatedContent,
-		"imagePullPolicy: Never",
+		"imagePullPolicy: Always",
 		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
 
 	// Replace the NodePort to use 30080 (DD-TEST-001 v2.7: full pipeline allocation)
