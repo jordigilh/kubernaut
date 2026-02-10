@@ -72,6 +72,24 @@ import (
 // Kubeconfig:  ~/.kube/fullpipeline-e2e-config
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// skipMockLLM returns true when the SKIP_MOCK_LLM environment variable is set
+// to any non-empty value. When true, the Mock LLM service is NOT built, deployed,
+// or checked for readiness. Use this for local development where HAPI connects
+// to a real LLM (e.g., Vertex AI). CI/CD pipelines leave this unset so Mock LLM
+// provides a fully self-contained test environment.
+func skipMockLLM() bool {
+	return os.Getenv("SKIP_MOCK_LLM") != ""
+}
+
+// getEnvOrDefault returns the value of the environment variable named by key,
+// or fallback if the variable is unset or empty.
+func getEnvOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
 // fullPipelineImageConfig defines all images required for the full pipeline E2E.
 // Each entry maps to a BuildImageForKind call.
 var fullPipelineImageConfigs = []E2EImageConfig{
@@ -288,14 +306,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, fmt.Errorf("HAPI RBAC failed: %w", err)
 	}
 
-	// 7b: Mock LLM (no workflow UUIDs yet — will be updated after workflow seeding)
-	mockLLMImage := builtImages["mock-llm"]
-	if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer); err != nil {
-		return builtImages, fmt.Errorf("Mock LLM deployment failed: %w", err)
+	// 7b: Mock LLM (skipped when SKIP_MOCK_LLM is set — HAPI uses real LLM instead)
+	if skipMockLLM() {
+		_, _ = fmt.Fprintln(writer, "  ⏭️  Mock LLM skipped (SKIP_MOCK_LLM is set — HAPI will use real LLM)")
+	} else {
+		mockLLMImage := builtImages["mock-llm"]
+		if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer); err != nil {
+			return builtImages, fmt.Errorf("Mock LLM deployment failed: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  ✅ Mock LLM deployed (ClusterIP)")
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Mock LLM deployed (ClusterIP)")
 
-	// 7c: HAPI (connects to Mock LLM + DataStorage)
+	// 7c: HAPI (connects to Mock LLM or real LLM depending on SKIP_MOCK_LLM)
+	// When SKIP_MOCK_LLM is set, HAPI uses user-provided ConfigMap + Secret
+	// (see E2E_HAPI_LLM_CONFIGMAP, E2E_HAPI_LLM_SECRET env vars)
 	hapiImage := builtImages["holmesgpt-api"]
 	if err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer); err != nil {
 		return builtImages, fmt.Errorf("HAPI deployment failed: %w", err)
@@ -432,6 +456,11 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
 
 	for _, baseCfg := range fullPipelineImageConfigs {
+		// Skip mock-llm build when SKIP_MOCK_LLM is set (local dev with real LLM)
+		if baseCfg.ServiceName == "mock-llm" && skipMockLLM() {
+			_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping mock-llm build (SKIP_MOCK_LLM is set)")
+			continue
+		}
 		wg.Add(1)
 		cfg := baseCfg // capture loop variable
 		// HAPI doesn't support Go coverage instrumentation (Python service)
@@ -749,15 +778,16 @@ spec:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
         imagePullPolicy: IfNotPresent
-        args:
-        - "--start-mb=80"
-        - "--increment-mb=10"
-        - "--interval-sec=1"
+        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
+        # Consumes 40Mi initially for 1s, then grows to 60Mi over 1s, then exits (hold=0)
+        # Limit deliberately lower than target+runtime to trigger OOMKill (exit 137)
+        # The remediation workflow fixes this by increasing the memory limit
+        args: ["40Mi", "1", "60Mi", "1", "0"]
         resources:
           limits:
-            memory: "100Mi"
-          requests:
             memory: "50Mi"
+          requests:
+            memory: "20Mi"
 `, targetNamespace)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -785,10 +815,12 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	// List of deployments that must be ready
 	deployments := []string{
 		"datastorage",
-		"mock-llm",
 		"holmesgpt-api",
 		"gateway",
 		"event-exporter",
+	}
+	if !skipMockLLM() {
+		deployments = append(deployments, "mock-llm")
 	}
 
 	// Check each deployment

@@ -225,9 +225,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create namespace %s: %w", WorkflowExecutionNamespace, nsErr)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", WorkflowExecutionNamespace)
-	// BR-SCOPE-001: Label namespace as managed by Kubernaut
-	_ = exec.Command("kubectl", "label", "namespace", WorkflowExecutionNamespace,
-		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
+	// BR-SCOPE-002: Infrastructure namespace (kubernaut-system) must NOT be labeled as managed.
+	// Only application/workload namespaces should have kubernaut.ai/managed=true.
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
 	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
@@ -733,9 +732,11 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to create namespace %s: %w", namespace, nsErr)
 	}
 	_, _ = fmt.Fprintf(output, "   ✅ Namespace %s ready\n", namespace)
-	// BR-SCOPE-001: Label namespace as managed by Kubernaut
-	_ = exec.Command("kubectl", "label", "namespace", namespace,
-		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
+	// BR-SCOPE-002: Infrastructure namespaces (kubernaut-system) must NOT be labeled as managed.
+	// The managed label is only applied to application/workload namespaces (e.g., fp-e2e-*)
+	// where the memory-eater pod runs. Labeling the controller namespace as managed causes
+	// the Gateway to create spurious RemediationRequests for infrastructure pod events
+	// (FailedScheduling, ImagePullBackOff, etc.).
 
 	// Deploy CRDs (use absolute path)
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")

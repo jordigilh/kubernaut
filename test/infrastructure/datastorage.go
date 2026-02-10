@@ -2191,13 +2191,42 @@ func getContainerIP(containerName string) string {
 // SHARED E2E HELPER FUNCTIONS (Per DD-TEST-001: Fresh builds with dynamic tags)
 // ═══════════════════════════════════════════════════════════════════════
 
-// buildDataStorageImageWithTag builds DataStorage image with a specific dynamic tag
-// This ensures each service gets a FRESH build with latest DataStorage code
+// buildDataStorageImageWithTag builds or resolves a DataStorage image for use in integration tests.
+//
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Returns the registry image name directly.
+//     Podman will auto-pull from the registry when `podman run` is called with this image name.
+//   - Otherwise: Builds locally with --no-cache and returns the original imageTag.
+//
+// Returns:
+//   - string: The actual image name to use in `podman run` (may differ from imageTag in registry mode)
+//   - error: Any errors during image build
+//
 // Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
+func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, error) {
+	// CI/CD Optimization: Check if we can use a pre-built image from registry
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	if registry != "" && tag != "" {
+		registryImage := fmt.Sprintf("%s/datastorage:%s", registry, tag)
+		_, _ = fmt.Fprintf(writer, "  🔄 Registry mode: IMAGE_REGISTRY=%s IMAGE_TAG=%s\n", registry, tag)
+		_, _ = fmt.Fprintf(writer, "  🔍 Verifying DataStorage image in registry: %s\n", registryImage)
+
+		exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+		if err == nil && exists {
+			_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image found in registry: %s\n", registryImage)
+			_, _ = fmt.Fprintf(writer, "  💡 Podman will auto-pull during container start (skipping local build)\n")
+			return registryImage, nil
+		}
+
+		// Registry verification failed - fall back to local build
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Registry verification failed (err=%v, exists=%v), falling back to local build...\n", err, exists)
+	}
+
+	// Local build path
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
+		return "", fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "  🔨 Building DataStorage with tag: %s\n", imageTag)
@@ -2226,11 +2255,11 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	buildCmd.Stderr = writer
 
 	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build DataStorage image: %w", err)
+		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image built: %s\n", imageTag)
-	return nil
+	return imageTag, nil
 }
 
 // Removed: loadDataStorageImageWithTag (unused) - E2E tests now use loadImageToKind from shared_integration_utils.go

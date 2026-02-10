@@ -73,6 +73,8 @@ build_failures.*
 !.env.example
 
 # AI provider credentials (MUST NOT be committed)
+credentials.json
+slack-webhook.url
 *service-account*.json
 *openai-credentials*.json
 *anthropic-credentials*.json

@@ -23,8 +23,10 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"gopkg.in/yaml.v3"
 )
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
@@ -112,8 +114,41 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, containerImage, description string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
 
-	// Generate ADR-043 compliant content
-	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", workflowName, version, description)
+	// ADR-043: Generate valid workflow-schema.yaml content
+	// DataStorage's HandleCreateWorkflow will parse and validate this (BR-HAPI-191)
+	schema := models.WorkflowSchema{
+		APIVersion: "kubernaut.io/v1alpha1",
+		Kind:       "WorkflowSchema",
+		Metadata: models.WorkflowSchemaMetadata{
+			WorkflowID:  workflowName,
+			Version:     version,
+			Description: description,
+		},
+		Labels: models.WorkflowSchemaLabels{
+			SignalType:    "test-signal",
+			Severity:      "low",
+			RiskTolerance: "high",
+			Environment:   "test",
+			Component:     "deployment",
+			Priority:      "p3",
+		},
+		Execution: &models.WorkflowExecution{
+			Engine: "tekton",
+		},
+		Parameters: []models.WorkflowParameter{
+			{
+				Name:        "TARGET_RESOURCE",
+				Type:        "string",
+				Required:    true,
+				Description: "Target resource being remediated",
+			},
+		},
+	}
+	yamlBytes, err := yaml.Marshal(&schema)
+	if err != nil {
+		return fmt.Errorf("failed to generate workflow-schema.yaml for %s: %w", workflowName, err)
+	}
+	content := string(yamlBytes)
 	contentBytes := []byte(content)
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
@@ -131,7 +166,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 		ContainerImage:  dsgen.NewOptString(containerImage),
 		Labels: dsgen.MandatoryLabels{
 			SignalType:  "test-signal",
-			Severity:    dsgen.MandatoryLabelsSeverityLow,
+			Severity:    dsgen.MandatoryLabelsSeverity_low,
 			Component:   "deployment",
 			Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem_test}, // ✅ Array!
 			Priority:    dsgen.MandatoryLabelsPriority_P3,
