@@ -19,6 +19,7 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -109,7 +110,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "*",
 			Priority:        "*",
-			ContainerImage:  "busybox:latest",
+			ContainerImage:  "quay.io/jordigilh/kubernaut-cicd/test-workflows/oomkill-increase-memory:fullpipeline-e2e-arm64",
 			ExecutionEngine: "job",
 			// BR-HAPI-191: Parameter schema matching oomkill-increase-memory.sh expectations
 			SchemaParameters: []models.WorkflowParameter{
@@ -146,12 +147,23 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:*"))
+		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:*"))
 		GinkgoWriter.Printf("  ✅ Workflow seeded: crashloop-config-fix-v1 → %s\n", workflowUUIDs["crashloop-config-fix-v1:*"])
+		GinkgoWriter.Printf("  ✅ Workflow seeded: oomkill-increase-memory-v1 → %s\n", workflowUUIDs["oomkill-increase-memory-v1:*"])
 
-		// Note: No Mock LLM setup needed — HAPI uses Vertex AI (real LLM).
-		// The LLM discovers workflows dynamically via search_workflow_catalog MCP tool.
-		// BR-HAPI-191: DataStorage now returns parameter schemas in search results,
-		// so the LLM sees expected parameter names/types when selecting a workflow.
+		// Update Mock LLM ConfigMap with actual workflow UUIDs from DataStorage,
+		// then restart Mock LLM to pick up the new config. This ensures the Mock
+		// LLM returns correct workflow_id values that match DataStorage records.
+		// When SKIP_MOCK_LLM is set, HAPI uses a real LLM — no Mock LLM to update.
+		if os.Getenv("SKIP_MOCK_LLM") == "" {
+			By("Step 0b: Updating Mock LLM with seeded workflow UUIDs")
+			err = infrastructure.UpdateMockLLMConfigMap(
+				testCtx, "kubernaut-system", kubeconfigPath, workflowUUIDs, GinkgoWriter,
+			)
+			Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM ConfigMap")
+		} else {
+			GinkgoWriter.Println("  ⏭️  Mock LLM update skipped (SKIP_MOCK_LLM is set)")
+		}
 	})
 
 	AfterAll(func() {
