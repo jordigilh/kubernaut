@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Jordi Gil.
+Copyright 2026 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package processing_test
+package classifier
 
 import (
 	"testing"
@@ -23,10 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// TestProcessing is the single entry point for all processing unit tests
-// BR-GATEWAY-190: Multi-replica deduplication safety (DistributedLockManager)
-// ADR-052: K8s Lease-based distributed locking pattern
-func TestProcessing(t *testing.T) {
+func TestClassifier(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Gateway Processing Test Suite")
+	RunSpecs(t, "Classifier Suite")
 }

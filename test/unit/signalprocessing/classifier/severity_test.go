@@ -29,7 +29,7 @@ limitations under the License.
 // 🔴 RED Phase (Day 1-2): These tests are EXPECTED TO FAIL
 // Tests are written FIRST to define business contract
 // Implementation will follow in GREEN phase (Day 3-4)
-package classifier_test
+package classifier
 
 import (
 	"context"
@@ -46,8 +46,6 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
-	// Note: This import will fail initially (RED phase) - it's intentional
-	// Implementation will be created in GREEN phase
 )
 
 var _ = Describe("Severity Classifier Unit Tests", Label("unit", "severity", "classifier"), func() {
@@ -79,13 +77,13 @@ var _ = Describe("Severity Classifier Unit Tests", Label("unit", "severity", "cl
 		defaultPolicy := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "critical"
-} else := "warning" {
-	input.signal.severity == "warning"
-} else := "info" {
-	input.signal.severity == "info"
-} else := "critical" {
+} else := "medium" if {
+	input.signal.severity == "medium"
+} else := "low" if {
+	input.signal.severity == "low"
+} else := "critical" if {
 	# Default: unmapped → critical (conservative)
 	true
 }
@@ -118,8 +116,8 @@ determine_severity := "critical" {
 				ActionPriority   string
 			}{
 				{"critical", "Prometheus default", "critical", "Immediate action required"},
-				{"warning", "Prometheus default", "warning", "Action within 1 hour"},
-				{"info", "Prometheus default", "info", "Informational only"},
+				{"medium", "Prometheus default", "medium", "Action within 1 hour"},
+				{"low", "Prometheus default", "low", "Informational only"},
 				{"CRITICAL", "Custom tool (uppercase)", "critical", "Case shouldn't matter"},
 			}
 
@@ -134,8 +132,8 @@ determine_severity := "critical" {
 				// THEN: Downstream consumers receive normalized severity they can interpret
 				Expect(err).ToNot(HaveOccurred(),
 					"Severity classification should succeed for %s", tc.Source)
-				Expect(result.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
-					"Normalized severity enables downstream services to interpret urgency")
+				Expect(result.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low", "unknown"}),
+					"Normalized severity enables downstream services to interpret urgency (DD-SEVERITY-001 v1.1)")
 				Expect(result.Source).To(Equal("rego-policy"),
 					"Source attribution enables audit traceability")
 
@@ -161,23 +159,23 @@ determine_severity := "critical" {
 			enterprisePolicy := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "sev1"
-} else := "critical" {
+} else := "critical" if {
 	input.signal.severity == "p0"
-} else := "critical" {
+} else := "critical" if {
 	input.signal.severity == "p1"
-} else := "warning" {
+} else := "high" if {
 	input.signal.severity == "sev2"
-} else := "warning" {
+} else := "medium" if {
 	input.signal.severity == "sev3"
-} else := "warning" {
+} else := "high" if {
 	input.signal.severity == "p2"
-} else := "info" {
+} else := "low" if {
 	input.signal.severity == "sev4"
-} else := "info" {
+} else := "low" if {
 	input.signal.severity == "p3"
-} else := "critical" {
+} else := "critical" if {
 	# Fallback: unmapped → critical (conservative)
 	true
 }
@@ -192,15 +190,15 @@ determine_severity := "critical" {
 			}{
 				"Sev1-4 scheme": {
 					{"Sev1", "critical", "Production outage requiring immediate response"},
-					{"Sev2", "warning", "Degraded service requiring attention within hours"},
-					{"Sev3", "warning", "Non-critical issue for next business day"},
-					{"Sev4", "info", "Informational alert for tracking"},
+					{"Sev2", "high", "Degraded service requiring attention within hours"},
+					{"Sev3", "medium", "Non-critical issue for next business day"},
+					{"Sev4", "low", "Informational alert for tracking"},
 				},
 				"PagerDuty P0-P4 scheme": {
 					{"P0", "critical", "All-hands production outage"},
 					{"P1", "critical", "Severe degradation affecting customers"},
-					{"P2", "warning", "Moderate impact requiring investigation"},
-					{"P3", "info", "Low priority for backlog"},
+					{"P2", "high", "Moderate impact requiring investigation"},
+					{"P3", "low", "Low priority for backlog"},
 				},
 			}
 
@@ -256,8 +254,8 @@ determine_severity := "critical" {
 				Rationale      string
 			}{
 				{"SEVERE", "critical", "Legacy monitoring uses 'SEVERE' for production outages"},
-				{"MODERATE", "warning", "Legacy monitoring uses 'MODERATE' for degradation"},
-				{"MINOR", "info", "Legacy monitoring uses 'MINOR' for tracking"},
+				{"MODERATE", "medium", "Legacy monitoring uses 'MODERATE' for degradation"},
+				{"MINOR", "low", "Legacy monitoring uses 'MINOR' for tracking"},
 			}
 
 			// GIVEN: Operator has loaded custom Rego policy with their mappings (DD-SEVERITY-001 REFACTOR: lowercase keys)
@@ -266,13 +264,13 @@ package signalprocessing.severity
 
 severity_map := {
 	"severe": "critical",
-	"moderate": "warning",
-	"minor": "info"
+	"moderate": "medium",
+	"minor": "low"
 }
 
-determine_severity := result {
+determine_severity := result if {
 	input_severity := input.signal.severity
-	result := object.get(severity_map, input_severity, "info")
+	result := object.get(severity_map, input_severity, "low")
 }
 `
 			err := severityClassifier.LoadRegoPolicy(customPolicy)
@@ -317,14 +315,14 @@ package signalprocessing.severity
 
 severity_map := {
 	"Sev1": "critical",
-	"Sev2": "warning"
+	"Sev2": "high"
 }
 
-determine_severity := result {
+determine_severity := result if {
 	input_severity := input.signal.severity
 	result := object.get(severity_map, input_severity, "")
 	result != ""
-} else := "critical" {
+} else := "critical" if {
 	# Conservative fallback: unmapped severities escalate to critical for safety
 	true
 }
@@ -391,9 +389,9 @@ determine_severity := result {
 			incompletePolicy := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "Sev1"
-} else := "warning" {
+} else := "warning" if {
 	input.signal.severity == "Sev2"
 }
 # Missing else clause for unmapped values
@@ -483,9 +481,9 @@ determine_severity := {
 			validPolicy := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "sev1"
-} else := "info" {
+} else := "low" if {
 	true
 }
 `

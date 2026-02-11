@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package audit_test contains unit tests for AIAnalysis audit client.
+// audit_test contains unit tests for AIAnalysis audit client.
 //
 // Business Requirements:
 // - BR-AI-050: Error audit trail completeness
@@ -22,12 +22,11 @@ limitations under the License.
 // Test Strategy:
 // - Unit tests with mock audit store for RecordError functionality
 // - Tests event structure, correlation ID handling, and payload construction
-package audit_test
+package aianalysis
 
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,31 +39,26 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
-func TestAuditClient(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "AIAnalysis Audit Client Suite")
-}
-
 // ========================================
 // Mock Audit Store
 // ========================================
 
-// MockAuditStore implements audit.AuditStore interface for testing
-type MockAuditStore struct {
+// mockAuditStore implements audit.AuditStore interface for testing
+type mockAuditStore struct {
 	StoredEvents []*ogenclient.AuditEventRequest
 	StoreError   error
 	FlushError   error
 }
 
-// NewMockAuditStore creates a new mock audit store
-func NewMockAuditStore() *MockAuditStore {
-	return &MockAuditStore{
+// newMockAuditStore creates a new mock audit store
+func newMockAuditStore() *mockAuditStore {
+	return &mockAuditStore{
 		StoredEvents: make([]*ogenclient.AuditEventRequest, 0),
 	}
 }
 
 // StoreAudit implements audit.AuditStore interface
-func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
+func (m *mockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	if m.StoreError != nil {
 		return m.StoreError
 	}
@@ -73,12 +67,12 @@ func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.Audit
 }
 
 // Flush implements audit.AuditStore interface
-func (m *MockAuditStore) Flush(ctx context.Context) error {
+func (m *mockAuditStore) Flush(ctx context.Context) error {
 	return m.FlushError
 }
 
 // Close implements audit.AuditStore interface
-func (m *MockAuditStore) Close() error {
+func (m *mockAuditStore) Close() error {
 	return nil
 }
 
@@ -88,14 +82,14 @@ func (m *MockAuditStore) Close() error {
 
 var _ = Describe("AuditClient RecordError", func() {
 	var (
-		mockStore   *MockAuditStore
+		mockStore   *mockAuditStore
 		auditClient *audit.AuditClient
 		analysis    *aianalysisv1.AIAnalysis
 		ctx         context.Context
 	)
 
 	BeforeEach(func() {
-		mockStore = NewMockAuditStore()
+		mockStore = newMockAuditStore()
 		auditClient = audit.NewAuditClient(mockStore, logr.Discard())
 		ctx = context.Background()
 
