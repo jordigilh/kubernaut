@@ -188,7 +188,8 @@ func main() {
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
 	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder)) // DD-EVENT-001: Session lifecycle events
+		handlers.WithRecorder(eventRecorder), // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode())           // BR-AA-HAPI-064: Async submit/poll/result flow
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient)
 
 	// ========================================

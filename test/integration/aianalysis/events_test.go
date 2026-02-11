@@ -151,9 +151,9 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 
 	Context("IT-AA-095-02: Investigation failure event trail", func() {
 		It("should emit AIAnalysisCreated and AnalysisFailed when HAPI returns permanent error", func() {
-			// NOTE: This test requires Mock HAPI configured with a scenario that returns
-			// permanent error (e.g., mock_rca_permanent_error). Without that config,
-			// the test may reach Completed instead of Failed.
+			// This test uses MOCK_RCA_PERMANENT_ERROR signal type, which triggers
+			// the Mock LLM to return HTTP 500, causing HAPI session to fail.
+			// The AA controller detects the failed session and moves to Failed phase.
 			rrName := helpers.UniqueTestName("test-remediation-fail")
 			analysisName := helpers.UniqueTestName("integration-events-fail")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
@@ -171,7 +171,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-fail",
 							Severity:         "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalType:       "MOCK_RCA_PERMANENT_ERROR",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
