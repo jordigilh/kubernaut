@@ -300,32 +300,8 @@ func main() {
 	logger.Info("Status Manager initialized (Pattern 2 - P1)")
 
 	// ========================================
-	// Pattern 3: Delivery Orchestrator (P0 - High Impact)
-	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §3
-	// ========================================
-	// DD-NOT-007: Registration Pattern (MANDATORY)
-	// Create delivery orchestrator with NO channel parameters
-	// Channels MUST be registered after construction
-	// ========================================
-	deliveryOrchestrator := delivery.NewOrchestrator(
-		sanitizer,
-		metricsRecorder,
-		statusManager,
-		ctrl.Log.WithName("delivery-orchestrator"),
-	)
-
-	// DD-NOT-007: Register all production channels
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
-
-	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
-	logger.Info("Registered channels",
-		"channels", []string{"console", "slack", "file", "log"})
-
-	// ========================================
 	// Circuit Breaker for Graceful Degradation (BR-NOT-055)
+	// DD-EVENT-001 v1.1: Must be created before Slack registration (CircuitBreakerSlackService)
 	// ========================================
 	// Initialize circuit breaker with github.com/sony/gobreaker
 	// Provides per-channel isolation (Slack, console, webhooks)
@@ -362,6 +338,29 @@ func main() {
 		"failure_threshold", 3,
 		"recovery_timeout", "30s",
 		"half_open_max_requests", 2)
+
+	// ========================================
+	// Pattern 3: Delivery Orchestrator (P0 - High Impact)
+	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §3
+	// ========================================
+	deliveryOrchestrator := delivery.NewOrchestrator(
+		sanitizer,
+		metricsRecorder,
+		statusManager,
+		ctrl.Log.WithName("delivery-orchestrator"),
+	)
+
+	// DD-NOT-007: Register all production channels
+	// DD-EVENT-001 v1.1: Slack wrapped with CircuitBreakerSlackService for failure tracking + CircuitBreakerOpen event
+	slackServiceWithCB := delivery.NewCircuitBreakerSlackService(slackService, circuitBreakerManager)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackServiceWithCB)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
+
+	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
+	logger.Info("Registered channels",
+		"channels", []string{"console", "slack", "file", "log"})
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
