@@ -55,6 +55,7 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 
 		result.Spec.SignalName = parsedData.AlertName
 		result.Spec.SignalType = string(parsedData.SignalType)
+		result.Spec.SignalFingerprint = parsedData.SignalFingerprint // BR-AUDIT-005: deduplication identity
 		result.Spec.SignalLabels = parsedData.SignalLabels
 		result.Spec.SignalAnnotations = parsedData.SignalAnnotations
 
@@ -184,6 +185,9 @@ func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 			}
 			if eventFields.Spec.SignalType != "" {
 				result.Spec.SignalType = eventFields.Spec.SignalType
+			}
+			if eventFields.Spec.SignalFingerprint != "" {
+				result.Spec.SignalFingerprint = eventFields.Spec.SignalFingerprint
 			}
 			if eventFields.Spec.SignalLabels != nil {
 				if result.Spec.SignalLabels == nil {

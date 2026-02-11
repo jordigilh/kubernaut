@@ -29,15 +29,17 @@ import (
 var _ = Describe("Audit Event Mapper", func() {
 
 	Context("MAPPER-GW-01: Map gateway audit data to RR Spec (Gaps #1-3)", func() {
-		It("should map Signal, SignalLabels, SignalAnnotations to RR spec", func() {
+		It("should map Signal, SignalLabels, SignalAnnotations, SignalFingerprint to RR spec", func() {
 			// TDD RED: Test mapping gateway audit data to RR spec fields
+			// BR-AUDIT-005: signalFingerprint is required for deduplication identity
 			parsedData := &reconstructionpkg.ParsedAuditData{
-				EventType:     "gateway.signal.received",
-				SignalType:    "prometheus-alert",
-				AlertName:     "HighCPU",
-				SignalLabels:  map[string]string{"alertname": "HighCPU", "severity": "critical"},
+				EventType:        "gateway.signal.received",
+				SignalType:       "prometheus-alert",
+				AlertName:        "HighCPU",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				SignalLabels:     map[string]string{"alertname": "HighCPU", "severity": "critical"},
 				SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-				OriginalPayload: `{"alert":"data"}`,
+				OriginalPayload:  `{"alert":"data"}`,
 			}
 
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
@@ -49,6 +51,10 @@ var _ = Describe("Audit Event Mapper", func() {
 			// Validate Signal field mapping
 			Expect(rrFields.Spec.SignalName).To(Equal("HighCPU"))
 			Expect(rrFields.Spec.SignalType).To(Equal("prometheus-alert"))
+
+			// Validate SignalFingerprint mapping (BR-AUDIT-005)
+			Expect(rrFields.Spec.SignalFingerprint).To(Equal("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"),
+				"Mapper must set spec.signalFingerprint from parsed gateway data")
 
 			// Validate SignalLabels mapping
 			Expect(rrFields.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
@@ -131,11 +137,13 @@ var _ = Describe("Audit Event Mapper", func() {
 	Context("MAPPER-MERGE-01: Merge multiple audit events", func() {
 		It("should merge gateway and orchestrator data into single RR", func() {
 			// Validates merging multiple audit events into complete RR
+			// BR-AUDIT-005: signalFingerprint must survive merge
 			gatewayData := &reconstructionpkg.ParsedAuditData{
-				EventType:     "gateway.signal.received",
-				SignalType:    "prometheus-alert",
-				AlertName:     "HighMemory",
-				SignalLabels:  map[string]string{"alertname": "HighMemory"},
+				EventType:        "gateway.signal.received",
+				SignalType:       "prometheus-alert",
+				AlertName:        "HighMemory",
+				SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+				SignalLabels:     map[string]string{"alertname": "HighMemory"},
 				SignalAnnotations: map[string]string{"summary": "Memory usage is high"},
 			}
 
@@ -155,6 +163,9 @@ var _ = Describe("Audit Event Mapper", func() {
 			// Validate gateway data in spec
 			Expect(rrFields.Spec.SignalName).To(Equal("HighMemory"))
 			Expect(rrFields.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighMemory"))
+			// BR-AUDIT-005: signalFingerprint must be preserved through merge
+			Expect(rrFields.Spec.SignalFingerprint).To(Equal("b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"),
+				"SignalFingerprint must survive merge from gateway event")
 
 			// Validate orchestrator data in status
 			Expect(rrFields.Status.TimeoutConfig.Global).ToNot(BeNil())
