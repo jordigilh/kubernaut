@@ -29,18 +29,19 @@ Events are structured per ADR-034 unified audit schema.
 ADR-034 Required Fields:
   - version: Schema version (always "1.0")
   - service/event_category: Service category per ADR-034 v1.2 ("aiagent" for AI Agent Provider)
-  - event_type: Event type (e.g., "llm_request", "llm_response", "llm_tool_call")
+  - event_type: Event type (e.g., "aiagent.llm.request", "aiagent.llm.response", "aiagent.llm.tool_call")
   - event_timestamp: ISO 8601 timestamp
   - correlation_id: Remediation ID for correlation
   - operation/event_action: Action performed
   - outcome/event_outcome: Result status
   - event_data: Service-specific payload (JSONB)
 
-Event Types:
-  - llm_request: LLM prompt sent to model
-  - llm_response: LLM analysis response received
-  - llm_tool_call: LLM tool invocation (e.g., search_workflow_catalog)
-  - workflow_validation_attempt: Validation retry event
+Event Types (aiagent.{domain}.{action} convention):
+  - aiagent.llm.request: LLM prompt sent to model
+  - aiagent.llm.response: LLM analysis response received
+  - aiagent.llm.tool_call: LLM tool invocation (e.g., search_workflow_catalog)
+  - aiagent.workflow.validation_attempt: Validation retry event
+  - aiagent.response.complete: Full HAPI response (provider perspective)
 
 Usage:
     from src.audit.events import (
@@ -110,7 +111,7 @@ def _create_adr034_event(
     Data Storage expects this exact structure.
 
     Args:
-        event_type: Event type (e.g., "llm_request")
+        event_type: Event type (e.g., "aiagent.llm.request")
         operation: Action performed (e.g., "llm_request_sent")
         outcome: Result status ("success", "failure", "pending")
         correlation_id: Remediation ID for correlation
@@ -167,7 +168,7 @@ def create_llm_request_event(
     prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
 
     event_data_model = LLMRequestEventData(
-        event_type="llm_request",  # ✅ FIX: Discriminator required for OpenAPI validation
+        event_type="aiagent.llm.request",  # Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         model=model,
@@ -181,7 +182,7 @@ def create_llm_request_event(
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     # AuditEventRequestEventData expects actual_instance to be a Pydantic model
     return _create_adr034_event(
-        event_type="llm_request",
+        event_type="aiagent.llm.request",
         operation="llm_request_sent",
         outcome="success",
         correlation_id=remediation_id or "unknown",
@@ -216,7 +217,7 @@ def create_llm_response_event(
     """
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMResponseEventData(
-        event_type="llm_response",  # ✅ FIX: Discriminator required for OpenAPI validation
+        event_type="aiagent.llm.response",  # Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         has_analysis=has_analysis,
@@ -228,7 +229,7 @@ def create_llm_response_event(
 
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
-        event_type="llm_response",
+        event_type="aiagent.llm.response",
         operation="llm_response_received",
         outcome="success" if has_analysis else "failure",
         correlation_id=remediation_id or "unknown",
@@ -267,7 +268,7 @@ def create_tool_call_event(
 
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMToolCallEventData(
-        event_type="llm_tool_call",  # ✅ FIX: Discriminator required for OpenAPI validation
+        event_type="aiagent.llm.tool_call",  # Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         tool_call_index=tool_call_index,
@@ -279,7 +280,7 @@ def create_tool_call_event(
 
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
-        event_type="llm_tool_call",
+        event_type="aiagent.llm.tool_call",
         operation="tool_invoked",
         outcome="success",
         correlation_id=remediation_id or "unknown",
@@ -326,7 +327,7 @@ def create_validation_attempt_event(
     validation_errors_str = "; ".join(errors) if errors else None
 
     event_data_model = WorkflowValidationEventData(
-        event_type="workflow_validation_attempt",  # ✅ FIX: Discriminator required for OpenAPI validation
+        event_type="aiagent.workflow.validation_attempt",  # Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         attempt=attempt,
@@ -350,7 +351,7 @@ def create_validation_attempt_event(
 
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
-        event_type="workflow_validation_attempt",
+        event_type="aiagent.workflow.validation_attempt",
         operation="validation_executed",
         outcome=outcome,
         correlation_id=remediation_id or "unknown",
@@ -358,22 +359,22 @@ def create_validation_attempt_event(
     )
 
 
-def create_hapi_response_complete_event(
+def create_aiagent_response_complete_event(
     incident_id: str,
     remediation_id: str,
     response_data: Dict[str, Any]
 ) -> AuditEventRequest:
     """
-    Create HAPI response completion audit event (ADR-034 compliant)
+    Create AI Agent response completion audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
     Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
 
-    This event captures the COMPLETE HolmesGPT API response (provider perspective)
+    This event captures the COMPLETE AI Agent API response (provider perspective)
     for SOC2 Type II compliance and RemediationRequest reconstruction.
 
     Hybrid Audit Approach:
-    - HAPI emits: holmesgpt.response.complete (full IncidentResponse - provider perspective)
+    - AI Agent emits: aiagent.response.complete (full IncidentResponse - provider perspective)
     - AI Analysis emits: aianalysis.analysis.completed (summary + business context - consumer perspective)
 
     This provides defense-in-depth auditing with both provider and consumer perspectives.
@@ -400,7 +401,7 @@ def create_hapi_response_complete_event(
     """
     # Create structured event_data using Pydantic model for validation
     event_data_model = HAPIResponseEventData(
-        event_type="holmesgpt.response.complete",  # Discriminator for OpenAPI validation
+        event_type="aiagent.response.complete",  # Discriminator for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         response_data=response_data  # Full IncidentResponse
@@ -408,10 +409,14 @@ def create_hapi_response_complete_event(
 
     # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
-        event_type="holmesgpt.response.complete",
+        event_type="aiagent.response.complete",
         operation="response_sent",
         outcome="success",
         correlation_id=remediation_id,
         event_data=event_data_model  # ← Pass model, not model_dump()
     )
+
+
+# Backward compatibility alias (deprecated - use create_aiagent_response_complete_event)
+create_hapi_response_complete_event = create_aiagent_response_complete_event
 

@@ -434,7 +434,7 @@ async def analyze_incident(
 
             # Call HolmesGPT SDK
             logger.info({
-                "event": "calling_holmesgpt_sdk",
+                "event": "calling_aiagent_sdk",
                 "incident_id": incident_id,
                 "attempt": attempt + 1,
                 "max_attempts": MAX_VALIDATION_ATTEMPTS

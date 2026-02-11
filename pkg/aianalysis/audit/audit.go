@@ -128,7 +128,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	}
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective)
-	// This complements the holmesgpt.response.complete event (provider perspective)
+	// This complements the aiagent.response.complete event (provider perspective)
 	if analysis.Status.InvestigationID != "" {
 		summary := ogenclient.ProviderResponseSummary{
 			IncidentID:       analysis.Status.InvestigationID,

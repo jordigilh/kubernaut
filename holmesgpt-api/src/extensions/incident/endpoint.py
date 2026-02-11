@@ -28,7 +28,7 @@ import logging
 
 from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
-from src.audit import get_audit_store, create_hapi_response_complete_event  # DD-AUDIT-005
+from src.audit import get_audit_store, create_aiagent_response_complete_event  # DD-AUDIT-005
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 from src.errors import PROBLEM_JSON_ERROR_RESPONSES  # BR-HAPI-200: Shared RFC 7807 error responses
@@ -128,7 +128,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     # with provider_response_summary (consumer perspective + business context)
     try:
         audit_store = get_audit_store()
-        logger.info(f"DD-AUDIT-005: Creating holmesgpt.response.complete event (incident_id={incident_req.incident_id}, remediation_id={incident_req.remediation_id})")
+        logger.info(f"DD-AUDIT-005: Creating aiagent.response.complete event (incident_id={incident_req.incident_id}, remediation_id={incident_req.remediation_id})")
         if audit_store:
             # Convert IncidentResponse to dict for audit storage
             # BR-HAPI-212: In mock mode, result is already a dict
@@ -139,12 +139,12 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
             else:
                 response_dict = result.dict()
 
-            audit_event = create_hapi_response_complete_event(
+            audit_event = create_aiagent_response_complete_event(
                 incident_id=incident_req.incident_id,
                 remediation_id=incident_req.remediation_id,
                 response_data=response_dict
             )
-            logger.info(f"DD-AUDIT-005: Storing holmesgpt.response.complete event (correlation_id={incident_req.remediation_id})")
+            logger.info(f"DD-AUDIT-005: Storing aiagent.response.complete event (correlation_id={incident_req.remediation_id})")
             
             # AGGRESSIVE LOGGING: Check store_audit() return value
             store_result = audit_store.store_audit(audit_event)
@@ -161,11 +161,11 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
         # Log the error but allow the business operation to complete
         # Note: logger already defined at module level (line 35)
         logger.error(
-            f"Failed to emit holmesgpt.response.complete audit event: {e}",
+            f"Failed to emit aiagent.response.complete audit event: {e}",
             extra={
                 "incident_id": incident_req.incident_id,
                 "remediation_id": incident_req.remediation_id,
-                "event_type": "holmesgpt.response.complete",
+                "event_type": "aiagent.response.complete",
                 "adr": "ADR-032 §1",  # Audit writes are mandatory, but non-blocking
             },
             exc_info=True

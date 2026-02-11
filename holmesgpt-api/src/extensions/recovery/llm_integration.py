@@ -327,7 +327,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
 
         # Debug: Log investigation details before SDK call
         logger.debug({
-            "event": "calling_holmesgpt_sdk",
+            "event": "calling_aiagent_sdk",
             "incident_id": incident_id,
             "prompt_length": len(investigation_prompt),
             "toolsets_enabled": config.toolsets if config else None,
