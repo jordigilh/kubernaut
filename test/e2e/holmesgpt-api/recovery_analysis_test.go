@@ -409,24 +409,25 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 			}
 
 			// ========================================
-			// ACT (ogen client: strict contract validation)
+			// ACT (BR-AA-HAPI-064: async session flow)
+			// HAPI accepts the request async (202) even without previous_execution;
+			// validation may happen during processing.
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			// BEHAVIOR: Either succeeds with default behavior OR rejects
+			// BEHAVIOR: Either succeeds with default behavior OR returns error
 			if err != nil {
-				// Rejected: HTTP 400/422
+				// Rejected during async processing
 				Expect(err.Error()).To(Or(
 					ContainSubstring("previous_execution"),
 					ContainSubstring("required"),
-				), "Error should indicate missing previous_execution")
+					ContainSubstring("failed"),
+				), "Error should indicate missing previous_execution or processing failure")
 			} else {
 				// Succeeds: Validate response structure
-				recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-				Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
 				Expect(recoveryResp.CanRecover).To(BeTrue(),
 					"can_recover must be present if request succeeds")
 			}
