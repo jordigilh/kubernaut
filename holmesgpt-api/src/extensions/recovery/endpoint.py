@@ -51,14 +51,16 @@ async def _run_recovery_investigation(session_manager: SessionManager, session_i
         metrics = get_global_metrics()
         result_dict = await analyze_recovery(data, app_config, metrics=metrics)
 
-        # Convert dict to Pydantic model for validation, then back to dict for storage
+        # Validate via Pydantic model, then serialize excluding None fields.
+        # exclude_none=True ensures optional fields like selected_workflow are ABSENT
+        # from JSON (not "null"), which maps correctly to Go ogen OptNil (Set=false).
         if isinstance(result_dict, dict):
             result = RecoveryResponse(**result_dict)
-            return result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+            return result.model_dump(exclude_none=True)
         elif hasattr(result_dict, 'model_dump'):
-            return result_dict.model_dump()
+            return result_dict.model_dump(exclude_none=True)
         else:
-            return result_dict.dict() if hasattr(result_dict, 'dict') else result_dict
+            return result_dict.dict(exclude_none=True) if hasattr(result_dict, 'dict') else result_dict
 
     await session_manager.run_investigation(session_id, _investigate, request_data)
 
