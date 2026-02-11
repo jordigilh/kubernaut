@@ -116,29 +116,23 @@ class TestLLMAuditIntegration:
             toolsets_enabled=["kubernetes/core", "workflow/catalog"]
         )
 
-        # ADR-034 envelope fields (top-level)
-        assert "version" in event
-        assert event["version"] == "1.0"
-        assert "event_category" in event
-        assert event["event_category"] == "aiagent"  # ADR-034 v1.2: HolmesGPT API is "aiagent" service (AI Agent Provider)
-        assert "event_type" in event
-        assert event["event_type"] == "aiagent.llm.request"
-        assert "event_timestamp" in event
-        assert "correlation_id" in event
-        assert event["correlation_id"] == "rem-67890"
-        assert "event_action" in event
-        assert "event_outcome" in event
-        assert "event_data" in event
+        # ADR-034 envelope fields (top-level) - Pydantic model attribute access
+        assert event.version == "1.0"
+        assert event.event_category == "aiagent"  # ADR-034 v1.2: HolmesGPT API is "aiagent" service (AI Agent Provider)
+        assert event.event_type == "aiagent.llm.request"
+        assert event.event_timestamp is not None
+        assert event.correlation_id == "rem-67890"
+        assert event.event_action is not None
+        assert event.event_outcome is not None
+        assert event.event_data is not None
 
-        # Service-specific fields (in event_data)
-        event_data = event["event_data"]
-        assert "event_id" in event_data
-        assert "incident_id" in event_data
-        assert event_data["incident_id"] == "inc-12345"
-        assert "model" in event_data
-        assert event_data["model"] == "claude-3-5-sonnet"
-        assert "prompt_length" in event_data
-        assert "toolsets_enabled" in event_data
+        # Service-specific fields (in event_data.actual_instance)
+        payload = event.event_data.actual_instance
+        assert payload.event_id is not None
+        assert payload.incident_id == "inc-12345"
+        assert payload.model == "claude-3-5-sonnet"
+        assert payload.prompt_length is not None
+        assert payload.toolsets_enabled is not None
 
     def test_llm_response_audit_event_structure(self):
         """
@@ -156,25 +150,23 @@ class TestLLMAuditIntegration:
             tool_call_count=3
         )
 
-        # ADR-034 envelope fields (top-level)
-        assert "version" in event
-        assert "event_category" in event
-        assert "event_type" in event
-        assert event["event_type"] == "aiagent.llm.response"
-        assert "event_timestamp" in event
-        assert "correlation_id" in event
-        assert event["correlation_id"] == "rem-67890"
-        assert "event_action" in event
-        assert "event_outcome" in event
-        assert "event_data" in event
+        # ADR-034 envelope fields (top-level) - Pydantic model attribute access
+        assert event.version is not None
+        assert event.event_category is not None
+        assert event.event_type == "aiagent.llm.response"
+        assert event.event_timestamp is not None
+        assert event.correlation_id == "rem-67890"
+        assert event.event_action is not None
+        assert event.event_outcome is not None
+        assert event.event_data is not None
 
-        # Service-specific fields (in event_data)
-        event_data = event["event_data"]
-        assert "event_id" in event_data
-        assert "incident_id" in event_data
-        assert "has_analysis" in event_data
-        assert "analysis_length" in event_data
-        assert "tool_call_count" in event_data
+        # Service-specific fields (in event_data.actual_instance)
+        payload = event.event_data.actual_instance
+        assert payload.event_id is not None
+        assert payload.incident_id is not None
+        assert payload.has_analysis is not None
+        assert payload.analysis_length is not None
+        assert payload.tool_call_count is not None
 
     def test_tool_call_audit_event_structure(self):
         """
@@ -192,26 +184,23 @@ class TestLLMAuditIntegration:
             tool_result={"workflows": []}
         )
 
-        # ADR-034 envelope fields (top-level)
-        assert "version" in event
-        assert "event_category" in event
-        assert "event_type" in event
-        assert event["event_type"] == "aiagent.llm.tool_call"
-        assert "event_timestamp" in event
-        assert "correlation_id" in event
-        assert event["correlation_id"] == "rem-67890"
-        assert "event_action" in event
-        assert "event_outcome" in event
-        assert "event_data" in event
+        # ADR-034 envelope fields (top-level) - Pydantic model attribute access
+        assert event.version is not None
+        assert event.event_category is not None
+        assert event.event_type == "aiagent.llm.tool_call"
+        assert event.event_timestamp is not None
+        assert event.correlation_id == "rem-67890"
+        assert event.event_action is not None
+        assert event.event_outcome is not None
+        assert event.event_data is not None
 
-        # Service-specific fields (in event_data)
-        event_data = event["event_data"]
-        assert "event_id" in event_data
-        assert "incident_id" in event_data
-        assert "tool_name" in event_data
-        assert event_data["tool_name"] == "search_workflow_catalog"
-        assert "tool_arguments" in event_data
-        assert "tool_result" in event_data
+        # Service-specific fields (in event_data.actual_instance)
+        payload = event.event_data.actual_instance
+        assert payload.event_id is not None
+        assert payload.incident_id is not None
+        assert payload.tool_name == "search_workflow_catalog"
+        assert payload.tool_arguments is not None
+        assert payload.tool_result is not None
 
 
 if __name__ == "__main__":
