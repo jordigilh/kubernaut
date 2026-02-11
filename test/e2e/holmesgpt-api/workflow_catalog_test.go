@@ -32,6 +32,10 @@ import (
 //
 // NOTE: These tests validate the workflow catalog tool (used by HAPI internally for LLM-driven workflow search).
 // The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident/recovery analysis.
+//
+// BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
+// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// endpoints are now async-only (202 Accepted).
 
 var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), func() {
 
@@ -63,16 +67,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 
 			// ========================================
 			// ACT: Call HAPI (which internally uses workflow catalog)
+			// (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Successful semantic search
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present (semantic search succeeded)")
@@ -108,17 +110,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Results sorted by confidence descending
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
 			// Workflow selection logic validated in integration tests
@@ -153,17 +152,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			ErrorMessage:      "Test error",
 		}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Graceful empty results (escalates to human review)
 		Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 			"needs_human_review must be true when no workflows found")
@@ -197,17 +193,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Filtered results
 			if incidentResp.SelectedWorkflow.Set {
 				// Workflow should match CrashLoopBackOff signal type
@@ -241,17 +234,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Result count limited
 			// HAPI returns selected_workflow (top 1) + alternative_workflows (typically top 5-10)
 			// Total should not exceed reasonable LLM context limits
@@ -306,16 +296,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			}
 			// ========================================
 			// ACT: Simulate LLM completing RCA for OOMKilled
+			// (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Relevant workflow found
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present for OOMKilled")
@@ -350,17 +338,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Relevant workflow found
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present for CrashLoopBackOff")
@@ -395,17 +380,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			ErrorMessage:      "Test error",
 		}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			respObj, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI should handle empty workflow results gracefully")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			respObj, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Graceful empty results
 			Expect(respObj.NeedsHumanReview.Value).To(BeTrue(),
 				"needs_human_review must be true when no workflows found")
@@ -456,17 +438,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: container_image included
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
 			// Container image validation done in integration tests
@@ -498,17 +477,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: container_digest included
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
 			// Container digest validation done in integration tests
@@ -540,17 +516,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Complete workflow data
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
 			// Required fields validation done in integration tests
@@ -582,17 +555,14 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ErrorMessage:      "Test error",
 			}
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			_, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Valid OCI references
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
 			// OCI format validation done in integration tests
