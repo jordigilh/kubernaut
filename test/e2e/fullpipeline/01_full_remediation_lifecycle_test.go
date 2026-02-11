@@ -36,6 +36,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -412,10 +413,177 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		}, timeout, interval).Should(Equal("Completed"),
 			"RemediationRequest should reach Completed phase")
 
+		// ================================================================
+		// Step 11: Verify audit trail completeness (BR-AUDIT-005)
+		// ================================================================
+		By("Step 11: Verifying audit trail completeness and non-duplication")
+
+		// The correlation_id for all audit events is the RR name
+		correlationID := remediationRequest.Name
+
+		// Expected audit event types from a successful full remediation lifecycle.
+		// Derived from BR-AUDIT-005, ADR-034, and each service's audit implementation.
+		//
+		// === Events that MUST appear exactly once ===
+		// These are lifecycle boundary events — one per RR by definition.
+		exactlyOnceEvents := []string{
+			// Gateway: signal ingestion and CRD creation
+			"gateway.signal.received",   // pkg/gateway/server.go: emitSignalReceivedAudit
+			"gateway.crd.created",       // pkg/gateway/server.go: emitCRDCreatedAudit
+			// Remediation Orchestrator: lifecycle boundaries
+			"orchestrator.lifecycle.created",   // pkg/remediationorchestrator/audit: emitRemediationCreatedAudit
+			"orchestrator.lifecycle.started",   // pkg/remediationorchestrator/audit: emitLifecycleStartedAudit
+			"orchestrator.lifecycle.completed", // pkg/remediationorchestrator/audit: emitCompletionAudit
+		}
+
+		// === Events that MUST appear at least once ===
+		// These fire during processing; some may repeat (phase transitions, retries).
+		atLeastOnceEvents := []string{
+			// Remediation Orchestrator: phase transitions
+			"orchestrator.lifecycle.transitioned", // pkg/remediationorchestrator/audit: emitPhaseTransitionAudit
+			// Signal Processing
+			"signalprocessing.enrichment.completed",    // pkg/signalprocessing/audit: RecordEnrichmentComplete
+			"signalprocessing.classification.decision",  // pkg/signalprocessing/audit: RecordClassificationDecision
+			"signalprocessing.signal.processed",         // pkg/signalprocessing/audit: RecordSignalProcessed
+			"signalprocessing.phase.transition",          // pkg/signalprocessing/audit: RecordPhaseTransition
+			// AI Analysis
+			"aianalysis.phase.transition",    // pkg/aianalysis/audit: RecordPhaseTransition
+			"aianalysis.holmesgpt.call",      // pkg/aianalysis/audit: RecordHolmesGPTCall
+			"aianalysis.rego.evaluation",     // pkg/aianalysis/audit: RecordRegoEvaluation
+			"aianalysis.analysis.completed",  // pkg/aianalysis/audit: RecordAnalysisComplete
+			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
+			string(ogenclient.LLMRequestPayloadAuditEventEventData),            // holmesgpt-api/src/audit/events.py: create_llm_request_event
+			string(ogenclient.LLMResponsePayloadAuditEventEventData),           // holmesgpt-api/src/audit/events.py: create_llm_response_event
+			string(ogenclient.WorkflowValidationPayloadAuditEventEventData),    // holmesgpt-api/src/audit/events.py: create_validation_attempt_event
+			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),       // holmesgpt-api/src/audit/events.py: create_aiagent_response_complete_event
+			// Workflow Execution
+			"workflowexecution.selection.completed", // pkg/workflowexecution/audit: RecordWorkflowSelectionCompleted
+			"workflowexecution.execution.started",   // pkg/workflowexecution/audit: RecordExecutionWorkflowStarted
+			"workflowexecution.workflow.completed",   // pkg/workflowexecution/audit: RecordWorkflowCompleted
+			// Notification
+			"notification.message.sent", // pkg/notification/audit: CreateMessageSentEvent
+		}
+
+		// === Events that MAY appear (non-deterministic) ===
+		// These depend on LLM behavior or conditional logic.
+		// ogenclient.LLMToolCallPayloadAuditEventEventData ("aiagent.llm.tool_call") — emitted when the LLM uses tools (e.g., search_workflow_catalog)
+		// "signalprocessing.business.classified" — emitted if business classification applies
+		// "aianalysis.approval.decision" — emitted if auto-approval is configured
+
+		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)
+
+		// Query all audit events for this remediation request
+		var allAuditEvents []ogenclient.AuditEvent
+		Eventually(func() int {
+			resp, err := dataStorageClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				Limit:         ogenclient.NewOptInt(200),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("  [Step 11] Query error: %v\n", err)
+				return 0
+			}
+			allAuditEvents = resp.Data
+			GinkgoWriter.Printf("  [Step 11] Found %d audit events for correlation_id=%s\n",
+				len(allAuditEvents), correlationID)
+			return len(allAuditEvents)
+		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", len(allExpected)),
+			"Should have at least %d audit events for the full lifecycle", len(allExpected))
+
+		// Build a map of event types for fast lookup
+		eventTypeCounts := map[string]int{}
+		for _, event := range allAuditEvents {
+			eventTypeCounts[event.EventType]++
+			GinkgoWriter.Printf("  Audit: type=%s category=%s outcome=%s ts=%s\n",
+				event.EventType, event.EventCategory, event.EventOutcome,
+				event.EventTimestamp.Format(time.RFC3339))
+		}
+
+		// Verify exactly-once events
+		for _, eventType := range exactlyOnceEvents {
+			Expect(eventTypeCounts).To(HaveKey(eventType),
+				"Audit trail must contain exactly-once event: %s", eventType)
+			Expect(eventTypeCounts[eventType]).To(Equal(1),
+				"Event %s must appear exactly once, but found %d", eventType, eventTypeCounts[eventType])
+		}
+
+		// Verify at-least-once events
+		for _, eventType := range atLeastOnceEvents {
+			Expect(eventTypeCounts).To(HaveKey(eventType),
+				"Audit trail must contain at-least-once event: %s", eventType)
+			Expect(eventTypeCounts[eventType]).To(BeNumerically(">=", 1),
+				"Event %s must appear at least once, but found %d", eventType, eventTypeCounts[eventType])
+		}
+
+		// Verify temporal ordering: first event should be gateway.signal.received
+		Expect(allAuditEvents).ToNot(BeEmpty())
+		earliestEvent := allAuditEvents[0]
+		for _, event := range allAuditEvents[1:] {
+			if event.EventTimestamp.Before(earliestEvent.EventTimestamp) {
+				earliestEvent = event
+			}
+		}
+		Expect(earliestEvent.EventType).To(Equal("gateway.signal.received"),
+			"Earliest audit event should be gateway.signal.received")
+
+		GinkgoWriter.Printf("  ✅ Audit trail verified: %d events, %d unique types, all expected present\n",
+			len(allAuditEvents), len(eventTypeCounts))
+
+		// ================================================================
+		// Step 12: Verify RR reconstruction from audit trail (BR-AUDIT-005)
+		// ================================================================
+		By("Step 12: Verifying RR reconstruction from audit trail")
+
+		var reconstructionResp *ogenclient.ReconstructionResponse
+		Eventually(func() error {
+			resp, err := dataStorageClient.ReconstructRemediationRequest(testCtx,
+				ogenclient.ReconstructRemediationRequestParams{
+					CorrelationID: correlationID,
+				})
+			if err != nil {
+				return fmt.Errorf("reconstruction API error: %w", err)
+			}
+
+			switch r := resp.(type) {
+			case *ogenclient.ReconstructionResponse:
+				reconstructionResp = r
+				return nil
+			case *ogenclient.ReconstructRemediationRequestBadRequest:
+				return fmt.Errorf("400 Bad Request: %s", r.Detail.Value)
+			case *ogenclient.ReconstructRemediationRequestNotFound:
+				return fmt.Errorf("404 Not Found")
+			case *ogenclient.ReconstructRemediationRequestInternalServerError:
+				return fmt.Errorf("500 Internal Server Error: %s", r.Detail.Value)
+			default:
+				return fmt.Errorf("unexpected response type: %T", resp)
+			}
+		}, 30*time.Second, 2*time.Second).Should(Succeed(),
+			"RR reconstruction should succeed")
+
+		Expect(reconstructionResp).ToNot(BeNil())
+		Expect(reconstructionResp.RemediationRequestYaml).ToNot(BeEmpty(),
+			"Reconstructed RR YAML should not be empty")
+		Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
+			"Reconstructed RR should be valid")
+		Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),
+			"Reconstructed RR completeness should be at least 80%%")
+
+		// Verify the reconstructed YAML contains key fields from the actual RR
+		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring(testNamespace),
+			"Reconstructed YAML should reference the test namespace")
+
+		GinkgoWriter.Printf("  ✅ RR reconstruction verified: completeness=%d%%, valid=%t\n",
+			reconstructionResp.Validation.Completeness, reconstructionResp.Validation.IsValid)
+		if len(reconstructionResp.Validation.Warnings) > 0 {
+			GinkgoWriter.Printf("  ⚠️  Reconstruction warnings: %v\n", reconstructionResp.Validation.Warnings)
+		}
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE")
+		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE (with audit verification)")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification ✅")
+		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated, temporally ordered ✅")
+		GinkgoWriter.Println("  RR Reconstruction: valid, high completeness ✅")
 	})
 })
 
