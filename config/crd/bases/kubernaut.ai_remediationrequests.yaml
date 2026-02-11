@@ -14,11 +14,22 @@ spec:
     singular: remediationrequest
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.overallPhase
+      name: Phase
+      type: string
+    - jsonPath: .status.outcome
+      name: Outcome
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: RemediationRequest is the Schema for the remediationrequests
-          API.
+        description: |-
+          RemediationRequest is the Schema for the remediationrequests API.
+          DD-CRD-003: Printer columns for operational triage
         properties:
           apiVersion:
             description: |-
