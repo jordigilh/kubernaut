@@ -713,18 +713,29 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         logger.info(f"🔍 SCENARIO DETECTION - Has 'recovery' + 'previous': {('recovery' in content and 'previous' in content)}")
 
         # Check for test-specific signal types first (human review tests)
-        if "mock_no_workflow_found" in content or "mock no workflow found" in content:
+        # FIX: Check BOTH 'content' (message text) AND 'all_text' (full message objects)
+        # Recovery prompts may embed the signal_type in structured content blocks or
+        # JSON payloads that 'content' extraction doesn't capture reliably.
+        # 'all_text' captures everything including {"signal_type": "MOCK_..."} in JSON.
+        search_text = content + " " + all_text
+        if "mock_no_workflow_found" in search_text or "mock no workflow found" in search_text:
+            logger.info("✅ SCENARIO DETECTED: NO_WORKFLOW_FOUND (mock keyword match)")
             return MOCK_SCENARIOS.get("no_workflow_found", DEFAULT_SCENARIO)
-        if "mock_low_confidence" in content or "mock low confidence" in content:
+        if "mock_low_confidence" in search_text or "mock low confidence" in search_text:
+            logger.info("✅ SCENARIO DETECTED: LOW_CONFIDENCE (mock keyword match)")
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
-        if "mock_problem_resolved" in content or "mock problem resolved" in content:
+        if "mock_problem_resolved" in search_text or "mock problem resolved" in search_text:
+            logger.info("✅ SCENARIO DETECTED: PROBLEM_RESOLVED (mock keyword match)")
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
-        if "mock_not_reproducible" in content or "mock not reproducible" in content:
+        if "mock_not_reproducible" in search_text or "mock not reproducible" in search_text:
+            logger.info("✅ SCENARIO DETECTED: NOT_REPRODUCIBLE (mock keyword match)")
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)  # Same scenario: issue self-resolved
-        if "mock_rca_incomplete" in content or "mock rca incomplete" in content:
+        if "mock_rca_incomplete" in search_text or "mock rca incomplete" in search_text:
+            logger.info("✅ SCENARIO DETECTED: RCA_INCOMPLETE (mock keyword match)")
             return MOCK_SCENARIOS.get("rca_incomplete", DEFAULT_SCENARIO)
         # E2E-HAPI-003: Max retries exhausted - LLM parsing failed
-        if "mock_max_retries_exhausted" in content or "mock max retries exhausted" in content:
+        if "mock_max_retries_exhausted" in search_text or "mock max retries exhausted" in search_text:
+            logger.info("✅ SCENARIO DETECTED: MAX_RETRIES_EXHAUSTED (mock keyword match)")
             return MOCK_SCENARIOS.get("max_retries_exhausted", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
