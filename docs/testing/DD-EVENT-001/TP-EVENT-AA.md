@@ -59,6 +59,9 @@
 | BR-AA-095 | Happy path event trail | Integration | IT-AA-095-01 | ⏸️ Pending |
 | BR-AA-095 | Investigation failure event trail | Integration | IT-AA-095-02 | ⏸️ Pending |
 | BR-AA-095 | Human review event trail | Integration | IT-AA-095-03 | ⏸️ Pending |
+| BR-AA-HAPI-064 | SessionCreated on happy path | Integration | IT-AA-064-01a | ✅ Implemented |
+| BR-AA-HAPI-064 | SessionLost on stale session (404) | Integration | IT-AA-064-01b | ✅ Implemented |
+| BR-AA-HAPI-064.6 | SessionRegenerationExceeded on cap | Integration | IT-AA-064-01c | ✅ Implemented |
 
 ---
 
@@ -225,14 +228,25 @@
 
 Originally delegated to the Issue #64 team, these tests were implemented by the current team. They map to BR-AA-HAPI-064.6 and the existing test plan at `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
 
+### Unit Tests
+
 | Test ID | Event | Description | Status |
 |---|---|---|---|
-| UT-AA-064-001 | SessionCreated | Session submitted to HAPI (K8s event assertion added) | Implemented |
-| UT-AA-064-008 | SessionLost | Session 404 triggers regeneration (K8s event assertion added) | Implemented |
-| UT-AA-064-010 | SessionRegenerationExceeded | Max regenerations exceeded (K8s event assertion added) | Implemented |
-| IT-AA-064-01 | Session lifecycle trail | SessionCreated → SessionLost → SessionRegenerationExceeded → AnalysisFailed | Covered by IT-AA-095-02 |
+| UT-AA-064-001 | SessionCreated | Session submitted to HAPI (K8s event assertion via FakeRecorder) | Implemented |
+| UT-AA-064-008 | SessionLost | Session 404 triggers regeneration (K8s event assertion via FakeRecorder) | Implemented |
+| UT-AA-064-010 | SessionRegenerationExceeded | Max regenerations exceeded (K8s event assertion via FakeRecorder) | Implemented |
 
 **File**: `test/unit/aianalysis/investigating_handler_session_test.go` (FakeRecorder wired via `WithRecorder`)
+
+### Integration Tests
+
+| Test ID | Event(s) | Description | Status |
+|---|---|---|---|
+| IT-AA-064-01a | SessionCreated | Happy path: session submitted, Normal event emitted | Implemented |
+| IT-AA-064-01b | SessionLost + SessionCreated | Stale session (404) triggers Warning + regeneration with new SessionCreated | Implemented |
+| IT-AA-064-01c | SessionLost + SessionRegenerationExceeded | Cap reached: Warning events emitted, AA transitions to Failed | Implemented |
+
+**File**: `test/integration/aianalysis/events_test.go` (within BR-AA-HAPI-064 session context)
 
 ---
 

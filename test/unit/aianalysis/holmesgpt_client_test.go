@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -189,6 +190,99 @@ var _ = Describe("HolmesGPTClient", func() {
 				Expect(err).To(HaveOccurred())
 				var apiErr *client.APIError
 				Expect(errors.As(err, &apiErr)).To(BeTrue())
+			})
+		})
+
+		// BR-AA-HAPI-064: awaitSession returns error when session fails server-side
+		Context("with session that fails during investigation", func() {
+			BeforeEach(func() {
+				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+
+					switch {
+					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+						w.WriteHeader(http.StatusAccepted)
+						_, _ = w.Write([]byte(`{"session_id": "fail-session-001"}`))
+
+					case r.URL.Path == "/api/v1/incident/session/fail-session-001" && r.Method == http.MethodGet:
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"status": "failed", "error": "LLM provider unavailable"}`))
+
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				var err error
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should return APIError with session failure details", func() {
+				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{
+					IncidentID:        "test-fail-session",
+					RemediationID:     "test-rem-fail",
+					SignalType:        "OOMKilled",
+					Severity:          "critical",
+					ResourceNamespace: "default",
+					ResourceKind:      "Pod",
+					ResourceName:      "test-pod",
+				})
+
+				Expect(err).To(HaveOccurred())
+				var apiErr *client.APIError
+				Expect(errors.As(err, &apiErr)).To(BeTrue())
+				Expect(apiErr.StatusCode).To(Equal(500))
+				Expect(apiErr.Message).To(ContainSubstring("LLM provider unavailable"))
+			})
+		})
+
+		// BR-AA-HAPI-064: awaitSession respects context cancellation
+		Context("with context cancelled during polling", func() {
+			BeforeEach(func() {
+				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+
+					switch {
+					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+						w.WriteHeader(http.StatusAccepted)
+						_, _ = w.Write([]byte(`{"session_id": "stuck-session-001"}`))
+
+					case r.URL.Path == "/api/v1/incident/session/stuck-session-001" && r.Method == http.MethodGet:
+						// Always return "investigating" -- never completes
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"status": "investigating", "progress": "Calling LLM..."}`))
+
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				var err error
+				hgClient, err = client.NewHolmesGPTClient(client.Config{BaseURL: mockServer.URL})
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should return error when context is cancelled", func() {
+				cancelCtx, cancel := context.WithCancel(ctx)
+				// Cancel after a short delay to allow submit + first poll
+				go func() {
+					time.Sleep(1500 * time.Millisecond)
+					cancel()
+				}()
+
+				_, err := hgClient.Investigate(cancelCtx, &client.IncidentRequest{
+					IncidentID:        "test-stuck-session",
+					RemediationID:     "test-rem-stuck",
+					SignalType:        "OOMKilled",
+					Severity:          "critical",
+					ResourceNamespace: "default",
+					ResourceKind:      "Pod",
+					ResourceName:      "test-pod",
+				})
+
+				Expect(err).To(HaveOccurred())
+				var apiErr *client.APIError
+				Expect(errors.As(err, &apiErr)).To(BeTrue())
+				Expect(apiErr.Message).To(ContainSubstring("context cancelled"))
 			})
 		})
 
