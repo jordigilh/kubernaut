@@ -2,9 +2,18 @@
 
 **Status**: ✅ APPROVED  
 **Decision Date**: 2026-02-09  
-**Version**: 1.0  
+**Version**: 1.1  
 **Authority Level**: FOUNDATIONAL  
 **Applies To**: All CRD controllers (AA, WE, RO, SP, Notification)
+
+---
+
+## Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-02-09 | AI Assistant | Initial registry: 11 implemented events, migration pattern |
+| 1.1 | 2026-02-05 | AI Assistant | Full coverage: P1-P4 gap analysis, 9 new constants, per-controller BRs (BR-*-095) |
 
 ---
 
@@ -17,6 +26,25 @@ Kubernaut controllers emit Kubernetes Events via `record.EventRecorder` for oper
 3. **Incomplete implementation**: Design docs planned ~20 events; only 11 are implemented across all controllers
 4. **No constants**: The testing guidelines (TESTING_GUIDELINES.md line 1728) proposed `pkg/shared/events/reasons.go` with `EventReasonXxx` constants, but this was never implemented
 5. **RO has zero events**: Despite having `EventRecorder` wired, the RemediationOrchestrator emits no K8s events
+
+### v1.1 Gap Analysis (2026-02-05)
+
+A comprehensive triage of all 5 controllers revealed:
+
+| Controller | Events Emitted | Total Lifecycle Points | Coverage |
+|---|---|---|---|
+| **WorkflowExecution** | 7 | ~15 | ~47% |
+| **Notification** | 2 | ~16 | ~12% |
+| **SignalProcessing** | 1 | ~14 | ~7% |
+| **AIAnalysis** | 1 | ~18 | ~6% |
+| **RemediationOrchestrator** | 0 | ~25+ | 0% |
+
+Gaps were classified into 4 priority tiers:
+
+- **P1 (Terminal States)**: Success/failure completion invisible on `kubectl describe`
+- **P2 (Decision Points)**: Branching decisions that change CRD trajectory (approval, escalation, blocking)
+- **P3 (Intermediate Transitions)**: Phase-to-phase breadcrumb trail for debugging
+- **P4 (Error Paths)**: Transient error conditions useful for diagnosing stuck CRDs
 
 This DD establishes the authoritative event registry and implementation pattern.
 
@@ -49,70 +77,112 @@ Per-controller event reasons are grouped by controller in this single file. Cont
 - Keep messages concise (under 256 characters)
 - Example: `fmt.Sprintf("Workflow %s completed successfully in %s", workflowID, duration)`
 
+### 4. Priority Classification (v1.1)
+
+| Priority | Description | Operator Impact |
+|----------|-------------|-----------------|
+| **P1** | Terminal state events (Completed, Failed, TimedOut) | `kubectl describe` shows outcome |
+| **P2** | Decision point events (approval, escalation, blocking) | Explains *why* CRD is in current state |
+| **P3** | Intermediate phase transitions | Breadcrumb trail for debugging |
+| **P4** | Error path warnings (degraded, cleanup failure) | Diagnoses stuck CRDs |
+
+### 5. Business Requirements (v1.1)
+
+Each controller has a dedicated K8s Event Observability BR:
+
+| BR ID | Controller | Description |
+|-------|------------|-------------|
+| BR-AA-095 | AIAnalysis | K8s Event Observability (DD-EVENT-001) |
+| BR-WE-095 | WorkflowExecution | K8s Event Observability (DD-EVENT-001) |
+| BR-SP-095 | SignalProcessing | K8s Event Observability (DD-EVENT-001) |
+| BR-NT-095 | Notification | K8s Event Observability (DD-EVENT-001) |
+| BR-ORCH-095 | RemediationOrchestrator | K8s Event Observability (DD-EVENT-001) |
+
+Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the existing BR number for test IDs.
+
 ---
 
 ## Event Registry
 
 ### AIAnalysis Controller
 
-| Reason Constant | Reason String | Type | When Emitted | Status |
-|----------------|---------------|------|-------------|--------|
-| `EventReasonAIAnalysisCreated` | `AIAnalysisCreated` | Normal | Pending → Investigating transition | Implemented |
-| `EventReasonInvestigationComplete` | `InvestigationComplete` | Normal | Investigation phase succeeded, transitioning to Analyzing | Planned |
-| `EventReasonAnalysisCompleted` | `AnalysisCompleted` | Normal | Analysis completed successfully (terminal) | Planned |
-| `EventReasonAnalysisFailed` | `AnalysisFailed` | Warning | Analysis failed (terminal) | Planned |
-| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | Any phase transition (generic) | Planned |
-| `EventReasonSessionCreated` | `SessionCreated` | Normal | HAPI investigation session submitted (issue #64) | Planned |
-| `EventReasonSessionLost` | `SessionLost` | Warning | HAPI session lost (404 on poll), regenerating | Planned |
-| `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | Max session regenerations (5) exceeded, transitioning to Failed | Planned |
-| `EventReasonApprovalRequired` | `ApprovalRequired` | Normal | Human approval required for workflow execution | Planned |
-| `EventReasonHumanReviewRequired` | `HumanReviewRequired` | Warning | HAPI flagged investigation for human review | Planned |
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonAIAnalysisCreated` | `AIAnalysisCreated` | Normal | P1 | Pending → Investigating transition | Implemented (v1.0) |
+| `EventReasonInvestigationComplete` | `InvestigationComplete` | Normal | P1 | Investigation phase succeeded, transitioning to Analyzing | Planned (v1.1) |
+| `EventReasonAnalysisCompleted` | `AnalysisCompleted` | Normal | P1 | Analysis completed successfully (terminal) | Planned (v1.1) |
+| `EventReasonAnalysisFailed` | `AnalysisFailed` | Warning | P1 | Analysis failed (terminal) | Planned (v1.1) |
+| `EventReasonApprovalRequired` | `ApprovalRequired` | Normal | P2 | Human approval required for workflow execution | Planned (v1.1) |
+| `EventReasonHumanReviewRequired` | `HumanReviewRequired` | Warning | P2 | HAPI flagged investigation for human review | Planned (v1.1) |
+| `EventReasonSessionCreated` | `SessionCreated` | Normal | P2 | HAPI investigation session submitted (issue #64) | Planned (v1.1, delegated) |
+| `EventReasonSessionLost` | `SessionLost` | Warning | P2 | HAPI session lost (404 on poll), regenerating | Planned (v1.1, delegated) |
+| `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | P2 | Max session regenerations (5) exceeded, transitioning to Failed | Planned (v1.1, delegated) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
+
+**Note**: Session events (SessionCreated, SessionLost, SessionRegenerationExceeded) are delegated to the Issue #64 team. Constants are defined; implementation is their responsibility. See BR-AA-HAPI-064.6 and `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
 
 ### WorkflowExecution Controller
 
-| Reason Constant | Reason String | Type | When Emitted | Status |
-|----------------|---------------|------|-------------|--------|
-| `EventReasonExecutionCreated` | `ExecutionCreated` | Normal | Execution resource (Job/PipelineRun) created | Implemented |
-| `EventReasonLockReleased` | `LockReleased` | Normal | Target resource lock released after cooldown | Implemented |
-| `EventReasonWorkflowExecutionDeleted` | `WorkflowExecutionDeleted` | Normal | WFE cleanup completed (finalizer) | Implemented |
-| `EventReasonPipelineRunCreated` | `PipelineRunCreated` | Normal | PipelineRun created or adopted | Implemented |
-| `EventReasonWorkflowCompleted` | `WorkflowCompleted` | Normal | Workflow execution succeeded | Implemented |
-| `EventReasonWorkflowFailed` | `WorkflowFailed` | Warning | Workflow execution failed | Implemented (2 sites) |
-| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | Any phase transition | Planned |
-| `EventReasonWorkflowValidated` | `WorkflowValidated` | Normal | Workflow spec validated successfully | Planned |
-| `EventReasonWorkflowValidationFailed` | `WorkflowValidationFailed` | Warning | Workflow spec validation failed | Planned |
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonExecutionCreated` | `ExecutionCreated` | Normal | P1 | Execution resource (Job/PipelineRun) created | Implemented (v1.0) |
+| `EventReasonWorkflowCompleted` | `WorkflowCompleted` | Normal | P1 | Workflow execution succeeded | Implemented (v1.0) |
+| `EventReasonWorkflowFailed` | `WorkflowFailed` | Warning | P1 | Workflow execution failed | Implemented (v1.0, 2 sites) |
+| `EventReasonLockReleased` | `LockReleased` | Normal | P1 | Target resource lock released after cooldown | Implemented (v1.0) |
+| `EventReasonWorkflowExecutionDeleted` | `WorkflowExecutionDeleted` | Normal | P1 | WFE cleanup completed (finalizer) | Implemented (v1.0) |
+| `EventReasonPipelineRunCreated` | `PipelineRunCreated` | Normal | P1 | PipelineRun created or adopted | Implemented (v1.0) |
+| `EventReasonWorkflowValidated` | `WorkflowValidated` | Normal | P2 | Workflow spec validated successfully | Planned (v1.1) |
+| `EventReasonWorkflowValidationFailed` | `WorkflowValidationFailed` | Warning | P2 | Workflow spec validation failed | Planned (v1.1) |
+| `EventReasonCooldownActive` | `CooldownActive` | Normal | P2 | Execution blocked by active cooldown on target resource | Planned (v1.1) |
+| `EventReasonCleanupFailed` | `CleanupFailed` | Warning | P4 | Execution resource cleanup failed during terminal/delete | Planned (v1.1) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 
 ### RemediationOrchestrator Controller
 
-| Reason Constant | Reason String | Type | When Emitted | Status |
-|----------------|---------------|------|-------------|--------|
-| `EventReasonRemediationCreated` | `RemediationCreated` | Normal | New RemediationRequest accepted | Planned |
-| `EventReasonRemediationCompleted` | `RemediationCompleted` | Normal | Remediation lifecycle completed successfully | Planned |
-| `EventReasonRemediationFailed` | `RemediationFailed` | Warning | Remediation lifecycle failed | Planned |
-| `EventReasonRemediationTimeout` | `RemediationTimeout` | Warning | Remediation exceeded timeout | Planned |
-| `EventReasonRecoveryInitiated` | `RecoveryInitiated` | Normal | Recovery attempt started after failed remediation | Planned |
-| `EventReasonEscalatedToManualReview` | `EscalatedToManualReview` | Warning | Unrecoverable failure, escalation notification sent | Planned |
-| `EventReasonNotificationCreated` | `NotificationCreated` | Normal | NotificationRequest CRD created | Planned |
-| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | Any phase transition | Planned |
-| `EventReasonCooldownActive` | `CooldownActive` | Normal | Remediation skipped due to active cooldown | Planned |
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonRemediationCreated` | `RemediationCreated` | Normal | P1 | New RemediationRequest accepted | Planned (v1.1) |
+| `EventReasonRemediationCompleted` | `RemediationCompleted` | Normal | P1 | Remediation lifecycle completed successfully | Planned (v1.1) |
+| `EventReasonRemediationFailed` | `RemediationFailed` | Warning | P1 | Remediation lifecycle failed | Planned (v1.1) |
+| `EventReasonRemediationTimeout` | `RemediationTimeout` | Warning | P1 | Remediation exceeded timeout | Planned (v1.1) |
+| `EventReasonApprovalRequired` | `ApprovalRequired` | Normal | P2 | Human approval required, RAR created | Planned (v1.1) |
+| `EventReasonApprovalGranted` | `ApprovalGranted` | Normal | P2 | RAR approved, transitioning to Executing | Planned (v1.1) |
+| `EventReasonApprovalRejected` | `ApprovalRejected` | Warning | P2 | RAR rejected, transitioning to Failed | Planned (v1.1) |
+| `EventReasonApprovalExpired` | `ApprovalExpired` | Warning | P2 | RAR expired past deadline | Planned (v1.1) |
+| `EventReasonEscalatedToManualReview` | `EscalatedToManualReview` | Warning | P2 | Unrecoverable failure, escalation notification sent | Planned (v1.1) |
+| `EventReasonRecoveryInitiated` | `RecoveryInitiated` | Normal | P2 | Recovery attempt started after failed remediation | Planned (v1.1) |
+| `EventReasonNotificationCreated` | `NotificationCreated` | Normal | P2 | NotificationRequest CRD created | Planned (v1.1) |
+| `EventReasonCooldownActive` | `CooldownActive` | Normal | P2 | Remediation skipped due to active cooldown (shared constant) | Planned (v1.1) |
+| `EventReasonConsecutiveFailureBlocked` | `ConsecutiveFailureBlocked` | Warning | P2 | Target resource blocked due to consecutive failures | Planned (v1.1) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 
 ### SignalProcessing Controller
 
-| Reason Constant | Reason String | Type | When Emitted | Status |
-|----------------|---------------|------|-------------|--------|
-| `EventReasonPolicyEvaluationFailed` | `PolicyEvaluationFailed` | Warning | Rego policy failed to map severity | Implemented |
-| `EventReasonSignalProcessed` | `SignalProcessed` | Normal | Signal enrichment and classification completed | Planned |
-| `EventReasonSignalEnriched` | `SignalEnriched` | Normal | K8s context enrichment completed | Planned |
-| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | Any phase transition | Planned |
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonPolicyEvaluationFailed` | `PolicyEvaluationFailed` | Warning | P2 | Rego policy failed to map severity | Implemented (v1.0) |
+| `EventReasonSignalProcessed` | `SignalProcessed` | Normal | P1 | Signal enrichment and classification completed (terminal) | Planned (v1.1) |
+| `EventReasonSignalEnriched` | `SignalEnriched` | Normal | P2 | K8s context enrichment completed | Planned (v1.1) |
+| `EventReasonEnrichmentDegraded` | `EnrichmentDegraded` | Warning | P4 | K8s enrichment returned partial/degraded results | Planned (v1.1) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 
 ### Notification Controller
 
-| Reason Constant | Reason String | Type | When Emitted | Status |
-|----------------|---------------|------|-------------|--------|
-| `EventReasonReconcileStarted` | `ReconcileStarted` | Normal | Notification reconciliation started | Implemented |
-| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | Phase transition (currently: to Sending) | Implemented |
-| `EventReasonNotificationSent` | `NotificationSent` | Normal | Notification delivered successfully | Planned |
-| `EventReasonNotificationFailed` | `NotificationFailed` | Warning | Notification delivery failed | Planned |
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonReconcileStarted` | `ReconcileStarted` | Normal | P3 | Notification reconciliation started | Implemented (v1.0) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Phase transition (currently: to Sending) | Implemented (v1.0) |
+| `EventReasonNotificationSent` | `NotificationSent` | Normal | P1 | Notification delivered successfully to all channels | Planned (v1.1) |
+| `EventReasonNotificationFailed` | `NotificationFailed` | Warning | P1 | Notification delivery failed permanently | Planned (v1.1) |
+| `EventReasonNotificationPartiallySent` | `NotificationPartiallySent` | Normal | P1 | Some channels succeeded, others failed terminally | Planned (v1.1) |
+| `EventReasonNotificationRetrying` | `NotificationRetrying` | Normal | P3 | Retrying after transient delivery failure | Planned (v1.1) |
+| `EventReasonCircuitBreakerOpen` | `CircuitBreakerOpen` | Warning | P2 | Slack circuit breaker tripped, channel temporarily disabled | Planned (v1.1) |
+
+### Shared Events (used by multiple controllers)
+
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any CRD phase transition (generic breadcrumb) | Implemented (v1.0, NT only); Planned for all |
 
 ---
 
@@ -153,6 +223,8 @@ const (
     EventReasonWorkflowFailed                = "WorkflowFailed"
     EventReasonWorkflowValidated             = "WorkflowValidated"
     EventReasonWorkflowValidationFailed      = "WorkflowValidationFailed"
+    EventReasonCooldownActive                = "CooldownActive"
+    EventReasonCleanupFailed                 = "CleanupFailed"
 )
 
 // ============================================================
@@ -167,7 +239,10 @@ const (
     EventReasonRecoveryInitiated             = "RecoveryInitiated"
     EventReasonEscalatedToManualReview       = "EscalatedToManualReview"
     EventReasonNotificationCreated           = "NotificationCreated"
-    EventReasonCooldownActive                = "CooldownActive"
+    EventReasonApprovalGranted               = "ApprovalGranted"
+    EventReasonApprovalRejected              = "ApprovalRejected"
+    EventReasonApprovalExpired               = "ApprovalExpired"
+    EventReasonConsecutiveFailureBlocked     = "ConsecutiveFailureBlocked"
 )
 
 // ============================================================
@@ -178,6 +253,7 @@ const (
     EventReasonPolicyEvaluationFailed        = "PolicyEvaluationFailed"
     EventReasonSignalProcessed               = "SignalProcessed"
     EventReasonSignalEnriched                = "SignalEnriched"
+    EventReasonEnrichmentDegraded            = "EnrichmentDegraded"
 )
 
 // ============================================================
@@ -188,6 +264,9 @@ const (
     EventReasonReconcileStarted              = "ReconcileStarted"
     EventReasonNotificationSent              = "NotificationSent"
     EventReasonNotificationFailed            = "NotificationFailed"
+    EventReasonNotificationPartiallySent     = "NotificationPartiallySent"
+    EventReasonNotificationRetrying          = "NotificationRetrying"
+    EventReasonCircuitBreakerOpen            = "CircuitBreakerOpen"
 )
 
 // ============================================================
@@ -214,20 +293,49 @@ r.Recorder.Event(obj, corev1.EventTypeNormal, events.EventReasonWorkflowComplete
 // Warning event
 r.Recorder.Event(obj, corev1.EventTypeWarning, events.EventReasonSessionRegenerationExceeded,
     fmt.Sprintf("Max session regenerations (%d) exceeded for investigation", maxRegenerations))
+
+// P3: Intermediate phase transition (shared constant, message distinguishes)
+r.Recorder.Event(obj, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+    fmt.Sprintf("Phase transition: %s → %s", oldPhase, newPhase))
 ```
 
 ---
 
 ## Migration Strategy
 
-1. Create `pkg/shared/events/reasons.go` with all constants
-2. Each controller migrates to constants in its own issue/PR:
-   - **AA**: Issue #64 (session-based pull design) -- implements all AA events
-   - **WE**: Separate issue -- replaces 7 inline strings with constants, adds planned events
-   - **RO**: Separate issue -- implements all 9 planned events
-   - **SP**: Separate issue -- replaces 1 inline string, adds planned events
-   - **Notification**: Separate issue -- replaces 2 inline strings, adds planned events
-3. Each migration PR also fixes inconsistent type references (`"Normal"` → `corev1.EventTypeNormal`)
+### v1.0 Migration (COMPLETED)
+
+1. Created `pkg/shared/events/reasons.go` with initial constants
+2. Each controller migrated inline strings to constants:
+   - **AA**: Issue #69 -- replaced 1 inline event
+   - **WE**: Issue #65 -- replaced 7 inline events + fixed raw type strings
+   - **SP**: Issue #67 -- replaced 1 inline string
+   - **Notification**: Issue #68 -- replaced 2 inline strings
+3. All controllers now use `corev1.EventTypeNormal`/`corev1.EventTypeWarning`
+
+### v1.1 Implementation (IN PROGRESS)
+
+Per-controller issues with TDD methodology (RED-GREEN-REFACTOR):
+
+| Controller | Issue | Events to Add | BR | Owner |
+|---|---|---|---|---|
+| AA | TBD | 6 (excl. 3 session events) | BR-AA-095 | Current team |
+| AA (session) | TBD | 3 (SessionCreated, SessionLost, SessionRegenerationExceeded) | BR-AA-HAPI-064.6 | Issue #64 team |
+| WE | TBD | 5 | BR-WE-095 | Current team |
+| SP | TBD | 5 | BR-SP-095 | Current team |
+| NT | TBD | 6 | BR-NT-095 | Current team |
+| RO | TBD | 14 (+ FakeRecorder infra) | BR-ORCH-095 | Current team |
+
+### Test Strategy: Defense-in-Depth
+
+Each event is tested at minimum 2 tiers:
+
+| Tier | What | How | Assert |
+|---|---|---|---|
+| **Unit** | Individual event emission | `record.NewFakeRecorder(N)` injected into reconciler | `recorder.Events` channel: type + reason + message |
+| **Integration** | Business flow event sequence | envtest with real EventRecorder | `corev1.EventList` by `involvedObject.name`: ordered trail |
+
+Test IDs follow DD-TEST-006 convention: `{TestType}-{ServiceCode}-{BR#}-{Sequence}` (e.g., `UT-AA-095-01`, `IT-RO-095-01`).
 
 ---
 
@@ -240,11 +348,14 @@ r.Recorder.Event(obj, corev1.EventTypeWarning, events.EventReasonSessionRegenera
 - Consistent type references across all controllers
 - Easy to audit which events each controller emits
 - Grep-friendly: `EventReason` prefix makes all events discoverable
+- Full terminal-state visibility via `kubectl describe` for every CRD (v1.1)
+- Decision-point observability for troubleshooting (v1.1)
 
 ### Negative
 
 - Initial migration effort to replace inline strings in 5 controllers
 - Shared package creates a mild coupling between controllers (acceptable for constants)
+- P3 events use shared `PhaseTransition` reason; message content required to distinguish transitions
 
 ---
 
@@ -268,6 +379,12 @@ Define events in a custom resource.
 
 **Rejected**: Over-engineering for string constants.
 
+### D. Per-Transition Reason Constants for P3 (v1.1)
+
+Define unique constants for each intermediate transition (e.g., `EventReasonPendingToEnriching`).
+
+**Rejected**: Creates constant explosion with minimal operator value. Shared `PhaseTransition` with descriptive messages is sufficient.
+
 ---
 
 ## Related Decisions
@@ -275,4 +392,14 @@ Define events in a custom resource.
 - **TESTING_GUIDELINES.md** (line 1728): Originally proposed this pattern (`pkg/shared/events/reasons.go`)
 - **ADR-001**: CRD microservices architecture mandates K8s events for observability
 - **DD-CONTROLLER-001**: Observed generation idempotency pattern (related controller design)
-- **Issue #64**: AA-HAPI session-based pull design (first consumer of new session events)
+- **DD-TEST-006**: Test plan policy and test ID convention (`{TestType}-{ServiceCode}-{BR#}-{Sequence}`)
+- **Issue #64**: AA-HAPI session-based pull design (owns session event implementation)
+- **BR-AA-HAPI-064.6**: Session regeneration cap event (test plan: `docs/testing/BR-AA-HAPI-064/`)
+
+## Test Plans
+
+- `docs/testing/DD-EVENT-001/TP-EVENT-AA.md` -- AIAnalysis event test plan
+- `docs/testing/DD-EVENT-001/TP-EVENT-WE.md` -- WorkflowExecution event test plan
+- `docs/testing/DD-EVENT-001/TP-EVENT-SP.md` -- SignalProcessing event test plan
+- `docs/testing/DD-EVENT-001/TP-EVENT-NT.md` -- Notification event test plan
+- `docs/testing/DD-EVENT-001/TP-EVENT-RO.md` -- RemediationOrchestrator event test plan
