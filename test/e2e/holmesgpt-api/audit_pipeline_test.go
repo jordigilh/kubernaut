@@ -84,9 +84,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint
+			// ACT: Call HAPI incident analysis via session client (BR-AA-HAPI-064)
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
@@ -164,9 +164,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
@@ -241,9 +241,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT: Call HAPI (triggers validation)
+			// ACT: Call HAPI (triggers validation) (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
@@ -318,9 +318,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			_, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
