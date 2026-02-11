@@ -106,9 +106,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 
 				events = resp.Data
 
-				// Look for llm_request event
+				// Look for aiagent.llm.request event
 				for _, event := range events {
-					if event.EventType == "llm_request" {
+					if event.EventType == string(ogenclient.LLMRequestPayloadAuditEventEventData) {
 						return true
 					}
 				}
@@ -119,14 +119,14 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BEHAVIOR: LLM request event persisted
 			var llmRequestEvent *ogenclient.AuditEvent
 			for i, event := range events {
-				if event.EventType == "llm_request" {
+				if event.EventType == string(ogenclient.LLMRequestPayloadAuditEventEventData) {
 					llmRequestEvent = &events[i]
 					break
 				}
 			}
 
 			Expect(llmRequestEvent).ToNot(BeNil(),
-				"llm_request event must be found")
+				"aiagent.llm.request event must be found (LLMRequestPayloadAuditEventEventData)")
 			Expect(llmRequestEvent.CorrelationID).To(Equal(remediationID),
 				"correlation_id must match remediation_id")
 
@@ -184,9 +184,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 
 				events = resp.Data
 
-				// Look for llm_response event
+				// Look for aiagent.llm.response event
 				for _, event := range events {
-					if event.EventType == "llm_response" {
+					if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
 						return true
 					}
 				}
@@ -197,14 +197,14 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BEHAVIOR: LLM response event persisted
 			var llmResponseEvent *ogenclient.AuditEvent
 			for i, event := range events {
-				if event.EventType == "llm_response" {
+				if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
 					llmResponseEvent = &events[i]
 					break
 				}
 			}
 
 			Expect(llmResponseEvent).ToNot(BeNil(),
-				"llm_response event must be found")
+				"aiagent.llm.response event must be found (LLMResponsePayloadAuditEventEventData)")
 			Expect(llmResponseEvent.CorrelationID).To(Equal(remediationID),
 				"correlation_id must match remediation_id")
 
@@ -261,9 +261,9 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 
 				events = resp.Data
 
-				// Look for workflow_validation_attempt event
+				// Look for aiagent.workflow.validation_attempt event
 				for _, event := range events {
-					if event.EventType == "workflow_validation_attempt" {
+					if event.EventType == string(ogenclient.WorkflowValidationPayloadAuditEventEventData) {
 						return true
 					}
 				}
@@ -274,14 +274,14 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			// BEHAVIOR: Validation events persisted
 			var validationEvent *ogenclient.AuditEvent
 			for i, event := range events {
-				if event.EventType == "workflow_validation_attempt" {
+				if event.EventType == string(ogenclient.WorkflowValidationPayloadAuditEventEventData) {
 					validationEvent = &events[i]
 					break
 				}
 			}
 
 			Expect(validationEvent).ToNot(BeNil(),
-				"workflow_validation_attempt event must be found")
+				"aiagent.workflow.validation_attempt event must be found (WorkflowValidationPayloadAuditEventEventData)")
 			Expect(validationEvent.CorrelationID).To(Equal(remediationID),
 				"correlation_id must match remediation_id")
 
@@ -343,10 +343,10 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 				hasLLMResponse := false
 
 				for _, event := range events {
-					if event.EventType == "llm_request" {
+					if event.EventType == string(ogenclient.LLMRequestPayloadAuditEventEventData) {
 						hasLLMRequest = true
 					}
-					if event.EventType == "llm_response" {
+					if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
 						hasLLMResponse = true
 					}
 				}
@@ -361,22 +361,22 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			hasValidation := false
 
 			for _, event := range events {
-				if event.EventType == "llm_request" {
+				if event.EventType == string(ogenclient.LLMRequestPayloadAuditEventEventData) {
 					hasLLMRequest = true
 				}
-				if event.EventType == "llm_response" {
+				if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
 					hasLLMResponse = true
 				}
-				if event.EventType == "workflow_validation_attempt" {
+				if event.EventType == string(ogenclient.WorkflowValidationPayloadAuditEventEventData) {
 					hasValidation = true
 				}
 			}
 
 			Expect(hasLLMRequest).To(BeTrue(),
-				"llm_request event must be present")
+				"aiagent.llm.request event must be present")
 			Expect(hasLLMResponse).To(BeTrue(),
-				"llm_response event must be present")
-			// Note: workflow_validation_attempt is optional (depends on if validation occurred)
+				"aiagent.llm.response event must be present")
+			// Note: aiagent.workflow.validation_attempt is optional (depends on if validation occurred)
 			_ = hasValidation
 
 			// CORRECTNESS: Consistent correlation across events

@@ -155,14 +155,14 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-		// Verify holmesgpt.response.complete event exists (HAPI returned needs_human_review=true)
+		// Verify aiagent.response.complete event exists (HAPI returned needs_human_review=true)
 		Eventually(func() bool {
 			// NT Pattern: Flush audit buffer on each retry
 			_ = auditStore.Flush(testCtx)
 			
 			// Query audit events via OpenAPI client (DD-API-001)
 			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
-			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -177,11 +177,11 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 				// Extract audit events from response
 				if resp.Data == nil || len(resp.Data) == 0 {
-					GinkgoWriter.Printf("  ⏳ No holmesgpt.response.complete events yet\n")
+					GinkgoWriter.Printf("  ⏳ No aiagent.response.complete events yet\n")
 					return false
 				}
 
-				GinkgoWriter.Printf("  ✅ Found %d holmesgpt.response.complete event(s)\n", len(resp.Data))
+				GinkgoWriter.Printf("  ✅ Found %d aiagent.response.complete event(s)\n", len(resp.Data))
 
 				// Verify event outcome (should be success - HTTP 200 from HAPI perspective)
 				// Per holmesgpt-api/src/audit/events.py:413 - HAPI always returns outcome="success"
@@ -193,12 +193,12 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 					// Verify event outcome uses OpenAPI constant
 					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
-						"holmesgpt.response.complete should have outcome=success (HTTP 200 from provider perspective)")
+						"aiagent.response.complete should have outcome=success (HTTP 200 from provider perspective)")
 				}
 
 				return true
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit holmesgpt.response.complete audit event when HAPI returns needs_human_review=true")
+				"Controller should emit aiagent.response.complete audit event when HAPI returns needs_human_review=true")
 
 			// Verify analysis.failed event exists (AIAnalysis failed due to workflow resolution failure)
 			Eventually(func() bool {
@@ -355,13 +355,13 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-		// Verify holmesgpt.response.complete event exists with success outcome
+		// Verify aiagent.response.complete event exists with success outcome
 		Eventually(func() bool {
 			// NT Pattern: Flush audit buffer on each retry
 			_ = auditStore.Flush(testCtx)
 			
 			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: HAPI events use "aiagent" category
-			eventType := ogenclient.NewOptString("holmesgpt.response.complete")
+			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -375,11 +375,11 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				}
 
 				if resp.Data == nil || len(resp.Data) == 0 {
-					GinkgoWriter.Printf("  ⏳ No holmesgpt.response.complete events yet\n")
+					GinkgoWriter.Printf("  ⏳ No aiagent.response.complete events yet\n")
 					return false
 				}
 
-				GinkgoWriter.Printf("  ✅ Found %d holmesgpt.response.complete event(s)\n", len(resp.Data))
+				GinkgoWriter.Printf("  ✅ Found %d aiagent.response.complete event(s)\n", len(resp.Data))
 
 				// Verify event outcome (should be success for problem resolved)
 				for _, event := range resp.Data {
@@ -388,12 +388,12 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 					// Verify event outcome uses OpenAPI constant
 					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
-						"holmesgpt.response.complete should have outcome=success when problem resolved")
+						"aiagent.response.complete should have outcome=success when problem resolved")
 				}
 
 				return true
 			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit holmesgpt.response.complete audit event when HAPI returns problem_resolved")
+				"Controller should emit aiagent.response.complete audit event when HAPI returns problem_resolved")
 
 			// Verify analysis.complete event exists
 			Eventually(func() bool {
