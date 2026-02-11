@@ -72,6 +72,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -509,7 +510,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(wfe, "Normal", "ExecutionCreated",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonExecutionCreated,
 		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.ExecutionEngine, r.ExecutionNamespace, createdName))
 
 	// Requeue to check execution status
@@ -676,7 +677,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	}
 
 	// Emit LockReleased event
-	r.Recorder.Event(wfe, "Normal", "LockReleased",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonLockReleased,
 		fmt.Sprintf("Lock released for %s after cooldown", wfe.Spec.TargetResource))
 
 	return ctrl.Result{}, nil
@@ -805,7 +806,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	// ========================================
 	// Emit deletion event (finalizers-lifecycle.md)
 	// ========================================
-	r.Recorder.Event(wfe, "Normal", "WorkflowExecutionDeleted",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowExecutionDeleted,
 		fmt.Sprintf("WorkflowExecution cleanup completed (phase: %s)", wfe.Status.Phase))
 
 	// ========================================
@@ -988,7 +989,7 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 			return ctrl.Result{}, fmt.Errorf("failed to update status in HandleAlreadyExists: %w", err)
 		}
 
-		r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
+		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPipelineRunCreated,
 			fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", pr.Namespace, pr.Name))
 
 		// Requeue to check PipelineRun status
@@ -1220,7 +1221,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
 
 	// Emit event
-	r.Recorder.Event(wfe, "Normal", "WorkflowCompleted",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowCompleted,
 		fmt.Sprintf("Workflow %s completed successfully in %s", wfe.Spec.WorkflowRef.WorkflowID, wfe.Status.Duration))
 
 	logger.Info("WorkflowExecution completed (atomic status update)")
@@ -1339,7 +1340,7 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	if wfe.Status.FailureDetails != nil {
 		reason = wfe.Status.FailureDetails.Reason
 	}
-	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
 
 	return ctrl.Result{}, nil
@@ -1453,7 +1454,7 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
 
 	// Emit event
-	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
 
 	logger.Info("WorkflowExecution failed with reason (atomic status update)", "reason", reason)
