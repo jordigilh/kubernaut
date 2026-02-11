@@ -199,41 +199,55 @@ def hapi_client():
     """
     FastAPI TestClient for HAPI service (in-process).
 
-    NOTE (Jan 4, 2026): Integration tests NO LONGER use this fixture.
-    Integration tests call business logic DIRECTLY (no HTTP client).
-    This fixture is kept for future E2E tests or manual testing.
+    BR-AA-HAPI-064: Session integration tests use this fixture to test
+    the async submit/poll/result HTTP endpoints via TestClient.
 
     Architecture Decision (Dec 29, 2025):
-    - Integration tests: TestClient (in-process HAPI) ✅
-    - E2E tests: External HAPI in Kind cluster ✅
+    - Integration tests: TestClient (in-process HAPI)
+    - E2E tests: External HAPI in Kind cluster
 
     Benefits:
-    - ✅ Faster (~3 min vs ~7 min, no Docker build)
-    - ✅ Reliable audit persistence (in-process config)
-    - ✅ Easier debugging (direct app access)
-    - ✅ Consistent with FastAPI best practices
+    - Faster (~3 min vs ~7 min, no Docker build)
+    - Reliable audit persistence (in-process config)
+    - Easier debugging (direct app access)
+    - Consistent with FastAPI best practices
 
     Configuration:
     - config.yaml: holmesgpt-api/config.yaml
     - Data Storage: http://localhost:18098 (Go-started)
     - Mock LLM: enabled
 
+    Note: src/main.py sets app=None when pytest is detected.
+    We must use create_app() factory with mock auth (same pattern as unit tests).
+
     See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
     """
-    import os
     from fastapi.testclient import TestClient
 
     # Environment variables are set globally in pytest_configure
     # (CONFIG_FILE, MOCK_LLM_MODE, LLM_MODEL, LLM_ENDPOINT)
 
-    # Import app (env vars already set by pytest_configure)
-    from src.main import app
+    # Use create_app() factory with mock auth (src/main.py sets app=None under pytest)
+    # Pattern matches unit test conftest.py client fixture
+    from src.main import create_app
+    from src.auth import MockAuthenticator, MockAuthorizer
+
+    app = create_app(
+        authenticator=MockAuthenticator(
+            valid_users={"test-token": "system:serviceaccount:test:sa"}
+        ),
+        authorizer=MockAuthorizer(default_allow=True),
+    )
 
     client = TestClient(app)
-    print(f"\n✅ HAPI TestClient initialized (in-process)")
+    # Set default auth header for protected endpoints (DD-AUTH-014)
+    client.headers = {"Authorization": "Bearer test-token"}
+
+    print(f"\n✅ HAPI TestClient initialized (in-process, create_app factory)")
     print(f"   Data Storage URL: {DATA_STORAGE_URL}")
     print(f"   Config: config.yaml")
     print(f"   Mode: Mock LLM")
+    print(f"   Auth: MockAuthenticator + MockAuthorizer")
 
     return client
 
@@ -422,8 +436,9 @@ def is_integration_infra_available() -> bool:
     """
     Check if HAPI integration infrastructure is available.
 
-    Note: HAPI integration tests use direct business logic calls (no HTTP),
-    so we only check Data Storage availability.
+    Some tests call business logic directly while session tests
+    (BR-AA-HAPI-064) use the in-process FastAPI TestClient.
+    Both patterns require Data Storage availability.
 
     Returns:
         bool: True if all required services are available
@@ -471,46 +486,18 @@ def pytest_collection_modifyitems(config, items):
     This is a safety mechanism. In practice, tests should fail (not skip)
     if infrastructure is missing, per TESTING_GUIDELINES.md.
 
-    Note: HAPI runs in-process with tests (FastAPI TestClient), so we only
-    check DataStorage availability for @pytest.mark.requires_data_storage tests.
+    Note: Some tests call business logic directly while session tests
+    (BR-AA-HAPI-064) use the in-process FastAPI TestClient. Both patterns
+    require DataStorage availability.
     """
     if config.getoption("--collect-only"):
         return
 
     # Check infrastructure availability based on test requirements
     ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
-    # NOTE: HAPI tests use direct business logic calls (no HTTP service), so no availability check needed
 
     for item in items:
         # Skip tests that require DataStorage if it's not available
         if "requires_data_storage" in item.keywords and not ds_available:
             skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
             item.add_marker(skip_ds)
-
-        # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)
-
-
-def pytest_collection_modifyitems(config, items):
-    """
-    Auto-skip tests if required infrastructure is not available.
-
-    This is a safety mechanism. In practice, tests should fail (not skip)
-    if infrastructure is missing, per TESTING_GUIDELINES.md.
-
-    Note: HAPI runs in-process with tests (FastAPI TestClient), so we only
-    check DataStorage availability for @pytest.mark.requires_data_storage tests.
-    """
-    if config.getoption("--collect-only"):
-        return
-
-    # Check infrastructure availability based on test requirements
-    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
-    # NOTE: HAPI tests use direct business logic calls (no HTTP service), so no availability check needed
-
-    for item in items:
-        # Skip tests that require DataStorage if it's not available
-        if "requires_data_storage" in item.keywords and not ds_available:
-            skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
-            item.add_marker(skip_ds)
-
-        # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)

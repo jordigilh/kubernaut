@@ -38,11 +38,24 @@ import (
 // Uses generated OpenAPI types for type-safe HAPI contract compliance.
 //
 // Methods:
-// - Investigate: Analyzes incidents via /incident/analyze endpoint
-// - InvestigateRecovery: Analyzes recovery scenarios via /recovery/analyze endpoint
+// - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint
+// - InvestigateRecovery: (Legacy sync) Analyzes recovery scenarios via /recovery/analyze endpoint
+// - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-HAPI-064.1)
+// - SubmitRecoveryInvestigation: (Async) Submits recovery investigation, returns session ID (BR-AA-HAPI-064.9)
+// - PollSession: (Async) Polls session status (BR-AA-HAPI-064.2)
+// - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-HAPI-064.3)
+// - GetRecoverySessionResult: (Async) Retrieves recovery investigation result (BR-AA-HAPI-064.9)
 type HolmesGPTClientInterface interface {
+	// Legacy synchronous methods (will be deprecated)
 	Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
 	InvestigateRecovery(ctx context.Context, req *client.RecoveryRequest) (*client.RecoveryResponse, error)
+
+	// Async session methods (BR-AA-HAPI-064)
+	SubmitInvestigation(ctx context.Context, req *client.IncidentRequest) (string, error)
+	SubmitRecoveryInvestigation(ctx context.Context, req *client.RecoveryRequest) (string, error)
+	PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error)
+	GetSessionResult(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
+	GetRecoverySessionResult(ctx context.Context, sessionID string) (*client.RecoveryResponse, error)
 }
 
 // ========================================
@@ -56,6 +69,9 @@ type HolmesGPTClientInterface interface {
 // Methods:
 // - RecordHolmesGPTCall: Records HAPI API calls with status and duration
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
+// - RecordHolmesGPTSubmit: Records async HAPI submit event (BR-AA-HAPI-064)
+// - RecordHolmesGPTResult: Records async HAPI result retrieval event (BR-AA-HAPI-064)
+// - RecordHolmesGPTSessionLost: Records session lost event (BR-AA-HAPI-064)
 type AuditClientInterface interface {
 	RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
@@ -63,6 +79,17 @@ type AuditClientInterface interface {
 	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
 	// BR-HAPI-200: Record analysis completion (for problem_resolved path)
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
+
+	// ========================================
+	// Session audit methods (BR-AA-HAPI-064)
+	// ========================================
+
+	// RecordHolmesGPTSubmit records an async HAPI submit event with session ID
+	RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string)
+	// RecordHolmesGPTResult records an async HAPI result retrieval with investigation time
+	RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64)
+	// RecordHolmesGPTSessionLost records a session lost event with generation count
+	RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32)
 }
 
 // AnalyzingAuditClientInterface defines audit methods for the Analyzing phase.
