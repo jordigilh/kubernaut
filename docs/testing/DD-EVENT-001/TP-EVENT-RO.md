@@ -40,7 +40,7 @@
 | `ApprovalRejected` | Warning | P2 | handleAwaitingApprovalPhase: RAR rejected | Planned |
 | `ApprovalExpired` | Warning | P2 | handleAwaitingApprovalPhase: RAR expired | Planned |
 | `EscalatedToManualReview` | Warning | P2 | Unrecoverable failure triggers escalation | Planned |
-| `RecoveryInitiated` | Normal | P2 | Recovery attempt started | Planned |
+| ~~`RecoveryInitiated`~~ | ~~Normal~~ | ~~P2~~ | ~~Recovery attempt started~~ | **Deferred to DD-RECOVERY-002** |
 | `NotificationCreated` | Normal | P2 | NotificationRequest CRD created | Planned |
 | `CooldownActive` | Normal | P2 | Remediation skipped due to cooldown | Planned |
 | `ConsecutiveFailureBlocked` | Warning | P2 | Target blocked due to consecutive failures | Planned |
@@ -65,7 +65,7 @@
 | BR-ORCH-095 | ApprovalRejected event on RAR rejection | Unit | UT-RO-095-07 | ⏸️ Pending |
 | BR-ORCH-095 | ApprovalExpired event on RAR deadline passed | Unit | UT-RO-095-08 | ⏸️ Pending |
 | BR-ORCH-095 | EscalatedToManualReview event on unrecoverable failure | Unit | UT-RO-095-09 | ⏸️ Pending |
-| BR-ORCH-095 | RecoveryInitiated event on recovery attempt | Unit | UT-RO-095-10 | ⏸️ Pending |
+| ~~BR-ORCH-095~~ | ~~RecoveryInitiated event on recovery attempt~~ | ~~Unit~~ | ~~UT-RO-095-10~~ | **Deferred to DD-RECOVERY-002** |
 | BR-ORCH-095 | NotificationCreated event on NT CRD creation | Unit | UT-RO-095-11 | ⏸️ Pending |
 | BR-ORCH-095 | CooldownActive event on cooldown blocking | Unit | UT-RO-095-12 | ⏸️ Pending |
 | BR-ORCH-095 | ConsecutiveFailureBlocked event on threshold exceeded | Unit | UT-RO-095-13 | ⏸️ Pending |
@@ -225,18 +225,11 @@
 3. Read from recorder.Events channel
 **Expected Result**: Event string contains "Warning" + "EscalatedToManualReview"
 
-#### UT-RO-095-10: RecoveryInitiated on recovery attempt
+#### ~~UT-RO-095-10: RecoveryInitiated on recovery attempt~~ — DEFERRED to DD-RECOVERY-002
 
-**BR**: BR-ORCH-095
-**Type**: Unit
-**Category**: Happy Path / Recovery
-**Description**: Verify that recovery attempt start emits RecoveryInitiated event
-**Preconditions**: RemediationRequest in state where recovery is triggered
-**Steps**:
-1. Create RR with recoverable failure condition
-2. Call Reconcile (recovery initiated)
-3. Read from recorder.Events channel
-**Expected Result**: Event string contains "Normal" + "RecoveryInitiated"
+> **Rationale**: The underlying recovery flow (DD-RECOVERY-002) is not implemented in the RO controller.
+> No code path exists to emit this event. The constant has been removed from `pkg/shared/events/reasons.go`.
+> This test will be implemented when DD-RECOVERY-002 is delivered.
 
 #### UT-RO-095-11: NotificationCreated on NT CRD creation
 
