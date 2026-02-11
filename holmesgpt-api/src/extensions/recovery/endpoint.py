@@ -18,41 +18,72 @@ limitations under the License.
 Recovery Analysis FastAPI Endpoint
 
 Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
+Business Requirement: BR-AA-HAPI-064.9 (Recovery Session-Based Async Pattern)
 Design Decision: DD-RECOVERY-003 (Recovery API Endpoint)
 
-This module contains the FastAPI router and endpoint for recovery analysis.
+This module contains the FastAPI router and endpoints for recovery analysis.
+All analysis is performed asynchronously via the session-based submit/poll/result pattern.
 """
 
 import logging
-from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse
 from .llm_integration import analyze_recovery
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 from src.metrics import get_global_metrics  # BR-HAPI-011, BR-HAPI-301
 from src.errors import PROBLEM_JSON_ERROR_RESPONSES  # BR-HAPI-200: Shared RFC 7807 error responses
+from src.session import SessionManager, session_status_response, session_result_response
+from src.session.session_manager import get_session_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+async def _run_recovery_investigation(session_manager: SessionManager, session_id: str, request_data: dict) -> None:
+    """
+    Background task that runs the recovery investigation and updates the session.
+
+    BR-AA-HAPI-064.9: Executes recovery analysis asynchronously.
+    """
+    async def _investigate(data: dict) -> dict:
+        from src.main import config as app_config
+        metrics = get_global_metrics()
+        result_dict = await analyze_recovery(data, app_config, metrics=metrics)
+
+        # Convert dict to Pydantic model for validation, then back to dict for storage
+        if isinstance(result_dict, dict):
+            result = RecoveryResponse(**result_dict)
+            return result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+        elif hasattr(result_dict, 'model_dump'):
+            return result_dict.model_dump()
+        else:
+            return result_dict.dict() if hasattr(result_dict, 'dict') else result_dict
+
+    await session_manager.run_investigation(session_id, _investigate, request_data)
+
+
 @router.post(
     "/recovery/analyze",
-    status_code=status.HTTP_200_OK,
-    response_model=RecoveryResponse,
-    response_model_exclude_none=True,  # E2E-HAPI-023/024: Exclude None values (selected_workflow). Note: alternative_workflows always included per BR-AUDIT-005
+    status_code=status.HTTP_202_ACCEPTED,
     responses=PROBLEM_JSON_ERROR_RESPONSES
 )
-async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Request) -> RecoveryResponse:
+async def recovery_analyze_endpoint(
+    recovery_req: RecoveryRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+):
     """
-    Analyze failed action and provide recovery strategies
+    Submit recovery analysis request (async session-based pattern).
 
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-    Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+    Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
     Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 
-    Called by: AIAnalysis Controller (for recovery attempts after workflow failure)
+    Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
+
+    Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+    The investigation runs as a background task. Poll via GET /recovery/session/{id}.
     """
     # DD-AUTH-006: Extract authenticated user for logging/audit
     user = get_authenticated_user(request)
@@ -64,7 +95,6 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
     })
 
     # BR-AI-080: Input validation (E2E-HAPI-018)
-    # Validate recovery_attempt_number >= 1 when is_recovery_attempt=true
     if recovery_req.is_recovery_attempt and recovery_req.recovery_attempt_number is not None:
         if recovery_req.recovery_attempt_number < 1:
             raise HTTPException(
@@ -72,37 +102,33 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
                 detail=f"recovery_attempt_number must be >= 1, got {recovery_req.recovery_attempt_number}"
             )
 
-    # DEBUG: Log what we receive (BR-HAPI-197 investigation)
-    logger.info(f"🔍 DEBUG: Recovery request received - signal_type={recovery_req.signal_type!r}")
-
     request_data = recovery_req.model_dump() if hasattr(recovery_req, 'model_dump') else recovery_req.dict()
 
-    # DEBUG: Log request_data dict
-    logger.info(f"🔍 DEBUG: Request dict - signal_type={request_data.get('signal_type')!r}, "
-                f"is_recovery_attempt={request_data.get('is_recovery_attempt')}, "
-                f"recovery_attempt_number={request_data.get('recovery_attempt_number')}")
+    # BR-AA-HAPI-064.9: Create recovery session and return immediately
+    sm = get_session_manager()
+    session_id = sm.create_session("recovery", request_data)
 
-    # Get result from analyze_recovery (returns dict)
-    # Pass app config for LLM configuration
-    from src.main import config as app_config
-    
-    # Inject global metrics (BR-HAPI-011, BR-HAPI-301)
-    metrics = get_global_metrics()
-    result_dict = await analyze_recovery(request_data, app_config, metrics=metrics)
+    # Schedule recovery investigation as background task
+    background_tasks.add_task(_run_recovery_investigation, sm, session_id, request_data)
 
-    # Convert dict to Pydantic model for type safety and validation
-    # This ensures all fields are validated per BR-HAPI-002 schema
-    if isinstance(result_dict, dict):
-        result = RecoveryResponse(**result_dict)
-    else:
-        result = result_dict  # Already a model (defensive programming)
-
-    # DEBUG: Log response (now can use attribute access)
-    logger.info(f"🔍 DEBUG: Response - needs_human_review={result.needs_human_review}, "
-                f"human_review_reason={result.human_review_reason!r}, "
-                f"can_recover={result.can_recover}, "
-                f"has_selected_workflow={result.selected_workflow is not None}")
-
-    return result
+    return {"session_id": session_id}
 
 
+@router.get(
+    "/recovery/session/{session_id}",
+    status_code=status.HTTP_200_OK,
+    responses={404: {"description": "Session not found (HAPI may have restarted)"}},
+)
+async def recovery_session_status_endpoint(session_id: str):
+    """Poll recovery session status. BR-AA-HAPI-064.9."""
+    return session_status_response(session_id)
+
+
+@router.get(
+    "/recovery/session/{session_id}/result",
+    status_code=status.HTTP_200_OK,
+    responses={404: {"description": "Session not found"}, 409: {"description": "Session not yet completed"}},
+)
+async def recovery_session_result_endpoint(session_id: str):
+    """Retrieve completed recovery result. BR-AA-HAPI-064.9."""
+    return session_result_response(session_id)

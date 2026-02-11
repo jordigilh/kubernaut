@@ -186,7 +186,9 @@ func main() {
 	// DD-AUDIT-003: Pass audit client to handlers
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
-	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient)
+	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
+	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient,
+		handlers.WithRecorder(eventRecorder)) // DD-EVENT-001: Session lifecycle events
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient)
 
 	// ========================================
@@ -201,7 +203,7 @@ func main() {
 	if err = (&aianalysis.AIAnalysisReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
-		Recorder:             mgr.GetEventRecorderFor("aianalysis-controller"),
+		Recorder:             eventRecorder,
 		Log:                  controllerLog,
 		Metrics:              aianalysisMetrics,    // DD-METRICS-001: Injected metrics (P0)
 		StatusManager:        statusManager,        // DD-PERF-001: Atomic status updates

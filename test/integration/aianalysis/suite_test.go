@@ -241,7 +241,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 				APIGroups:     []string{""},
 				Resources:     []string{"services"},
 				ResourceNames: []string{"holmesgpt-api"}, // Must match HAPI middleware config (main.py)
-				Verbs:         []string{"create"},        // HAPI checks "create" verb (default in main.py)
+				Verbs:         []string{"create", "get"},  // BR-AA-HAPI-064: "create" for POST, "get" for session poll/result
 			},
 		},
 	}
@@ -666,7 +666,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
 	// Create handlers with REAL HAPI client, metrics, and REAL audit client
-	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
+	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
+	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
+		handlers.WithRecorder(eventRecorder),  // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode())            // BR-AA-HAPI-064: Async submit/poll/result flow
 	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
@@ -675,7 +678,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Metrics:              testMetrics, // DD-METRICS-001: Per-process metrics
 		Client:               k8sManager.GetClient(),
 		Scheme:               k8sManager.GetScheme(),
-		Recorder:             k8sManager.GetEventRecorderFor("aianalysis-controller"),
+		Recorder:             eventRecorder,
 		Log:                  ctrl.Log.WithName("aianalysis-controller"),
 		StatusManager:        status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
 		InvestigatingHandler: investigatingHandler,

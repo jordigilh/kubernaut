@@ -11,6 +11,9 @@ import time
 import tempfile
 from unittest.mock import patch
 
+# BR-AA-HAPI-064: Session manager reset between tests
+from src.session.session_manager import reset_session_manager
+
 
 def pytest_configure(config):
     """
@@ -110,6 +113,17 @@ def wait_for_condition(check_fn, timeout=1.0, interval=0.01, error_msg="Conditio
 def wait_for():
     """Fixture to provide wait_for_condition helper to tests."""
     return wait_for_condition
+
+
+@pytest.fixture(autouse=True)
+def _reset_session_manager():
+    """
+    Reset the global SessionManager singleton between tests.
+    BR-AA-HAPI-064: Prevents session leakage between test cases.
+    """
+    reset_session_manager()
+    yield
+    reset_session_manager()
 
 
 @pytest.fixture

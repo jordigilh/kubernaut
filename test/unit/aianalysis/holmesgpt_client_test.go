@@ -47,27 +47,43 @@ var _ = Describe("HolmesGPTClient", func() {
 	})
 
 	Describe("Investigate", func() {
-		// BR-AI-006: Successful API call
+		// BR-AI-006: Successful API call (via session flow)
+		// BR-AA-HAPI-064: Investigate() wraps submit -> poll -> result internally
 		Context("with successful response", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					Expect(r.URL.Path).To(Equal("/api/v1/incident/analyze"))
-					Expect(r.Method).To(Equal(http.MethodPost))
-
 					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{
-						"incident_id": "test-incident-001",
-						"analysis": "Root cause: OOM",
-						"root_cause_analysis": {
-							"root_cause": "OOM detected",
-							"recommendations": ["Increase memory limits"]
-						},
-						"target_in_owner_chain": true,
-						"confidence": 0.85,
-						"timestamp": "2025-12-24T15:00:00Z",
-						"warnings": []
-					}`))
+
+					switch {
+					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+						// Step 1: Submit -> 202 Accepted with session_id
+						w.WriteHeader(http.StatusAccepted)
+						_, _ = w.Write([]byte(`{"session_id": "test-session-001"}`))
+
+					case r.URL.Path == "/api/v1/incident/session/test-session-001" && r.Method == http.MethodGet:
+						// Step 2: Poll -> completed
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"status": "completed"}`))
+
+					case r.URL.Path == "/api/v1/incident/session/test-session-001/result" && r.Method == http.MethodGet:
+						// Step 3: Get result
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{
+							"incident_id": "test-incident-001",
+							"analysis": "Root cause: OOM",
+							"root_cause_analysis": {
+								"root_cause": "OOM detected",
+								"recommendations": ["Increase memory limits"]
+							},
+							"target_in_owner_chain": true,
+							"confidence": 0.85,
+							"timestamp": "2025-12-24T15:00:00Z",
+							"warnings": []
+						}`))
+
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
 				}))
 
 				var err error

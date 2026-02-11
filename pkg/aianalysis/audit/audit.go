@@ -41,6 +41,11 @@ const (
 	EventTypeApprovalDecision  = "aianalysis.approval.decision"
 	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
 	EventTypeError             = "aianalysis.error.occurred"
+
+	// Session audit event types (BR-AA-HAPI-064)
+	EventTypeHolmesGPTSubmit      = "aianalysis.holmesgpt.submit"
+	EventTypeHolmesGPTResult      = "aianalysis.holmesgpt.result"
+	EventTypeHolmesGPTSessionLost = "aianalysis.holmesgpt.session_lost"
 )
 
 // Event category constant (per DD-AUDIT-003)
@@ -433,6 +438,32 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 	}
 
 	return false
+}
+
+// ========================================
+// SESSION AUDIT METHODS (BR-AA-HAPI-064)
+// Stubs for async submit/poll audit events - implementation in GREEN phase
+// ========================================
+
+// RecordHolmesGPTSubmit records an async HAPI submit event with session ID.
+// BR-AA-HAPI-064: Audit trail for session creation
+func (c *AuditClient) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+	c.log.V(1).Info("RecordHolmesGPTSubmit stub called", "sessionID", sessionID, "name", analysis.Name)
+	// TODO: Implement in GREEN phase - emit EventTypeHolmesGPTSubmit audit event
+}
+
+// RecordHolmesGPTResult records an async HAPI result retrieval with investigation time.
+// BR-AA-HAPI-064: Audit trail for result retrieval
+func (c *AuditClient) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+	c.log.V(1).Info("RecordHolmesGPTResult stub called", "investigationTimeMs", investigationTimeMs, "name", analysis.Name)
+	// TODO: Implement in GREEN phase - emit EventTypeHolmesGPTResult audit event
+}
+
+// RecordHolmesGPTSessionLost records a session lost event with generation count.
+// BR-AA-HAPI-064: Audit trail for session regeneration
+func (c *AuditClient) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+	c.log.V(1).Info("RecordHolmesGPTSessionLost stub called", "generation", generation, "name", analysis.Name)
+	// TODO: Implement in GREEN phase - emit EventTypeHolmesGPTSessionLost audit event
 }
 
 // RecordAnalysisFailed records an audit event for analysis failure.

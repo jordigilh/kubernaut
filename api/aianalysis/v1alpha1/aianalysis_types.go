@@ -398,7 +398,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded;SessionRegenerationExceeded
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -507,8 +507,38 @@ type AIAnalysisStatus struct {
 	// Recovery-specific status fields (only populated for recovery attempts)
 	RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
 
+	// ========================================
+	// INVESTIGATION SESSION (BR-AA-HAPI-064)
+	// Tracks the async submit/poll session with HAPI
+	// ========================================
+	// InvestigationSession tracks the async HAPI session for submit/poll pattern
+	// +optional
+	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
+
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// InvestigationSession tracks the async HAPI session lifecycle.
+// BR-AA-HAPI-064.4: AA controller session tracking
+// BR-AA-HAPI-064.5: Session regeneration on 404 (HAPI restart)
+type InvestigationSession struct {
+	// Session ID returned by HAPI on submit (cleared on session loss)
+	ID string `json:"id,omitempty"`
+	// Generation counter tracking session regenerations (0 = first session, incremented on 404)
+	// +kubebuilder:validation:Minimum=0
+	Generation int32 `json:"generation"`
+	// LastPolled timestamp of the last poll attempt
+	// +optional
+	LastPolled *metav1.Time `json:"lastPolled,omitempty"`
+	// CreatedAt timestamp when the current session was created
+	// +optional
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+	// PollCount tracks the number of poll attempts for backoff calculation
+	// BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PollCount int32 `json:"pollCount,omitempty"`
 }
 
 // RootCauseAnalysis contains detailed RCA results
