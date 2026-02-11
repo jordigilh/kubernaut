@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -893,8 +894,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			_, err := reconciler.MarkCompleted(ctx, wfe, pr)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Check event was recorded (fake recorder captures events)
-			Expect(recorder.Events).To(HaveLen(1))
+			// Check event was recorded (drain channel and match by content)
+			evts := drainFakeRecorderEvents(recorder)
+			Expect(evts).ToNot(BeEmpty(), "Expected at least one event")
+			Expect(hasEventMatch(evts, "Normal", events.EventReasonWorkflowCompleted)).
+				To(BeTrue(), "Expected WorkflowCompleted event, got: %v", evts)
 		})
 	})
 
@@ -1021,7 +1025,11 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			_, err := reconciler.MarkFailed(ctx, wfe, pr)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(recorder.Events).To(HaveLen(1))
+			// Check event was recorded (drain channel and match by content)
+			evts := drainFakeRecorderEvents(recorder)
+			Expect(evts).ToNot(BeEmpty(), "Expected at least one event")
+			Expect(hasEventMatch(evts, "Warning", events.EventReasonWorkflowFailed)).
+				To(BeTrue(), "Expected WorkflowFailed event, got: %v", evts)
 		})
 
 		// BR-AUDIT-005 Gap #7: Validate ErrorDetails in audit event
