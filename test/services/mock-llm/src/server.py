@@ -627,6 +627,25 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             request_data = {}
 
         # Route based on endpoint
+        # IT-AA-095-02: Detect mock_rca_permanent_error scenario and return HTTP 500
+        # This causes HAPI session to fail, triggering AA controller to move to Failed phase
+        messages = request_data.get("messages", [])
+        all_content = " ".join(str(m.get("content", "")) for m in messages if m.get("content")).lower()
+        if "mock_rca_permanent_error" in all_content or "mock rca permanent error" in all_content:
+            logger.info("🚨 MOCK_RCA_PERMANENT_ERROR detected - returning HTTP 500")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            error_response = json.dumps({
+                "error": {
+                    "message": "Mock permanent LLM error for testing",
+                    "type": "server_error",
+                    "code": "internal_error"
+                }
+            })
+            self.wfile.write(error_response.encode("utf-8"))
+            return
+
         if self.path in ["/v1/chat/completions", "/chat/completions"]:
             logger.info(f"  → Handling OpenAI chat completion request")
             response = self._handle_openai_request(request_data)
