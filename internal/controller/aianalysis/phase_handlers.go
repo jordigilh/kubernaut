@@ -20,10 +20,12 @@ import (
 	"context"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
 // ========================================
@@ -75,7 +77,7 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhaseInvestigating)
 	}
 
-	r.Recorder.Event(analysis, "Normal", "AIAnalysisCreated", "AIAnalysis processing started")
+	r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonAIAnalysisCreated, "AIAnalysis processing started")
 
 	// Requeue after short delay to process Investigating phase
 	// Using RequeueAfter instead of deprecated Requeue field

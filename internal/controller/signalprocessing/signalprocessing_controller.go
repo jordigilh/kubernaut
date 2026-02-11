@@ -51,6 +51,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -575,7 +576,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 
 		// Emit Kubernetes Event for operator visibility
 		// Include external severity value for debugging policy configuration issues
-		r.Recorder.Event(sp, corev1.EventTypeWarning, "PolicyEvaluationFailed",
+		r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
 			fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
 
 			// Do not requeue - requires manual policy fix by operator
