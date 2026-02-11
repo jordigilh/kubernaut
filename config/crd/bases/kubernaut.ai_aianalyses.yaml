@@ -967,6 +967,43 @@ spec:
                   HolmesGPT investigation ID for correlation
                 maxLength: 253
                 type: string
+              investigationSession:
+                description: |-
+                  ========================================
+                  INVESTIGATION SESSION (BR-AA-HAPI-064)
+                  Tracks the async submit/poll session with HAPI
+                  ========================================
+                  InvestigationSession tracks the async HAPI session for submit/poll pattern
+                properties:
+                  createdAt:
+                    description: CreatedAt timestamp when the current session was
+                      created
+                    format: date-time
+                    type: string
+                  generation:
+                    description: Generation counter tracking session regenerations
+                      (0 = first session, incremented on 404)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  id:
+                    description: Session ID returned by HAPI on submit (cleared on
+                      session loss)
+                    type: string
+                  lastPolled:
+                    description: LastPolled timestamp of the last poll attempt
+                    format: date-time
+                    type: string
+                  pollCount:
+                    description: |-
+                      PollCount tracks the number of poll attempts for backoff calculation
+                      BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                required:
+                - generation
+                type: object
               investigationTime:
                 description: |-
                   NOTE: TokensUsed REMOVED (Dec 2025)
@@ -1173,6 +1210,7 @@ spec:
                 - InvestigationInconclusive
                 - ProblemResolved
                 - MaxRetriesExceeded
+                - SessionRegenerationExceeded
                 type: string
               targetInOwnerChain:
                 description: |-
