@@ -18,6 +18,7 @@ package aianalysis
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -78,6 +79,10 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	}
 
 	r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonAIAnalysisCreated, "AIAnalysis processing started")
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for intermediate transitions
+	r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+		fmt.Sprintf("Phase transition: %s → %s", phaseBefore, PhaseInvestigating))
 
 	// Requeue after short delay to process Investigating phase
 	// Using RequeueAfter instead of deprecated Requeue field
@@ -155,6 +160,9 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
 			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
 
+			// DD-EVENT-001 v1.1: Emit K8s events based on the new phase
+			r.emitInvestigatingPhaseEvents(analysis, phaseBefore)
+
 			// Requeue quickly after phase transition
 			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 		}
@@ -230,6 +238,9 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
 			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
 
+			// DD-EVENT-001 v1.1: Emit K8s events based on the new phase
+			r.emitAnalyzingPhaseEvents(analysis, phaseBefore)
+
 			// Requeue quickly after phase transition
 			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 		}
@@ -239,4 +250,73 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 	// Stub fallback (for tests without handler wiring)
 	log.Info("No AnalyzingHandler configured - using stub")
 	return ctrl.Result{}, nil
+}
+
+// ========================================
+// DD-EVENT-001 v1.1: K8s Event Emission Helpers
+// BR-AA-095: K8s Event Observability for AIAnalysis Controller
+// ========================================
+
+// emitInvestigatingPhaseEvents emits K8s events after the Investigating handler runs.
+// Called only when the phase has actually changed (handlerExecuted && phase != phaseBefore).
+func (r *AIAnalysisReconciler) emitInvestigatingPhaseEvents(analysis *aianalysisv1.AIAnalysis, phaseBefore string) {
+	newPhase := analysis.Status.Phase
+
+	// P1: Terminal state events
+	switch newPhase {
+	case PhaseAnalyzing:
+		// Successful investigation → transitioning to Analyzing
+		r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonInvestigationComplete,
+			"Investigation completed successfully, transitioning to Analyzing")
+	case PhaseFailed:
+		// Investigation failure → terminal state
+		r.Recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonAnalysisFailed,
+			fmt.Sprintf("Analysis failed during investigation: %s", analysis.Status.Message))
+	}
+
+	// P2: Decision point events
+	if analysis.Status.NeedsHumanReview {
+		reason := analysis.Status.HumanReviewReason
+		if reason == "" {
+			reason = "unspecified"
+		}
+		r.Recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonHumanReviewRequired,
+			fmt.Sprintf("Human review required: %s", reason))
+	}
+
+	// P3: PhaseTransition breadcrumb for all transitions
+	r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+		fmt.Sprintf("Phase transition: %s → %s", phaseBefore, newPhase))
+}
+
+// emitAnalyzingPhaseEvents emits K8s events after the Analyzing handler runs.
+// Called only when the phase has actually changed (handlerExecuted && phase != phaseBefore).
+func (r *AIAnalysisReconciler) emitAnalyzingPhaseEvents(analysis *aianalysisv1.AIAnalysis, phaseBefore string) {
+	newPhase := analysis.Status.Phase
+
+	// P1: Terminal state events
+	switch newPhase {
+	case PhaseCompleted:
+		// Successful analysis → terminal state
+		r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonAnalysisCompleted,
+			"Analysis completed successfully")
+	case PhaseFailed:
+		// Analysis failure → terminal state
+		r.Recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonAnalysisFailed,
+			fmt.Sprintf("Analysis failed: %s", analysis.Status.Message))
+	}
+
+	// P2: Decision point events
+	if analysis.Status.ApprovalRequired {
+		reason := analysis.Status.ApprovalReason
+		if reason == "" {
+			reason = "policy evaluation"
+		}
+		r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonApprovalRequired,
+			fmt.Sprintf("Human approval required: %s", reason))
+	}
+
+	// P3: PhaseTransition breadcrumb for all transitions
+	r.Recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+		fmt.Sprintf("Phase transition: %s → %s", phaseBefore, newPhase))
 }
