@@ -112,6 +112,12 @@ const (
 	// fails pre-execution validation.
 	// Type: Warning
 	EventReasonWorkflowValidationFailed = "WorkflowValidationFailed"
+
+	// EventReasonCleanupFailed is emitted when execution resource cleanup
+	// fails during terminal reconciliation or finalizer processing.
+	// Type: Warning
+	// Priority: P4
+	EventReasonCleanupFailed = "CleanupFailed"
 )
 
 // ============================================================
@@ -152,6 +158,29 @@ const (
 	// EventReasonCooldownActive is emitted when a remediation is skipped because
 	// the target resource is under active cooldown.
 	EventReasonCooldownActive = "CooldownActive"
+
+	// EventReasonApprovalGranted is emitted when a RemediationApprovalRequest
+	// is approved and the remediation transitions to Executing.
+	// Priority: P2
+	EventReasonApprovalGranted = "ApprovalGranted"
+
+	// EventReasonApprovalRejected is emitted when a RemediationApprovalRequest
+	// is rejected and the remediation transitions to Failed.
+	// Type: Warning
+	// Priority: P2
+	EventReasonApprovalRejected = "ApprovalRejected"
+
+	// EventReasonApprovalExpired is emitted when a RemediationApprovalRequest
+	// exceeds its deadline without a decision.
+	// Type: Warning
+	// Priority: P2
+	EventReasonApprovalExpired = "ApprovalExpired"
+
+	// EventReasonConsecutiveFailureBlocked is emitted when a target resource
+	// is blocked due to consecutive remediation failures exceeding the threshold.
+	// Type: Warning
+	// Priority: P2
+	EventReasonConsecutiveFailureBlocked = "ConsecutiveFailureBlocked"
 )
 
 // ============================================================
@@ -171,6 +200,12 @@ const (
 	// EventReasonSignalEnriched is emitted when K8s context enrichment
 	// completes for a signal.
 	EventReasonSignalEnriched = "SignalEnriched"
+
+	// EventReasonEnrichmentDegraded is emitted when K8s context enrichment
+	// returns partial or degraded results (e.g., API timeout, missing resources).
+	// Type: Warning
+	// Priority: P4
+	EventReasonEnrichmentDegraded = "EnrichmentDegraded"
 )
 
 // ============================================================
@@ -188,6 +223,22 @@ const (
 	// EventReasonNotificationFailed is emitted when notification delivery fails.
 	// Type: Warning
 	EventReasonNotificationFailed = "NotificationFailed"
+
+	// EventReasonNotificationPartiallySent is emitted when some notification channels
+	// succeeded but others failed terminally.
+	// Priority: P1
+	EventReasonNotificationPartiallySent = "NotificationPartiallySent"
+
+	// EventReasonNotificationRetrying is emitted when notification delivery is
+	// retrying after a transient failure.
+	// Priority: P3
+	EventReasonNotificationRetrying = "NotificationRetrying"
+
+	// EventReasonCircuitBreakerOpen is emitted when a delivery channel's circuit
+	// breaker is tripped, temporarily disabling the channel.
+	// Type: Warning
+	// Priority: P2
+	EventReasonCircuitBreakerOpen = "CircuitBreakerOpen"
 )
 
 // ============================================================
