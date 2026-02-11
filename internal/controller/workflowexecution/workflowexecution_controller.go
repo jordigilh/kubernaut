@@ -363,6 +363,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// ========================================
 	if err := r.ValidateSpec(wfe); err != nil {
 		logger.Error(err, "Spec validation failed")
+		// DD-EVENT-001 v1.1: Emit WorkflowValidationFailed event (P2: Decision Point)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Spec validation failed: %v", err))
 		// Mark as Failed with ConfigurationError reason
 		// This is a pre-execution failure (wasExecutionFailure: false)
 		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
@@ -370,6 +373,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 		return ctrl.Result{}, nil
 	}
+
+	// DD-EVENT-001 v1.1: Emit WorkflowValidated event (P2: Decision Point)
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowValidated,
+		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
@@ -390,6 +397,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				return ctrl.Result{}, fmt.Errorf("failed to update phase to Pending during cooldown: %w", err)
 			}
 		}
+		// DD-EVENT-001 v1.1: Emit CooldownActive event (P2: Decision Point)
+		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonCooldownActive,
+			fmt.Sprintf("Execution deferred: cooldown active for %s (remaining: %s)", wfe.Spec.TargetResource, remaining.Round(time.Second)))
+
 		// Stay in Pending, requeue after cooldown expires
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
@@ -512,6 +523,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonExecutionCreated,
 		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.ExecutionEngine, r.ExecutionNamespace, createdName))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Running
+	r.emitPhaseTransition(wfe, "Pending", "Running")
 
 	// Requeue to check execution status
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
@@ -647,6 +661,9 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
 				logger.Error(err, "Failed to cleanup execution resource after cooldown",
 					"engine", exec.Engine())
+				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+					fmt.Sprintf("Cleanup failed after cooldown: %v", err))
 				return ctrl.Result{}, err
 			}
 			logger.Info("Lock released after cooldown",
@@ -780,6 +797,9 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
 				logger.Error(err, "Failed to cleanup execution resource during finalization",
 					"engine", exec.Engine())
+				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+					fmt.Sprintf("Cleanup failed during finalization: %v", err))
 				return ctrl.Result{}, err
 			}
 			logger.Info("Finalizer: cleaned up execution resource", "engine", exec.Engine())
@@ -1224,6 +1244,9 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowCompleted,
 		fmt.Sprintf("Workflow %s completed successfully in %s", wfe.Spec.WorkflowRef.WorkflowID, wfe.Status.Duration))
 
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Completed
+	r.emitPhaseTransition(wfe, "Running", "Completed")
+
 	logger.Info("WorkflowExecution completed (atomic status update)")
 
 	return ctrl.Result{}, nil
@@ -1343,6 +1366,9 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
 
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
+	r.emitPhaseTransition(wfe, "Running", "Failed")
+
 	return ctrl.Result{}, nil
 }
 
@@ -1457,6 +1483,9 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
 
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Failed
+	r.emitPhaseTransition(wfe, "Pending", "Failed")
+
 	logger.Info("WorkflowExecution failed with reason (atomic status update)", "reason", reason)
 
 	return nil
@@ -1519,4 +1548,15 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	}
 
 	return nil
+}
+
+// ========================================
+// DD-EVENT-001 v1.1: K8s Event Emission Helpers
+// BR-WE-095: K8s Event Observability for WorkflowExecution Controller
+// ========================================
+
+// emitPhaseTransition emits a PhaseTransition breadcrumb event for WFE phase changes.
+func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, from, to string) {
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+		fmt.Sprintf("Phase transition: %s → %s", from, to))
 }

@@ -508,6 +508,12 @@ func (r *NotificationRequestReconciler) auditMessageSent(ctx context.Context, no
 		r.markAuditEventEmitted(notificationKey, eventKey)
 	}
 
+	// DD-EVENT-001 v1.1: Emit NotificationSent when delivery succeeds (K8s Event Observability)
+	if r.Recorder != nil {
+		r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonNotificationSent,
+			fmt.Sprintf("Successfully delivered to channel %s", channel))
+	}
+
 	return nil
 }
 
@@ -1010,6 +1016,7 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 		r.getChannelAttemptCount,
 		r.auditMessageSent,
 		r.auditMessageFailed,
+		r.checkBeforeDelivery, // DD-EVENT-001 v1.1: Circuit breaker check + CircuitBreakerOpen event
 	)
 	if err != nil {
 		return nil, err
@@ -1276,6 +1283,10 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseRetrying), 1)
 
+	// DD-EVENT-001 v1.1: Emit NotificationRetrying when retrying after transient failure
+	r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonNotificationRetrying,
+		fmt.Sprintf("Retrying failed channels with backoff %v", backoff))
+
 	log.Info("NotificationRequest entering retry phase (atomic update)",
 		"name", notification.Name,
 		"successfulDeliveries", notification.Status.SuccessfulDeliveries,
@@ -1330,6 +1341,10 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhasePartiallySent), 1)
 
+	// DD-EVENT-001 v1.1: Emit NotificationPartiallySent when some channels succeed but others fail
+	r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonNotificationPartiallySent,
+		fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, len(notification.Spec.Channels)))
+
 	log.Info("NotificationRequest partially completed (atomic update)",
 		"name", notification.Name,
 		"successfulDeliveries", notification.Status.SuccessfulDeliveries,
@@ -1370,6 +1385,10 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 		// Record metric
 		// DD-METRICS-001: Use injected metrics recorder
 		r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseFailed), 1)
+
+		// DD-EVENT-001 v1.1: Emit NotificationFailed Warning when delivery fails terminally
+		r.Recorder.Event(notification, corev1.EventTypeWarning, events.EventReasonNotificationFailed,
+			"All delivery attempts failed or exhausted retries")
 
 		// AUDIT: Message escalated (ADR-032 §1: MANDATORY)
 		if auditErr := r.auditMessageEscalated(ctx, notification); auditErr != nil {
