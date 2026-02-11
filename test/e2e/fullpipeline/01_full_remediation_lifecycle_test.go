@@ -472,28 +472,44 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 
 		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)
 
-		// Query all audit events for this remediation request
+		// Query all audit events for this remediation request.
+		// The Eventually checks that ALL required event types are present (not just a count
+		// threshold), preventing a race where late-arriving events (e.g., notification.message.sent)
+		// are missed because the count was already satisfied by earlier events.
 		var allAuditEvents []ogenclient.AuditEvent
-		Eventually(func() int {
+		eventTypeCounts := map[string]int{}
+		Eventually(func() []string {
 			resp, err := dataStorageClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				Limit:         ogenclient.NewOptInt(200),
 			})
 			if err != nil {
 				GinkgoWriter.Printf("  [Step 11] Query error: %v\n", err)
-				return 0
+				return allExpected // return full list so matcher keeps polling
 			}
 			allAuditEvents = resp.Data
-			GinkgoWriter.Printf("  [Step 11] Found %d audit events for correlation_id=%s\n",
-				len(allAuditEvents), correlationID)
-			return len(allAuditEvents)
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", len(allExpected)),
-			"Should have at least %d audit events for the full lifecycle", len(allExpected))
 
-		// Build a map of event types for fast lookup
-		eventTypeCounts := map[string]int{}
+			// Rebuild event type counts on each poll
+			eventTypeCounts = map[string]int{}
+			for _, event := range allAuditEvents {
+				eventTypeCounts[event.EventType]++
+			}
+
+			// Determine which required event types are still missing
+			var missing []string
+			for _, eventType := range allExpected {
+				if eventTypeCounts[eventType] == 0 {
+					missing = append(missing, eventType)
+				}
+			}
+			GinkgoWriter.Printf("  [Step 11] Found %d audit events (%d unique types), %d required types still missing\n",
+				len(allAuditEvents), len(eventTypeCounts), len(missing))
+			return missing
+		}, 90*time.Second, 2*time.Second).Should(BeEmpty(),
+			"All required audit event types must be present in the trail")
+
+		// Log all events for debugging
 		for _, event := range allAuditEvents {
-			eventTypeCounts[event.EventType]++
 			GinkgoWriter.Printf("  Audit: type=%s category=%s outcome=%s ts=%s\n",
 				event.EventType, event.EventCategory, event.EventOutcome,
 				event.EventTimestamp.Format(time.RFC3339))
