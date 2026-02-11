@@ -223,6 +223,121 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
+	Describe("resolveTargetResource (BR-HAPI-191)", func() {
+		// resolveTargetResource is private; tested via Create() which sets WE.Spec.TargetResource.
+		// BR-HAPI-191: Prefer LLM-identified AffectedResource over RR's TargetResource.
+		It("should use RCA AffectedResource namespace/kind/name when namespaced (LLM identified Deployment)", func() {
+			// Arrange: AI with RootCauseAnalysis.AffectedResource (namespaced)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Pod crash loop - parent Deployment needs rollback",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Namespace: "prod",
+					Kind:      "Deployment",
+					Name:      "my-app",
+				},
+			}
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert: WE uses namespace/kind/name from AffectedResource (not RR's Pod)
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.TargetResource).To(Equal("prod/Deployment/my-app"),
+				"BR-HAPI-191: WorkflowExecution must use LLM-identified Deployment for correct patching target")
+		})
+
+		It("should use RCA AffectedResource kind/name when cluster-scoped (Namespace empty)", func() {
+			// Arrange: AI with AffectedResource cluster-scoped (e.g., Node)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Node not ready",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Namespace: "", // Cluster-scoped
+					Kind:      "Node",
+					Name:      "worker-1",
+				},
+			}
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert: WE uses kind/name (no namespace)
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.TargetResource).To(Equal("Node/worker-1"),
+				"BR-HAPI-191: Cluster-scoped resources use kind/name format")
+		})
+
+		It("should fall back to RR TargetResource when AffectedResource Kind or Name is empty", func() {
+			// Arrange: RCA has AffectedResource but Kind empty - fallback to RR
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Incomplete RCA",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Namespace: "prod",
+					Kind:      "", // Empty - triggers fallback
+					Name:      "my-app",
+				},
+			}
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert: WE uses RR's target (default Pod)
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.TargetResource).To(Equal("default/Pod/test-pod"),
+				"BR-HAPI-191: Fallback to RR TargetResource when AffectedResource incomplete")
+		})
+
+		It("should fall back to RR TargetResource when AffectedResource Name is empty", func() {
+			// Arrange: RCA has AffectedResource but Name empty - fallback to RR
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remediation", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Incomplete RCA",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Namespace: "prod",
+					Kind:      "Deployment",
+					Name:      "", // Empty - triggers fallback
+				},
+			}
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert: WE uses RR's target
+			Expect(err).ToNot(HaveOccurred())
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.TargetResource).To(Equal("default/Pod/test-pod"))
+		})
+	})
+
 	Describe("BuildTargetResourceString", func() {
 		It("should format namespaced resources as 'namespace/kind/name' per BR-ORCH-025", func() {
 			// Arrange

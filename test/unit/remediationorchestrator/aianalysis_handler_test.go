@@ -337,6 +337,61 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(nrList.Items).To(HaveLen(1))
 				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
 			})
+
+			// populateManualReviewContext: RCA.Summary preferred over legacy RootCause
+			It("should use RootCauseAnalysis.Summary when present (populateManualReviewContext)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.SubReason = "LowConfidence"
+				ai.Status.RootCause = "legacy"
+				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "RCA Summary: OOM kill - scale deployment",
+				}
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Body).To(ContainSubstring("RCA Summary: OOM kill - scale deployment"))
+				Expect(nrList.Items[0].Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "RCA Summary: OOM kill - scale deployment"))
+			})
+
+			// populateManualReviewContext: Warnings population
+			It("should populate Warnings from AIAnalysis into notification body", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Failed"
+				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.SubReason = "LowConfidence"
+				ai.Status.Message = "Confidence below threshold"
+				ai.Status.Warnings = []string{"Warning A: Missing probes", "Warning B: Resource limits low"}
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Body).To(ContainSubstring("**Warnings**:"))
+				Expect(nrList.Items[0].Spec.Body).To(ContainSubstring("Warning A: Missing probes"))
+				Expect(nrList.Items[0].Spec.Body).To(ContainSubstring("Warning B: Resource limits low"))
+			})
 		})
 
 		// =====================================================
