@@ -114,12 +114,12 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonAnalysisFailed` | `AnalysisFailed` | Warning | P1 | Analysis failed (terminal) | Planned (v1.1) |
 | `EventReasonApprovalRequired` | `ApprovalRequired` | Normal | P2 | Human approval required for workflow execution | Planned (v1.1) |
 | `EventReasonHumanReviewRequired` | `HumanReviewRequired` | Warning | P2 | HAPI flagged investigation for human review | Planned (v1.1) |
-| `EventReasonSessionCreated` | `SessionCreated` | Normal | P2 | HAPI investigation session submitted (issue #64) | Planned (v1.1, delegated) |
-| `EventReasonSessionLost` | `SessionLost` | Warning | P2 | HAPI session lost (404 on poll), regenerating | Planned (v1.1, delegated) |
-| `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | P2 | Max session regenerations (5) exceeded, transitioning to Failed | Planned (v1.1, delegated) |
+| `EventReasonSessionCreated` | `SessionCreated` | Normal | P2 | HAPI investigation session submitted (issue #64) | Implemented (v1.1) |
+| `EventReasonSessionLost` | `SessionLost` | Warning | P2 | HAPI session lost (404 on poll), regenerating | Implemented (v1.1) |
+| `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | P2 | Max session regenerations (5) exceeded, transitioning to Failed | Implemented (v1.1) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 
-**Note**: Session events (SessionCreated, SessionLost, SessionRegenerationExceeded) are delegated to the Issue #64 team. Constants are defined; implementation is their responsibility. See BR-AA-HAPI-064.6 and `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
+**Note**: Session events (SessionCreated, SessionLost, SessionRegenerationExceeded) were originally delegated to the Issue #64 team but have been implemented by the current team via `WithRecorder` functional option on `InvestigatingHandler`. See BR-AA-HAPI-064.6 and `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
 
 ### WorkflowExecution Controller
 
@@ -150,7 +150,7 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonApprovalRejected` | `ApprovalRejected` | Warning | P2 | RAR rejected, transitioning to Failed | Planned (v1.1) |
 | `EventReasonApprovalExpired` | `ApprovalExpired` | Warning | P2 | RAR expired past deadline | Planned (v1.1) |
 | `EventReasonEscalatedToManualReview` | `EscalatedToManualReview` | Warning | P2 | Unrecoverable failure, escalation notification sent | Planned (v1.1) |
-| `EventReasonRecoveryInitiated` | `RecoveryInitiated` | Normal | P2 | Recovery attempt started after failed remediation | Planned (v1.1) |
+| ~~`EventReasonRecoveryInitiated`~~ | ~~`RecoveryInitiated`~~ | Normal | P2 | Recovery attempt started after failed remediation | **Deferred to DD-RECOVERY-002** (no recovery path implemented) |
 | `EventReasonNotificationCreated` | `NotificationCreated` | Normal | P2 | NotificationRequest CRD created | Planned (v1.1) |
 | `EventReasonCooldownActive` | `CooldownActive` | Normal | P2 | Remediation skipped due to active cooldown (shared constant) | Planned (v1.1) |
 | `EventReasonConsecutiveFailureBlocked` | `ConsecutiveFailureBlocked` | Warning | P2 | Target resource blocked due to consecutive failures | Planned (v1.1) |
@@ -236,7 +236,7 @@ const (
     EventReasonRemediationCompleted          = "RemediationCompleted"
     EventReasonRemediationFailed             = "RemediationFailed"
     EventReasonRemediationTimeout            = "RemediationTimeout"
-    EventReasonRecoveryInitiated             = "RecoveryInitiated"
+    // EventReasonRecoveryInitiated removed — deferred to DD-RECOVERY-002
     EventReasonEscalatedToManualReview       = "EscalatedToManualReview"
     EventReasonNotificationCreated           = "NotificationCreated"
     EventReasonApprovalGranted               = "ApprovalGranted"
@@ -319,8 +319,8 @@ Per-controller issues with TDD methodology (RED-GREEN-REFACTOR):
 
 | Controller | Issue | Events to Add | BR | Owner |
 |---|---|---|---|---|
-| AA | TBD | 6 (excl. 3 session events) | BR-AA-095 | Current team |
-| AA (session) | TBD | 3 (SessionCreated, SessionLost, SessionRegenerationExceeded) | BR-AA-HAPI-064.6 | Issue #64 team |
+| AA | #72 | 6 (excl. 3 session events) | BR-AA-095 | Current team |
+| AA (session) | #73 | 3 (SessionCreated, SessionLost, SessionRegenerationExceeded) | BR-AA-HAPI-064.6 | Current team (originally delegated to Issue #64 team) |
 | WE | TBD | 5 | BR-WE-095 | Current team |
 | SP | TBD | 5 | BR-SP-095 | Current team |
 | NT | TBD | 6 | BR-NT-095 | Current team |

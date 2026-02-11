@@ -142,10 +142,6 @@ const (
 	// Type: Warning
 	EventReasonRemediationTimeout = "RemediationTimeout"
 
-	// EventReasonRecoveryInitiated is emitted when a recovery attempt is started
-	// after a failed remediation.
-	EventReasonRecoveryInitiated = "RecoveryInitiated"
-
 	// EventReasonEscalatedToManualReview is emitted when an unrecoverable failure
 	// triggers escalation notification to operators.
 	// Type: Warning

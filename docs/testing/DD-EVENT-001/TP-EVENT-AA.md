@@ -5,7 +5,7 @@
 **Created**: 2026-02-05
 **Author**: AI Assistant
 **Status**: Draft
-**Issue**: #72 (our events), #73 (session events, delegated)
+**Issue**: #72 (our events), #73 (session events, implemented)
 **BR**: BR-AA-095, BR-AA-HAPI-064.6 (session events)
 **DD**: DD-EVENT-001 v1.1
 
@@ -17,12 +17,11 @@
 
 - BR-AA-095: K8s Event Observability for AIAnalysis controller
 - 6 events implemented by this team
-- 3 session events documented (delegated to Issue #64 team)
+- 3 session events implemented (originally delegated to Issue #64 team, completed by current team)
 - Defense-in-depth: UT (FakeRecorder) + IT (corev1.EventList)
 
 ### Out of Scope
 
-- Session event implementation (SessionCreated, SessionLost, SessionRegenerationExceeded) -- owned by Issue #64 team
 - Audit event testing (covered by BR-SP-090 pattern)
 - Metrics testing (separate maturity requirement)
 
@@ -39,9 +38,9 @@
 | `ApprovalRequired` | Normal | P2 | AnalyzingHandler: approval needed | This team | Planned |
 | `HumanReviewRequired` | Warning | P2 | InvestigatingHandler: needs_human_review=true | This team | Planned |
 | `PhaseTransition` | Normal | P3 | All intermediate transitions (shared constant) | This team | Planned |
-| `SessionCreated` | Normal | P2 | Session submitted to HAPI | Issue #64 team | Delegated |
-| `SessionLost` | Warning | P2 | Session 404 on poll | Issue #64 team | Delegated |
-| `SessionRegenerationExceeded` | Warning | P2 | Max regenerations exceeded | Issue #64 team | Delegated |
+| `SessionCreated` | Normal | P2 | Session submitted to HAPI | This team | Implemented |
+| `SessionLost` | Warning | P2 | Session 404 on poll | This team | Implemented |
+| `SessionRegenerationExceeded` | Warning | P2 | Max regenerations exceeded | This team | Implemented |
 
 ---
 
@@ -222,16 +221,18 @@
 
 ---
 
-## 5. Delegated Session Event Tests (Issue #64 team)
+## 5. Session Event Tests (Implemented)
 
-The following test scenarios are defined here for completeness but will be implemented by the Issue #64 team. They map to BR-AA-HAPI-064.6 and the existing test plan at `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
+Originally delegated to the Issue #64 team, these tests were implemented by the current team. They map to BR-AA-HAPI-064.6 and the existing test plan at `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
 
-| Test ID | Event | Description |
-|---|---|---|
-| UT-AA-064-008 | SessionCreated | Session submitted to HAPI (already in session test plan) |
-| UT-AA-064-009 | SessionLost | Session 404 triggers regeneration |
-| UT-AA-064-010 | SessionRegenerationExceeded | Max regenerations exceeded (already in session test plan) |
-| IT-AA-064-01 | Session lifecycle trail | SessionCreated → SessionLost → SessionRegenerationExceeded → AnalysisFailed |
+| Test ID | Event | Description | Status |
+|---|---|---|---|
+| UT-AA-064-001 | SessionCreated | Session submitted to HAPI (K8s event assertion added) | Implemented |
+| UT-AA-064-008 | SessionLost | Session 404 triggers regeneration (K8s event assertion added) | Implemented |
+| UT-AA-064-010 | SessionRegenerationExceeded | Max regenerations exceeded (K8s event assertion added) | Implemented |
+| IT-AA-064-01 | Session lifecycle trail | SessionCreated → SessionLost → SessionRegenerationExceeded → AnalysisFailed | Covered by IT-AA-095-02 |
+
+**File**: `test/unit/aianalysis/investigating_handler_session_test.go` (FakeRecorder wired via `WithRecorder`)
 
 ---
 
