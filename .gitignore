@@ -115,6 +115,8 @@ UNIT_TEST_*.md
 
 # Session and infrastructure ephemeral files
 *SESSION*.md
+# Exception: test plan documents containing "session" in docs/testing/
+!docs/testing/**/session_*
 *-HOUR-*.md
 *INFRASTRUCTURE-SETUP*.md
 *INFRASTRUCTURE-FINAL*.md
@@ -204,7 +206,6 @@ PR_DESCRIPTION.md
 *_PROGRESS.md
 *_HANDOFF.md
 *_COMPLETE.md
-SESSION_*.md
 SESSION_*.txt
 GOOD_*.md
 OVERNIGHT_*.md

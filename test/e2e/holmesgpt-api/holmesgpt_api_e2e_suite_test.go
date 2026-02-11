@@ -89,6 +89,9 @@ var (
 	// Shared HAPI client (authenticated with ServiceAccount)
 	hapiClient *hapiclient.Client
 
+	// Shared HAPI session client (BR-AA-HAPI-064: async submit/poll/result wrapper)
+	sessionClient *hapiclient.HolmesGPTClient
+
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 
@@ -219,6 +222,17 @@ var _ = SynchronizedBeforeSuite(
 		}
 		logger.Info("✅ Authenticated HAPI client initialized")
 
+		// BR-AA-HAPI-064: Create session-aware client for async submit/poll/result tests
+		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+			hapiclient.Config{BaseURL: hapiURL},
+			testauth.NewServiceAccountTransport(saToken),
+		)
+		if err != nil {
+			logger.Info("❌ Failed to create HAPI session client")
+			Fail(fmt.Sprintf("Failed to create HAPI session client: %v", err))
+		}
+		logger.Info("✅ HAPI session client initialized (BR-AA-HAPI-064)")
+
 		// Mark setup as successful (for setup failure detection in AfterSuite)
 		setupSucceeded = true
 
@@ -253,6 +267,13 @@ var _ = SynchronizedBeforeSuite(
 			}),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated HAPI client")
+
+		// BR-AA-HAPI-064: Create session-aware client for async submit/poll/result tests
+		sessionClient, err = hapiclient.NewHolmesGPTClientWithTransport(
+			hapiclient.Config{BaseURL: hapiURL},
+			testauth.NewServiceAccountTransport(saToken),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create HAPI session client")
 	},
 )
 
