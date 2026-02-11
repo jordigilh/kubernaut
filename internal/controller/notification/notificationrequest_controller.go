@@ -45,6 +45,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
@@ -196,7 +197,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// Emit ReconcileStarted event (P1: EventRecorder)
-	r.Recorder.Event(notification, corev1.EventTypeNormal, "ReconcileStarted",
+	r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonReconcileStarted,
 		fmt.Sprintf("Started reconciling notification %s", notification.Name))
 
 	// DEBUG: Log reconcile start with current state
@@ -946,7 +947,7 @@ func (r *NotificationRequestReconciler) handlePendingToSendingTransition(
 	}
 
 	// Emit PhaseTransition event (P1: EventRecorder)
-	r.Recorder.Event(notification, corev1.EventTypeNormal, "PhaseTransition",
+	r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
 		fmt.Sprintf("Transitioned to %s phase", notificationv1alpha1.NotificationPhaseSending))
 
 	// Record metric for phase transition to Sending (BR-NOT-054: Observability)
@@ -1110,161 +1111,78 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 			"resourceVersion", notification.ResourceVersion)
 	}
 
-	// Calculate overall status
-	totalChannels := len(notification.Spec.Channels)
+	// ========================================
+	// DELEGATE PHASE TRANSITION DECISION TO pkg/notification/phase
+	// ========================================
+	// Build channel states from controller helper methods, then delegate
+	// the pure business logic to the extracted DetermineTransition function.
 
-	// Count successful deliveries from BOTH status and current attempts
-	// This is critical because atomic updates haven't happened yet
-	totalSuccessful := notification.Status.SuccessfulDeliveries
-	for _, attempt := range result.deliveryAttempts {
-		if attempt.Status == "success" {
-			totalSuccessful++
+	// Build channel states map from controller helper methods
+	policy := r.getRetryPolicy(notification)
+	channelStates := make(map[string]notificationphase.ChannelState, len(notification.Spec.Channels))
+	for _, channel := range notification.Spec.Channels {
+		ch := string(channel)
+		channelStates[ch] = notificationphase.ChannelState{
+			AlreadySucceeded:  r.channelAlreadySucceeded(notification, ch),
+			AttemptCount:      r.getChannelAttemptCount(notification, ch),
+			HasPermanentError: r.hasChannelPermanentError(notification, ch),
 		}
 	}
 
-	log.Info("🔍 PHASE TRANSITION LOGIC START",
-		"currentPhase", notification.Status.Phase,
-		"totalChannels", totalChannels,
-		"totalSuccessful", totalSuccessful,
-		"statusSuccessful", notification.Status.SuccessfulDeliveries,
-		"attemptsSuccessful", len(result.deliveryAttempts),
-		"failureCount", result.failureCount,
-		"deliveryAttemptsRecorded", len(result.deliveryAttempts),
-		"statusDeliveryAttempts", len(notification.Status.DeliveryAttempts))
+	// Determine phase transition using extracted business logic
+	decision := notificationphase.DetermineTransition(
+		notification,
+		&notificationphase.DeliveryResult{
+			ChannelResults:   result.deliveryResults,
+			FailureCount:     result.failureCount,
+			DeliveryAttempts: result.deliveryAttempts,
+		},
+		channelStates,
+		policy.MaxAttempts,
+	)
 
-	if totalSuccessful == totalChannels {
-		// All channels delivered successfully → Sent
+	log.Info("🔍 PHASE TRANSITION DECISION",
+		"currentPhase", notification.Status.Phase,
+		"nextPhase", decision.NextPhase,
+		"reason", decision.Reason,
+		"isTerminal", decision.IsTerminal,
+		"shouldRequeue", decision.ShouldRequeue,
+		"phaseUnchanged", decision.PhaseUnchanged,
+		"isPermanentFailure", decision.IsPermanentFailure,
+		"maxFailedAttemptCount", decision.MaxFailedAttemptCount)
+
+	// Execute the transition based on the decision
+	switch {
+	case decision.NextPhase == notificationphase.Sent:
 		log.Info("✅ ALL CHANNELS SUCCEEDED → transitioning to Sent")
 		return r.transitionToSent(ctx, notification, result.deliveryAttempts)
+
+	case decision.NextPhase == notificationphase.PartiallySent:
+		log.Info("Partial delivery success with exhausted retries, transitioning to PartiallySent")
+		return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts)
+
+	case decision.NextPhase == notificationphase.Failed && decision.IsPermanentFailure:
+		log.Info("All retries exhausted → transitioning to Failed (permanent)",
+			"reason", decision.Reason)
+		return r.transitionToFailed(ctx, notification, true, decision.Reason, result.deliveryAttempts)
+
+	case decision.NextPhase == notificationphase.Retrying:
+		backoff := r.calculateBackoffWithPolicy(notification, decision.MaxFailedAttemptCount)
+		log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
+			"backoff", backoff,
+			"maxAttemptCount", decision.MaxFailedAttemptCount)
+		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
+
+	case decision.PhaseUnchanged && decision.ShouldRequeue && result.failureCount > 0:
+		log.Info("All channels failed, retries remaining — temporary failure with backoff",
+			"reason", decision.Reason)
+		return r.transitionToFailed(ctx, notification, false, decision.Reason, result.deliveryAttempts)
+
+	default:
+		log.Info("Partial delivery success, continuing",
+			"nextPhase", decision.NextPhase)
+		return ctrl.Result{Requeue: true}, nil
 	}
-
-	// Check if all channels exhausted retries
-	allChannelsExhausted := true
-	policy := r.getRetryPolicy(notification)
-
-	log.Info("🔍 STARTING EXHAUSTION CHECK",
-		"allChannelsExhausted_initial", allChannelsExhausted,
-		"maxAttempts", policy.MaxAttempts,
-		"channels", notification.Spec.Channels)
-
-	for _, channel := range notification.Spec.Channels {
-		attemptCount := r.getChannelAttemptCount(notification, string(channel))
-		hasSuccess := r.channelAlreadySucceeded(notification, string(channel))
-		hasPermanentError := r.hasChannelPermanentError(notification, string(channel))
-
-		log.Info("🔍 EXHAUSTION CHECK",
-			"channel", channel,
-			"attemptCount", attemptCount,
-			"maxAttempts", policy.MaxAttempts,
-			"hasSuccess", hasSuccess,
-			"hasPermanentError", hasPermanentError,
-			"isExhausted", hasSuccess || hasPermanentError || attemptCount >= policy.MaxAttempts)
-
-		if !hasSuccess && !hasPermanentError && attemptCount < policy.MaxAttempts {
-			allChannelsExhausted = false
-			log.Info("✅ Channel NOT exhausted - retries available",
-				"channel", channel,
-				"attemptCount", attemptCount,
-				"maxAttempts", policy.MaxAttempts)
-			break
-		}
-	}
-
-	log.Info("🔍 EXHAUSTION CHECK COMPLETE",
-		"allChannelsExhausted_final", allChannelsExhausted,
-		"willEnterExhaustedBlock", allChannelsExhausted)
-
-	if allChannelsExhausted {
-		log.Info("⚠️  ENTERING EXHAUSTED BLOCK",
-			"totalSuccessful", totalSuccessful,
-			"totalChannels", totalChannels)
-		// NT-BUG-003 Fix: Check for partial success before marking as Failed
-		if totalSuccessful > 0 && totalSuccessful < totalChannels {
-			// Some channels succeeded, others failed → PartiallySent (terminal)
-			log.Info("Partial delivery success with exhausted retries, transitioning to PartiallySent",
-				"successful", totalSuccessful,
-				"total", totalChannels)
-			return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts)
-		}
-
-		// Determine failure reason: permanent errors vs retry exhaustion
-		allPermanentErrors := true
-		for _, channel := range notification.Spec.Channels {
-			if !r.hasChannelPermanentError(notification, string(channel)) {
-				allPermanentErrors = false
-				break
-			}
-		}
-
-		reason := "MaxRetriesExhausted"
-		if allPermanentErrors {
-			reason = "AllDeliveriesFailed"
-		}
-
-		// All retries exhausted with no successes → Failed (permanent)
-		return r.transitionToFailed(ctx, notification, true, reason, result.deliveryAttempts)
-	}
-
-	// NT-BUG-005 Fix: Handle partial success correctly during retry loop
-	// Don't transition to Failed if some channels succeeded - instead requeue with backoff
-	log.Info("🔍 CHECKING FAILURE COUNT",
-		"failureCount", result.failureCount,
-		"totalSuccessful", totalSuccessful,
-		"willCheckPartialSuccess", result.failureCount > 0)
-
-	if result.failureCount > 0 {
-		log.Info("🔍 INSIDE FAILURE COUNT BLOCK",
-			"totalSuccessful", totalSuccessful,
-			"willCheckPartialSuccessBranch", totalSuccessful > 0)
-
-		if totalSuccessful > 0 {
-			log.Info("🎯 PARTIAL SUCCESS BRANCH ENTERED - SHOULD TRANSITION TO RETRYING",
-				"successful", totalSuccessful,
-				"failed", result.failureCount,
-				"total", totalChannels)
-			// Partial success (some channels succeeded, some failed), retries remain
-			// Stay in current phase and requeue with backoff to allow failed channels to retry
-
-			// Calculate backoff based on max attempt count of failed channels
-			maxAttemptCount := 0
-			for _, channel := range notification.Spec.Channels {
-				// Only consider failed channels for backoff calculation
-				if !r.channelAlreadySucceeded(notification, string(channel)) {
-					attemptCount := r.getChannelAttemptCount(notification, string(channel))
-					if attemptCount > maxAttemptCount {
-						maxAttemptCount = attemptCount
-					}
-				}
-			}
-
-			backoff := r.calculateBackoffWithPolicy(notification, maxAttemptCount)
-
-			log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
-				"successful", totalSuccessful,
-				"failed", result.failureCount,
-				"total", totalChannels,
-				"backoff", backoff,
-				"maxAttemptCount", maxAttemptCount,
-				"currentPhase", notification.Status.Phase,
-				"nextPhase", notificationv1alpha1.NotificationPhaseRetrying)
-
-			return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
-		}
-		// All channels failed, retries remain → Failed (temporary, will retry)
-		log.Info("🔍 ALL CHANNELS FAILED BRANCH",
-			"totalSuccessful", totalSuccessful,
-			"shouldTransitionToFailed", true)
-		log.Info("All channels failed, retries remaining",
-			"failed", result.failureCount,
-			"total", totalChannels)
-		return r.transitionToFailed(ctx, notification, false, "AllDeliveriesFailed", result.deliveryAttempts)
-	}
-
-	// Partial success with no failures (shouldn't reach here, but handle safely)
-	log.Info("Partial delivery success, continuing",
-		"successful", totalSuccessful,
-		"total", totalChannels)
-	return ctrl.Result{Requeue: true}, nil
 }
 
 // transitionToSent transitions notification to Sent (terminal success state).

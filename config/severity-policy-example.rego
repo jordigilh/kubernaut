@@ -21,67 +21,67 @@ package signalprocessing.severity
 # Unmapped severity values escalate to "critical" for safety
 
 # Standard normalized severity values (DD-SEVERITY-001 v1.1: aligned with HAPI/workflow catalog)
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "critical"
 }
 
-determine_severity := "high" {
+determine_severity := "high" if {
 	input.signal.severity == "high"
 }
 
-determine_severity := "medium" {
+determine_severity := "medium" if {
 	input.signal.severity == "medium"
 }
 
-determine_severity := "low" {
+determine_severity := "low" if {
 	input.signal.severity == "low"
 }
 
-determine_severity := "unknown" {
+determine_severity := "unknown" if {
 	input.signal.severity == "unknown"
 }
 
 # PagerDuty P0-P4 severity scheme
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "P0"
 }
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "P1"
 }
 
-determine_severity := "high" {
+determine_severity := "high" if {
 	input.signal.severity == "P2"
 }
 
-determine_severity := "medium" {
+determine_severity := "medium" if {
 	input.signal.severity == "P3"
 }
 
-determine_severity := "low" {
+determine_severity := "low" if {
 	input.signal.severity == "P4"
 }
 
 # Enterprise Sev1-4 severity scheme
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	input.signal.severity == "Sev1"
 }
 
-determine_severity := "high" {
+determine_severity := "high" if {
 	input.signal.severity == "Sev2"
 }
 
-determine_severity := "medium" {
+determine_severity := "medium" if {
 	input.signal.severity == "Sev3"
 }
 
-determine_severity := "low" {
+determine_severity := "low" if {
 	input.signal.severity == "Sev4"
 }
 
 # CONSERVATIVE FALLBACK: Unmapped severities escalate to critical
 # This ensures unknown alerts receive immediate attention
-determine_severity := "critical" {
+determine_severity := "critical" if {
 	# Catch-all: any unmapped severity value maps to critical
 	true
 }
@@ -93,25 +93,25 @@ determine_severity := "critical" {
 # Uncomment the policy below and comment out the conservative policy above
 # to use permissive fallback (unmapped → unknown)
 
-# determine_severity := "critical" {
+# determine_severity := "critical" if {
 # 	input.signal.severity == "critical"
 # }
 #
-# determine_severity := "high" {
+# determine_severity := "high" if {
 # 	input.signal.severity == "high"
 # }
 #
-# determine_severity := "medium" {
+# determine_severity := "medium" if {
 # 	input.signal.severity == "medium"
 # }
 #
-# determine_severity := "low" {
+# determine_severity := "low" if {
 # 	input.signal.severity == "low"
 # }
 #
 # # PERMISSIVE FALLBACK: Unmapped severities downgrade to unknown
 # # This requires operator investigation of unmapped values
-# determine_severity := "unknown" {
+# determine_severity := "unknown" if {
 # 	# Catch-all: any unmapped severity value maps to unknown
 # 	true
 # }

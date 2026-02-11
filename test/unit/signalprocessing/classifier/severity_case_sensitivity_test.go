@@ -28,18 +28,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 )
 
 var _ = Describe("Severity Classifier - Case Sensitivity (REFACTOR Phase)", func() {
 	var (
-		severityClassifier *SeverityClassifier
+		severityClassifier *classifier.SeverityClassifier
 		ctx                context.Context
 	)
 
 	BeforeEach(func() {
 		zapLog, _ := zap.NewDevelopment()
 		logger := zapr.NewLogger(zapLog)
-		severityClassifier = NewSeverityClassifier(nil, logger)
+		severityClassifier = classifier.NewSeverityClassifier(nil, logger)
 		ctx = context.Background()
 	})
 
@@ -57,11 +58,11 @@ var _ = Describe("Severity Classifier - Case Sensitivity (REFACTOR Phase)", func
 			policyWithLowercase := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
     input.signal.severity == "sev1"
-} else := "warning" {
+} else := "high" if {
     input.signal.severity == "sev2"
-} else := "info" {
+} else := "low" if {
     true
 }
 `
@@ -76,12 +77,12 @@ determine_severity := "critical" {
 				{"SEV1", "critical"},    // All uppercase
 				{"Sev1", "critical"},    // Mixed case
 				{"sev1", "critical"},    // All lowercase
-				{"SEV2", "warning"},     // All uppercase
-				{"Sev2", "warning"},     // Mixed case
-				{"sev2", "warning"},     // All lowercase
-				{"UNMAPPED", "info"},    // Fallback (all uppercase)
-				{"Unmapped", "info"},    // Fallback (mixed case)
-				{"unmapped", "info"},    // Fallback (all lowercase)
+				{"SEV2", "high"},        // All uppercase
+				{"Sev2", "high"},        // Mixed case
+				{"sev2", "high"},        // All lowercase
+				{"UNMAPPED", "low"},     // Fallback (all uppercase)
+				{"Unmapped", "low"},     // Fallback (mixed case)
+				{"unmapped", "low"},     // Fallback (all lowercase)
 			}
 
 			for _, tc := range testCases {
@@ -138,15 +139,15 @@ determine_severity := "critical" {
 			policyExpectingLowercase := `
 package signalprocessing.severity
 
-determine_severity := "critical" {
+determine_severity := "critical" if {
     input.signal.severity == "p0"
-} else := "critical" {
+} else := "critical" if {
     input.signal.severity == "high"
-} else := "warning" {
+} else := "medium" if {
     input.signal.severity == "medium"
-} else := "info" {
+} else := "low" if {
     input.signal.severity == "low"
-} else := "info" {
+} else := "low" if {
     true
 }
 `
@@ -160,8 +161,8 @@ determine_severity := "critical" {
 			}{
 				{"P0", "critical"},      // Uppercase priority
 				{"HIGH", "critical"},    // Uppercase severity
-				{"Medium", "warning"},   // Mixed case
-				{"low", "info"},         // Already lowercase
+				{"Medium", "medium"},    // Mixed case
+				{"low", "low"},          // Already lowercase
 			}
 
 			for _, tc := range testCases {

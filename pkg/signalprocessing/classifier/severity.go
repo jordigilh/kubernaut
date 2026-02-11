@@ -34,11 +34,11 @@ limitations under the License.
 //
 // Example Conservative Policy:
 //
-//	determine_severity := "critical" {
+//	determine_severity := "critical" if {
 //	    input.signal.severity == "Sev1"
-//	} else := "warning" {
+//	} else := "warning" if {
 //	    input.signal.severity == "Sev2"
-//	} else := "critical" {  # Operator-defined fallback
+//	} else := "critical" if {  # Operator-defined fallback
 //	    true
 //	}
 package classifier
