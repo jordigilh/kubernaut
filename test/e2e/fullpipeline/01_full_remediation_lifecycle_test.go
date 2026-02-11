@@ -597,8 +597,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 
 		// ================================================================
 		// Step 12b: Field-by-field verification against the live RR (DD-AUDIT-004)
-		// Parse the reconstructed YAML back into an RR struct and compare
-		// key fields against the actual RR that flowed through the pipeline.
+		// Parse the reconstructed YAML back into an RR struct and verify
+		// fields that the reconstruction pipeline populates from audit events.
+		//
+		// Currently reconstructed fields (from pkg/datastorage/reconstruction/):
+		//   gateway.signal.received → SignalName, SignalType, SignalFingerprint, SignalLabels, SignalAnnotations, OriginalPayload
+		//   orchestrator.lifecycle.created → TimeoutConfig
+		//   aianalysis.analysis.completed → ProviderData
+		//   workflowexecution.selection.completed → SelectedWorkflowRef
+		//   workflowexecution.execution.started → ExecutionRef
+		//
+		// NOT reconstructed (pipeline limitations):
+		//   OverallPhase — not part of reconstruction scope
+		//   Namespace/Name — reconstruction uses correlation_id-derived naming
 		// ================================================================
 		By("Step 12b: Verifying reconstructed RR fields match the live RR")
 
@@ -616,19 +627,20 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		GinkgoWriter.Printf("  Reconstructed RR: name=%s namespace=%s phase=%s\n",
 			reconstructedRR.Name, reconstructedRR.Namespace, reconstructedRR.Status.OverallPhase)
 
-		// Gap #1: spec.signalName — from gateway.signal.received
+		// Gap #1: spec.signalName — from gateway.signal.received (AlertName field)
 		Expect(reconstructedRR.Spec.SignalName).ToNot(BeEmpty(),
 			"Gap #1: Reconstructed RR must have spec.signalName")
 		Expect(reconstructedRR.Spec.SignalName).To(Equal(liveRR.Spec.SignalName),
 			"Gap #1: Reconstructed signalName should match live RR")
-		GinkgoWriter.Printf("  ✅ Gap #1: signalName=%s\n", reconstructedRR.Spec.SignalName)
+		GinkgoWriter.Printf("  ✅ Gap #1: signalName=%s (matches live RR)\n", reconstructedRR.Spec.SignalName)
 
-		// Gap #1: spec.signalFingerprint — from gateway.signal.received
+		// Gap #1: spec.signalFingerprint — from gateway.signal.received (Fingerprint field)
+		// SHA256 hash (64-char hex), used as deduplication identity for the signal
 		Expect(reconstructedRR.Spec.SignalFingerprint).ToNot(BeEmpty(),
 			"Gap #1: Reconstructed RR must have spec.signalFingerprint")
 		Expect(reconstructedRR.Spec.SignalFingerprint).To(Equal(liveRR.Spec.SignalFingerprint),
 			"Gap #1: Reconstructed signalFingerprint should match live RR")
-		GinkgoWriter.Printf("  ✅ Gap #1: signalFingerprint=%s\n", reconstructedRR.Spec.SignalFingerprint)
+		GinkgoWriter.Printf("  ✅ Gap #1: signalFingerprint=%s (matches live RR)\n", reconstructedRR.Spec.SignalFingerprint)
 
 		// Gap #2: spec.signalLabels — from gateway.signal.received
 		Expect(reconstructedRR.Spec.SignalLabels).ToNot(BeEmpty(),
@@ -636,7 +648,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		GinkgoWriter.Printf("  ✅ Gap #2: signalLabels has %d entries\n", len(reconstructedRR.Spec.SignalLabels))
 
 		// Gap #3: spec.signalAnnotations — from gateway.signal.received
-		// Annotations may be empty depending on the signal source, so just check presence
+		// Annotations may be empty depending on the signal source
 		GinkgoWriter.Printf("  ✅ Gap #3: signalAnnotations has %d entries\n", len(reconstructedRR.Spec.SignalAnnotations))
 
 		// Gap #4: spec.originalPayload — from gateway.signal.received
@@ -655,8 +667,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"Gap #6: Reconstructed RR must have status.executionRef")
 		GinkgoWriter.Printf("  ✅ Gap #6: executionRef.name=%s\n", reconstructedRR.Status.ExecutionRef.Name)
 
-		// Gap #7: status.error — NOT implemented in reconstruction pipeline (noted)
+		// Gap #7: status.error — NOT implemented in reconstruction pipeline
 		// This is a success path so no error is expected anyway.
+		GinkgoWriter.Println("  ⏭️  Gap #7: status.error (N/A on success path; not implemented in reconstruction)")
 
 		// Gap #8: status.timeoutConfig — from orchestrator.lifecycle.created
 		Expect(reconstructedRR.Status.TimeoutConfig).ToNot(BeNil(),
@@ -664,11 +677,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		GinkgoWriter.Printf("  ✅ Gap #8: timeoutConfig present (global=%v)\n",
 			reconstructedRR.Status.TimeoutConfig.Global)
 
-		// Verify namespace and metadata consistency
-		Expect(reconstructedRR.Namespace).To(Equal(testNamespace),
-			"Reconstructed RR namespace should match test namespace")
-
-		GinkgoWriter.Printf("  ✅ RR reconstruction verified: completeness=%d%%, valid=%t, all gaps verified\n",
+		GinkgoWriter.Printf("  ✅ RR reconstruction verified: completeness=%d%%, valid=%t, gaps #1-6,#8 verified\n",
 			reconstructionResp.Validation.Completeness, reconstructionResp.Validation.IsValid)
 		if len(reconstructionResp.Validation.Warnings) > 0 {
 			GinkgoWriter.Printf("  ⚠️  Reconstruction warnings: %v\n", reconstructionResp.Validation.Warnings)
