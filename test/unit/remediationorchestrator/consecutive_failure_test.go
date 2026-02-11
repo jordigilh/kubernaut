@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -100,13 +101,14 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 		// Create reconciler with consecutive failure blocking enabled
 		// DD-METRICS-001: Metrics are required (use fresh registry per test to avoid conflicts)
 		metrics := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
 		reconciler = controller.NewReconciler(
 			fakeClient,
 			fakeClient, // apiReader (same as client for tests)
 			scheme,
-			nil,     // audit store
-			nil,     // recorder
-			metrics, // metrics (DD-METRICS-001: required)
+			nil,      // audit store
+			recorder, // DD-EVENT-001: FakeRecorder for K8s event assertions
+			metrics,  // metrics (DD-METRICS-001: required)
 			controller.TimeoutConfig{},
 			nil, // routing engine
 		)

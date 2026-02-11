@@ -383,9 +383,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		k8sManager.GetScheme(),
-		auditStore,                 // Real audit store for ADR-032 compliance
-		nil,                        // No EventRecorder for integration tests
-		roMetrics,                  // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
+		auditStore,                                                             // Real audit store for ADR-032 compliance
+		k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
+		roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
 		controller.TimeoutConfig{}, // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
 		routingEngine,              // Real routing engine for integration tests (BR-ORCH-042)
 	)

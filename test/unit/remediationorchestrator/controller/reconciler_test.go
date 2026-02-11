@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -64,8 +65,9 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 		// Create fake client and reconciler
 		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		timeoutConfig := prodcontroller.TimeoutConfig{}                                                                                                                     // Use default timeout config
-		reconciler = prodcontroller.NewReconciler(fakeClient, fakeClient, scheme, nil, nil, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), timeoutConfig, nil) // Use default routing (will be created)
+		timeoutConfig := prodcontroller.TimeoutConfig{}                                                                                                                                                                       // Use default timeout config
+		recorder := record.NewFakeRecorder(20)                                                                                                                                                                                 // DD-EVENT-001: FakeRecorder for K8s event assertions
+		reconciler = prodcontroller.NewReconciler(fakeClient, fakeClient, scheme, nil, recorder, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), timeoutConfig, nil) // Use default routing (will be created)
 	})
 
 	Describe("NewReconciler", func() {
