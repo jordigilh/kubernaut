@@ -360,7 +360,7 @@ class TestAuditPipelineE2E:
         BR-AUDIT-005: LLM request audit events are persisted in Data Storage.
 
         Verifies:
-        - llm_request event stored in database
+        - aiagent.llm.request event stored in database
         - Correlation IDs match
         - Prompt information captured
 
@@ -400,14 +400,14 @@ class TestAuditPipelineE2E:
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=1,  # At least llm_request
+            min_expected_events=1,  # Retry until at least 1 event appears
             timeout_seconds=15  # E2E may be slower
         )
 
-        # Verify llm_request event exists (Pydantic model attribute access)
-        llm_requests = [e for e in events if e.event_type == "llm_request"]
-        # DD-TESTING-001: Deterministic count - exactly 1 LLM call = 1 llm_request event
-        assert len(llm_requests) == 1, f"Expected exactly 1 llm_request event. Found events: {[e.event_type for e in events]}"
+        # Verify aiagent.llm.request event exists (Pydantic model attribute access)
+        llm_requests = [e for e in events if e.event_type == "aiagent.llm.request"]
+        # DD-TESTING-001: Deterministic count - exactly 1 LLM call = 1 aiagent.llm.request event
+        assert len(llm_requests) == 1, f"Expected exactly 1 aiagent.llm.request event. Found events: {[e.event_type for e in events]}"
 
         # ADR-034: incident_id and prompt info are in event_data
         event = llm_requests[0]
@@ -463,19 +463,14 @@ class TestAuditPipelineE2E:
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=1,  # At least llm_request
+            min_expected_events=1,  # Retry until at least 1 event appears
             timeout_seconds=30  # Increased for E2E with real LLM mock delays
         )
 
-        # Verify llm_response event exists (Pydantic model attribute access)
-        llm_responses = [e for e in events if e.event_type == "llm_response"]
-        # ADR-034 v1.1+: Tool-using LLMs emit multiple llm_response events (one per tool call + final)
-        # Note: E2E Mock LLM may not emit all events - make this lenient for E2E environment
-        if len(llm_responses) == 0:
-            print(f"⚠️  WARNING: No llm_response events found in E2E. Found: {[e.event_type for e in events]}")
-            print("    This may indicate Mock LLM E2E configuration needs adjustment")
-            return  # Skip remaining assertions
-        assert len(llm_responses) >= 1, f"Expected at least 1 llm_response event. Found events: {[e.event_type for e in events]}"
+        # Verify aiagent.llm.response event exists (Pydantic model attribute access)
+        llm_responses = [e for e in events if e.event_type == "aiagent.llm.response"]
+        # DD-TESTING-001: Deterministic count - Mock LLM makes exactly 1 call = 1 aiagent.llm.response
+        assert len(llm_responses) == 1, f"Expected exactly 1 aiagent.llm.response event. Found events: {[e.event_type for e in events]}"
 
         # ADR-034: Fields are in event_data
         event = llm_responses[0]
@@ -527,18 +522,18 @@ class TestAuditPipelineE2E:
         result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
-        # Complete flow: llm_request + llm_response + workflow_validation_attempt
+        # Complete flow: aiagent.llm.request + aiagent.llm.response + aiagent.workflow.validation_attempt
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=5,  # DD-HAPI-002 v1.2: llm_request + llm_response + multiple workflow_validation_attempt events (up to 3)
+            min_expected_events=5,  # Retry until at least 5 events appear (request + response + validation attempts)
             timeout_seconds=30  # Increased for E2E with real LLM mock delays
         )
 
         # Verify validation attempt event exists (Pydantic model attribute access)
-        validation_events = [e for e in events if e.event_type == "workflow_validation_attempt"]
-        # DD-HAPI-002 v1.2: Workflow validation with self-correction creates multiple attempts (up to 3)
-        assert len(validation_events) >= 1, f"Expected at least 1 workflow_validation_attempt event. Found events: {[e.event_type for e in events]}"
+        validation_events = [e for e in events if e.event_type == "aiagent.workflow.validation_attempt"]
+        # DD-TESTING-001: Deterministic count - Mock LLM returns valid workflow on first try = exactly 1 validation attempt
+        assert len(validation_events) == 1, f"Expected exactly 1 aiagent.workflow.validation_attempt event. Found events: {[e.event_type for e in events]}"
 
         # Verify all validation events have correct correlation_id
         for event in validation_events:
@@ -584,9 +579,9 @@ class TestAuditPipelineE2E:
         BR-AUDIT-005: Complete audit trail (all event types) persisted.
 
         Verifies all expected event types are in Data Storage:
-        - llm_request
-        - llm_response
-        - workflow_validation_attempt
+        - aiagent.llm.request
+        - aiagent.llm.response
+        - aiagent.workflow.validation_attempt
 
         NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
         """
@@ -614,30 +609,41 @@ class TestAuditPipelineE2E:
         result = call_hapi_incident_analyze(hapi_url, request_data, auth_token=hapi_auth_token)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        # DD-TESTING-001: Mock LLM deterministic flow emits exactly 3 HAPI events:
+        #   aiagent.llm.request (1) + aiagent.llm.response (1) + aiagent.workflow.validation_attempt (1)
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=2,  # llm_request + llm_response minimum
+            min_expected_events=3,  # Retry until all 3 deterministic events appear
             timeout_seconds=15
         )
 
         # Filter out Data Storage self-audit events (datastorage.audit.written)
-        # These are created by Data Storage when it writes our events (Pydantic model attribute access)
         hapi_events = [e for e in events if e.event_type != "datastorage.audit.written"]
-        event_types = {e.event_type for e in hapi_events}
 
-        assert "llm_request" in event_types, f"Missing llm_request in audit trail. Found: {event_types}"
-        assert "llm_response" in event_types, f"Missing llm_response in audit trail. Found: {event_types}"
-        # DD-HAPI-002 v1.2: workflow_validation_attempt events only emitted if workflow selected
-        # If no workflow or validation passes on first try, no validation events expected
-        # Note: Most tests pass on first try, so this assertion is too strict for E2E
-        # assert "workflow_validation_attempt" in event_types, f"Missing workflow_validation_attempt in audit trail. Found: {event_types}"
+        # DD-TESTING-001 §256-300: Deterministic count validation per event type
+        event_counts = {}
+        for e in hapi_events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
+
+        assert event_counts.get("aiagent.llm.request", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.request. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.response", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.response. Got: {event_counts}"
+        assert event_counts.get("aiagent.workflow.validation_attempt", 0) == 1, \
+            f"Expected exactly 1 aiagent.workflow.validation_attempt. Got: {event_counts}"
+
+        # DD-TESTING-001: Verify temporal ordering (request → response → validation)
+        sorted_events = sorted(hapi_events, key=lambda e: e.event_timestamp)
+        event_type_order = [e.event_type for e in sorted_events]
+        request_idx = event_type_order.index("aiagent.llm.request")
+        response_idx = event_type_order.index("aiagent.llm.response")
+        assert request_idx < response_idx, \
+            f"aiagent.llm.request must precede aiagent.llm.response. Order: {event_type_order}"
 
         # ADR-034: Verify HAPI events have consistent correlation_id and incident_id
-        # (exclude Data Storage self-audit events which have different structure)
         for event in hapi_events:
             assert event.correlation_id == unique_remediation_id, f"Inconsistent correlation_id in {event.event_type}"
-            # event_data is a oneOf discriminated union - access actual_instance
             event_data = event.event_data if hasattr(event, 'event_data') else None
             if event_data is not None and hasattr(event_data, 'actual_instance'):
                 payload = event_data.actual_instance

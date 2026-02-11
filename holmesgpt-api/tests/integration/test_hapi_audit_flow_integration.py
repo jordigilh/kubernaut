@@ -126,7 +126,7 @@ def query_audit_events_with_retry(
         audit_store: BufferedAuditStore instance (MANDATORY per ADR-032)
         correlation_id: Correlation ID for audit correlation
         event_category: Event category (ADR-034 mandatory field, "aiagent" for HAPI)
-        event_type: Optional event type filter (e.g., "holmesgpt.response.complete")
+        event_type: Optional event type filter (e.g., "aiagent.response.complete")
         min_expected_events: Minimum number of events expected (default 1)
         timeout_seconds: Maximum time to wait for events (default 30s, aligned with Go)
         poll_interval: Time between polling attempts (default 1.0s, matches DataStorage batch flush)
@@ -237,7 +237,7 @@ class TestIncidentAnalysisAuditFlow:
         audit_store,
         unique_test_id):
         """
-        BR-AUDIT-005: Incident analysis MUST emit llm_request and llm_response audit events.
+        BR-AUDIT-005: Incident analysis MUST emit aiagent.llm.request and aiagent.llm.response audit events.
 
         This test validates that HAPI's business logic emits audit events as a side effect
         of processing an incident analysis request.
@@ -289,28 +289,16 @@ class TestIncidentAnalysisAuditFlow:
             timeout_seconds=10
         )
 
-        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
-        # ADR-034 v1.1+: Tool-using LLMs (workflow search) emit multiple request/response pairs
-        # Business logic emits: llm_request → llm_tool_call → workflow.catalog.search_completed → llm_response
-        # May have multiple LLM calls during analysis (tool retries, follow-ups)
-        # Test focuses on BR-AUDIT-005 requirement: llm_request + llm_response must be emitted
-        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+        # DD-TESTING-001 §256-300: Deterministic count validation per event type
+        event_counts = {}
+        for e in all_events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
 
-        # Verify AT LEAST 2 LLM events (allow multiple request/response pairs)
-        assert len(llm_events) >= 2, \
-            f"Expected at least 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
-            f"All events: {[e.event_type for e in all_events]}"
-
-        # Extract event types
-        event_types = [e.event_type for e in llm_events]
-
-        # Verify llm_request event emitted
-        assert "llm_request" in event_types, \
-            f"llm_request event not found in {event_types}"
-
-        # Verify llm_response event emitted
-        assert "llm_response" in event_types, \
-            f"llm_response event not found in {event_types}"
+        # DD-TESTING-001: Exactly 1 LLM request and 1 LLM response per incident analysis call
+        assert event_counts.get("aiagent.llm.request", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.request. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.response", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.response. Got: {event_counts}"
 
         # Verify all LLM events have same correlation_id
         for event in llm_events:
@@ -323,7 +311,7 @@ class TestIncidentAnalysisAuditFlow:
         audit_store,
         unique_test_id):
         """
-        BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
+        BR-AUDIT-005: Incident analysis MUST emit aiagent.llm.tool_call events for workflow searches.
 
         This test validates that HAPI emits audit events when LLM uses tools
         (e.g., workflow catalog search) during analysis.
@@ -355,20 +343,30 @@ class TestIncidentAnalysisAuditFlow:
         assert response is not None
 
         # ASSERT: Verify tool call events emitted
-        # Expect 4 events: llm_request, llm_tool_call, llm_response, workflow_validation_attempt
+        # DD-TESTING-001: Mock mode deterministic flow emits exactly 4 events:
+        #   aiagent.llm.request (1) + aiagent.llm.tool_call (1) + aiagent.llm.response (1) + aiagent.workflow.validation_attempt (1)
         events = query_audit_events_with_retry(
             audit_store=audit_store,
             correlation_id=remediation_id,
             event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
             event_type=None,  # Query all event types, filter in test
-            min_expected_events=4,  # All 4 audit events from mock mode
+            min_expected_events=4,  # Retry until all 4 deterministic events appear
             timeout_seconds=10
         )
-        event_types = [e.event_type for e in events]
 
-        # Tool call events should be present (workflow catalog search)
-        assert "llm_tool_call" in event_types, \
-            f"llm_tool_call event not found. Events: {event_types}"
+        # DD-TESTING-001 §256-300: Deterministic count validation per event type
+        event_counts = {}
+        for e in events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
+
+        assert event_counts.get("aiagent.llm.request", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.request. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.tool_call", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.tool_call. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.response", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.response. Got: {event_counts}"
+        assert event_counts.get("aiagent.workflow.validation_attempt", 0) == 1, \
+            f"Expected exactly 1 aiagent.workflow.validation_attempt. Got: {event_counts}"
 
     @pytest.mark.asyncio
     async def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
@@ -376,7 +374,7 @@ class TestIncidentAnalysisAuditFlow:
         audit_store,
         unique_test_id):
         """
-        BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
+        BR-AUDIT-005: Workflow validation MUST emit aiagent.workflow.validation_attempt events.
 
         This test validates that HAPI emits audit events during workflow validation
         (self-correction loop) as part of incident analysis.
@@ -412,15 +410,16 @@ class TestIncidentAnalysisAuditFlow:
             audit_store=audit_store,
             correlation_id=remediation_id,
             event_category="aiagent",  # HAPI is AI Agent Provider (ADR-034 v1.2)
-            event_type="workflow_validation_attempt",  # Specific event type for this test
-            min_expected_events=1,  # At least workflow_validation_attempt
+            event_type="aiagent.workflow.validation_attempt",  # Specific event type for this test
+            min_expected_events=1,  # Retry until event appears
             timeout_seconds=10
         )
-        event_types = [e.event_type for e in events]
 
-        # Validation attempt events should be present
-        assert "workflow_validation_attempt" in event_types, \
-            f"workflow_validation_attempt event not found. Events: {event_types}"
+        # DD-TESTING-001: Deterministic count - Mock LLM returns valid workflow on first try
+        assert len(events) == 1, \
+            f"Expected exactly 1 aiagent.workflow.validation_attempt event. Got: {len(events)}"
+        assert events[0].event_type == "aiagent.workflow.validation_attempt", \
+            f"Unexpected event type: {events[0].event_type}"
 
 
 class TestRecoveryAnalysisAuditFlow:
@@ -440,7 +439,7 @@ class TestRecoveryAnalysisAuditFlow:
         audit_store,
         unique_test_id):
         """
-        BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
+        BR-AUDIT-005: Recovery analysis MUST emit aiagent.llm.request and aiagent.llm.response audit events.
 
         This test validates that HAPI emits audit events during recovery analysis.
 
@@ -474,19 +473,16 @@ class TestRecoveryAnalysisAuditFlow:
             timeout_seconds=10
         )
 
-        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
-        # ADR-034 v1.1+: Recovery analysis with tool-using LLMs emits multiple request/response pairs
-        # Recovery analysis may also emit additional events (tool calls, validation attempts)
-        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+        # DD-TESTING-001 §256-300: Deterministic count validation per event type
+        event_counts = {}
+        for e in all_events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
 
-        # Verify AT LEAST 2 LLM events (allow multiple request/response pairs)
-        assert len(llm_events) >= 2, \
-            f"Expected at least 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
-            f"All events: {[e.event_type for e in all_events]}"
-
-        event_types = [e.event_type for e in llm_events]
-        assert "llm_request" in event_types, f"llm_request not found in {event_types}"
-        assert "llm_response" in event_types, f"llm_response not found in {event_types}"
+        # DD-TESTING-001: Exactly 1 LLM request and 1 LLM response per recovery analysis call
+        assert event_counts.get("aiagent.llm.request", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.request. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.response", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.response. Got: {event_counts}"
 
 
 class TestAuditEventSchemaValidation:
@@ -544,7 +540,8 @@ class TestAuditEventSchemaValidation:
             min_expected_events=1,
             timeout_seconds=10
         )
-        assert len(events) > 0, "No audit events found"
+        # DD-TESTING-001: Deterministic count - single incident analysis emits at least 2 HAPI events
+        assert len(events) >= 2, f"Expected at least 2 audit events (aiagent.llm.request + aiagent.llm.response). Found: {len(events)}"
 
         # ADR-034 required fields (per ADR-034 v1.2 and Data Storage OpenAPI spec)
         required_fields = [
@@ -584,8 +581,8 @@ class TestAuditEventSchemaValidation:
                 # This should NOT appear in HAPI tests - AIAnalysis controller only
                 assert event.event_category == "analysis", \
                     f"AI Analysis events must have category='analysis', got '{event.event_category}'"
-            elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
-                                       "workflow_validation_attempt", "holmesgpt.response.complete"]:
+            elif event.event_type in ["aiagent.llm.request", "aiagent.llm.response", "aiagent.llm.tool_call", 
+                                       "aiagent.workflow.validation_attempt", "aiagent.response.complete"]:
                 # ADR-034 v1.6: HAPI events use 'aiagent' category
                 assert event.event_category == "aiagent", \
                     f"HAPI events must have category='aiagent' per ADR-034 v1.6, got '{event.event_category}'"
@@ -661,25 +658,21 @@ class TestErrorScenarioAuditFlow:
             timeout_seconds=10
         )
 
-        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
-        # ADR-034 v1.1+: Even failed workflows may have multiple LLM calls (tool retries, error handling)
-        # Even failed workflows may emit additional events (tool calls, validation attempts)
-        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+        # DD-TESTING-001 §256-300: Deterministic count validation per event type
+        event_counts = {}
+        for e in all_events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
 
-        # Verify AT LEAST 2 LLM events even for failed workflow search
-        assert len(llm_events) >= 2, \
-            f"Expected at least 2 LLM events (llm_request, llm_response) even for failed workflow search, got {len(llm_events)}. " \
-            f"All events: {[e.event_type for e in all_events]}"
+        # DD-TESTING-001: Even failed workflows must emit exactly 1 request + 1 response
+        assert event_counts.get("aiagent.llm.request", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.request even for failed workflow. Got: {event_counts}"
+        assert event_counts.get("aiagent.llm.response", 0) == 1, \
+            f"Expected exactly 1 aiagent.llm.response even for failed workflow. Got: {event_counts}"
 
         # Verify events include the remediation_id (correlation)
-        for event in llm_events:
+        for event in all_events:
             assert event.correlation_id == remediation_id, \
                 f"Event correlation_id mismatch: {event.correlation_id} != {remediation_id}"
-
-        # Business failure context should be captured in audit events
-        event_types = [e.event_type for e in llm_events]
-        assert "llm_request" in event_types, "Should audit LLM request even when workflow not found"
-        assert "llm_response" in event_types, "Should audit LLM response even when workflow not found"
 
 
 # ========================================

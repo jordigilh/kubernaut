@@ -82,7 +82,7 @@ class TestLLMAuditIntegration:
         event = {
             "version": "1.0",
             "event_category": "test-service",
-            "event_type": "llm_request",
+            "event_type": "aiagent.llm.request",
             "event_timestamp": "2025-01-01T00:00:00Z",
             "correlation_id": "test-123",
             "event_action": "test_op",
@@ -122,7 +122,7 @@ class TestLLMAuditIntegration:
         assert "event_category" in event
         assert event["event_category"] == "aiagent"  # ADR-034 v1.2: HolmesGPT API is "aiagent" service (AI Agent Provider)
         assert "event_type" in event
-        assert event["event_type"] == "llm_request"
+        assert event["event_type"] == "aiagent.llm.request"
         assert "event_timestamp" in event
         assert "correlation_id" in event
         assert event["correlation_id"] == "rem-67890"
@@ -160,7 +160,7 @@ class TestLLMAuditIntegration:
         assert "version" in event
         assert "event_category" in event
         assert "event_type" in event
-        assert event["event_type"] == "llm_response"
+        assert event["event_type"] == "aiagent.llm.response"
         assert "event_timestamp" in event
         assert "correlation_id" in event
         assert event["correlation_id"] == "rem-67890"
@@ -196,7 +196,7 @@ class TestLLMAuditIntegration:
         assert "version" in event
         assert "event_category" in event
         assert "event_type" in event
-        assert event["event_type"] == "llm_tool_call"
+        assert event["event_type"] == "aiagent.llm.tool_call"
         assert "event_timestamp" in event
         assert "correlation_id" in event
         assert event["correlation_id"] == "rem-67890"
