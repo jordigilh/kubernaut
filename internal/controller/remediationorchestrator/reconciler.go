@@ -436,10 +436,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if rr.Status.OverallPhase == "" {
 		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
 
-		// Per DD-AUDIT-003: Emit lifecycle.started event for new RR
-		// Must happen BEFORE requeue so audit trail captures first reconcile
-		r.emitLifecycleStartedAudit(ctx, rr)
-
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
 		// Initialize phase + StartTime + TimeoutConfig in single API call
@@ -460,6 +456,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		logger.Error(err, "Failed to initialize RemediationRequest status")
 		return ctrl.Result{}, err
 	}
+
+	// RO-AUDIT-IDEMPOTENCY: Emit initialization audit events ONLY after winning the
+	// AtomicStatusUpdate. Concurrent reconciles that both see OverallPhase == "" will
+	// race on the status update; only the winner proceeds here, preventing duplicate
+	// lifecycle.started/created events. Same pattern as RAR (ConditionAuditRecorded),
+	// Notification (NT-BUG-001), and WFE (DD-STATUS-001).
+	r.emitLifecycleStartedAudit(ctx, rr)
 
 	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
 	// The rr object passed to AtomicStatusUpdate is updated with the persisted status
