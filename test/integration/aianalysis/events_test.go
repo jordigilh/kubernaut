@@ -356,184 +356,20 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 		})
 	})
 
-	Context("IT-AA-064-01b: SessionLost on stale session (404)", Label("session"), func() {
-		It("should emit SessionLost warning and regenerate when session ID is unknown to HAPI", func() {
-			rrName := helpers.UniqueTestName("test-remediation-session-lost")
-			analysisName := helpers.UniqueTestName("integration-events-session-lost")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      analysisName,
-					Namespace: testNamespace,
-				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      rrName,
-						Namespace: testNamespace,
-					},
-					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "test-fingerprint-session-lost",
-							Severity:         "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "staging",
-							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod-session-lost",
-								Namespace: testNamespace,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
-					},
-				},
-			}
-
-			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
-
-			By("Creating AIAnalysis CRD and waiting for initial session")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			// Wait for the controller to get a real session ID from HAPI
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return analysis.Status.InvestigationSession != nil &&
-					analysis.Status.InvestigationSession.ID != ""
-			}, eventTimeout, eventInterval).Should(BeTrue(), "Expected session to be created")
-
-			By("Injecting stale session ID to trigger 404 on next poll")
-			// Set a fabricated UUID that HAPI has never seen
-			analysis.Status.InvestigationSession.ID = "00000000-dead-beef-0000-000000000000"
-			analysis.Status.InvestigationSession.PollCount = 0 // Reset to ensure next reconcile polls
-			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
-
-			By("Waiting for reconciliation to complete (session lost -> regenerate -> complete)")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, eventTimeout, eventInterval).Should(Equal("Completed"))
-
-			By("Asserting SessionLost warning event was emitted")
-			var evts []corev1.Event
-			Eventually(func() bool {
-				var err error
-				evts, err = listEventsForObject(ctx, k8sClient, analysisName, testNamespace)
-				if err != nil {
-					return false
-				}
-				reasons := eventReasons(evts)
-				return containsReason(reasons, events.EventReasonSessionLost) &&
-					containsReason(reasons, events.EventReasonSessionCreated)
-			}, eventTimeout, eventInterval).Should(BeTrue(), "Expected SessionLost + SessionCreated events")
-
-			// Verify SessionLost is a Warning event
-			for _, e := range evts {
-				if e.Reason == events.EventReasonSessionLost {
-					Expect(e.Type).To(Equal(corev1.EventTypeWarning))
-					Expect(e.Message).To(ContainSubstring("session lost"))
-					break
-				}
-			}
-
-			// Verify at least 2 SessionCreated events (initial + after regeneration)
-			sessionCreatedCount := 0
-			for _, e := range evts {
-				if e.Reason == events.EventReasonSessionCreated {
-					sessionCreatedCount++
-				}
-			}
-			Expect(sessionCreatedCount).To(BeNumerically(">=", 2),
-				"Expected at least 2 SessionCreated events (initial + regenerated)")
-		})
-	})
-
-	Context("IT-AA-064-01c: SessionRegenerationExceeded", Label("session"), func() {
-		It("should emit SessionRegenerationExceeded warning and fail when cap is reached", func() {
-			rrName := helpers.UniqueTestName("test-remediation-regen-exceeded")
-			analysisName := helpers.UniqueTestName("integration-events-regen-exceeded")
-			analysis := &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      analysisName,
-					Namespace: testNamespace,
-				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      rrName,
-						Namespace: testNamespace,
-					},
-					RemediationID: rrName,
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "test-fingerprint-regen-exceeded",
-							Severity:         "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "staging",
-							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod-regen",
-								Namespace: testNamespace,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
-					},
-				},
-			}
-
-			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
-
-			By("Creating AIAnalysis CRD and waiting for initial session")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			// Wait for the controller to get a real session ID
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return analysis.Status.InvestigationSession != nil &&
-					analysis.Status.InvestigationSession.ID != ""
-			}, eventTimeout, eventInterval).Should(BeTrue(), "Expected session to be created")
-
-			By("Setting generation to MaxSessionRegenerations-1 and injecting stale session ID")
-			// This ensures the next 404 triggers the regeneration cap
-			analysis.Status.InvestigationSession.ID = "00000000-dead-beef-0000-000000000001"
-			analysis.Status.InvestigationSession.Generation = 4 // MaxSessionRegenerations(5) - 1
-			analysis.Status.InvestigationSession.PollCount = 0
-			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
-
-			By("Waiting for Failed phase (regeneration cap exceeded)")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, eventTimeout, eventInterval).Should(Equal("Failed"))
-
-			By("Asserting SessionLost + SessionRegenerationExceeded events")
-			var evts []corev1.Event
-			Eventually(func() bool {
-				var err error
-				evts, err = listEventsForObject(ctx, k8sClient, analysisName, testNamespace)
-				if err != nil {
-					return false
-				}
-				reasons := eventReasons(evts)
-				return containsReason(reasons, events.EventReasonSessionLost) &&
-					containsReason(reasons, events.EventReasonSessionRegenerationExceeded)
-			}, eventTimeout, eventInterval).Should(BeTrue(),
-				"Expected SessionLost + SessionRegenerationExceeded events")
-
-			// Verify SessionRegenerationExceeded is a Warning event
-			for _, e := range evts {
-				if e.Reason == events.EventReasonSessionRegenerationExceeded {
-					Expect(e.Type).To(Equal(corev1.EventTypeWarning))
-					Expect(e.Message).To(ContainSubstring("exceeded"))
-					break
-				}
-			}
-
-			// Verify the AA status reflects the failure reason
-			Expect(analysis.Status.SubReason).To(Equal("SessionRegenerationExceeded"))
-		})
-	})
+	// IT-AA-064-01b and IT-AA-064-01c: REMOVED (covered by unit tests)
+	//
+	// SessionLost + regeneration and SessionRegenerationExceeded are error-injection
+	// scenarios that require fabricating CRD status (fake session IDs). This undermines
+	// the integration test contract of testing naturally occurring flows.
+	//
+	// These scenarios are comprehensively covered at the unit test level:
+	//   - UT-AA-064-008: Session lost (404) -- first regeneration
+	//   - UT-AA-064-009: Multiple regenerations under cap
+	//   - UT-AA-064-010: Regeneration cap exceeded (Phase=Failed, SubReason, K8s events)
+	//   - UT-AA-064-002: Submit after session regeneration (ID cleared, Generation preserved)
+	//   - UT-AA-064-017: Recovery session lost -- same regeneration cap
+	//
+	// See: test/unit/aianalysis/investigating_handler_session_test.go
 })
 
 func containsReason(reasons []string, reason string) bool {

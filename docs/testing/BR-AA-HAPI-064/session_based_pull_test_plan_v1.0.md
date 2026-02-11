@@ -478,17 +478,15 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
   - Business Outcome: Operators can observe that a HAPI session was created via K8s Events
   - Given: AIAnalysis CRD created, controller reconciles with `WithSessionMode()`
   - Then: Normal event with reason=`SessionCreated` emitted, message contains "session created"
-- **IT-AA-064-01b**: SessionLost on stale session (404)
-  - BR: BR-AA-HAPI-064.5, DD-EVENT-001
-  - Business Outcome: HAPI restart is visible to operators via Warning K8s Event
-  - Given: AIAnalysis has a session, then `InvestigationSession.ID` is set to a fabricated UUID (HAPI returns 404)
-  - Then: Warning event `SessionLost` emitted, followed by regeneration producing a new `SessionCreated` event
-  - At least 2 `SessionCreated` events (initial + post-regeneration)
-- **IT-AA-064-01c**: SessionRegenerationExceeded
-  - BR: BR-AA-HAPI-064.6, DD-EVENT-001
-  - Business Outcome: Persistent HAPI instability is escalated via Warning K8s Event before AA fails
-  - Given: `InvestigationSession.Generation` set to 4 (MaxSessionRegenerations - 1), stale session ID injected
-  - Then: Warning events `SessionLost` + `SessionRegenerationExceeded` emitted, Phase=Failed, SubReason="SessionRegenerationExceeded"
+- ~~**IT-AA-064-01b**: SessionLost on stale session (404)~~ **REMOVED** -- covered by UT-AA-064-008/009/002
+  - **Rationale**: Error-injection (fabricating CRD status with fake session IDs) undermines the
+    integration test contract of testing naturally occurring flows. These scenarios are
+    comprehensively covered by unit tests: UT-AA-064-008 (first 404 regeneration),
+    UT-AA-064-009 (multiple regenerations under cap), UT-AA-064-002 (resubmit after regeneration).
+- ~~**IT-AA-064-01c**: SessionRegenerationExceeded~~ **REMOVED** -- covered by UT-AA-064-010
+  - **Rationale**: Same as above. UT-AA-064-010 fully validates Phase=Failed,
+    SubReason="SessionRegenerationExceeded", and both SessionLost + SessionRegenerationExceeded
+    K8s events with Warning type. See: `test/unit/aianalysis/investigating_handler_session_test.go`
 
 ---
 
