@@ -286,7 +286,7 @@ elif event.event_type.startswith("aianalysis."):
     # This should NOT appear in HAPI tests - AIAnalysis controller only
     assert event.event_category == "analysis", \
         f"AI Analysis events must have category='analysis', got '{event.event_category}'"
-elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", "workflow_validation_attempt", "holmesgpt.response.complete"]:
+elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", "workflow_validation_attempt", "aiagent.response.complete"]:
     # ADR-034 v1.6: HAPI events use 'aiagent' category
     assert event.event_category == "aiagent", \
         f"HAPI events must have category='aiagent', got '{event.event_category}'"
@@ -423,7 +423,7 @@ elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", "workf
 568|                assert event.event_category == "analysis", \
 569|                    f"AI Analysis events must have category='analysis', got '{event.event_category}'"
 570|            elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
-571|                                       "workflow_validation_attempt", "holmesgpt.response.complete"]:
+571|                                       "workflow_validation_attempt", "aiagent.response.complete"]:
 572|                # ADR-034 v1.6: HAPI events use 'aiagent' category
 573|                assert event.event_category == "aiagent", \
 574|                    f"HAPI events must have category='aiagent' per ADR-034 v1.6, got '{event.event_category}'"
@@ -571,7 +571,7 @@ valid_categories = ["aiagent", "workflow"]  # Was ["analysis", "workflow"]
 
 # Lines 570-574: Add HAPI event validation
 elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
-                           "workflow_validation_attempt", "holmesgpt.response.complete"]:
+                           "workflow_validation_attempt", "aiagent.response.complete"]:
     assert event.event_category == "aiagent", \
         f"HAPI events must have category='aiagent' per ADR-034 v1.6"
 ```

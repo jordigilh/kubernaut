@@ -5,8 +5,8 @@
 **Pass Rate**: 33/35 (94.3%)
 
 **Failures**:
-1. `test_llm_response_event_persisted` - Expected exactly 1 `llm_response`, found 3
-2. `test_complete_audit_trail_persisted` - Missing `workflow_validation_attempt` events
+1. `test_llm_response_event_persisted` - Expected exactly 1 `aiagent.llm.response`, found 3
+2. `test_complete_audit_trail_persisted` - Missing `aiagent.workflow.validation_attempt` events
 
 ---
 
@@ -19,25 +19,25 @@ assert len(llm_responses) == 1, f"Expected exactly 1 llm_response event"
 
 ### Actual Behavior
 Found 17 audit events including:
-- 3x `llm_request`
-- 3x `llm_response`  
-- 3x `llm_tool_call`
+- 3x `aiagent.llm.request`
+- 3x `aiagent.llm.response`  
+- 3x `aiagent.llm.tool_call`
 - 3x `workflow.catalog.search_completed`
-- 4x `workflow_validation_attempt`
-- 1x `holmesgpt.response.complete`
+- 4x `aiagent.workflow.validation_attempt`
+- 1x `aiagent.response.complete`
 
 ### Root Cause Analysis
 
 **Authority**: ADR-034 v1.1+ (Unified Audit Table Design)
 
 **Business Logic** (CORRECT):
-- Tool-using LLMs emit MULTIPLE `llm_response` events
-- Pattern: `llm_request` → `llm_tool_call` → `llm_response` (per tool invocation)
-- Final analysis also emits `llm_response`
+- Tool-using LLMs emit MULTIPLE `aiagent.llm.response` events
+- Pattern: `aiagent.llm.request` → `aiagent.llm.tool_call` → `aiagent.llm.response` (per tool invocation)
+- Final analysis also emits `aiagent.llm.response`
 - **Total**: 1+ responses depending on tool usage
 
 **Test Logic** (INCORRECT):
-- Assumes exactly 1 LLM call = 1 `llm_response` event
+- Assumes exactly 1 LLM call = 1 `aiagent.llm.response` event
 - Does not account for tool-using LLMs (HolmesGPT SDK workflow catalog search)
 - Based on pre-tool-era audit design
 
@@ -119,10 +119,10 @@ Found events: ['llm_response', 'llm_request']
 ```
 
 Only 2 events total - missing:
-- `llm_tool_call` (workflow catalog search)
+- `aiagent.llm.tool_call` (workflow catalog search)
 - `workflow.catalog.search_completed`
-- `workflow_validation_attempt`
-- `holmesgpt.response.complete`
+- `aiagent.workflow.validation_attempt`
+- `aiagent.response.complete`
 
 **This suggests the Mock LLM returned a MINIMAL response** - possibly no workflow selected, which bypasses the validation loop entirely.
 

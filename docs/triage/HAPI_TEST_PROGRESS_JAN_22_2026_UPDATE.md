@@ -35,7 +35,7 @@
 2. ✅ `test_incident_analysis_emits_llm_request_and_response_events` (line 270-278)
 3. ✅ `test_workflow_not_found_emits_audit_with_error_context` (line 633-635)
 
-**Root Cause**: Tests expected EXACTLY 2 LLM events (`llm_request` + `llm_response`), but with ADR-034 v1.1+ workflow catalog integration, tool-using LLMs emit multiple request/response pairs.
+**Root Cause**: Tests expected EXACTLY 2 LLM events (`aiagent.llm.request` + `aiagent.llm.response`), but with ADR-034 v1.1+ workflow catalog integration, tool-using LLMs emit multiple request/response pairs.
 
 **Fix Applied**:
 ```python

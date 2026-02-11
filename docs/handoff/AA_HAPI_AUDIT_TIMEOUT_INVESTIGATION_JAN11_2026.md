@@ -8,7 +8,7 @@
 
 ## Summary
 
-**Issue**: Test times out after 5 seconds waiting for HAPI `holmesgpt.response.complete` event to appear in DataStorage.
+**Issue**: Test times out after 5 seconds waiting for HAPI `aiagent.response.complete` event to appear in DataStorage.
 
 **Verdict**: This is **UNRELATED** to the BR-AI-002 test fixes. It's a pre-existing issue with HAPI async buffer coordination.
 
@@ -18,7 +18,7 @@
 
 ### Expected
 1. AIAnalysis controller calls HAPI
-2. HAPI emits `holmesgpt.response.complete` audit event
+2. HAPI emits `aiagent.response.complete` audit event
 3. HAPI buffer flushes to PostgreSQL (0.1s interval)
 4. Test queries DataStorage API for event
 5. Event appears within 5 seconds
@@ -27,7 +27,7 @@
 1. ✅ AIAnalysis controller completes analysis (`Phase: Completed`)
 2. ✅ HAPI emits event **4 times** (idempotency issue):
    ```
-   INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing holmesgpt.response.complete event (correlation_id=rr-recon-26c2ad6f)
+   INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing aiagent.response.complete event (correlation_id=rr-recon-26c2ad6f)
    INFO:src.extensions.incident.endpoint:✅ DD-AUDIT-005: Event stored successfully (buffered=True, correlation_id=rr-recon-26c2ad6f)
    [repeated 4 times]
    ```
@@ -43,8 +43,8 @@
 
 **Logs**:
 ```
-INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Creating holmesgpt.response.complete event (incident_id=test-rr-recon-65b9c925, remediation_id=rr-recon-26c2ad6f)
-INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing holmesgpt.response.complete event (correlation_id=rr-recon-26c2ad6f)
+INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Creating aiagent.response.complete event (incident_id=test-rr-recon-65b9c925, remediation_id=rr-recon-26c2ad6f)
+INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing aiagent.response.complete event (correlation_id=rr-recon-26c2ad6f)
 INFO:src.extensions.incident.endpoint:✅ DD-AUDIT-005: Event stored successfully (buffered=True, correlation_id=rr-recon-26c2ad6f)
 🔍 HAPI AUDIT STORE: result=True, correlation_id=rr-recon-26c2ad6f
 ```
@@ -68,7 +68,7 @@ INFO:src.extensions.incident.endpoint:✅ DD-AUDIT-005: Event stored successfull
 Eventually(func() int {
     hapiResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
         CorrelationID: ogenclient.NewOptString(correlationID), // "rr-recon-26c2ad6f"
-        EventType:     ogenclient.NewOptString(hapiEventType),  // "holmesgpt.response.complete"
+        EventType:     ogenclient.NewOptString(hapiEventType),  // "aiagent.response.complete"
     })
     if err != nil {
         GinkgoWriter.Printf("⏳ Waiting for HAPI event (query error: %v)\n", err)
@@ -113,8 +113,8 @@ Eventually(func() int {
 **Theory**: HAPI events are being stored but with incorrect structure/discriminator, causing DataStorage queries to filter them out.
 
 **Evidence**:
-- OpenAPI spec defines `holmesgpt.response.complete` with discriminator
-- Generated client uses `HolmesGPTResponsePayloadAuditEventEventData = "holmesgpt.response.complete"`
+- OpenAPI spec defines `aiagent.response.complete` with discriminator
+- Generated client uses `HolmesGPTResponsePayloadAuditEventEventData = "aiagent.response.complete"`
 - Test queries with correct event_type
 
 **Likelihood**: Low - other tests with same event_type pass

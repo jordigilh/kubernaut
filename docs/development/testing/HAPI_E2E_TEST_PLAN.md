@@ -938,9 +938,9 @@ for _, event := range events {
 
 **Expected Results**:
 - **BEHAVIOR**: All event types present
-  - `llm_request` event found
-  - `llm_response` event found
-  - (Optional: `workflow_validation_attempt` if validation occurred)
+  - `aiagent.llm.request` event found
+  - `aiagent.llm.response` event found
+  - (Optional: `aiagent.workflow.validation_attempt` if validation occurred)
 - **CORRECTNESS**: Consistent correlation across events
   - All events have same `correlation_id` (remediation_id)
   - All have same `incident_id` in event_data

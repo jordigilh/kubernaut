@@ -24,7 +24,7 @@ Fixed idempotency issue where controller was making **4 duplicate HAPI calls** i
 ### Test Logs (Before Fix)
 
 ```
-INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing holmesgpt.response.complete event (correlation_id=rr-recon-26c2ad6f)
+INFO:src.extensions.incident.endpoint:DD-AUDIT-005: Storing aiagent.response.complete event (correlation_id=rr-recon-26c2ad6f)
 INFO:src.extensions.incident.endpoint:✅ DD-AUDIT-005: Event stored successfully (buffered=True, correlation_id=rr-recon-26c2ad6f)
 [repeated 4 times for same correlation_id]
 ```

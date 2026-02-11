@@ -170,7 +170,7 @@ One test (`test_no_workflow_found_returns_needs_human_review`) uses outdated req
 
 3. **Audit Event Generation**:
    - Mock LLM mode (`MOCK_LLM_MODE=true`) now correctly generates audit events
-   - All 3 event types work: `llm_request`, `llm_response`, `workflow_validation_attempt`
+   - All 3 event types work: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.workflow.validation_attempt`
    - Events persist to Data Storage successfully
 
 ### **For AIAnalysis Team**:

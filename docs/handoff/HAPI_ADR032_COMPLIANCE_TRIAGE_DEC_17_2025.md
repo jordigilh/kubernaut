@@ -15,7 +15,7 @@
 
 **CORRECTED Finding**: HAPI and AA audit **DIFFERENT layers**:
 - **AA**: Audits calling HAPI HTTP service (`aianalysis.holmesgpt.call`)
-- **HAPI**: Audits calling external LLM providers (`llm_request`, `llm_response`)
+- **HAPI**: Audits calling external LLM providers (`aiagent.llm.request`, `aiagent.llm.response`)
 
 **Result**: HAPI **MUST** have audit AND fix ADR-032 violations.
 
@@ -53,10 +53,10 @@
 | | | CRD lifecycle | `aianalysis.phase.transition` |
 | | | Analysis completion | `aianalysis.analysis.completed` |
 | | | Approval decisions | `aianalysis.approval.decision` |
-| **HAPI** | **LLM Provider Integration** | Prompt TO OpenAI/Anthropic | `llm_request` |
-| | | Response FROM LLM provider | `llm_response` |
-| | | LLM tool invocations | `llm_tool_call` |
-| | | Validation retries | `workflow_validation_attempt` |
+| **HAPI** | **LLM Provider Integration** | Prompt TO OpenAI/Anthropic | `aiagent.llm.request` |
+| | | Response FROM LLM provider | `aiagent.llm.response` |
+| | | LLM tool invocations | `aiagent.llm.tool_call` |
+| | | Validation retries | `aiagent.workflow.validation_attempt` |
 
 ### **Why These Are NOT Duplicates**
 
@@ -312,10 +312,10 @@ async def startup_event():
 >
 > | Event Type | Description | Priority |
 > |------------|-------------|----------|
-> | `llm_request` | LLM prompt sent to external provider | P0 |
-> | `llm_response` | LLM response received from provider | P0 |
-> | `llm_tool_call` | LLM tool invocation | P0 |
-> | `workflow_validation_attempt` | Validation retry event | P0 |
+> | `aiagent.llm.request` | LLM prompt sent to external provider | P0 |
+> | `aiagent.llm.response` | LLM response received from provider | P0 |
+> | `aiagent.llm.tool_call` | LLM tool invocation | P0 |
+> | `aiagent.workflow.validation_attempt` | Validation retry event | P0 |
 >
 > **Industry Precedent**: OpenAI API logs, Anthropic Claude logs, AWS Bedrock audit logs
 >
@@ -839,10 +839,10 @@ Add section:
 **Purpose**: Verify HAPI audit events are correctly stored in Data Storage service.
 
 **Coverage**:
-- `llm_request` event → DS roundtrip
-- `llm_response` event → DS roundtrip
-- `llm_tool_call` event → DS roundtrip
-- `workflow_validation_attempt` event → DS roundtrip
+- `aiagent.llm.request` event → DS roundtrip
+- `aiagent.llm.response` event → DS roundtrip
+- `aiagent.llm.tool_call` event → DS roundtrip
+- `aiagent.workflow.validation_attempt` event → DS roundtrip
 - ADR-032 compliance (service crashes if audit fails)
 - Schema validation (ADR-034 compliance)
 
@@ -897,10 +897,10 @@ python -m pytest tests/integration/test_audit_integration.py -v
 
 ### **Phase 3: Integration Tests** (NEW - User Requested):
 - [ ] Create `test_audit_integration.py` for HAPI audit events
-- [ ] Test `llm_request` event → DS service roundtrip
-- [ ] Test `llm_response` event → DS service roundtrip
-- [ ] Test `llm_tool_call` event → DS service roundtrip
-- [ ] Test `workflow_validation_attempt` event → DS service roundtrip
+- [ ] Test `aiagent.llm.request` event → DS service roundtrip
+- [ ] Test `aiagent.llm.response` event → DS service roundtrip
+- [ ] Test `aiagent.llm.tool_call` event → DS service roundtrip
+- [ ] Test `aiagent.workflow.validation_attempt` event → DS service roundtrip
 - [ ] Verify stored events match sent events (schema validation)
 - [ ] Test audit failure scenarios (DS unavailable, nil store)
 - [ ] Test ADR-032 compliance (service crashes if audit fails)

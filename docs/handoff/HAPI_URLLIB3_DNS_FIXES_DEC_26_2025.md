@@ -129,9 +129,9 @@ make test-e2e-holmesgpt-api
 - ✅ No DNS resolution errors for Data Storage
 - ✅ Audit events successfully persist to Data Storage
 - ✅ All 3 audit event types generated in mock mode:
-  - `llm_request`
-  - `llm_response`
-  - `workflow_validation_attempt`
+  - `aiagent.llm.request`
+  - `aiagent.llm.response`
+  - `aiagent.workflow.validation_attempt`
 
 ---
 

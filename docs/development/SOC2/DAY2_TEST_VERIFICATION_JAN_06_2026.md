@@ -22,7 +22,7 @@ PASS
 
 ### **Test 1: Hybrid Audit Event Emission**
 - ✅ PASSED (2.034 seconds)
-- ✅ HAPI events: **EXACTLY 1** (holmesgpt.response.complete)
+- ✅ HAPI events: **EXACTLY 1** (aiagent.response.complete)
 - ✅ AA events: **EXACTLY 1** (aianalysis.analysis.completed)
 - ✅ Deterministic count validation working
 
@@ -34,7 +34,7 @@ PASS
 ### **Test 3: Audit Event Correlation**
 - ✅ PASSED (2.034 seconds)
 - ✅ Correlation ID consistency validated
-- ✅ Event counts: holmesgpt.response.complete: 1, aianalysis.analysis.completed: 1
+- ✅ Event counts: aiagent.response.complete: 1, aianalysis.analysis.completed: 1
 
 ---
 
@@ -54,7 +54,7 @@ PASS
 
 ### **1. Controller Idempotency Confirmed**
 ```
-holmesgpt.response.complete: 1
+aiagent.response.complete: 1
 aianalysis.analysis.completed: 1
 ```
 
