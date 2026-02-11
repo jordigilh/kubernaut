@@ -531,16 +531,26 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 				"Event %s must appear at least once, but found %d", eventType, eventTypeCounts[eventType])
 		}
 
-		// Verify temporal ordering: first event should be gateway.signal.received
+		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
+		// Audit timestamps have second-level precision, so multiple events emitted in the
+		// first second of the pipeline (gateway → RO → SP) share the same timestamp.
+		// We verify gateway.signal.received is present at the earliest timestamp tier.
 		Expect(allAuditEvents).ToNot(BeEmpty())
-		earliestEvent := allAuditEvents[0]
+		earliestTS := allAuditEvents[0].EventTimestamp
 		for _, event := range allAuditEvents[1:] {
-			if event.EventTimestamp.Before(earliestEvent.EventTimestamp) {
-				earliestEvent = event
+			if event.EventTimestamp.Before(earliestTS) {
+				earliestTS = event.EventTimestamp
 			}
 		}
-		Expect(earliestEvent.EventType).To(Equal("gateway.signal.received"),
-			"Earliest audit event should be gateway.signal.received")
+		var earliestTypes []string
+		for _, event := range allAuditEvents {
+			if event.EventTimestamp.Equal(earliestTS) {
+				earliestTypes = append(earliestTypes, event.EventType)
+			}
+		}
+		Expect(earliestTypes).To(ContainElement("gateway.signal.received"),
+			"gateway.signal.received must be among the earliest audit events (ts=%s, found: %v)",
+			earliestTS.Format(time.RFC3339), earliestTypes)
 
 		GinkgoWriter.Printf("  ✅ Audit trail verified: %d events, %d unique types, all expected present\n",
 			len(allAuditEvents), len(eventTypeCounts))
