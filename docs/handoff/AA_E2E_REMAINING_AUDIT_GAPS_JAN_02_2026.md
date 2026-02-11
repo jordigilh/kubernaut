@@ -268,10 +268,10 @@ if r.AuditClient != nil {
 2. `aianalysis.holmesgpt.call` ✅
 3. `aianalysis.error.occurred` ✅ (AA-BUG-001 fix)
 4. `aianalysis.analysis.completed` ✅
-5. `workflow_validation_attempt` ✅
-6. `llm_response` ✅
-7. `llm_tool_call` ✅
-8. `llm_request` ✅
+5. `aiagent.workflow.validation_attempt` ✅
+6. `aiagent.llm.response` ✅
+7. `aiagent.llm.tool_call` ✅
+8. `aiagent.llm.request` ✅
 
 ### Missing (2 types) ❌
 9. `aianalysis.rego.evaluation` ❌

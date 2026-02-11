@@ -71,10 +71,10 @@ def test_llm_request_event_stored_in_ds(
 5. ❌ Event schema is valid
 
 #### What's NOT Being Tested (MISSING):
-1. ❌ HAPI emits `llm_request` event when `/api/v1/incident/analyze` is called
-2. ❌ HAPI emits `llm_response` event after LLM completes
-3. ❌ HAPI emits `llm_tool_call` event when using workflow catalog
-4. ❌ HAPI emits `workflow_validation_attempt` event during validation
+1. ❌ HAPI emits `aiagent.llm.request` event when `/api/v1/incident/analyze` is called
+2. ❌ HAPI emits `aiagent.llm.response` event after LLM completes
+3. ❌ HAPI emits `aiagent.llm.tool_call` event when using workflow catalog
+4. ❌ HAPI emits `aiagent.workflow.validation_attempt` event during validation
 5. ❌ Audit events contain correct data from actual requests
 6. ❌ Audit events are emitted at correct times in business flow
 

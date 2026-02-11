@@ -9,10 +9,10 @@
 **Finding**: 2 HAPI integration tests are failing due to **test logic being outdated** after business logic evolved to emit additional audit events.
 
 **Root Cause**: Tests assert exact event counts (e.g., `len(events) == 2`), but the business logic now emits 4 events per incident analysis:
-1. `llm_request`
-2. `llm_tool_call` (workflow catalog search)
-3. `llm_response`
-4. `workflow_validation_attempt`
+1. `aiagent.llm.request`
+2. `aiagent.llm.tool_call` (workflow catalog search)
+3. `aiagent.llm.response`
+4. `aiagent.workflow.validation_attempt`
 
 **Status**: Not an infrastructure issue - tests need to filter by `event_type` rather than asserting total count.
 
@@ -31,10 +31,10 @@ E   AssertionError: Expected exactly 2 audit events (llm_request, llm_response),
 ```
 
 **Events Returned** (in order):
-1. `workflow_validation_attempt` (timestamp: ...762494)
-2. `llm_response` (timestamp: ...762313)
-3. `llm_tool_call` (timestamp: ...762292)
-4. `llm_request` (timestamp: ...762177)
+1. `aiagent.workflow.validation_attempt` (timestamp: ...762494)
+2. `aiagent.llm.response` (timestamp: ...762313)
+3. `aiagent.llm.tool_call` (timestamp: ...762292)
+4. `aiagent.llm.request` (timestamp: ...762177)
 
 **Why It's Failing**:
 - Test queries ALL events for `correlation_id` (line 266-271)
@@ -42,7 +42,7 @@ E   AssertionError: Expected exactly 2 audit events (llm_request, llm_response),
 - But business logic now emits 4 events (workflow validation + tool call added)
 
 **Test Purpose** (BR-AUDIT-005):
-> Verify that incident analysis **emits** `llm_request` and `llm_response` events
+> Verify that incident analysis **emits** `aiagent.llm.request` and `aiagent.llm.response` events
 
 **Correct Approach**:
 - Query ALL events for correlation_id
@@ -65,17 +65,17 @@ E   AssertionError: Expected exactly 2 audit events (llm_request, llm_response),
 ### **Timeline of Business Logic Evolution**
 
 1. **Original Design** (pre-Dec 2025):
-   - Incident analysis emitted 2 events: `llm_request` + `llm_response`
+   - Incident analysis emitted 2 events: `aiagent.llm.request` + `aiagent.llm.response`
    - Tests correctly asserted `len(events) == 2`
 
 2. **Workflow Catalog Search Added** (Dec 2025):
    - Business logic added tool calling (workflow catalog search)
-   - New event: `llm_tool_call`
+   - New event: `aiagent.llm.tool_call`
    - Event count: 3
 
 3. **Self-Correction Loop Added** (Dec 2025 - Jan 2026):
    - Business logic added workflow validation with retry
-   - New event: `workflow_validation_attempt`
+   - New event: `aiagent.workflow.validation_attempt`
    - Event count: 4
 
 4. **Tests Not Updated**:

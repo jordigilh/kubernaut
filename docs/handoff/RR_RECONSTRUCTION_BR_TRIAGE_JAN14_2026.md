@@ -64,7 +64,7 @@ This triage validates that **100% of BR-AUDIT-005 v2.0 RR Reconstruction require
 
 | Test Spec | Test ID | Test Type | Expected Events | Status | Evidence |
 |-----------|---------|-----------|-----------------|--------|----------|
-| HAPI response audit event | INTEGRATION-HAPI-01 | Integration | 1 `holmesgpt.response.complete` | ✅ PASSING | Integration test validates event |
+| HAPI response audit event | INTEGRATION-HAPI-01 | Integration | 1 `aiagent.response.complete` | ✅ PASSING | Integration test validates event |
 | AI Analysis completed event | INTEGRATION-AI-01 | Integration | 1 `aianalysis.analysis.completed` | ✅ PASSING | `full_reconstruction_integration_test.go:187` |
 | ProviderData populated | INTEGRATION-AI-02 | Integration | ProviderResponseSummary JSON | ✅ PASSING | `full_reconstruction_integration_test.go:323` |
 | Parser uses jx.Encoder | UNIT-PARSER-AI-01 | Unit | Correct ogen type marshaling | ✅ PASSING | `parser.go:77-82` |

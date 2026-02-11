@@ -140,7 +140,7 @@ valid_categories = ["aiagent", "workflow"]  # ADR-034 v1.6
 
 # Added HAPI event type validation
 elif event.event_type in ["llm_request", "llm_response", "llm_tool_call", 
-                           "workflow_validation_attempt", "holmesgpt.response.complete"]:
+                           "workflow_validation_attempt", "aiagent.response.complete"]:
     assert event.event_category == "aiagent", \
         f"HAPI events must have category='aiagent' per ADR-034 v1.6"
 ```

@@ -61,10 +61,10 @@ Added **4 new schemas** for HolmesGPT audit events:
 
 | Schema | Event Type | Description |
 |--------|-----------|-------------|
-| `LLMRequestPayload` | `llm_request` | LLM API request event |
-| `LLMResponsePayload` | `llm_response` | LLM API response event |
-| `LLMToolCallPayload` | `llm_tool_call` | LLM tool invocation event |
-| `WorkflowValidationPayload` | `workflow_validation_attempt` | Workflow validation event |
+| `LLMRequestPayload` | `aiagent.llm.request` | LLM API request event |
+| `LLMResponsePayload` | `aiagent.llm.response` | LLM API response event |
+| `LLMToolCallPayload` | `aiagent.llm.tool_call` | LLM tool invocation event |
+| `WorkflowValidationPayload` | `aiagent.workflow.validation_attempt` | Workflow validation event |
 
 **Discriminator Mapping** (added to `event_data` `oneOf`):
 ```yaml
@@ -75,7 +75,7 @@ discriminator:
     'llm_response': '#/components/schemas/LLMResponsePayload'
     'llm_tool_call': '#/components/schemas/LLMToolCallPayload'
     'workflow_validation_attempt': '#/components/schemas/WorkflowValidationPayload'
-    'holmesgpt.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
+    'aiagent.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
 ```
 
 ---

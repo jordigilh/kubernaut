@@ -162,7 +162,7 @@ This is a VALID outcome - not all signals require remediation.
 
 | Field | Value |
 |-------|-------|
-| `event_type` | `llm_response` |
+| `event_type` | `aiagent.llm.response` |
 | `outcome` | `resolved` or `inconclusive` |
 | `investigation_summary` | Full summary from LLM |
 | `original_signal_type` | From request |

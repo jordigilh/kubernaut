@@ -14,7 +14,7 @@
 
 **What Works NOW**:
 - ✅ **Gap #1-3** (Gateway): `original_payload`, `signal_labels`, `signal_annotations`
-- ✅ **Gap #4** (AI Analysis HYBRID): `holmesgpt.response.complete` + `aianalysis.analysis.completed`
+- ✅ **Gap #4** (AI Analysis HYBRID): `aiagent.response.complete` + `aianalysis.analysis.completed`
 - ✅ **Gap #5** (Workflow Selection): `workflowexecution.selection.completed` with `selected_workflow_ref`
 - ✅ **Gap #6** (Execution Ref): `workflowexecution.execution.started` with `execution_ref`
 - ✅ **Gap #7** (Error Details): `pkg/shared/audit.ErrorDetails` used across all services
@@ -59,7 +59,7 @@ if annotations != nil {
 
 ### ✅ **Gap #4: AI Provider Data - HYBRID (IMPLEMENTED)**
 
-**Event Types**: `holmesgpt.response.complete` + `aianalysis.analysis.completed`
+**Event Types**: `aiagent.response.complete` + `aianalysis.analysis.completed`
 **Files**:
 - **HAPI**: `holmesgpt-api/src/extensions/incident/endpoint.py:85-115`
 - **AI Analysis**: `pkg/aianalysis/audit/audit.go:84-162`

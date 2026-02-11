@@ -15,7 +15,7 @@
 
 **CORRECTED Finding**: HAPI and AA audit **DIFFERENT layers**:
 - **AA**: Audits calling HAPI HTTP service (`aianalysis.holmesgpt.call`)
-- **HAPI**: Audits calling external LLM providers (`llm_request`, `llm_response`)
+- **HAPI**: Audits calling external LLM providers (`aiagent.llm.request`, `aiagent.llm.response`)
 
 **Result**: HAPI **MUST** have audit AND fix ADR-032 violations.
 
@@ -53,10 +53,10 @@
 | | | CRD lifecycle | `aianalysis.phase.transition` |
 | | | Analysis completion | `aianalysis.analysis.completed` |
 | | | Approval decisions | `aianalysis.approval.decision` |
-| **HAPI** | **LLM Provider Integration** | Prompt TO OpenAI/Anthropic | `llm_request` |
-| | | Response FROM LLM provider | `llm_response` |
-| | | LLM tool invocations | `llm_tool_call` |
-| | | Validation retries | `workflow_validation_attempt` |
+| **HAPI** | **LLM Provider Integration** | Prompt TO OpenAI/Anthropic | `aiagent.llm.request` |
+| | | Response FROM LLM provider | `aiagent.llm.response` |
+| | | LLM tool invocations | `aiagent.llm.tool_call` |
+| | | Validation retries | `aiagent.workflow.validation_attempt` |
 
 ### **Why These Are NOT Duplicates**
 
@@ -311,10 +311,10 @@ async def startup_event():
 >
 > | Event Type | Description | Priority |
 > |------------|-------------|----------|
-> | `llm_request` | LLM prompt sent to external provider | P1 |
-> | `llm_response` | LLM response received from provider | P1 |
-> | `llm_tool_call` | LLM tool invocation | P1 |
-> | `workflow_validation_attempt` | Validation retry event | P1 |
+> | `aiagent.llm.request` | LLM prompt sent to external provider | P1 |
+> | `aiagent.llm.response` | LLM response received from provider | P1 |
+> | `aiagent.llm.tool_call` | LLM tool invocation | P1 |
+> | `aiagent.workflow.validation_attempt` | Validation retry event | P1 |
 >
 > **Industry Precedent**: OpenAI API logs, Anthropic Claude logs, AWS Bedrock audit logs
 >

@@ -98,7 +98,7 @@
 10. Added `test_workflows_bootstrapped` to complete audit trail test
 
 **Root Cause**:
-- `test_complete_audit_trail_persisted` expects `workflow_validation_attempt` event
+- `test_complete_audit_trail_persisted` expects `aiagent.workflow.validation_attempt` event
 - Test doesn't bootstrap workflows into DataStorage
 - Without workflows, validation doesn't run → no validation event created
 - Result: `AssertionError: Missing workflow_validation_attempt in audit trail`
