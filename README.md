@@ -77,13 +77,13 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 |---------|--------|---------|-------------------|
 | **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 92.7% |
 | **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 87.4% |
-| **Signal Processing** | ✅ v1.0 | Signal enrichment, mode classification, type normalization | 85.6% |
+| **Signal Processing** | ✅ v1.0 | Signal enrichment, mode classification, type normalization | 85.5% |
 | **Workflow Execution** | ✅ v1.0 | Tekton Pipeline & K8s Job orchestration | 82.8% |
+| **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 82.7% |
 | **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 81.5% |
-| **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 80.9% |
 | **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 78.9% |
 | **Notification** | ✅ v1.0 | Multi-channel delivery | 73.3% |
-| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 60.7% |
+| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 61.4% |
 | **Must-Gather** | ✅ v1.0 | Enterprise diagnostic collection (BR-PLATFORM-001) | N/A (bats) |
 | ~~Effectiveness Monitor~~ | ❌ V1.1 | Continuous improvement (DD-017) | — |
 
@@ -290,13 +290,13 @@ Kubernaut follows a **defense-in-depth testing pyramid** with coverage tracked a
 |---------|---------------|-------------|-----|-----------|
 | **HolmesGPT API** | 79.1% | 56.5% | 59.2% | 92.7% |
 | **AI Analysis** | 80.0% | 73.6% | 53.4% | 87.4% |
-| **Signal Processing** | 87.3% | 61.8% | 58.1% | 85.6% |
-| **Workflow Execution** | 73.4% | 67.9% | 56.3% | 82.8% |
+| **Signal Processing** | 87.3% | 61.9% | 57.9% | 85.5% |
+| **Workflow Execution** | 73.4% | 67.9% | 56.2% | 82.8% |
+| **Remediation Orchestrator** | 79.5% | 56.7% | 47.0% | 82.7% |
 | **Gateway** | 67.7% | 42.5% | 58.8% | 81.5% |
-| **Remediation Orchestrator** | 79.2% | 55.9% | 47.2% | 80.9% |
 | **Auth Webhook** | 50.0% | 49.0% | 40.5% | 78.9% |
-| **Notification** | 75.5% | 57.7% | 50.8% | 73.3% |
-| **Data Storage** | 55.0% | 34.2% | 45.2% | 60.7% |
+| **Notification** | 75.5% | 57.6% | 51.0% | 73.3% |
+| **Data Storage** | 55.0% | 34.2% | 46.8% | 61.4% |
 
 > Coverage is reported on every PR via GitHub Actions. "All Tiers" uses line-by-line merging — a statement covered by any tier counts once. See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for methodology and patterns.
 

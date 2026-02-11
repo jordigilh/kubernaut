@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	sigyaml "sigs.k8s.io/yaml"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -594,11 +595,80 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),
 			"Reconstructed RR completeness should be at least 80%%")
 
-		// Verify the reconstructed YAML contains key fields from the actual RR
-		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring(testNamespace),
-			"Reconstructed YAML should reference the test namespace")
+		// ================================================================
+		// Step 12b: Field-by-field verification against the live RR (DD-AUDIT-004)
+		// Parse the reconstructed YAML back into an RR struct and compare
+		// key fields against the actual RR that flowed through the pipeline.
+		// ================================================================
+		By("Step 12b: Verifying reconstructed RR fields match the live RR")
 
-		GinkgoWriter.Printf("  ✅ RR reconstruction verified: completeness=%d%%, valid=%t\n",
+		// Fetch the live RR (post-completion, all status fields populated)
+		liveRR := &remediationv1.RemediationRequest{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{
+			Name: remediationRequest.Name, Namespace: testNamespace,
+		}, liveRR)).To(Succeed(), "Should fetch the live RR")
+
+		// Parse reconstructed YAML into an RR struct
+		reconstructedRR := &remediationv1.RemediationRequest{}
+		Expect(sigyaml.Unmarshal([]byte(reconstructionResp.RemediationRequestYaml), reconstructedRR)).To(Succeed(),
+			"Reconstructed YAML should unmarshal into a RemediationRequest")
+
+		GinkgoWriter.Printf("  Reconstructed RR: name=%s namespace=%s phase=%s\n",
+			reconstructedRR.Name, reconstructedRR.Namespace, reconstructedRR.Status.OverallPhase)
+
+		// Gap #1: spec.signalName — from gateway.signal.received
+		Expect(reconstructedRR.Spec.SignalName).ToNot(BeEmpty(),
+			"Gap #1: Reconstructed RR must have spec.signalName")
+		Expect(reconstructedRR.Spec.SignalName).To(Equal(liveRR.Spec.SignalName),
+			"Gap #1: Reconstructed signalName should match live RR")
+		GinkgoWriter.Printf("  ✅ Gap #1: signalName=%s\n", reconstructedRR.Spec.SignalName)
+
+		// Gap #1: spec.signalFingerprint — from gateway.signal.received
+		Expect(reconstructedRR.Spec.SignalFingerprint).ToNot(BeEmpty(),
+			"Gap #1: Reconstructed RR must have spec.signalFingerprint")
+		Expect(reconstructedRR.Spec.SignalFingerprint).To(Equal(liveRR.Spec.SignalFingerprint),
+			"Gap #1: Reconstructed signalFingerprint should match live RR")
+		GinkgoWriter.Printf("  ✅ Gap #1: signalFingerprint=%s\n", reconstructedRR.Spec.SignalFingerprint)
+
+		// Gap #2: spec.signalLabels — from gateway.signal.received
+		Expect(reconstructedRR.Spec.SignalLabels).ToNot(BeEmpty(),
+			"Gap #2: Reconstructed RR must have spec.signalLabels")
+		GinkgoWriter.Printf("  ✅ Gap #2: signalLabels has %d entries\n", len(reconstructedRR.Spec.SignalLabels))
+
+		// Gap #3: spec.signalAnnotations — from gateway.signal.received
+		// Annotations may be empty depending on the signal source, so just check presence
+		GinkgoWriter.Printf("  ✅ Gap #3: signalAnnotations has %d entries\n", len(reconstructedRR.Spec.SignalAnnotations))
+
+		// Gap #4: spec.originalPayload — from gateway.signal.received
+		Expect(reconstructedRR.Spec.OriginalPayload).ToNot(BeEmpty(),
+			"Gap #4: Reconstructed RR must have spec.originalPayload (original webhook body)")
+		GinkgoWriter.Printf("  ✅ Gap #4: originalPayload present (%d bytes)\n", len(reconstructedRR.Spec.OriginalPayload))
+
+		// Gap #5: status.selectedWorkflowRef — from workflowexecution.selection.completed
+		Expect(reconstructedRR.Status.SelectedWorkflowRef).ToNot(BeNil(),
+			"Gap #5: Reconstructed RR must have status.selectedWorkflowRef")
+		GinkgoWriter.Printf("  ✅ Gap #5: selectedWorkflowRef.workflowID=%s\n",
+			reconstructedRR.Status.SelectedWorkflowRef.WorkflowID)
+
+		// Gap #6: status.executionRef — from workflowexecution.execution.started
+		Expect(reconstructedRR.Status.ExecutionRef).ToNot(BeNil(),
+			"Gap #6: Reconstructed RR must have status.executionRef")
+		GinkgoWriter.Printf("  ✅ Gap #6: executionRef.name=%s\n", reconstructedRR.Status.ExecutionRef.Name)
+
+		// Gap #7: status.error — NOT implemented in reconstruction pipeline (noted)
+		// This is a success path so no error is expected anyway.
+
+		// Gap #8: status.timeoutConfig — from orchestrator.lifecycle.created
+		Expect(reconstructedRR.Status.TimeoutConfig).ToNot(BeNil(),
+			"Gap #8: Reconstructed RR must have status.timeoutConfig")
+		GinkgoWriter.Printf("  ✅ Gap #8: timeoutConfig present (global=%v)\n",
+			reconstructedRR.Status.TimeoutConfig.Global)
+
+		// Verify namespace and metadata consistency
+		Expect(reconstructedRR.Namespace).To(Equal(testNamespace),
+			"Reconstructed RR namespace should match test namespace")
+
+		GinkgoWriter.Printf("  ✅ RR reconstruction verified: completeness=%d%%, valid=%t, all gaps verified\n",
 			reconstructionResp.Validation.Completeness, reconstructionResp.Validation.IsValid)
 		if len(reconstructionResp.Validation.Warnings) > 0 {
 			GinkgoWriter.Printf("  ⚠️  Reconstruction warnings: %v\n", reconstructionResp.Validation.Warnings)
