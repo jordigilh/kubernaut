@@ -68,7 +68,6 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var holmesGPTURL string
-	var holmesGPTTimeout time.Duration
 	var regoPolicyPath string
 	var dataStorageURL string
 
@@ -76,9 +75,6 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
-	// BR-ORCH-036 v3.0: 10m default accommodates real LLM response times (2-3 min per call).
-	// Will be replaced by session-based pulling design (see BR for details).
-	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-api-timeout", 10*time.Minute, "HolmesGPT-API request timeout.")
 	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
 	flag.StringVar(&dataStorageURL, "datastorage-url", getEnvOrDefault("DATASTORAGE_URL", "http://datastorage:8080"), "Data Storage Service URL for audit events.")
 
@@ -113,10 +109,11 @@ func main() {
 	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
 	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
 	// ========================================
-	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL, "timeout", holmesGPTTimeout.String())
+	// BR-AA-HAPI-064: With async session mode, per-request HTTP timeout defaults to 60s
+	// (via client.defaultTimeout). The RO enforces phase-level timeout via TimeoutConfig.Analyzing.
+	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL)
 	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
 		BaseURL: holmesGPTURL,
-		Timeout: holmesGPTTimeout,
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create HolmesGPT-API client")
