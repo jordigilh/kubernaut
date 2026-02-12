@@ -3,12 +3,12 @@
 > **Note**: V1.0 uses label-only matching per DD-WORKFLOW-015. Semantic search references in this document are historical context for V1.1+.
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V2.4 - Multi-Environment Support)
+**Status**: ✅ **APPROVED** (V2.6 - Action-Type Primary Matching)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
-**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-004 v1.6 (Multi-Environment Queries)
-**Version**: 2.4
+**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-004 v1.6 (Multi-Environment Queries), DD-WORKFLOW-016 (Action-Type Workflow Indexing)
+**Version**: 2.6
 
 ---
 
@@ -37,7 +37,28 @@
 
 ## 📝 **Changelog**
 
-### Version 2.5 (2026-01-28) **← CURRENT**
+### Version 2.6 (2026-02-05) **← CURRENT**
+**BREAKING**: Action-type primary matching (DD-WORKFLOW-016)
+
+**Changes**:
+- **NEW**: `action_type` added as **mandatory label** (Group C: Workflow-Defined)
+  - Enforced taxonomy (10 types): `ScaleReplicas`, `RestartPod`, `RestartDeployment`, `IncreaseCPULimits`, `IncreaseMemoryLimits`, `RollbackDeployment`, `DrainNode`, `CordonNode`, `CleanupNode`, `DeletePod`
+  - Validated against DD-WORKFLOW-016 authoritative taxonomy
+  - Becomes the **primary matching key** for workflow catalog search (replaces `signal_type`)
+- **CHANGED**: `signal_type` demoted from **mandatory primary key** to **optional metadata**
+  - No longer used as the primary catalog search filter
+  - Retained on workflow entries as documentation/metadata
+  - SP continues to populate `signal_type` for signal classification (ADR-054)
+- **NEW**: `ListAvailableActions` context-aware HAPI tool filters available action types by severity/component/environment
+- **NEW**: LLM two-step workflow discovery protocol (list actions -> RCA -> search catalog)
+
+**Rationale**: Different source adapters (Prometheus, K8s Events) produce incompatible signal type vocabularies. The same signal can require different remediations depending on root cause. Action-type indexing decouples workflows from source adapter vocabularies and leverages the LLM's RCA to select the appropriate remediation action.
+
+**Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+
+**Breaking Impact**: Pre-release only. Workflow registration now requires `action_type` from the enforced taxonomy. Catalog search primary key changes from `signal_type` to `action_type`.
+
+### Version 2.5 (2026-01-28) **[SUPERSEDED by v2.6]**
 **FEATURE**: Multi-environment workflow capability (workflows declare target environments)
 
 **Breaking Changes**:
@@ -196,7 +217,7 @@ metadata:
 
 **Rule**: When writing API code, always use `snake_case`. The K8s annotation format is only for CRD metadata.
 
-### **5 Mandatory Labels (V1.4)**
+### **6 Mandatory Labels (V2.6)**
 
 Labels are grouped by how they are populated:
 
@@ -204,11 +225,13 @@ Labels are grouped by how they are populated:
 
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
-| 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff, NodeNotReady) |
+| 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff, NodeNotReady). **Optional for catalog matching** (v2.6: metadata only, not used as primary search key). SP continues to populate for signal classification. |
 | 2 | `severity` | ENUM | Alert/Event | ❌ NO | How bad (critical, high, medium, low) |
 | 3 | `component` | TEXT | K8s Resource | ❌ NO | What resource (pod, deployment, node) |
 
 **Derivation**: These labels are extracted directly from Kubernetes events, Prometheus alerts, or signal metadata. **No user configuration required.**
+
+> **v2.6 Note**: `signal_type` remains auto-populated by SP for signal classification (ADR-054) and is available as metadata on workflow entries. However, it is **no longer the primary catalog search key**. See Group C below and DD-WORKFLOW-016.
 
 #### **Group B: System-Classified Labels** (Signal Processing derives with configurable defaults)
 
@@ -221,9 +244,31 @@ Labels are grouped by how they are populated:
 
 **Default Logic** (if no custom Rego):
 - `environment`: From namespace label `kubernaut.ai/environment` (single authoritative source)
-- `priority`: Derived from `severity` + `environment` (critical + production → P0)
+- `priority`: Derived from `severity` + `environment` (critical + production -> P0)
 
 **Rationale**: Using only `kubernaut.ai/` prefixed labels prevents accidentally capturing labels from other systems.
+
+#### **Group C: Workflow-Defined Labels (v2.6)** (Workflow author selects from enforced taxonomy)
+
+| # | Label | Type | Source | Wildcard | Description |
+|---|---|---|---|---|---|
+| 6 | `action_type` | TEXT | Workflow Author | ❌ NO | **Primary catalog matching key.** What the workflow does (ScaleReplicas, RestartPod, IncreaseCPULimits, etc.). Selected from enforced taxonomy defined in DD-WORKFLOW-016. |
+
+**Derivation**: Workflow authors select from the predefined action type taxonomy when registering workflows. The LLM selects an action type after RCA investigation via the `list_available_actions` tool (DD-WORKFLOW-016).
+
+**Valid Values (V1.0 Taxonomy)**:
+- `ScaleReplicas` - Horizontally scale a workload
+- `RestartPod` - Kill and recreate specific pod(s)
+- `RestartDeployment` - Rolling restart of all pods in a workload
+- `IncreaseCPULimits` - Raise CPU resource limits
+- `IncreaseMemoryLimits` - Raise memory resource limits
+- `RollbackDeployment` - Revert to previous revision
+- `DrainNode` - Drain and cordon a node (evict pods)
+- `CordonNode` - Cordon a node (prevent scheduling, no eviction)
+- `CleanupNode` - Reclaim disk space (purge temp files, old logs, unused images)
+- `DeletePod` - Delete specific pod(s)
+
+**Authority**: DD-WORKFLOW-016 governs the action type taxonomy. New types require a DD-WORKFLOW-016 amendment.
 
 ---
 
@@ -1016,20 +1061,23 @@ The `search_workflow_catalog` tool includes `rca_resource` for validation:
 
 ### **Label Matching Rules**
 
-**For MCP Workflow Search** (DD-LLM-001):
-1. **Mandatory Label Filtering**: `signal_type`, `severity`, `environment`, `priority` used as SQL WHERE filters
-2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) for pgvector semantic similarity
-3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic)
-4. **Wildcard Support (Mandatory Labels)**: `environment`, `priority` support `'*'` (matches any value)
-5. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `serviceMesh` support `'*'` (matches any non-empty value)
-6. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
-7. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
+**For MCP Workflow Search** (DD-LLM-001, DD-WORKFLOW-016):
+1. **Primary Key (v2.6)**: `action_type` is the required primary filter (replaces `signal_type` per DD-WORKFLOW-016)
+2. **Mandatory Label Filtering**: `severity`, `environment`, `priority` used as SQL WHERE filters with wildcard support
+3. **Component Filtering**: `component` used as SQL WHERE filter with wildcard support
+4. **Signal Type (v2.6)**: Optional metadata on workflow entries, NOT used as primary search filter
+5. **Wildcard Support (Mandatory Labels)**: `environment`, `priority` support `'*'` (matches any value)
+6. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `serviceMesh` support `'*'` (matches any non-empty value)
+7. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
+8. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
+9. **Two-Step Discovery (v2.6)**: LLM calls `list_available_actions` first, then `search_workflow_catalog` (DD-WORKFLOW-016)
 
 **For Workflow Registration**:
-1. **5 Mandatory Labels Required**: Every workflow must have all 5 mandatory labels (v1.4)
-2. **Custom Labels Optional**: Workflows can include custom labels for more specific matching
-3. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
-4. **Validation**: Labels are validated against authoritative values in this document
+1. **6 Labels Required (v2.6)**: Every workflow must have `action_type` (from taxonomy) + `severity`, `component`, `environment`, `priority`. `signal_type` is optional metadata.
+2. **Action Type Validation**: `action_type` must be from DD-WORKFLOW-016 enforced taxonomy
+3. **Custom Labels Optional**: Workflows can include custom labels for more specific matching
+4. **Description Format**: Must follow `"<action_type> <severity>: <description>"` for optimal semantic matching
+5. **Validation**: Labels are validated against authoritative values in this document and DD-WORKFLOW-016
 
 ### **Valid Values (Authoritative)**
 
@@ -1041,6 +1089,11 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   # WHY: LLM uses signal_type to query the same source system during investigation
   #      Example: signal_type="OOMKilled" → LLM runs: kubectl get events | grep "OOMKilled"
   #      If we transform "OOMKilled" → "pod-oomkilled", LLM queries will fail
+  #
+  # v2.6 NOTE: signal_type is NO LONGER the primary catalog search key.
+  # It remains auto-populated by SP for signal classification (ADR-054) and
+  # is available as optional metadata on workflow entries.
+  # Primary catalog matching now uses action_type (DD-WORKFLOW-016).
   #
   # SOURCE: Kubernetes API - kubectl describe pod → State.Reason field
   # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
@@ -1097,6 +1150,30 @@ risk_tolerance:  # Derived from priority + environment via Rego
   - low      # Conservative remediation (e.g., 10% resource increase, no restart)
   - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
   - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
+```
+
+#### **Group C: Workflow-Defined Labels (v2.6)**
+
+```yaml
+action_type:  # PRIMARY CATALOG MATCHING KEY (DD-WORKFLOW-016)
+  # Enforced taxonomy - workflow authors select from this list
+  # LLM selects via list_available_actions tool after RCA investigation
+  # VerbNoun naming convention
+  #
+  - ScaleReplicas          # Horizontally scale a workload
+  - RestartPod             # Kill and recreate specific pod(s)
+  - RestartDeployment      # Rolling restart of all pods in a workload
+  - IncreaseCPULimits      # Raise CPU resource limits
+  - IncreaseMemoryLimits   # Raise memory resource limits
+  - RollbackDeployment     # Revert to previous revision
+  - DrainNode              # Drain and cordon a node (evict pods)
+  - CordonNode             # Cordon a node (prevent scheduling, no eviction)
+  - CleanupNode            # Reclaim disk space (purge temp files, old logs, unused images)
+  - DeletePod              # Delete specific pod(s)
+  #
+  # RULE: New action types require DD-WORKFLOW-016 amendment
+  # RULE: Validation rejects unknown action types at registration time
+  # AUTHORITY: DD-WORKFLOW-016
 ```
 
 #### **Optional Custom Labels (User-Defined)**
@@ -1547,10 +1624,10 @@ func ValidateMandatoryLabels(filters WorkflowSearchFilters) error {
 }
 ```
 
-#### **SQL Filtering Pattern (v1.6 - 5 Mandatory + Custom Labels)**
+#### **SQL Filtering Pattern (v2.6 - Action-Type Primary + Mandatory + Custom Labels)**
 
 ```sql
--- Filter workflows by 5 mandatory labels (v1.4) + optional custom labels
+-- Filter workflows by action_type (primary key, v2.6) + mandatory labels + optional custom labels
 SELECT
     workflow_id,
     version,
@@ -1559,10 +1636,11 @@ SELECT
     embedding
 FROM workflow_catalog
 WHERE status = 'active'
-  -- 5 Mandatory labels (structured columns, snake_case)
-  AND signal_type = $1                                -- OOMKilled
-  AND severity = $2                                   -- critical
-  AND component = $3                                  -- pod
+  -- Primary key (v2.6, DD-WORKFLOW-016)
+  AND action_type = $1                                -- ScaleReplicas (from LLM selection)
+  -- Mandatory labels (structured columns, snake_case)
+  AND (severity = $2 OR severity = '*')               -- critical
+  AND (component = $3 OR component = '*')             -- pod
   AND (environment = $4 OR environment = '*')         -- production (with wildcard)
   AND (priority = $5 OR priority = '*')               -- P0 (with wildcard)
   -- Custom labels (JSONB containment - customer-defined)
@@ -1571,7 +1649,7 @@ ORDER BY embedding <=> $7  -- semantic similarity
 LIMIT 10;
 ```
 
-**Note**: `risk_tolerance` and `business_category` are now custom labels (v1.4), not mandatory columns.
+**Note (v2.6)**: `action_type` replaces `signal_type` as the primary search key (DD-WORKFLOW-016). `signal_type` is optional metadata on workflow entries, not a search filter. `risk_tolerance` and `business_category` are custom labels (v1.4), not mandatory columns.
 
 ---
 
@@ -1855,7 +1933,15 @@ custom_labels     JSONB
 
 ## 📋 **Changelog**
 
-### **v1.6** (2025-11-30) - CURRENT
+### **v2.6** (2026-02-05) - CURRENT
+- ✅ **BREAKING**: `action_type` added as mandatory label (Group C: Workflow-Defined, 10 types)
+- ✅ **BREAKING**: `signal_type` demoted from required primary key to optional metadata
+- ✅ **NEW**: Enforced action type taxonomy (DD-WORKFLOW-016)
+- ✅ **NEW**: `ListAvailableActions` context-aware HAPI tool
+- ✅ **NEW**: LLM two-step workflow discovery protocol
+- ✅ **Cross-reference**: DD-WORKFLOW-016, DD-HAPI-016
+
+### **v1.6** (2025-11-30)
 - ✅ **BREAKING**: Standardized all API/database field names to **snake_case**
 - ✅ **Changed filter parameters**: `signal-type` → `signal_type`, etc.
 - ✅ **Clarified naming convention**: K8s annotations (kebab-case) vs API fields (snake_case)
@@ -1901,11 +1987,11 @@ custom_labels     JSONB
 
 ---
 
-**Document Version**: 1.6
-**Last Updated**: November 30, 2025
-**Status**: ✅ **APPROVED** (95% confidence, snake_case API standardization)
+**Document Version**: 2.6
+**Last Updated**: February 5, 2026
+**Status**: ✅ **APPROVED** (95% confidence, action-type primary matching)
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow label schema
-**Breaking Change**: API field names use snake_case; Data Storage must update Go struct JSON tags
-**Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001
-**Next Review**: After Data Storage implements snake_case API fields
+**Breaking Change (v2.6)**: `action_type` replaces `signal_type` as primary catalog matching key. Workflow registration now requires `action_type` from enforced taxonomy (DD-WORKFLOW-016).
+**Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001, DD-WORKFLOW-016, DD-HAPI-016
+**Next Review**: After V1.0 implementation validates action-type matching accuracy
 
