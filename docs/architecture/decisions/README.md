@@ -61,10 +61,10 @@
 || DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / HolmesGPT API | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
 || DD-CONTEXT-004 | [BR-AI-002 Ownership](./DD-CONTEXT-004-BR-AI-002-Ownership.md) | AIAnalysis / Context API | ✅ Approved | 2025-10-22 | Keep BR-AI-002 in AIAnalysis (revised scope) |
 || DD-016 | [Dynamic Toolset V2.0 Deferral](./DD-016-dynamic-toolset-v2-deferral.md) | Dynamic Toolset | ✅ Approved | 2025-11-21 | Deferred to V2.0 (redundant with HolmesGPT-API Prometheus discovery) |
-|| DD-017 | [Effectiveness Monitor V1.1 Deferral](./DD-017-effectiveness-monitor-v1.1-deferral.md) | Effectiveness Monitor | ✅ Approved | 2025-12-01 | Deferred to V1.1 (year-end timeline + requires 8+ weeks of data) |
-|| DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | 85-90% effectiveness, 11x ROI (DD-017) |
-|| DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | Idempotent restart recovery (DD-017) |
-|| DD-EFFECTIVENESS-003 | [RemediationRequest Watch Strategy](./DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | 92% confidence, future-proof design (DD-017) |
+|| DD-017 | [Effectiveness Monitor V1.1 Deferral](./DD-017-effectiveness-monitor-v1.1-deferral.md) | Effectiveness Monitor | ✅ Approved | 2025-12-01 | Level 1 in V1.0, Level 2 in V1.1 (DD-017 v2.0 partial reinstatement) |
+|| DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ✅ Level 1 V1.0 / Level 2 V1.1 | 2025-10-16 | 85-90% effectiveness, 11x ROI (DD-017) |
+|| DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ✅ V1.0 (applies to Level 1) | 2025-10-16 | Idempotent restart recovery (DD-017) |
+|| DD-EFFECTIVENESS-003 | [RemediationRequest Watch Strategy](./DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) | Effectiveness Monitor | ✅ V1.0 (applies to Level 1) | 2025-10-16 | 92% confidence, future-proof design (DD-017) |
 || DD-GATEWAY-004 | [Redis Memory Optimization](./DD-GATEWAY-004-redis-memory-optimization.md) | Gateway Service | ✅ Approved | 2025-10-24 | 93% memory reduction, lightweight metadata |
 || DD-GATEWAY-005 | [Redis Cleanup on CRD Deletion](./DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) | Gateway Service | ✅ Approved | 2025-10-27 | No cleanup needed (TTL-based expiration) |
 || DD-GATEWAY-006 | [Authentication Strategy](./DD-GATEWAY-006-authentication-strategy.md) | Gateway Service | ✅ Approved | 2025-10-27 | Network-level security, no OAuth2 |
@@ -75,6 +75,7 @@
 || DD-HOLMESGPT-008 | [Safety-Aware Investigation](./DD-HOLMESGPT-008-Safety-Aware-Investigation.md) | HolmesGPT API | ✅ Approved | 2025-10-16 | Safety-aware AI investigations |
 || DD-HOLMESGPT-009 | [Self-Documenting JSON Format](./DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md) | HolmesGPT API / All AI Services | ✅ Approved | 2025-10-16 | 60% token reduction, $5,500/year savings |
 || DD-HOLMESGPT-009-ADD | [YAML Evaluation Addendum](./DD-HOLMESGPT-009-ADDENDUM-YAML-Evaluation.md) | HolmesGPT API / All AI Services | ✅ JSON Reaffirmed | 2024-10-16 | YAML evaluated: 17.5% token savings insufficient |
+|| DD-HAPI-016 | [Remediation History Context](./DD-HAPI-016-remediation-history-context.md) | HolmesGPT API | ✅ Approved | 2026-02-05 | HAPI remediation history context enrichment for LLM investigation |
 || DD-HOLMESGPT-013 | [Vendor Local SDK Copy](./DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) | HolmesGPT API | ✅ Approved | 2025-10-18 | Stability through vendored SDK |
 || DD-HOLMESGPT-014 | [MinimalDAL Stateless Architecture](./DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) | HolmesGPT API | ✅ Approved | 2025-10-20 | Stateless architecture, no Robusta Platform |
 

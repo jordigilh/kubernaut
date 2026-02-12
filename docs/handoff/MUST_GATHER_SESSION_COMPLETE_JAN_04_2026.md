@@ -269,7 +269,7 @@ make help
 
 ### MVP Requirements - ✅ **100% Complete**
 - [x] Collect all 6 Kubernaut CRD types
-- [x] Collect logs from all 8 V1.0 services
+- [x] Collect logs from all 8 V1.0 services (Note: V1.0 service count increased to 10 with EM Level 1 addition per DD-017 v2.0, February 2026)
 - [x] Collect DataStorage API (workflows + audit)
 - [x] Generate integrity checksums
 - [x] Sanitize sensitive data (GDPR/CCPA)

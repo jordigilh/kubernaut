@@ -386,18 +386,20 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 **Rationale**:
 - ✅ **Business-Critical**: Tracks remediation effectiveness (learning loop)
 - ✅ **Compliance**: Effectiveness metrics require audit trail (SOC 2)
-- ✅ **State Changes**: Updates effectiveness scores, triggers retraining
+- ✅ **State Changes**: Emits assessment data as audit events (DD-017 v2.0)
 - ✅ **Debugging Value**: Critical for understanding AI learning
 - ✅ **ML Observability**: Model performance tracking
 
-**Audit Events**:
+**Audit Events** (per DD-017 v2.0):
 
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `effectiveness.assessment.started` | Effectiveness assessment started | P0 |
-| `effectiveness.score.calculated` | Effectiveness score calculated | P0 |
-| `effectiveness.learning.triggered` | Learning feedback triggered | P0 |
-| `effectiveness.crd.updated` | Effectiveness CRD updated | P1 |
+| Event Type | Description | Scope | Priority |
+|------------|-------------|-------|----------|
+| `effectiveness.assessment.completed` | Level 1 assessment completed (dual spec hash, health checks, metrics, score, side effects) | V1.0 (Level 1) | P0 |
+| `effectiveness.assessment.started` | Effectiveness assessment started | V1.0 (Level 1) | P0 |
+| `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | V1.1 (Level 2) | P0 |
+| `effectiveness.crd.updated` | Effectiveness CRD updated | V1.1 (Level 2) | P1 |
+
+**Note**: EM Level 1 (V1.0) emits `effectiveness.assessment.completed` as the primary audit event. Data stored as audit traces only—no new database tables. DD-HAPI-016 uses these events for remediation history context enrichment.
 
 **Industry Precedent**: MLflow tracking, Weights & Biases audit logs, Kubeflow Pipelines logs
 
