@@ -152,6 +152,31 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -159,7 +184,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -187,6 +212,31 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -194,7 +244,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -222,6 +272,31 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -229,7 +304,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -257,6 +332,31 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -264,7 +364,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -292,6 +392,31 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -299,7 +424,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError
+			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -420,6 +545,31 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -427,7 +577,7 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -455,6 +605,31 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -462,7 +637,7 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -490,6 +665,31 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -497,7 +697,7 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -525,6 +725,31 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -532,7 +757,7 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -560,6 +785,31 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			return res, errors.Wrap(err, "parse media type")
 		}
 		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &response, nil
 		case ct == "application/problem+json":
 			buf, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -567,7 +817,7 @@ func decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError
+			var response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err

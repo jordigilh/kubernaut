@@ -23,6 +23,10 @@ import (
 	hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
+// BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
+// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// endpoints are now async-only (202 Accepted).
+
 // Predictive Signal Mode E2E Tests
 // Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md (Category G)
 // Scenarios: E2E-HAPI-055 through E2E-HAPI-057 (3 total)
@@ -66,22 +70,19 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ErrorMessage:      "Predicted memory exhaustion based on trend analysis",
 			}
 			// BR-AI-084: Set signal_mode to predictive
-			req.SignalMode = hapiclient.NewOptNilIncidentRequestSignalMode(
-				hapiclient.IncidentRequestSignalModePredictive,
+			req.SignalMode = hapiclient.NewOptNilSignalMode(
+				hapiclient.SignalModePredictive,
 			)
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint
+			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Analysis should complete successfully
 			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
 				"Predictive analysis should produce non-empty analysis text")
@@ -145,22 +146,19 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ErrorMessage:      "Container killed due to OOM",
 			}
 			// Set explicit reactive mode
-			req.SignalMode = hapiclient.NewOptNilIncidentRequestSignalMode(
-				hapiclient.IncidentRequestSignalModeReactive,
+			req.SignalMode = hapiclient.NewOptNilSignalMode(
+				hapiclient.SignalModeReactive,
 			)
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint
+			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Standard reactive response
 			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
 				"Reactive analysis should produce non-empty analysis text")
@@ -203,17 +201,14 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			// signal_mode intentionally NOT set — defaults to reactive
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint
+			// ACT: Call HAPI incident analysis endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Should behave same as explicit reactive mode
 			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
 				"Default (no signal_mode) should produce non-empty analysis like reactive")

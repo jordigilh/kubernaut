@@ -759,8 +759,12 @@ type DeduplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:selectablefield:JSONPath=.spec.signalFingerprint
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
+// +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RemediationRequest is the Schema for the remediationrequests API.
+// DD-CRD-003: Printer columns for operational triage
 type RemediationRequest struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

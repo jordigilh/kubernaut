@@ -30,6 +30,12 @@ import (
 // Business Requirements: BR-AI-080, BR-AI-081, BR-HAPI-197, BR-HAPI-212, BR-STORAGE-013
 //
 // Purpose: Validate recovery analysis endpoint behavior and correctness
+//
+// BR-AA-HAPI-064: Success-path tests migrated from ogen direct client (sync 200) to
+// sessionClient.InvestigateRecovery() (async submit/poll/result wrapper) because HAPI
+// endpoints are now async-only (202 Accepted).
+// Error-path tests (E2E-HAPI-018, 019) retain the ogen client for strict
+// type-safe validation of 4xx error responses.
 
 var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"), func() {
 
@@ -80,24 +86,21 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-013",
 				RemediationID:         "test-rem-013",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Complete recovery response
 			Expect(recoveryResp.IncidentID).To(Equal("test-recovery-013"),
 				"incident_id must match request")
@@ -136,23 +139,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-014",
 				RemediationID:         "test-rem-014",
 				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Type-safe response
 			// incident_id is string
 			Expect(recoveryResp.IncidentID).To(BeAssignableToTypeOf(""),
@@ -214,23 +214,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-015",
 				RemediationID:         "test-rem-015",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("critical"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityCritical),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Recovery differs from initial attempt
 			Expect(recoveryResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
@@ -261,26 +258,23 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-016",
 				RemediationID:         "test-rem-016",
 				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec), EnrichmentResults: hapiclient.NewOptNilRecoveryRequestEnrichmentResults(hapiclient.RecoveryRequestEnrichmentResults{}),
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec), EnrichmentResults: hapiclient.NewOptNilEnrichmentResults(hapiclient.EnrichmentResults{}),
 				// Note: EnrichmentResults is map[string]jx.Raw, so detailed field validation skipped in E2E
 				// DetectedLabels workflow filtering validated in integration tests
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Workflow selection considers labels
 			Expect(recoveryResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
@@ -312,23 +306,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-017",
 				RemediationID:         "test-rem-017",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Complete mock response
 			Expect(recoveryResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
@@ -346,6 +337,9 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 	})
 
 	Context("BR-HAPI-200: Error handling", func() {
+		// NOTE: Error-path tests retain the ogen client (hapiClient) for strict
+		// type-safe validation of 4xx error responses. These requests are rejected
+		// by HAPI before async processing begins, so the ogen client still works.
 
 		It("E2E-HAPI-018: Recovery rejects invalid attempt number", func() {
 			// ========================================
@@ -365,13 +359,13 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-018",
 				RemediationID:         "test-rem-018",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(0), // INVALID
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (ogen client: strict 4xx validation)
 			// ========================================
 			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
 			err = ogenx.ToError(resp, err) // Convert ogen response to Go error
@@ -408,31 +402,32 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-019",
 				RemediationID:         "test-rem-019",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				// previous_execution is MISSING
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
+			// HAPI accepts the request async (202) even without previous_execution;
+			// validation may happen during processing.
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			// BEHAVIOR: Either succeeds with default behavior OR rejects
+			// BEHAVIOR: Either succeeds with default behavior OR returns error
 			if err != nil {
-				// Rejected: HTTP 400/422
+				// Rejected during async processing
 				Expect(err.Error()).To(Or(
 					ContainSubstring("previous_execution"),
 					ContainSubstring("required"),
-				), "Error should indicate missing previous_execution")
+					ContainSubstring("failed"),
+				), "Error should indicate missing previous_execution or processing failure")
 			} else {
 				// Succeeds: Validate response structure
-				recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-				Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
 				Expect(recoveryResp.CanRecover).To(BeTrue(),
 					"can_recover must be present if request succeeds")
 			}
@@ -461,22 +456,16 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-020",
 				RemediationID:         "test-rem-020",
 				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			_, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
-
-			// ========================================
-			// ASSERT
-			// ========================================
-			_, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
 
 			// BEHAVIOR: DataStorage queried for workflows
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
@@ -503,22 +492,16 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-021",
 				RemediationID:         "test-rem-021",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			_, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
-
-			// ========================================
-			// ASSERT
-			// ========================================
-			_, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
 
 			// BEHAVIOR: Executable workflow returned
 			// Note: SelectedWorkflow is map[string]jx.Raw, so detailed field validation skipped in E2E
@@ -540,7 +523,7 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 			// BR: BR-AI-080, BR-AI-081
 
 			// ========================================
-			// STEP 1: Call incident analyze endpoint
+			// STEP 1: Call incident analyze endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			incidentReq := &hapiclient.IncidentRequest{
 				IncidentID:        "test-flow-022",
@@ -554,11 +537,8 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				ErrorMessage:      "Container restarting repeatedly",
 			}
 
-			incidentResp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, incidentReq)
+			incident, err := sessionClient.Investigate(ctx, incidentReq)
 			Expect(err).ToNot(HaveOccurred(), "Incident analysis should succeed")
-
-			incident, ok := incidentResp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
 			Expect(incident.SelectedWorkflow.Set).To(BeTrue(), "Incident should select a workflow")
 
 			// ========================================
@@ -574,22 +554,19 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 			prevExec := createPreviousExecution(initialWorkflowID, "execution_timeout")
 
 			// ========================================
-			// STEP 4: Call recovery analyze endpoint with previous_execution
+			// STEP 4: Call recovery analyze endpoint (BR-AA-HAPI-064: async session flow)
 			// ========================================
 			recoveryReq := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-flow-022",
 				RemediationID:         "test-rem-022",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
-			recoveryResp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, recoveryReq)
+			recovery, err := sessionClient.InvestigateRecovery(ctx, recoveryReq)
 			Expect(err).ToNot(HaveOccurred(), "Recovery analysis should succeed")
-
-			recovery, ok := recoveryResp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
 
 			// ========================================
 			// STEP 5: Validate recovery workflow returned
@@ -627,23 +604,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-023",
 				RemediationID:         "test-rem-023",
 				SignalType:            hapiclient.NewOptNilString("MOCK_NOT_REPRODUCIBLE"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: No recovery needed
 			Expect(recoveryResp.CanRecover).To(BeFalse(),
 				"can_recover must be false when issue self-resolved")
@@ -677,23 +651,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-024",
 				RemediationID:         "test-rem-024",
 				SignalType:            hapiclient.NewOptNilString("MOCK_NO_WORKFLOW_FOUND"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Human intervention required
 			Expect(recoveryResp.CanRecover).To(BeTrue(),
 				"can_recover must be true (recovery possible manually)")
@@ -726,23 +697,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-025",
 				RemediationID:         "test-rem-025",
 				SignalType:            hapiclient.NewOptNilString("MOCK_LOW_CONFIDENCE"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BR-HAPI-197 + BR-HAPI-198: HAPI returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
 			Expect(recoveryResp.CanRecover).To(BeTrue(),
@@ -783,23 +751,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-026",
 				RemediationID:         "test-rem-026",
 				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Confident recovery recommendation
 			Expect(recoveryResp.CanRecover).To(BeTrue(),
 				"can_recover must be true")
@@ -837,23 +802,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-027",
 				RemediationID:         "test-rem-027",
 				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
-				Severity:              hapiclient.NewOptNilString("high"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Complete response structure
 			Expect(recoveryResp.IncidentID).ToNot(BeEmpty(),
 				"incident_id must be present")
@@ -889,23 +851,20 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				IncidentID:            "test-recovery-028",
 				RemediationID:         "test-rem-028",
 				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
-				Severity:              hapiclient.NewOptNilString("critical"),
+				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityCritical),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
+			recoveryResp, err := sessionClient.InvestigateRecovery(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI recovery analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			recoveryResp, ok := resp.(*hapiclient.RecoveryResponse)
-			Expect(ok).To(BeTrue(), "Expected RecoveryResponse type")
-
 			// BEHAVIOR: Strategies provided
 			Expect(recoveryResp.Strategies).ToNot(BeEmpty(),
 				"strategies must be present")

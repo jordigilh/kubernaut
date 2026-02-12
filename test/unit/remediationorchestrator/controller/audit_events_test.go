@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -115,12 +116,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Build()
 
 		// Create reconciler with mock audit store
+		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
 		reconciler = prodcontroller.NewReconciler(
 			fakeClient,
-			fakeClient, // apiReader (same as client for tests)
+			fakeClient,     // apiReader (same as client for tests)
 			scheme,
 			mockAuditStore, // Use mock audit store
-			nil,            // No EventRecorder needed
+			recorder,       // DD-EVENT-001: FakeRecorder for K8s event assertions
 			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
 			prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,

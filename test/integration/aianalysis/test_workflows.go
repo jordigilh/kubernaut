@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -34,14 +35,15 @@ import (
 // TestWorkflow represents a workflow for AIAnalysis integration tests
 // These workflows match the Mock LLM responses to enable end-to-end testing
 type TestWorkflow struct {
-	WorkflowID  string // Must match Mock LLM workflow_id (e.g., "oomkill-increase-memory-v1")
-	Name        string
-	Description string
-	SignalType  string // Must match test scenarios (e.g., "OOMKilled")
-	Severity    string
-	Component   string
-	Environment string
-	Priority    string
+	WorkflowID       string // Must match Mock LLM workflow_id (e.g., "oomkill-increase-memory-v1")
+	Name             string
+	Description      string
+	SignalType       string // Must match test scenarios (e.g., "OOMKilled")
+	Severity         string
+	Component        string
+	Environment      string
+	Priority         string
+	SchemaParameters []models.WorkflowParameter // BR-HAPI-191: Must match Mock LLM parameters
 }
 
 // GetAIAnalysisTestWorkflows returns the workflows that Mock LLM expects
@@ -54,6 +56,10 @@ type TestWorkflow struct {
 //   - Workflows created for BOTH staging and production environments
 //     (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
+	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
+	// Mock LLM scenarios defined in test/services/mock-llm/src/server.py
+	// HAPI validates LLM response parameters against workflow schema from DataStorage
+	// If parameters don't match, HAPI returns parameter_validation_failed BEFORE confidence check
 	baseWorkflows := []TestWorkflow{
 		{
 			WorkflowID:  "oomkill-increase-memory-v1",
@@ -63,6 +69,13 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
+			// Mock LLM "oomkilled" scenario returns: MEMORY_LIMIT_NEW, TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit for the container (e.g., 1Gi)"},
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the target resource (e.g., Deployment)"},
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the target resource"},
+				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
+			},
 		},
 		{
 			WorkflowID:  "crashloop-config-fix-v1",
@@ -72,6 +85,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "high",
 			Component:   "deployment",
 			Priority:    "P1",
+			// Mock LLM "crashloop" scenario returns: CONFIG_MAP, TARGET_NAMESPACE
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "CONFIG_MAP", Type: "string", Required: true, Description: "ConfigMap name to fix"},
+				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
+			},
 		},
 		{
 			WorkflowID:  "node-drain-reboot-v1",
@@ -81,6 +99,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "node",
 			Priority:    "P0",
+			// Mock LLM "node_not_ready" scenario returns: NODE_NAME, GRACE_PERIOD
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "NODE_NAME", Type: "string", Required: true, Description: "Name of the node to drain and reboot"},
+				{Name: "GRACE_PERIOD", Type: "string", Required: true, Description: "Grace period in seconds for pod eviction"},
+			},
 		},
 		{
 			WorkflowID:  "memory-optimize-v1",
@@ -90,6 +113,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
+			// Mock LLM "recovery" scenario returns: OPTIMIZATION_LEVEL, MEMORY_TARGET
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "OPTIMIZATION_LEVEL", Type: "string", Required: true, Description: "Optimization aggressiveness level"},
+				{Name: "MEMORY_TARGET", Type: "string", Required: true, Description: "Target memory allocation"},
+			},
 		},
 		{
 			WorkflowID:  "generic-restart-v1",
@@ -99,6 +127,10 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "medium",
 			Component:   "deployment",
 			Priority:    "P2",
+			// Mock LLM "low_confidence" scenario returns: ACTION
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "ACTION", Type: "string", Required: true, Description: "Restart action to perform"},
+			},
 		},
 		{
 			WorkflowID:  "test-signal-handler-v1",
@@ -108,6 +140,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "pod",
 			Priority:    "P1",
+			// Mock LLM "test_signal" scenario returns: TEST_MODE, ACTION
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "TEST_MODE", Type: "string", Required: true, Description: "Test mode flag"},
+				{Name: "ACTION", Type: "string", Required: true, Description: "Action to perform"},
+			},
 		},
 	}
 
@@ -157,15 +194,16 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 	sharedWorkflows := make([]infrastructure.TestWorkflow, len(workflows))
 	for i, wf := range workflows {
 		sharedWorkflows[i] = infrastructure.TestWorkflow{
-			WorkflowID:     wf.WorkflowID,
-			Name:           wf.Name,
-			Description:    wf.Description,
-			SignalType:     wf.SignalType,
-			Severity:       wf.Severity,
-			Component:      wf.Component,
-			Environment:    wf.Environment,
-			Priority:       wf.Priority,
-			ContainerImage: "", // AIAnalysis uses default pattern (empty = auto-generate)
+			WorkflowID:       wf.WorkflowID,
+			Name:             wf.Name,
+			Description:      wf.Description,
+			SignalType:       wf.SignalType,
+			Severity:         wf.Severity,
+			Component:        wf.Component,
+			Environment:      wf.Environment,
+			Priority:         wf.Priority,
+			ContainerImage:   "", // AIAnalysis uses default pattern (empty = auto-generate)
+			SchemaParameters: wf.SchemaParameters, // BR-HAPI-191: Pass through for HAPI validation
 		}
 	}
 

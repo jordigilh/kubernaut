@@ -35,8 +35,9 @@ type ExecutionEngine string
 
 const (
 	// ExecutionEngineTekton represents Tekton Pipelines execution engine
-	// Currently the only supported engine (ADR-043)
 	ExecutionEngineTekton ExecutionEngine = "tekton"
+	// ExecutionEngineJob represents Kubernetes Job execution engine
+	ExecutionEngineJob ExecutionEngine = "job"
 )
 
 // RemediationWorkflow represents a workflow in the catalog
@@ -383,6 +384,14 @@ type WorkflowSearchResult struct {
 	// V1.0: Structured type for compile-time validation
 	// Note: Not a pointer - FailedDetections field tracks detection failures
 	DetectedLabels DetectedLabels `json:"detected_labels,omitempty"`
+
+	// ========================================
+	// PARAMETER SCHEMA (BR-HAPI-191)
+	// ========================================
+	// Parameters contains the workflow parameter schema (JSONB)
+	// Used by HAPI for parameter validation and by LLM for correct parameter names
+	// Format: {"schema": {"parameters": [{"name": "PARAM_NAME", "type": "string", ...}]}}
+	Parameters *json.RawMessage `json:"parameters,omitempty"`
 
 	// ========================================
 	// INTERNAL: Full workflow data (not serialized to JSON)

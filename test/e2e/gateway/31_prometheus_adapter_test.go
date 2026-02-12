@@ -179,13 +179,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			Expect(crd.Spec.Severity).To(Equal("critical"), "Severity helps AI choose remediation strategy")
 			Expect(crd.Namespace).To(Equal(prodNamespace), "Namespace enables kubectl targeting: 'kubectl -n production'")
 
-			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
-			fingerprintLabel := crd.Labels["kubernaut.ai/signal-fingerprint"]
-			expectedLabel := fingerprint
-			if len(expectedLabel) > 63 {
-				expectedLabel = expectedLabel[:63] // K8s label value max length
-			}
-			Expect(fingerprintLabel).To(Equal(expectedLabel), "CRD fingerprint label must match response fingerprint (truncated to 63 chars for K8s)")
+			// Verify fingerprint is stored in spec (not as label — SHA256 exceeds 63-char label limit)
+			Expect(crd.Spec.SignalFingerprint).To(Equal(fingerprint),
+				"Full fingerprint stored in spec.signalFingerprint (BR-GATEWAY-185 v1.1)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Prometheus alert → Gateway → CRD created with complete business metadata
@@ -282,7 +278,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert must create CRD (201 Created)")
 
-			// Parse response to get full fingerprint (before K8s label truncation)
+			// Parse response to get full fingerprint
 			var response1 map[string]interface{}
 			err = json.NewDecoder(resp1.Body).Decode(&response1) //nolint:ineffassign // Test pattern: error reassignment across phases
 			fingerprint, ok := response1["fingerprint"].(string)

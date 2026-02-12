@@ -24,6 +24,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
 )
 
+// BR-AA-HAPI-064: Success-path tests migrated from ogen direct client (sync 200) to
+// sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
+// endpoints are now async-only (202 Accepted).
+// Error-path tests (E2E-HAPI-007, 008) retain the ogen client for strict
+// type-safe validation of 4xx error responses.
+
 // Incident Analysis E2E Tests
 // Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md
 // Scenarios: E2E-HAPI-001 through E2E-HAPI-008 (8 total)
@@ -60,17 +66,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT: Call HAPI incident analysis endpoint
+			// ACT: Call HAPI incident analysis via session client (BR-AA-HAPI-064)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT: Business outcome validation
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Human review required
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 				"needs_human_review must be true when no workflow found")
@@ -119,17 +122,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BR-HAPI-197 + BR-HAPI-198: HAPI returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
@@ -173,17 +173,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: AI gave up after max retries
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeTrue(),
 				"needs_human_review must be true when max retries exhausted")
@@ -241,17 +238,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Confident recommendation provided
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
 				"needs_human_review must be false for confident recommendation")
@@ -295,17 +289,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Complete response structure
 			Expect(incidentResp.IncidentID).To(Equal("test-struct-005"),
 				"incident_id must match request")
@@ -349,17 +340,14 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 			}
 
 			// ========================================
-			// ACT
+			// ACT (BR-AA-HAPI-064: async session flow)
 			// ========================================
-			resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "HAPI incident analysis API call should succeed")
 
 			// ========================================
 			// ASSERT
 			// ========================================
-			incidentResp, ok := resp.(*hapiclient.IncidentResponse)
-			Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
-
 			// BEHAVIOR: Workflow selection influenced by labels
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")

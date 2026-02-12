@@ -7,7 +7,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **signal_type** | **str** | Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff) | 
-**severity** | **str** | Severity level this workflow is designed for | 
+**severity** | **str** | Severity level this workflow is designed for (&#39;*&#39; matches any severity) | 
 **component** | **str** | Kubernetes resource type this workflow targets (e.g., pod, deployment, node) | 
 **environment** | **List[str]** | Target environments (workflow can declare multiple, &#39;*&#39; matches all) | 
 **priority** | **str** | Business priority level (P0, P1, P2, P3, * for any) | 

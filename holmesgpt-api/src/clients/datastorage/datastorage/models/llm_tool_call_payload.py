@@ -29,7 +29,7 @@ except ImportError:
 
 class LLMToolCallPayload(BaseModel):
     """
-    LLM tool call event payload (llm_tool_call)
+    LLM tool call event payload (aiagent.llm.tool_call)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
@@ -44,8 +44,8 @@ class LLMToolCallPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('llm_tool_call'):
-            raise ValueError("must be one of enum values ('llm_tool_call')")
+        if value not in ('aiagent.llm.tool_call'):
+            raise ValueError("must be one of enum values ('aiagent.llm.tool_call')")
         return value
 
     model_config = {

@@ -409,7 +409,46 @@ def create_app(authenticator=None, authorizer=None):
     # Logic preserved in src/extensions/postexec.py for V1.1
     # app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
     app.include_router(health.router, tags=["Health"])
-    
+
+    # DD-AUTH-006: Add oauthProxyAuth security scheme to OpenAPI spec
+    # This documents the oauth-proxy authentication flow used in production.
+    # The actual auth enforcement is in AuthenticationMiddleware above.
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        from fastapi.openapi.utils import get_openapi
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})
+        openapi_schema["components"]["securitySchemes"]["oauthProxyAuth"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": (
+                "**OAuth-proxy Authentication Flow (DD-AUTH-006)**\n\n"
+                "This API is protected by an `oauth-proxy` sidecar running alongside "
+                "the HolmesGPT API service in Kubernetes. All incoming requests to HAPI "
+                "are intercepted by the `oauth-proxy` before reaching the actual HAPI application.\n\n"
+                "**1. Client Authentication**: Clients must authenticate with a valid "
+                "Kubernetes ServiceAccount token via `Authorization: Bearer <token>` header.\n\n"
+                "**2. OAuth-proxy Validation**: Validates the JWT token against the Kubernetes "
+                "API server's `TokenReview` endpoint.\n\n"
+                "**3. Subject Access Review (SAR)**: Checks if the authenticated ServiceAccount "
+                "has the necessary RBAC permissions.\n\n"
+                "**4. User Identity Injection**: Injects authenticated user identity into "
+                "`X-Auth-Request-User` header for LLM cost tracking and audit.\n\n"
+                "**Authority**: DD-AUTH-006 (HAPI oauth-proxy integration)"
+            ),
+        }
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
+
     return app
 
 

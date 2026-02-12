@@ -98,7 +98,7 @@ import "github.com/jordigilh/kubernaut/pkg/testutil"
 
 // Metadata validation
 testutil.ValidateAuditEvent(hapiEvent, testutil.ExpectedAuditEvent{
-    EventType:     "holmesgpt.response.complete",
+    EventType:     "aiagent.response.complete",
     EventCategory: dsgen.AuditEventEventCategoryAnalysis,
     EventAction:   "response_sent",
     EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
@@ -173,7 +173,7 @@ Expected behavior with deterministic counts:
 
 ```bash
 # Test 1: Hybrid Audit Event Emission
-✅ HAPI events: EXACTLY 1 (holmesgpt.response.complete)
+✅ HAPI events: EXACTLY 1 (aiagent.response.complete)
 ✅ AA events: EXACTLY 1 (aianalysis.analysis.completed)
 
 # Test 2: RR Reconstruction Completeness

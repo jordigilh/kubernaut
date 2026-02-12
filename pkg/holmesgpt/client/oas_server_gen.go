@@ -29,7 +29,20 @@ type Handler interface {
 	// Analyze initial incident and provide RCA + workflow selection
 	// Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
 	// Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-	// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection).
+	// Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+	// Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+	// Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
+	// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
+	// Flow:
+	// 1. Receive IncidentRequest from AIAnalysis
+	// 2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
+	// 3. Sanitize input for LLM (BR-HAPI-211)
+	// 4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
+	// 5. Search workflow catalog via MCP (BR-HAPI-250)
+	// 6. Validate workflow response (DD-HAPI-002 v1.2)
+	// 7. Self-correct if validation fails (up to 3 attempts)
+	// 8. Emit audit event with complete response (DD-AUDIT-005)
+	// 9. Return IncidentResponse with RCA and workflow selection.
 	//
 	// POST /api/v1/incident/analyze
 	IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context.Context, req *IncidentRequest) (IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error)
@@ -49,6 +62,7 @@ type Handler interface {
 	// Analyze failed action and provide recovery strategies
 	// Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
 	// Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+	// Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 	// Called by: AIAnalysis Controller (for recovery attempts after workflow failure).
 	//
 	// POST /api/v1/recovery/analyze

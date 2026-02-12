@@ -31,6 +31,7 @@ import (
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -69,6 +70,48 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request", err.Error(), h.logger)
 		return
 	}
+
+	// ADR-043: Extract parameter schema from workflow-schema.yaml content
+	// The content field IS the workflow-schema.yaml (single source of truth for parameters).
+	// DataStorage parses it and stores extracted parameters in the parameters JSONB column.
+	// BR-HAPI-191: Parameters are used by HAPI for validation and by MCP tool results for LLM guidance.
+	schemaParser := schema.NewParser()
+	parsedSchema, err := schemaParser.ParseAndValidate(workflow.Content)
+	if err != nil {
+		h.logger.Error(err, "Content is not a valid workflow-schema.yaml (ADR-043)",
+			"workflow_name", workflow.WorkflowName,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Content must be valid workflow-schema.yaml per ADR-043: %v", err), h.logger)
+		return
+	}
+
+	// Extract parameters and wrap in the format expected by HAPI's WorkflowResponseValidator
+	// Format: {"schema": {"parameters": [{"name": "PARAM", "type": "string", ...}]}}
+	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
+	if err != nil {
+		h.logger.Error(err, "Failed to extract parameters from workflow schema",
+			"workflow_name", workflow.WorkflowName,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Failed to extract parameters: %v", err), h.logger)
+		return
+	}
+	// Wrap in {"schema": {"parameters": [...]}} for HAPI validator compatibility
+	wrappedParams := map[string]interface{}{
+		"schema": map[string]json.RawMessage{
+			"parameters": extractedParams,
+		},
+	}
+	wrappedJSON, err := json.Marshal(wrappedParams)
+	if err != nil {
+		h.logger.Error(err, "Failed to marshal wrapped parameters")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to process parameters", h.logger)
+		return
+	}
+	rawMsg := json.RawMessage(wrappedJSON)
+	workflow.Parameters = &rawMsg
 
 	// V1.0: Embedding generation removed (label-only search)
 	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)

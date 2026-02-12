@@ -129,8 +129,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// - Expected: Duplicate detected, occurrenceCount: 1 → 2
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create new CRD")
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -252,8 +251,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// - Expected: Duplicate detected, occurrenceCount incremented
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -352,8 +350,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// For v1.0, we expect AlreadyExists error handling to fetch existing CRD
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -440,8 +437,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// - Expected: NEW incident (retry remediation), new CRD created
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -506,8 +502,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// - Expected: NEW incident (retry remediation), new CRD created
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -583,8 +578,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			//   for an unknown intermediate state
 
 			By("1. Send first alert (creates CRD)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
@@ -685,8 +679,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// - Expected: New CRD created
 
 			By("1. Send alert (no existing CRD)")
-			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "First alert should create new CRD")
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var response gateway.ProcessingResponse
 			err := json.Unmarshal(resp.Body, &response)

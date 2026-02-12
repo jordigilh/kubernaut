@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
@@ -42,10 +44,38 @@ import (
 // Design Decision: Event API vs Watch
 // - V1: HTTP POST endpoint /api/v1/signals/kubernetes-event (consistent with Prometheus adapter)
 // - V2: Consider watch-based ingestion if needed (more complex, real-time)
+// OwnerResolver resolves the top-level controller owner of a Kubernetes resource.
+//
+// This interface enables the KubernetesEventAdapter to resolve the owner chain
+// (e.g., Pod -> ReplicaSet -> Deployment) for fingerprinting purposes.
+// By fingerprinting at the owner level (e.g., Deployment), events from different
+// pods of the same Deployment are correctly deduplicated.
+//
+// Business Requirement: Prevents duplicate remediation workflows for events that
+// originate from the same root cause (same Deployment/StatefulSet/DaemonSet).
+type OwnerResolver interface {
+	// ResolveTopLevelOwner traverses the ownerReference chain to find the top-level
+	// controller (e.g., Deployment, StatefulSet, DaemonSet).
+	//
+	// Parameters:
+	// - ctx: Context for cancellation/timeout
+	// - namespace: Resource namespace
+	// - kind: Resource kind (e.g., "Pod")
+	// - name: Resource name (e.g., "payment-api-789abc")
+	//
+	// Returns:
+	// - ownerKind: Top-level owner kind (e.g., "Deployment")
+	// - ownerName: Top-level owner name (e.g., "payment-api")
+	// - err: Resolution error (RBAC, timeout, not found). Callers should fall back
+	//         to involvedObject on error.
+	ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error)
+}
+
 type KubernetesEventAdapter struct {
-	name        string
-	version     string
-	description string
+	name          string
+	version       string
+	description   string
+	ownerResolver OwnerResolver
 }
 
 // kubernetesEvent represents the minimal K8s Event structure we need to parse
@@ -79,13 +109,23 @@ type kubernetesEvent struct {
 	} `json:"source"`
 }
 
-// NewKubernetesEventAdapter creates a new Kubernetes Event adapter
-func NewKubernetesEventAdapter() *KubernetesEventAdapter {
-	return &KubernetesEventAdapter{
+// NewKubernetesEventAdapter creates a new Kubernetes Event adapter.
+//
+// Parameters:
+// - ownerResolver: Optional. If non-nil, the adapter resolves the top-level owner
+//   (e.g., Deployment) for fingerprinting, enabling deduplication across pods from
+//   the same controller. If nil, fingerprinting falls back to the involvedObject
+//   directly (legacy behavior).
+func NewKubernetesEventAdapter(ownerResolver ...OwnerResolver) *KubernetesEventAdapter {
+	adapter := &KubernetesEventAdapter{
 		name:        "kubernetes-event",
 		version:     "1.0",
 		description: "Handles Kubernetes Event API signals (Warning/Error types)",
 	}
+	if len(ownerResolver) > 0 && ownerResolver[0] != nil {
+		adapter.ownerResolver = ownerResolver[0]
+	}
+	return adapter
 }
 
 // Name returns the adapter identifier
@@ -101,6 +141,14 @@ func (a *KubernetesEventAdapter) Name() string {
 // - Test/integration scenarios
 func (a *KubernetesEventAdapter) GetRoute() string {
 	return "/api/v1/signals/kubernetes-event"
+}
+
+// ReplayValidator returns body-based replay prevention middleware (BR-GATEWAY-075).
+// Kubernetes Event sources (e.g., kubernetes-event-exporter) cannot set dynamic
+// HTTP headers. Instead, event freshness is validated from the event's
+// lastTimestamp/firstTimestamp fields in the request body.
+func (a *KubernetesEventAdapter) ReplayValidator(tolerance time.Duration) func(http.Handler) http.Handler {
+	return middleware.EventFreshnessValidator(tolerance)
 }
 
 // GetSourceService returns the monitoring system name (BR-GATEWAY-027)
@@ -178,10 +226,32 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Namespace: event.InvolvedObject.Namespace,
 	}
 
-	// 6. Generate fingerprint for deduplication (shared utility)
-	// Format: SHA256(reason:namespace:kind:name)
-	// Same resource + same reason = same fingerprint = deduplicated
-	fingerprint := types.CalculateFingerprint(event.Reason, resource)
+	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004)
+	//
+	// Strategy depends on whether OwnerResolver is configured:
+	// - With OwnerResolver: SHA256(namespace:ownerKind:ownerName) — reason excluded
+	//   Resolves owner chain (Pod → ReplicaSet → Deployment) so events from
+	//   different pods/reasons of the same Deployment produce one fingerprint.
+	// - Without OwnerResolver (legacy): SHA256(reason:namespace:kind:name)
+	var fingerprint string
+	if a.ownerResolver != nil {
+		ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
+			ctx, resource.Namespace, resource.Kind, resource.Name)
+		if err == nil && ownerKind != "" && ownerName != "" {
+			// Owner resolved: fingerprint at owner level
+			fingerprint = types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: resource.Namespace,
+				Kind:      ownerKind,
+				Name:      ownerName,
+			})
+		} else {
+			// Fallback: involvedObject without reason (graceful degradation)
+			fingerprint = types.CalculateOwnerFingerprint(resource)
+		}
+	} else {
+		// Legacy behavior: includes reason in fingerprint
+		fingerprint = types.CalculateFingerprint(event.Reason, resource)
+	}
 
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{

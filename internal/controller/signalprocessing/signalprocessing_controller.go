@@ -51,6 +51,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -270,6 +271,12 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 		return ctrl.Result{}, err
 	}
 
+	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
+	if r.Recorder != nil {
+		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseEnriching))
+	}
+
 	// DD-005: Track phase processing success
 	r.Metrics.IncrementProcessingTotal("pending", "success")
 	// Requeue quickly to continue to next phase
@@ -476,6 +483,18 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		return ctrl.Result{}, updateErr
 	}
 
+	// DD-EVENT-001 v1.1: K8s events for enrichment observability
+	// SP-BUG-ENRICHMENT-001: Only emit events if enrichment wasn't already completed
+	if r.Recorder != nil && !enrichmentAlreadyCompleted {
+		if k8sCtx.DegradedMode {
+			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonEnrichmentDegraded,
+				enrichmentMessage)
+		} else {
+			r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonSignalEnriched,
+				enrichmentMessage)
+		}
+	}
+
 	// Record enrichment completion audit event (BR-SP-090)
 	// ADR-032: Audit is MANDATORY - return error if not configured
 	// RF-SP-003: Track actual enrichment duration for audit metrics
@@ -494,6 +513,12 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// DD-005: Track phase processing failure
 		r.Metrics.IncrementProcessingTotal("enriching", "failure")
 		return ctrl.Result{}, err
+	}
+
+	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
+	if r.Recorder != nil {
+		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseClassifying))
 	}
 
 	// DD-005: Track phase processing success and duration
@@ -575,8 +600,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 
 		// Emit Kubernetes Event for operator visibility
 		// Include external severity value for debugging policy configuration issues
-		r.Recorder.Event(sp, corev1.EventTypeWarning, "PolicyEvaluationFailed",
-			fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
+		if r.Recorder != nil {
+			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
+				fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
+		}
 
 			// Do not requeue - requires manual policy fix by operator
 			return ctrl.Result{}, nil
@@ -674,6 +701,12 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{}, err
 	}
 
+	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
+	if r.Recorder != nil {
+		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseCategorizing))
+	}
+
 	// DD-005: Track phase processing success and duration
 	r.Metrics.IncrementProcessingTotal("classifying", "success")
 	r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
@@ -757,6 +790,12 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 
+	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
+	if r.Recorder != nil {
+		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseCompleted))
+	}
+
 	// BR-SP-090: Record audit event on completion
 	// ADR-032: Audit is MANDATORY - not optional. AuditClient must be wired up.
 	// DD-PERF-001: After atomic update, sp object has all persisted status including BusinessClassification
@@ -765,6 +804,11 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
 		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
 		return ctrl.Result{}, err
+	}
+
+	// DD-EVENT-001 v1.1: SignalProcessed K8s event when enrichment and classification complete successfully
+	if r.Recorder != nil {
+		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonSignalProcessed, processingMessage)
 	}
 
 	// DD-005: Track phase processing success and duration

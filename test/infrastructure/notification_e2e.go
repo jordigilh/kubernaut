@@ -291,7 +291,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		"--for=condition=ready",
 		"pod",
 		"-l", "app=notification-controller",
-		"--timeout=120s")
+		"--timeout=300s")
 	waitCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
@@ -457,9 +457,26 @@ func deployNotificationRBAC(namespace, kubeconfigPath string, writer io.Writer) 
 		return fmt.Errorf("RBAC manifest not found at %s", rbacPath)
 	}
 
-	// Apply RBAC with namespace override for ServiceAccount
-	// ClusterRole and ClusterRoleBinding are cluster-scoped
-	applyCmd := exec.Command("kubectl", "apply", "-f", rbacPath, "-n", namespace)
+	// Read RBAC manifest and replace the hardcoded namespace in ClusterRoleBinding subjects.
+	// The manifest hardcodes "notification-e2e" for the Notification-specific E2E suite,
+	// but the full pipeline E2E deploys in "kubernaut-system". kubectl apply -n only affects
+	// namespace-scoped resources (ServiceAccount), not cluster-scoped ones (ClusterRoleBinding).
+	rbacContent, err := os.ReadFile(rbacPath)
+	if err != nil {
+		return fmt.Errorf("failed to read RBAC manifest: %w", err)
+	}
+	updatedRBAC := strings.ReplaceAll(string(rbacContent),
+		"namespace: notification-e2e",
+		fmt.Sprintf("namespace: %s", namespace))
+
+	// Write to temp file and apply
+	tmpRBAC := filepath.Join(os.TempDir(), "notification-rbac-e2e.yaml")
+	if err := os.WriteFile(tmpRBAC, []byte(updatedRBAC), 0644); err != nil {
+		return fmt.Errorf("failed to write temp RBAC: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpRBAC) }()
+
+	applyCmd := exec.Command("kubectl", "apply", "-f", tmpRBAC, "-n", namespace)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer
@@ -554,6 +571,30 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	updatedContent = strings.ReplaceAll(updatedContent,
 		"imagePullPolicy: Never",
 		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
+
+	// Allow overriding mock Slack webhook with real URL for local testing
+	// Priority: 1) SLACK_WEBHOOK_URL env var, 2) ~/.kubernaut/notification/slack-webhook.url file
+	// Usage: SLACK_WEBHOOK_URL="https://hooks.slack.com/..." make test-e2e-fullpipeline
+	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
+	if slackURL != "" {
+		_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from SLACK_WEBHOOK_URL env var\n")
+	} else {
+		homeDir, _ := os.UserHomeDir()
+		if homeDir != "" {
+			slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
+			if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
+				slackURL = strings.TrimSpace(string(data))
+				if slackURL != "" {
+					_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
+				}
+			}
+		}
+	}
+	if slackURL != "" {
+		updatedContent = strings.ReplaceAll(updatedContent,
+			`"http://mock-slack:8080/webhook"`,
+			fmt.Sprintf(`"%s"`, slackURL))
+	}
 
 	// DD-TEST-007: Inject GOCOVERDIR env var and /coverdata volume when E2E_COVERAGE=true
 	if os.Getenv("E2E_COVERAGE") == "true" {

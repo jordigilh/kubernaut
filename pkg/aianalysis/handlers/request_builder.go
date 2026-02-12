@@ -78,7 +78,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		IncidentID:        analysis.Name,    // Q1: Use CR name
 		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
 		SignalType:        spec.SignalType,
-		Severity:          spec.Severity,
+		Severity:          client.Severity(spec.Severity),
 		SignalSource:      "kubernaut",
 		ResourceNamespace: spec.TargetResource.Namespace,
 		ResourceKind:      spec.TargetResource.Kind,
@@ -97,7 +97,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	// BR-AI-084: Pass signal mode to HAPI for prompt strategy switching (ADR-054)
 	// "reactive" triggers RCA investigation; "predictive" triggers predict & prevent strategy
 	if spec.SignalMode != "" {
-		req.SignalMode.SetTo(client.IncidentRequestSignalMode(spec.SignalMode))
+		req.SignalMode.SetTo(client.SignalMode(spec.SignalMode))
 	}
 
 	return req
@@ -176,7 +176,7 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		"requestPointer", fmt.Sprintf("%p", req),
 	)
 
-	req.Severity.SetTo(spec.Severity)
+	req.Severity.SetTo(client.Severity(spec.Severity))
 	req.ResourceNamespace.SetTo(spec.TargetResource.Namespace)
 	req.ResourceKind.SetTo(spec.TargetResource.Kind)
 	req.ResourceName.SetTo(spec.TargetResource.Name)
@@ -209,7 +209,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 	originalRCA := client.OriginalRCA{
 		Summary:             prev.OriginalRCA.Summary,
 		SignalType:          prev.OriginalRCA.SignalType,
-		Severity:            prev.OriginalRCA.Severity,
+		Severity:            client.Severity(prev.OriginalRCA.Severity),
 		ContributingFactors: prev.OriginalRCA.ContributingFactors,
 	}
 

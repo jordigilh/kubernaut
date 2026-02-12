@@ -24,7 +24,7 @@ limitations under the License.
 // This test validates the HYBRID audit approach where BOTH HolmesAPI and AI Analysis
 // emit audit events for defense-in-depth SOC2 compliance:
 //
-// 1. HolmesAPI emits: holmesgpt.response.complete (provider perspective, full response)
+// 1. HolmesAPI emits: aiagent.response.complete (provider perspective, full response)
 // 2. AI Analysis emits: aianalysis.analysis.completed (consumer perspective, summary + business context)
 //
 // Infrastructure:
@@ -180,7 +180,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify that BOTH services emit audit events with correct structure:
-			// 1. HolmesAPI emits holmesgpt.response.complete (provider perspective)
+			// 1. HolmesAPI emits aiagent.response.complete (provider perspective)
 			// 2. AI Analysis emits aianalysis.analysis.completed (consumer perspective)
 			// 3. Both events share the same correlation_id
 			// 4. Both events contain appropriate data for their perspective
@@ -255,14 +255,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// STEP 1: Verify HAPI audit event (provider perspective)
 			// ========================================
 			// NT Pattern: No preliminary flush needed - waitForAuditEvents helper flushes on each retry
-			By("Waiting for HAPI audit event (holmesgpt.response.complete)")
-			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
+			By("Waiting for HAPI audit event (aiagent.response.complete)")
+			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.AIAgentResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
 
 		By("Validating HAPI event metadata with testutil")
 		actorID := "holmesgpt-api"
 		validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
-			EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
+			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
 			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: HolmesGPT API uses "aiagent" category
 			EventAction:   "response_sent",
 			EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
@@ -274,7 +274,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			validators.ValidateAuditEventHasRequiredFields(hapiEvent)
 
 			// DD-AUDIT-004: Use strongly-typed payload (no map[string]interface{})
-			hapiPayload := hapiEvent.EventData.HolmesGPTResponsePayload
+			hapiPayload := hapiEvent.EventData.AIAgentResponsePayload
 			Expect(hapiPayload.EventID).ToNot(BeEmpty(), "EventData should have event_id")
 			Expect(hapiPayload.IncidentID).ToNot(BeEmpty(), "EventData should have incident_id")
 
@@ -420,11 +420,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// HAPI Python audit buffer can be slow to flush under load (batch_size triggers, not timer).
 			// SOLUTION: Use same pattern as successful "Hybrid Audit Event Emission" test (line 259)
 			By("Querying HAPI event for RR reconstruction validation (with Eventually for async buffer)")
-			hapiEventType := string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)
+			hapiEventType := string(ogenclient.AIAgentResponsePayloadAuditEventEventData)
 			hapiEvents := waitForAuditEvents(correlationID, hapiEventType, 1)
 
 			// Extract strongly-typed response_data (DD-AUDIT-004)
-			hapiPayload := hapiEvents[0].EventData.HolmesGPTResponsePayload
+			hapiPayload := hapiEvents[0].EventData.AIAgentResponsePayload
 			responseData := hapiPayload.ResponseData
 
 			By("Validating COMPLETE IncidentResponse structure for RR reconstruction")
@@ -553,7 +553,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				allEvents = allResp.Data
 				
 				// Count HAPI events specifically - don't exit until we have at least 1
-				hapiEventType := ogenclient.HolmesGPTResponsePayloadAuditEventEventData
+				hapiEventType := ogenclient.AIAgentResponsePayloadAuditEventEventData
 				hapiCount := 0
 				for _, event := range allEvents {
 					if event.EventData.Type == hapiEventType {
@@ -571,7 +571,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			eventCounts := countEventsByType(allEvents)
 
 			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-			hapiCount := eventCounts[string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)]
+			hapiCount := eventCounts[string(ogenclient.AIAgentResponsePayloadAuditEventEventData)]
 			aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
 			Expect(hapiCount).To(Equal(1),
@@ -593,7 +593,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			By("Validating both hybrid events present")
 			var foundHAPI, foundAA bool
 			for _, event := range allEvents {
-				if event.EventType == string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData) {
+				if event.EventType == string(ogenclient.AIAgentResponsePayloadAuditEventEventData) {
 					foundHAPI = true
 				}
 				if event.EventType == aianalysisaudit.EventTypeAnalysisCompleted {

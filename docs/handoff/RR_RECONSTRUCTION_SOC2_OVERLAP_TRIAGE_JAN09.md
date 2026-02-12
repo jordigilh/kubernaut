@@ -105,7 +105,7 @@ payload.SignalLabels.SetTo(labels) // Gap #2 ✅
 
 **Implemented**:
 - ✅ **Gap #2**: `ProviderData` - HYBRID approach:
-  - HolmesGPT API emits `holmesgpt.response.complete` with full `IncidentResponse`
+  - HolmesGPT API emits `aiagent.response.complete` with full `IncidentResponse`
   - AIAnalysis emits `aianalysis.analysis.completed` with `provider_response_summary`
 
 **Design Decision**: **DD-AUDIT-005 v1.0** (Hybrid Provider Data Capture)
@@ -176,7 +176,7 @@ payload.SignalLabels.SetTo(labels) // Gap #2 ✅
 **RR Reconstruction Remaining**: **0%** (nothing left to do)
 
 **Note**: HYBRID approach captures provider data at 2 points:
-1. `holmesgpt.response.complete` - Full response from HolmesGPT
+1. `aiagent.response.complete` - Full response from HolmesGPT
 2. `aianalysis.analysis.completed` - Processed summary from AIAnalysis
 
 ---

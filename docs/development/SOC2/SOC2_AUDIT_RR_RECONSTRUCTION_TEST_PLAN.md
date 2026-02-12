@@ -121,7 +121,7 @@
 - ✅ **ADDED**: DD-AUDIT-005 v1.0 (Hybrid Provider Data Capture design decision)
 - ✅ **UPDATED**: Day 2 now captures 2 audit events (1 HAPI + 1 AA) per analysis
 - ✅ **BENEFITS**: Defense-in-depth auditing with provider + consumer perspectives
-- ✅ **ADDED**: `holmesgpt.response.complete` event type (HAPI-side audit)
+- ✅ **ADDED**: `aiagent.response.complete` event type (HAPI-side audit)
 - ✅ **UPDATED**: `aianalysis.analysis.completed` now includes `provider_response_summary`
 - ✅ **IMPROVED**: Complete RR reconstruction with full IncidentResponse from HAPI
 
@@ -191,7 +191,7 @@ This test plan validates the 8 critical field gaps for RemediationRequest CRD re
 | Gap # | Field | Service | Test Tier Coverage | Expected Event Count | Status |
 |-------|-------|---------|-------------------|----------------------|--------|
 | **Gap 1-3** | Gateway fields | Gateway | Integration, E2E | 1 `gateway.signal.received` | ✅ Day 1 Complete |
-| **Gap 4** | AI provider data | HolmesAPI + AI Analysis | Integration, E2E | 2 events: `holmesgpt.response.complete` + `aianalysis.analysis.completed` | ✅ **COMPLETE** (Jan 14, 2026) |
+| **Gap 4** | AI provider data | HolmesAPI + AI Analysis | Integration, E2E | 2 events: `aiagent.response.complete` + `aianalysis.analysis.completed` | ✅ **COMPLETE** (Jan 14, 2026) |
 | **Gap 5-6** | Workflow refs | Workflow Execution | Integration, E2E | 2 events: `workflowexecution.selection.completed` + `workflowexecution.execution.started` | ✅ **COMPLETE** (Jan 13, 2026) |
 | **Gap 7** | Error details | All Services | Integration, E2E | N `*.failure` (per error scenario) | ✅ **COMPLETE** (Jan 13, 2026) |
 | **Gap 8** | TimeoutConfig | Orchestrator | Integration, E2E | 1-2 `webhook.remediationrequest.timeout_modified` | ✅ **COMPLETE** (Jan 13, 2026) |
@@ -466,7 +466,7 @@ var _ = Describe("BR-AUDIT-005: Gateway E2E", func() {
 
 | Event Type | Expected Count | Trigger | Service | Fields Captured |
 |-----------|----------------|---------|---------|-----------------|
-| `holmesgpt.response.complete` | 1 per analysis | HAPI returns response | HolmesAPI | `response_data` (Full IncidentResponse) |
+| `aiagent.response.complete` | 1 per analysis | HAPI returns response | HolmesAPI | `response_data` (Full IncidentResponse) |
 | `aianalysis.analysis.completed` | 1 per analysis | AI analysis completes | AI Analysis | `provider_response_summary` (Summary + business context) |
 
 **Total Events**: 2 per AI analysis (1 from HAPI + 1 from AA)
@@ -520,7 +520,7 @@ var _ = Describe("BR-AUDIT-005: AI Analysis + HolmesAPI Hybrid Audit Integration
             correlationID := aiAnalysis.Spec.RemediationID
 
             // 1. Verify HAPI audit event (provider perspective)
-            hapiEventType := "holmesgpt.response.complete"
+            hapiEventType := "aiagent.response.complete"
             hapiEvents := waitForAuditEvents(correlationID, hapiEventType, 1)
 
             // Validate HAPI event metadata
@@ -568,7 +568,7 @@ var _ = Describe("BR-AUDIT-005: AI Analysis + HolmesAPI Hybrid Audit Integration
             // for full RR reconstruction (SOC2 compliance)
 
             correlationID := "req-2025-01-05-reconstruction-test"
-            hapiEvents := waitForAuditEvents(correlationID, "holmesgpt.response.complete", 1)
+            hapiEvents := waitForAuditEvents(correlationID, "aiagent.response.complete", 1)
 
             responseData := hapiEvents[0].EventData.(map[string]interface{})["response_data"].(map[string]interface{})
 

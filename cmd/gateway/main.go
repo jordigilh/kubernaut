@@ -102,15 +102,21 @@ func main() {
 	}
 
 	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002)
+	// BR-GATEWAY-004: Owner chain resolution for signal deduplication (Issue #63).
+	// Uses the same ctrlClient as scope management (ADR-053) — metadata-only informer
+	// cache, zero additional API calls. Shared across all adapters.
+	ownerResolver := adapters.NewK8sOwnerResolver(srv.GetCachedClient())
+
 	// Prometheus AlertManager webhook adapter
-	prometheusAdapter := adapters.NewPrometheusAdapter()
+	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment
+	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver)
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
 	}
 
 	// Kubernetes Event webhook adapter
-	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
+	k8sEventAdapter := adapters.NewKubernetesEventAdapter(ownerResolver)
 	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
 		logger.Error(err, "Failed to register K8s Event adapter")
 		os.Exit(1)

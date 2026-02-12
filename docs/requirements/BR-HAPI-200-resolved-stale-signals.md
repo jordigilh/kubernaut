@@ -162,7 +162,7 @@ This is a VALID outcome - not all signals require remediation.
 
 | Field | Value |
 |-------|-------|
-| `event_type` | `llm_response` |
+| `event_type` | `aiagent.llm.response` |
 | `outcome` | `resolved` or `inconclusive` |
 | `investigation_summary` | Full summary from LLM |
 | `original_signal_type` | From request |
@@ -176,9 +176,33 @@ This is a VALID outcome - not all signals require remediation.
 
 **MUST**: AIAnalysis SHALL handle both outcomes:
 
+#### Decision Tree (Evaluation Order)
+
+**CRITICAL**: The `needs_human_review` check MUST be evaluated **before** the "ProblemResolved" check.
+Evaluating in the wrong order causes high-confidence inconclusive investigations to be misclassified as "ProblemResolved".
+
+```
+1. needs_human_review=true                              → WorkflowResolutionFailed (Layer 1)
+2. !hasSelectedWorkflow && confidence >= 0.7
+   && no inconclusive/no-match warning signals          → ProblemResolved (Outcome A)
+3. !hasSelectedWorkflow                                 → NoWorkflowTerminalFailure
+4. hasSelectedWorkflow && confidence < 0.7              → LowConfidenceFailure
+5. default (workflow selected, confidence >= 0.7)       → Proceed to Analyzing phase
+```
+
+**Defense-in-Depth (Layer 2)**: Even when `needs_human_review=false`, the "ProblemResolved" path
+verifies that HAPI's warnings do not contain signals indicating an active problem. This catches
+edge cases where the LLM incorrectly overrides `needs_human_review=false` but HAPI's
+`result_parser` still appends diagnostic warnings from `investigation_outcome` processing.
+
+Warning signals that block "ProblemResolved" classification:
+- `"inconclusive"` - from HAPI when `investigation_outcome == "inconclusive"`
+- `"no workflows matched"` - from HAPI when `selected_workflow` is null and outcome is not "resolved"
+- `"human review recommended"` - general HAPI safety signal
+
 #### Outcome A: Problem Resolved (`needs_human_review=false`, `human_review_reason=null`)
 
-AIAnalysis detects this pattern: `needs_human_review=false` AND `selected_workflow=null` AND `confidence >= 0.7`
+AIAnalysis detects this pattern: `needs_human_review=false` AND `selected_workflow=null` AND `confidence >= 0.7` AND no inconclusive/no-match warning signals
 
 1. **NOT** create a WorkflowExecution CRD
 2. Transition to `Completed` phase
@@ -356,7 +380,7 @@ And the event SHALL include the LLM's investigation_summary
 | LLM Prompt Update (investigation_outcome guidance) | ✅ Complete | HAPI Team |
 | Response Parsing (handle "resolved" and "inconclusive") | ✅ Complete | HAPI Team |
 | Unit Tests | ✅ Complete | HAPI Team |
-| AIAnalysis Handler | ⏳ Day 8 | AIAnalysis Team |
+| AIAnalysis Handler (BR-HAPI-200.6 decision tree + defense-in-depth) | ✅ Complete | AIAnalysis Team |
 | RO Handler | ⏳ Day 7 | RO Team |
 | Notification Rules | ⏳ Day 15 | Notification Team |
 
@@ -378,6 +402,7 @@ And the event SHALL include the LLM's investigation_summary
 |---------|------|---------|
 | 1.0 | 2025-12-07 | Initial business requirement |
 | 1.1 | 2025-12-07 | Aligned with authoritative implementation: replaced `problem_not_reproducible` with `investigation_inconclusive`, clarified two distinct outcomes (Resolved vs Inconclusive) |
+| 1.2 | 2026-02-09 | BR-HAPI-200.6: Documented corrected decision tree evaluation order (needs_human_review BEFORE ProblemResolved), added defense-in-depth via warnings-based check. Fixed misclassification bug where high-confidence inconclusive investigations were routed to ProblemResolved. AIAnalysis Handler marked complete. |
 
 ---
 

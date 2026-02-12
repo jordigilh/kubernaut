@@ -115,7 +115,7 @@ Context("Full RR Reconstruction with All 7 Gaps", func() {
 **Audit Events Required**:
 1. `gateway.signal.received` (Gaps #1-3)
 2. `orchestrator.lifecycle.created` (Gap #8)
-3. `holmesgpt.response.complete` (Gap #4 - HAPI side)
+3. `aiagent.response.complete` (Gap #4 - HAPI side)
 4. `aianalysis.analysis.completed` (Gap #4 - AA side)
 5. `workflowexecution.selection.completed` (Gap #5)
 6. `workflowexecution.execution.started` (Gap #6)

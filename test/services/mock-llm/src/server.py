@@ -74,6 +74,7 @@ class MockScenario:
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
     include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
     parameters: Dict[str, str] = field(default_factory=dict)
+    execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
 
 
 # Pre-defined scenarios for common test cases
@@ -87,10 +88,16 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="OOMKill Recovery - Increase Memory Limits",
         confidence=0.95,
         root_cause="Container exceeded memory limits due to traffic spike",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource (not the Pod)
+        # The WFE creator will use this to set TargetResource to the Deployment
+        rca_resource_kind="Deployment",
         rca_resource_namespace="production",
-        rca_resource_name="api-server-abc123",
-        parameters={"MEMORY_LIMIT": "1Gi", "NAMESPACE": "production"}
+        rca_resource_name="api-server",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
+        parameters={"MEMORY_LIMIT_NEW": "128Mi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "memory-eater", "TARGET_NAMESPACE": "default"},
+        # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
+        execution_engine="job",
     ),
     "crashloop": MockScenario(
         name="crashloop",
@@ -101,10 +108,12 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="CrashLoopBackOff - Configuration Fix",
         confidence=0.88,
         root_cause="Container failing due to missing configuration",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource (not the Pod)
+        rca_resource_kind="Deployment",
         rca_resource_namespace="staging",
-        rca_resource_name="worker-xyz789",
-        parameters={"CONFIG_MAP": "app-config", "NAMESPACE": "staging"}
+        rca_resource_name="worker",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        parameters={"CONFIG_MAP": "app-config", "TARGET_NAMESPACE": "staging"}
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
@@ -232,10 +241,14 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         workflow_title="OOMKill Recovery - Increase Memory Limits",
         confidence=0.88,
         root_cause="Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
-        rca_resource_kind="Pod",
+        # BR-HAPI-191: RCA identifies Deployment as the affected resource
+        rca_resource_kind="Deployment",
         rca_resource_namespace="production",
-        rca_resource_name="api-server-abc123",
-        parameters={"MEMORY_LIMIT": "2Gi", "NAMESPACE": "production"}
+        rca_resource_name="api-server",
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"},
+        # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
+        execution_engine="job",
     ),
     "predictive_no_action": MockScenario(
         name="predictive_no_action",
@@ -392,6 +405,11 @@ def load_scenarios_from_file(config_path: str):
         scenarios:
           oomkill-increase-memory-v1:production: "uuid1"
           crashloop-config-fix-v1:test: "uuid2"
+        overrides:                          # Optional: per-scenario field overrides
+          crashloop:
+            execution_engine: "job"         # Override execution_engine for this scenario
+          oomkilled:
+            execution_engine: "job"
     """
     try:
         import yaml
@@ -451,7 +469,30 @@ def load_scenarios_from_file(config_path: str):
                 print(f"  ⚠️  No matching scenario for config entry: {workflow_key}")
 
         print(f"✅ Mock LLM loaded {synced_count}/{len(MOCK_SCENARIOS)} scenarios from file")
-        
+
+        # Apply scenario-level overrides (e.g., execution_engine)
+        # Format: overrides:
+        #           crashloop:
+        #             execution_engine: "job"
+        overrides_config = config.get('overrides', {})
+        if overrides_config:
+            for scenario_name, overrides in overrides_config.items():
+                if scenario_name in MOCK_SCENARIOS:
+                    scenario = MOCK_SCENARIOS[scenario_name]
+                    for key, value in overrides.items():
+                        if hasattr(scenario, key):
+                            setattr(scenario, key, value)
+                            print(f"  ✅ Override {scenario_name}.{key} = {value}")
+                        else:
+                            print(f"  ⚠️  Unknown override field: {scenario_name}.{key}")
+                elif scenario_name == "default" and DEFAULT_SCENARIO:
+                    for key, value in overrides.items():
+                        if hasattr(DEFAULT_SCENARIO, key):
+                            setattr(DEFAULT_SCENARIO, key, value)
+                            print(f"  ✅ Override default.{key} = {value}")
+                else:
+                    print(f"  ⚠️  Unknown scenario for override: {scenario_name}")
+
         # Validate that all scenarios with workflow_name matched successfully
         # This prevents silent failures from workflow name drift between Mock LLM and test fixtures
         # Check both MOCK_SCENARIOS and DEFAULT_SCENARIO
@@ -586,6 +627,25 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             request_data = {}
 
         # Route based on endpoint
+        # IT-AA-095-02: Detect mock_rca_permanent_error scenario and return HTTP 500
+        # This causes HAPI session to fail, triggering AA controller to move to Failed phase
+        messages = request_data.get("messages", [])
+        all_content = " ".join(str(m.get("content", "")) for m in messages if m.get("content")).lower()
+        if "mock_rca_permanent_error" in all_content or "mock rca permanent error" in all_content:
+            logger.info("🚨 MOCK_RCA_PERMANENT_ERROR detected - returning HTTP 500")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            error_response = json.dumps({
+                "error": {
+                    "message": "Mock permanent LLM error for testing",
+                    "type": "server_error",
+                    "code": "internal_error"
+                }
+            })
+            self.wfile.write(error_response.encode("utf-8"))
+            return
+
         if self.path in ["/v1/chat/completions", "/chat/completions"]:
             logger.info(f"  → Handling OpenAI chat completion request")
             response = self._handle_openai_request(request_data)
@@ -653,18 +713,29 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         logger.info(f"🔍 SCENARIO DETECTION - Has 'recovery' + 'previous': {('recovery' in content and 'previous' in content)}")
 
         # Check for test-specific signal types first (human review tests)
-        if "mock_no_workflow_found" in content or "mock no workflow found" in content:
+        # FIX: Check BOTH 'content' (message text) AND 'all_text' (full message objects)
+        # Recovery prompts may embed the signal_type in structured content blocks or
+        # JSON payloads that 'content' extraction doesn't capture reliably.
+        # 'all_text' captures everything including {"signal_type": "MOCK_..."} in JSON.
+        search_text = content + " " + all_text
+        if "mock_no_workflow_found" in search_text or "mock no workflow found" in search_text:
+            logger.info("✅ SCENARIO DETECTED: NO_WORKFLOW_FOUND (mock keyword match)")
             return MOCK_SCENARIOS.get("no_workflow_found", DEFAULT_SCENARIO)
-        if "mock_low_confidence" in content or "mock low confidence" in content:
+        if "mock_low_confidence" in search_text or "mock low confidence" in search_text:
+            logger.info("✅ SCENARIO DETECTED: LOW_CONFIDENCE (mock keyword match)")
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
-        if "mock_problem_resolved" in content or "mock problem resolved" in content:
+        if "mock_problem_resolved" in search_text or "mock problem resolved" in search_text:
+            logger.info("✅ SCENARIO DETECTED: PROBLEM_RESOLVED (mock keyword match)")
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
-        if "mock_not_reproducible" in content or "mock not reproducible" in content:
+        if "mock_not_reproducible" in search_text or "mock not reproducible" in search_text:
+            logger.info("✅ SCENARIO DETECTED: NOT_REPRODUCIBLE (mock keyword match)")
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)  # Same scenario: issue self-resolved
-        if "mock_rca_incomplete" in content or "mock rca incomplete" in content:
+        if "mock_rca_incomplete" in search_text or "mock rca incomplete" in search_text:
+            logger.info("✅ SCENARIO DETECTED: RCA_INCOMPLETE (mock keyword match)")
             return MOCK_SCENARIOS.get("rca_incomplete", DEFAULT_SCENARIO)
         # E2E-HAPI-003: Max retries exhausted - LLM parsing failed
-        if "mock_max_retries_exhausted" in content or "mock max retries exhausted" in content:
+        if "mock_max_retries_exhausted" in search_text or "mock max retries exhausted" in search_text:
+            logger.info("✅ SCENARIO DETECTED: MAX_RETRIES_EXHAUSTED (mock keyword match)")
             return MOCK_SCENARIOS.get("max_retries_exhausted", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
@@ -976,6 +1047,7 @@ The problem has self-resolved. No remediation workflow is needed.
                 "version": "1.0.0",
                 "confidence": scenario.confidence,  # 0.35 - triggers human review
                 "rationale": "Multiple possible causes identified, confidence is low",
+                "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
             # E2E-HAPI-002: Add alternative workflows for human review
@@ -1104,6 +1176,7 @@ No suitable alternative workflow found. Human review required.
                 "version": "1.0.0",
                 "confidence": scenario.confidence,
                 "rationale": f"Selected based on {scenario.signal_type} signal analysis",
+                "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
             # Format as markdown with JSON block (like real LLM would)
@@ -1263,7 +1336,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "workflow_id": "{scenario.workflow_id}",
     "version": "1.0.0",
     "confidence": {scenario.confidence},
-    "rationale": "Alternative approach after failed attempt"
+    "rationale": "Alternative approach after failed attempt",
+    "execution_engine": "{scenario.execution_engine}"
   }},
   "alternative_workflows": {json.dumps(alternatives_list)}
 }}
@@ -1309,7 +1383,8 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "workflow_id": "{scenario.workflow_id}",
     "version": "1.0.0",
     "confidence": {scenario.confidence},
-    "rationale": "Selected based on signal analysis"
+    "rationale": "Selected based on signal analysis",
+    "execution_engine": "{scenario.execution_engine}"
   }}
 }}
 ```

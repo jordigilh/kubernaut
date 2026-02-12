@@ -28,6 +28,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -413,28 +414,45 @@ func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, wri
 		_, _ = fmt.Fprintln(writer, "  📊 DD-TEST-007: Python E2E coverage instrumentation ENABLED")
 	}
 
-	// ADR-030: Create HAPI ConfigMap with minimal config
-	deployment := fmt.Sprintf(`apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: holmesgpt-api-config
-  namespace: %s
-data:
-  config.yaml: |
-    logging:
-      level: "INFO"
-    llm:
-      provider: "openai"
-      model: "mock-model"
-      endpoint: "http://mock-llm:8080"
-    data_storage:
-      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
-    audit:
-      flush_interval_seconds: 0.1
-      buffer_size: 10000
-      batch_size: 50
----
-apiVersion: apps/v1
+	// ──────────────────────────────────────────────────────────────────────
+	// LLM configuration strategy (multi-provider):
+	//
+	// Default (CI/CD): Generate holmesgpt-api-config ConfigMap with mock-llm
+	//   settings. HAPI env vars point to http://mock-llm:8080.
+	//
+	// SKIP_MOCK_LLM (local dev with real LLM):
+	//   The infra reads a local config file (outside the repo) to determine the
+	//   LLM provider, then creates the appropriate K8s resources in the cluster.
+	//
+	//   Supported providers (detected from config llm.provider field):
+	//     vertex_ai  — GCP Vertex AI (needs VERTEXAI_PROJECT, VERTEXAI_LOCATION,
+	//                  GOOGLE_APPLICATION_CREDENTIALS via credentials.json Secret)
+	//     anthropic  — Anthropic API direct (needs ANTHROPIC_API_KEY via Secret,
+	//                  sourced from file or ANTHROPIC_API_KEY env var)
+	//
+	//   Environment variables:
+	//     E2E_HAPI_LLM_CONFIG_PATH      — path to HAPI config.yaml
+	//                                      (default: ~/.kubernaut/e2e/hapi-llm-config.yaml)
+	//     E2E_HAPI_LLM_CREDENTIALS_PATH — path to credentials.json (Vertex AI only)
+	//                                      (default: ~/.kubernaut/e2e/credentials.json)
+	//     ANTHROPIC_API_KEY              — Anthropic API key (alternative to file)
+	//
+	// ──────────────────────────────────────────────────────────────────────
+
+	var settings hapiLLMDeploymentSettings
+
+	if skipMockLLM() {
+		var err error
+		settings, err = buildExternalLLMSettings(kubeconfigPath, namespace, writer)
+		if err != nil {
+			return fmt.Errorf("failed to configure external LLM: %w", err)
+		}
+	} else {
+		settings = buildMockLLMSettings(namespace)
+	}
+
+	// ADR-030: Compose the full HAPI deployment manifest
+	deployment := fmt.Sprintf(`%sapiVersion: apps/v1
 kind: Deployment
 metadata:
   name: holmesgpt-api
@@ -449,7 +467,7 @@ spec:
       labels:
         app: holmesgpt-api
     spec:
-      serviceAccountName: holmesgpt-api-sa  # DD-AUTH-014: Required for DataStorage authentication
+      serviceAccountName: holmesgpt-api-sa
       containers:
       - name: holmesgpt-api
         image: %s
@@ -460,28 +478,19 @@ spec:
         - "-config"
         - "/etc/holmesgpt/config.yaml"
         env:
-        - name: LLM_ENDPOINT
-          value: "http://mock-llm:8080"
-        - name: LLM_MODEL
-          value: "mock-model"
-        - name: LLM_PROVIDER
-          value: "openai"
-        - name: OPENAI_API_KEY
-          value: "mock-api-key-for-e2e"
-        - name: DATA_STORAGE_URL
-          value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
-        - name: LITELLM_LOG
-          value: "DEBUG"  # Enable LiteLLM debug logging
+        %s
         %s
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt
           readOnly: true
         %s
+        %s
       volumes:
       - name: config
         configMap:
-          name: holmesgpt-api-config
+          name: %s
+      %s
       %s
 ---
 apiVersion: v1
@@ -497,7 +506,12 @@ spec:
     nodePort: 30120
   selector:
     app: holmesgpt-api
-`, namespace, namespace, imageTag, GetImagePullPolicy(), coverageEnv, coverageVolumeMount, coverageVolume, namespace)
+`, settings.ConfigMapYAML,
+		namespace, imageTag, GetImagePullPolicy(),
+		settings.EnvVars, coverageEnv,
+		settings.CredentialMount, coverageVolumeMount,
+		settings.ConfigMapName, settings.CredentialVolume, coverageVolume,
+		namespace)
 
 	// Apply manifest
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -588,7 +602,48 @@ subjects:
   - kind: ServiceAccount
     name: holmesgpt-api-sa
     namespace: %s
-`, namespace, namespace, namespace, namespace)
+---
+# ClusterRole: K8s investigation permissions for HolmesGPT kubernetes/core toolset
+# Required for kubectl-based pod/event investigation during incident analysis
+# Without this, the LLM cannot gather evidence and skips workflow catalog search
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-investigator
+  labels:
+    app: holmesgpt-api
+    component: investigation
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding: Grant HAPI investigation permissions cluster-wide
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-investigator-binding
+  labels:
+    app: holmesgpt-api
+    component: investigation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-investigator
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: %s
+`, namespace, namespace, namespace, namespace, namespace)
 
 	// Apply manifest
 	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
@@ -922,5 +977,456 @@ spec:
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "Mock LLM pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM ready\n")
 
+	return nil
+}
+
+// UpdateMockLLMConfigMap updates the Mock LLM ConfigMap with workflow UUIDs
+// obtained after seeding workflows in DataStorage, then restarts the Mock LLM
+// deployment to pick up the new configuration.
+//
+// This solves the ordering problem: SetupFullPipelineInfrastructure deploys
+// Mock LLM with empty scenarios (PHASE 7), then tests seed workflows in
+// BeforeAll. After seeding, this function updates the ConfigMap with actual
+// UUIDs and restarts the Mock LLM so it returns correct workflow_id values.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - namespace: Kubernetes namespace (e.g., "kubernaut-system")
+//   - kubeconfigPath: Path to kubeconfig for kubectl commands
+//   - workflowUUIDs: Map of "workflow_name:environment" → "uuid" from SeedWorkflowsInDataStorage
+//   - writer: Output writer for progress logging
+func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
+
+	// Build the scenarios YAML with actual workflow UUIDs
+	scenariosYAML := "scenarios:\n"
+	for key, uuid := range workflowUUIDs {
+		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
+	}
+	// Add overrides section: ensure oomkilled scenario uses job execution engine
+	// This is redundant with the hardcoded default in server.py but ensures
+	// CI/CD ConfigMap-based configuration is explicit and self-documenting
+	scenariosYAML += "    overrides:\n"
+	scenariosYAML += "      oomkilled:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      oomkilled_predictive:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+	scenariosYAML += "      crashloop:\n"
+	scenariosYAML += "        execution_engine: \"job\"\n"
+
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+`, namespace, scenariosYAML)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
+
+	// Restart Mock LLM deployment to pick up the new ConfigMap
+	// The Mock LLM reads scenarios.yaml at startup only (no hot-reload)
+	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
+	restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+	restartCmd.Stdout = writer
+	restartCmd.Stderr = writer
+	if err := restartCmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment: %w", err)
+	}
+
+	// Wait for rollout to complete
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM rollout to complete...\n")
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("Mock LLM rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
+
+	return nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LLM PROVIDER CONFIGURATION (Multi-Provider)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Supports: vertex_ai, anthropic, openai (mock)
+//
+// The config file at ~/.kubernaut/e2e/hapi-llm-config.yaml determines which
+// provider is used. The llm.provider field drives all configuration decisions:
+//   - Which K8s Secrets to create
+//   - Which environment variables the HAPI container needs
+//   - Which credential files to mount
+//
+// Adding a new provider:
+//  1. Add a case to buildExternalLLMSettings()
+//  2. Implement build<Provider>Settings() returning hapiLLMDeploymentSettings
+//  3. Implement create<Provider>Secret() for credential management
+//
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// hapiLLMConfig represents the parsed HAPI LLM config file structure.
+// Only the fields relevant to E2E infrastructure setup are included.
+type hapiLLMConfig struct {
+	LLM struct {
+		Provider     string `yaml:"provider"`       // "vertex_ai", "anthropic", "openai"
+		Model        string `yaml:"model"`          // e.g. "claude-sonnet-4@20250514"
+		GCPProjectID string `yaml:"gcp_project_id"` // Vertex AI only
+		GCPRegion    string `yaml:"gcp_region"`     // Vertex AI only
+		APIKey       string `yaml:"api_key"`        // Anthropic / OpenAI (optional — prefer file/env)
+	} `yaml:"llm"`
+}
+
+// hapiLLMDeploymentSettings holds the computed Kubernetes manifest fragments
+// produced by a provider-specific builder. These fragments are interpolated
+// directly into the HAPI Deployment + Service YAML template.
+type hapiLLMDeploymentSettings struct {
+	// ConfigMapYAML is the full ConfigMap manifest to prepend (empty when using external ConfigMap)
+	ConfigMapYAML string
+	// ConfigMapName is the name of the ConfigMap to mount as /etc/holmesgpt
+	ConfigMapName string
+	// EnvVars is a YAML fragment of env entries for the HAPI container
+	EnvVars string
+	// CredentialVolume is a YAML fragment for the volumes section (empty if no credentials)
+	CredentialVolume string
+	// CredentialMount is a YAML fragment for the volumeMounts section (empty if no credentials)
+	CredentialMount string
+}
+
+// getHAPILLMConfigPath returns the resolved path to the HAPI LLM config file.
+func getHAPILLMConfigPath() string {
+	return getEnvOrDefault("E2E_HAPI_LLM_CONFIG_PATH",
+		filepath.Join(os.Getenv("HOME"), ".kubernaut", "e2e", "hapi-llm-config.yaml"))
+}
+
+// parseHAPILLMConfig reads and parses the HAPI LLM config file.
+func parseHAPILLMConfig() (*hapiLLMConfig, error) {
+	configPath := getHAPILLMConfigPath()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read LLM config from %s: %w", configPath, err)
+	}
+
+	var cfg hapiLLMConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse LLM config YAML from %s: %w", configPath, err)
+	}
+	return &cfg, nil
+}
+
+// buildExternalLLMSettings reads the HAPI LLM config, creates the ConfigMap and
+// provider-specific K8s Secrets, then returns the deployment settings with
+// the correct env vars and volume mounts for the detected provider.
+//
+// Provider dispatch:
+//
+//	vertex_ai  → buildVertexAISettings  + createVertexAISecret
+//	anthropic  → buildAnthropicSettings + createAnthropicSecret
+func buildExternalLLMSettings(kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
+	cfg, err := parseHAPILLMConfig()
+	if err != nil {
+		return hapiLLMDeploymentSettings{}, err
+	}
+
+	_, _ = fmt.Fprintf(writer, "  🔍 Detected LLM provider: %s (model: %s)\n", cfg.LLM.Provider, cfg.LLM.Model)
+
+	// Create ConfigMap from the local config file (common to all providers)
+	if err := createLLMConfigMap(kubeconfigPath, namespace, writer); err != nil {
+		return hapiLLMDeploymentSettings{}, err
+	}
+
+	switch cfg.LLM.Provider {
+	case "vertex_ai":
+		return buildVertexAISettings(cfg, kubeconfigPath, namespace, writer)
+	case "anthropic":
+		return buildAnthropicSettings(cfg, kubeconfigPath, namespace, writer)
+	default:
+		return hapiLLMDeploymentSettings{}, fmt.Errorf(
+			"unsupported LLM provider %q in config file %s\n"+
+				"  Supported providers: vertex_ai, anthropic\n"+
+				"  Set llm.provider in your config file", cfg.LLM.Provider, getHAPILLMConfigPath())
+	}
+}
+
+// buildMockLLMSettings returns deployment settings for the Mock LLM (CI/CD mode).
+func buildMockLLMSettings(namespace string) hapiLLMDeploymentSettings {
+	return hapiLLMDeploymentSettings{
+		ConfigMapName: "holmesgpt-api-config",
+		ConfigMapYAML: fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: %s
+data:
+  config.yaml: |
+    logging:
+      level: "INFO"
+    llm:
+      provider: "openai"
+      model: "mock-model"
+      endpoint: "http://mock-llm:8080"
+    data_storage:
+      url: "http://data-storage-service:8080"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+---
+`, namespace),
+		EnvVars: `- name: LLM_ENDPOINT
+          value: "http://mock-llm:8080"
+        - name: LLM_MODEL
+          value: "mock-model"
+        - name: LLM_PROVIDER
+          value: "openai"
+        - name: OPENAI_API_KEY
+          value: "mock-api-key-for-e2e"
+        - name: DATA_STORAGE_URL
+          value: "http://data-storage-service:8080"
+        - name: LITELLM_LOG
+          value: "DEBUG"`,
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Vertex AI provider
+// ──────────────────────────────────────────────────────────────────────
+
+// buildVertexAISettings builds HAPI deployment settings for the Vertex AI provider.
+// LiteLLM requires VERTEXAI_PROJECT + VERTEXAI_LOCATION as env vars, and
+// GOOGLE_APPLICATION_CREDENTIALS pointing to a mounted credentials.json file.
+//
+// Credential source: ~/.kubernaut/e2e/credentials.json (or E2E_HAPI_LLM_CREDENTIALS_PATH)
+func buildVertexAISettings(cfg *hapiLLMConfig, kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
+	settings := hapiLLMDeploymentSettings{
+		ConfigMapName: "hapi-llm-config",
+	}
+
+	// Base env vars
+	envVars := `- name: DATA_STORAGE_URL
+          value: "http://data-storage-service:8080"
+        - name: LITELLM_LOG
+          value: "DEBUG"`
+
+	// Provider-specific env vars from config
+	if cfg.LLM.GCPProjectID != "" {
+		envVars += fmt.Sprintf(`
+        - name: VERTEXAI_PROJECT
+          value: "%s"`, cfg.LLM.GCPProjectID)
+		_, _ = fmt.Fprintf(writer, "  🔧 VERTEXAI_PROJECT=%s\n", cfg.LLM.GCPProjectID)
+	}
+	if cfg.LLM.GCPRegion != "" {
+		envVars += fmt.Sprintf(`
+        - name: VERTEXAI_LOCATION
+          value: "%s"`, cfg.LLM.GCPRegion)
+		_, _ = fmt.Fprintf(writer, "  🔧 VERTEXAI_LOCATION=%s\n", cfg.LLM.GCPRegion)
+	}
+
+	// GCP credentials file (optional — falls back to in-cluster Workload Identity)
+	credsPath := getEnvOrDefault("E2E_HAPI_LLM_CREDENTIALS_PATH",
+		filepath.Join(os.Getenv("HOME"), ".kubernaut", "e2e", "credentials.json"))
+
+	if _, err := os.Stat(credsPath); err == nil {
+		if err := createFileSecret(kubeconfigPath, namespace, "hapi-llm-credentials",
+			"credentials.json", credsPath, writer); err != nil {
+			return settings, fmt.Errorf("failed to create Vertex AI credentials Secret: %w", err)
+		}
+		settings.CredentialVolume = `- name: llm-credentials
+        secret:
+          secretName: hapi-llm-credentials`
+		settings.CredentialMount = `- name: llm-credentials
+          mountPath: /var/secrets/llm
+          readOnly: true`
+		envVars += `
+        - name: LLM_CREDENTIALS_PATH
+          value: "/var/secrets/llm/credentials.json"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: "/var/secrets/llm/credentials.json"`
+	} else {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  No GCP credentials at %s — using in-cluster auth\n", credsPath)
+	}
+
+	settings.EnvVars = envVars
+	return settings, nil
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Anthropic provider
+// ──────────────────────────────────────────────────────────────────────
+
+// buildAnthropicSettings builds HAPI deployment settings for Anthropic direct API.
+// LiteLLM requires the ANTHROPIC_API_KEY environment variable.
+//
+// API key resolution order:
+//  1. ANTHROPIC_API_KEY environment variable (highest priority — CI/CD friendly)
+//  2. File at ~/.kubernaut/e2e/anthropic-api-key (local dev — single line, no newline)
+//  3. llm.api_key field in the config YAML (least preferred — visible in ConfigMap)
+func buildAnthropicSettings(cfg *hapiLLMConfig, kubeconfigPath, namespace string, writer io.Writer) (hapiLLMDeploymentSettings, error) {
+	settings := hapiLLMDeploymentSettings{
+		ConfigMapName: "hapi-llm-config",
+	}
+
+	// Resolve the API key from the three sources
+	apiKey, source, err := resolveAnthropicAPIKey(cfg)
+	if err != nil {
+		return settings, err
+	}
+	_, _ = fmt.Fprintf(writer, "  🔑 Anthropic API key resolved from: %s\n", source)
+
+	// Store the API key in a K8s Secret (never in a ConfigMap)
+	if err := createLiteralSecret(kubeconfigPath, namespace, "hapi-llm-credentials",
+		"api-key", apiKey, writer); err != nil {
+		return settings, fmt.Errorf("failed to create Anthropic API key Secret: %w", err)
+	}
+
+	// Env vars: inject ANTHROPIC_API_KEY from the Secret
+	settings.EnvVars = `- name: DATA_STORAGE_URL
+          value: "http://data-storage-service:8080"
+        - name: LITELLM_LOG
+          value: "DEBUG"
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hapi-llm-credentials
+              key: api-key`
+
+	// No volume/mount needed — API key is injected via env var from Secret
+	return settings, nil
+}
+
+// resolveAnthropicAPIKey resolves the Anthropic API key from multiple sources.
+// Returns (key, source_description, error).
+func resolveAnthropicAPIKey(cfg *hapiLLMConfig) (string, string, error) {
+	// 1. Environment variable (highest priority)
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		return key, "ANTHROPIC_API_KEY env var", nil
+	}
+
+	// 2. File at ~/.kubernaut/e2e/anthropic-api-key
+	keyFilePath := getEnvOrDefault("E2E_ANTHROPIC_API_KEY_PATH",
+		filepath.Join(os.Getenv("HOME"), ".kubernaut", "e2e", "anthropic-api-key"))
+	if data, err := os.ReadFile(keyFilePath); err == nil {
+		key := strings.TrimSpace(string(data))
+		if key != "" {
+			return key, keyFilePath, nil
+		}
+	}
+
+	// 3. Config YAML field (least preferred)
+	if cfg.LLM.APIKey != "" {
+		return cfg.LLM.APIKey, "config YAML llm.api_key", nil
+	}
+
+	return "", "", fmt.Errorf(
+		"Anthropic API key not found. Provide it via one of:\n"+
+			"  1. ANTHROPIC_API_KEY environment variable\n"+
+			"  2. File at %s (single line, no trailing newline)\n"+
+			"  3. llm.api_key field in %s", keyFilePath, getHAPILLMConfigPath())
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Shared K8s resource helpers
+// ──────────────────────────────────────────────────────────────────────
+
+// createLLMConfigMap creates the hapi-llm-config ConfigMap from the local config file.
+// Used by all external LLM providers (Vertex AI, Anthropic).
+func createLLMConfigMap(kubeconfigPath, namespace string, writer io.Writer) error {
+	configPath := getHAPILLMConfigPath()
+	_, _ = fmt.Fprintf(writer, "  🔗 Creating ConfigMap hapi-llm-config from %s\n", configPath)
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("HAPI LLM config file not found: %s\n"+
+			"  Create it with your LLM settings (see ~/.kubernaut/e2e/hapi-llm-config.yaml)\n"+
+			"  Or set E2E_HAPI_LLM_CONFIG_PATH to point to your config file", configPath)
+	}
+
+	if err := kubectlPipedApply(kubeconfigPath,
+		[]string{"create", "configmap", "hapi-llm-config",
+			"--namespace", namespace,
+			"--from-file=config.yaml=" + configPath,
+			"--dry-run=client", "-o", "yaml"},
+		writer); err != nil {
+		return fmt.Errorf("failed to create LLM ConfigMap: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap hapi-llm-config created")
+	return nil
+}
+
+// createFileSecret creates a K8s Secret from a local file.
+// The file path is resolved through symlinks for kubectl compatibility.
+func createFileSecret(kubeconfigPath, namespace, secretName, key, filePath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating Secret %s from %s\n", secretName, filePath)
+
+	// Resolve symlinks so kubectl reads the actual file
+	realPath, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path %s: %w", filePath, err)
+	}
+
+	return kubectlPipedApply(kubeconfigPath,
+		[]string{"create", "secret", "generic", secretName,
+			"--namespace", namespace,
+			"--from-file=" + key + "=" + realPath,
+			"--dry-run=client", "-o", "yaml"},
+		writer)
+}
+
+// createLiteralSecret creates a K8s Secret from a literal string value.
+func createLiteralSecret(kubeconfigPath, namespace, secretName, key, value string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🔐 Creating Secret %s (literal key: %s)\n", secretName, key)
+
+	return kubectlPipedApply(kubeconfigPath,
+		[]string{"create", "secret", "generic", secretName,
+			"--namespace", namespace,
+			"--from-literal=" + key + "=" + value,
+			"--dry-run=client", "-o", "yaml"},
+		writer)
+}
+
+// kubectlPipedApply runs: kubectl <generateArgs> --dry-run=client -o yaml | kubectl apply -f -
+// This pattern is idempotent — safe to call multiple times for the same resource.
+func kubectlPipedApply(kubeconfigPath string, generateArgs []string, writer io.Writer) error {
+	// Prepend --kubeconfig to the generate command
+	fullGenArgs := append([]string{"--kubeconfig", kubeconfigPath}, generateArgs...)
+
+	genCmd := exec.Command("kubectl", fullGenArgs...)
+	applyCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+
+	pipe, err := genCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create pipe: %w", err)
+	}
+	applyCmd.Stdin = pipe
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := genCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start kubectl generate: %w", err)
+	}
+	if err := applyCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start kubectl apply: %w", err)
+	}
+	if err := genCmd.Wait(); err != nil {
+		return fmt.Errorf("kubectl generate failed: %w", err)
+	}
+	if err := applyCmd.Wait(); err != nil {
+		return fmt.Errorf("kubectl apply failed: %w", err)
+	}
 	return nil
 }

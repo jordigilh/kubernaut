@@ -178,7 +178,7 @@ not to be nil
 - HAPI parses LLM response
 - Extracts `alternative_workflows` from LLM output
 - Includes it in `IncidentResponse` struct
-- Writes it to audit event (`holmesgpt.response.complete`)
+- Writes it to audit event (`aiagent.response.complete`)
 
 **Actual Behavior**:
 - HAPI parses LLM response ✅
@@ -421,7 +421,7 @@ ERROR analyzing-handler No workflow selected - investigation may have failed
 1. Create AIAnalysis with signal_type="CrashLoopBackOff"
 2. Mock LLM returns response with alternative_workflows array
 3. HAPI receives response with alternative_workflows
-4. HAPI writes audit event (holmesgpt.response.complete)
+4. HAPI writes audit event (aiagent.response.complete)
 5. Test queries audit event from DataStorage
 6. ❌ EXPECTED: alternative_workflows field populated
 7. ❌ ACTUAL: alternative_workflows is nil (empty array)

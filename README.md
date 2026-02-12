@@ -1,6 +1,6 @@
 # Kubernaut
 
-**AI-Powered Kubernetes Operations Platform**
+**AIOps Platform for Intelligent Kubernetes Remediation**
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
 [![Go Version](https://img.shields.io/badge/Go-1.25.3-blue.svg)](https://golang.org/dl/)
@@ -8,30 +8,36 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
-Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven investigation with automated remediation. It analyzes Kubernetes incidents and predictive signals, orchestrates multi-step remediation workflows, and executes validated actions—targeting mean time to resolution reduction from 60 minutes to under 5 minutes while maintaining operational safety.
+Kubernaut is an open-source **AIOps platform** that closes the loop from Kubernetes alert to automated remediation — without a human in the middle. When something goes wrong in your cluster (an OOMKill, a CrashLoopBackOff, node pressure), Kubernaut detects the signal, enriches it with context, sends it to an LLM for live root cause investigation using real `kubectl` access, matches a remediation workflow from a searchable catalog, and executes the fix — or escalates to a human with a full RCA when it can't.
+
+The result: **mean time to resolution drops from 60 minutes to under 5**, while humans stay in control through approval gates, configurable confidence thresholds, and SOC2-compliant audit trails.
 
 ---
 
 ## 🎯 What is Kubernaut?
 
-Kubernaut automates the entire incident response lifecycle for Kubernetes:
+Kubernaut automates the entire incident response lifecycle for Kubernetes through a five-stage AIOps pipeline:
 
-1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager (including predictive `predict_linear()` alerts) and Kubernetes Events
-2. **AI Analysis**: Uses HolmesGPT for root cause analysis and remediation recommendations
-3. **Workflow Orchestration**: Executes remediation workflows via Tekton Pipelines or Kubernetes Jobs
-4. **Continuous Learning**: Tracks effectiveness of workflow executions and successful remediations over time
+1. **Signal Detection** — Receives alerts from Prometheus AlertManager (including predictive `predict_linear()` alerts) and Kubernetes Events, validates resource scope, and creates a `RemediationRequest`.
+2. **Signal Processing** — Enriches the signal with Kubernetes context: owner chain, namespace labels, severity classification, deduplication, and signal mode (reactive vs. predictive).
+3. **AI Analysis** — An LLM investigates the incident live — checking pod logs, events, and resource limits via `kubectl` — produces a root cause analysis, and searches a workflow catalog for a matching remediation.
+4. **Workflow Execution** — Runs the selected remediation (e.g., a Kubernetes Job that patches a Deployment's memory limits) via Tekton Pipelines or Kubernetes Jobs, with optional human approval gates.
+5. **Notification** — Keeps the team informed at every stage — whether the fix was applied automatically, is pending approval, or has been flagged for human review.
+
+For SRE teams, the value proposition is: **reduce MTTR on known failure patterns to near-zero, while building a searchable catalog of remediation workflows that encode your team's operational knowledge.** Kubernaut handles the toil; your team focuses on the novel problems.
 
 ### Key Capabilities
 
-- **Multi-Source Signal Processing**: Prometheus alerts (reactive and predictive), Kubernetes events with deduplication, signal mode classification, and signal type normalization (ADR-054).
-- **AI-Powered Root Cause Analysis**: HolmesGPT integration for intelligent investigation
-- **Remediation Workflows**: Flexible execution via Tekton Pipelines (multi-step) or Kubernetes Jobs (single-step), with OCI-containerized workflow definitions
-- **Resource Scope Management**: Label-based opt-in model (`kubernaut.ai/managed=true`) controls which namespaces and resources Kubernaut manages, with metadata-only informer caching for both Gateway and Remediation Orchestrator (ADR-053)
-- **Safety-First Execution**: Admission webhook validation, human-in-the-loop approval gates, and effectiveness tracking
-- **Continuous Learning**: Multi-dimensional effectiveness tracking (incident type, workflow, action)
-- **Production-Ready**: Comprehensive CI coverage reporting, SOC2-compliant audit traces, 10 of 10 V1.0 services ready
+- **Multi-Source Signal Processing**: Prometheus alerts (reactive and predictive), Kubernetes events with deduplication, signal mode classification, and signal type normalization (ADR-054)
+- **AI-Powered Root Cause Analysis**: HolmesGPT integration with LLM providers (Vertex AI, OpenAI, and others via LiteLLM) for intelligent investigation with live `kubectl` access
+- **Remediation Workflow Catalog**: Searchable catalog of OCI-containerized workflows with label-based matching (signal type, severity, component, environment), wildcard support, and confidence scoring
+- **Flexible Execution**: Tekton Pipelines (multi-step) or Kubernetes Jobs (single-step) with parameterized actions following the Validate-Action-Verify pattern
+- **Resource Scope Management**: Label-based opt-in model (`kubernaut.ai/managed=true`) controls which namespaces and resources Kubernaut manages, with metadata-only informer caching (ADR-053)
+- **Safety-First Design**: Admission webhook validation, human-in-the-loop approval gates, configurable confidence thresholds, and effectiveness tracking
 - **SOC2 Type II Compliance**: Full RemediationRequest reconstruction from audit traces, operator attribution via webhooks, hash chain integrity verification (DD-AUDIT-004, DD-WEBHOOK-001, ADR-034)
+- **Continuous Learning**: Multi-dimensional effectiveness tracking (incident type, workflow, action) to improve remediation success rates over time
 - **Enterprise Diagnostics**: Must-gather diagnostic collection following OpenShift industry standard (BR-PLATFORM-001)
+- **Production-Ready**: 10 of 10 V1.0 services complete with comprehensive CI coverage reporting
 
 ---
 
@@ -64,20 +70,20 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**V1.0 Release** (In Development) | **Timeline**: Pre-release February 2026
-**Production-Ready Services**: 10 of 10 (100%) ✅ | **SOC2 Type II Compliance**: ✅ Completed
+**V1.0 Release** | **Timeline**: Pre-release February 2026
+**Production-Ready Services**: 10 of 10 (100%) ✅ | **Full Pipeline E2E**: ✅ | **SOC2 Type II Compliance**: ✅
 
 | Service | Status | Purpose | All Tiers Coverage |
 |---------|--------|---------|-------------------|
-| **Signal Processing** | ✅ v1.0 | Signal enrichment, mode classification, type normalization | 84.9% |
-| **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 82.4% |
-| **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 81.8% |
-| **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 80.1% |
-| **Workflow Execution** | ✅ v1.0 | Tekton Pipeline & K8s Job orchestration | 79.1% |
-| **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 76.0% |
-| **Notification** | ✅ v1.0 | Multi-channel delivery | 72.7% |
-| **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 65.2% |
-| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 60.5% |
+| **HolmesGPT API** | ✅ v3.10 | AI investigation wrapper | 92.7% |
+| **AI Analysis** | ✅ v1.0 | AI-powered analysis & recommendations | 87.4% |
+| **Signal Processing** | ✅ v1.0 | Signal enrichment, mode classification, type normalization | 85.5% |
+| **Workflow Execution** | ✅ v1.0 | Tekton Pipeline & K8s Job orchestration | 82.8% |
+| **Remediation Orchestrator** | ✅ v1.0 | Cross-CRD lifecycle coordination | 82.7% |
+| **Gateway** | ✅ v1.0 | Signal ingestion & deduplication | 81.5% |
+| **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 78.9% |
+| **Notification** | ✅ v1.0 | Multi-channel delivery | 73.3% |
+| **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 61.4% |
 | **Must-Gather** | ✅ v1.0 | Enterprise diagnostic collection (BR-PLATFORM-001) | N/A (bats) |
 | ~~Effectiveness Monitor~~ | ❌ V1.1 | Continuous improvement (DD-017) | — |
 
@@ -89,8 +95,11 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **SAR Authentication**: Middleware-based SubjectAccessReview for all stateless services (DD-AUTH-014)
 - ✅ **Resource Scope Management** (February 2026): `kubernaut.ai/managed` label-based opt-in for both Gateway and Remediation Orchestrator (BR-SCOPE-001, BR-SCOPE-010, ADR-053). Namespace fallback deprecated (DD-GATEWAY-007). ScopeChecker interface with mandatory DI, metadata-only informer caching, exponential backoff for unmanaged resources.
 - ✅ **Predictive Signal Mode** (February 2026): Signal mode classification and type normalization in SP, predictive prompt strategy in HAPI enabling preemptive remediation for `predict_linear()` alerts (BR-SP-106, BR-AI-084, ADR-054)
-- 🚧 **Remaining** (1 PR):
-  1. **Segmented E2E Scenarios** (#39): Progressive integration validation across all services
+- ✅ **Full Pipeline E2E Validation** (February 2026): End-to-end scenario with real LLM (Vertex AI) covering signal detection → AI investigation → workflow matching → execution → notification ([#39](https://github.com/jordigilh/kubernaut/issues/39))
+
+**Next** (V1.0+):
+- 🚧 **PagerDuty Delivery Channel** ([#60](https://github.com/jordigilh/kubernaut/issues/60)): PagerDuty Events API v2 integration for the Notification service
+- 🚧 **Async AA-HAPI Session Polling** ([#64](https://github.com/jordigilh/kubernaut/issues/64)): Replace synchronous HAPI calls with session-based submit/poll design to eliminate timeout fragility
 
 ---
 
@@ -279,15 +288,15 @@ Kubernaut follows a **defense-in-depth testing pyramid** with coverage tracked a
 
 | Service | Unit-Testable | Integration | E2E | All Tiers |
 |---------|---------------|-------------|-----|-----------|
-| **Signal Processing** | 82.3% | 60.8% | 56.9% | 84.9% |
-| **AI Analysis** | 71.7% | 73.6% | 56.0% | 82.4% |
-| **Remediation Orchestrator** | 75.8% | 56.9% | 41.0% | 81.8% |
-| **Gateway** | 65.2% | 41.7% | 58.6% | 80.1% |
-| **Workflow Execution** | 44.9% | 70.4% | 57.0% | 79.1% |
-| **HolmesGPT API** | 76.0% | 43.5% | 40.0% | 76.0% |
-| **Notification** | 75.3% | 58.2% | 48.5% | 72.7% |
-| **Auth Webhook** | 50.0% | 48.4% | 39.7% | 65.2% |
-| **Data Storage** | 58.3% | 34.0% | 44.8% | 60.5% |
+| **HolmesGPT API** | 79.1% | 56.5% | 59.2% | 92.7% |
+| **AI Analysis** | 80.0% | 73.6% | 53.4% | 87.4% |
+| **Signal Processing** | 87.3% | 61.9% | 57.9% | 85.5% |
+| **Workflow Execution** | 73.4% | 67.9% | 56.2% | 82.8% |
+| **Remediation Orchestrator** | 79.5% | 56.7% | 47.0% | 82.7% |
+| **Gateway** | 67.7% | 42.5% | 58.8% | 81.5% |
+| **Auth Webhook** | 50.0% | 49.0% | 40.5% | 78.9% |
+| **Notification** | 75.5% | 57.6% | 51.0% | 73.3% |
+| **Data Storage** | 55.0% | 34.2% | 46.8% | 61.4% |
 
 > Coverage is reported on every PR via GitHub Actions. "All Tiers" uses line-by-line merging — a statement covered by any tier counts once. See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for methodology and patterns.
 
@@ -349,9 +358,9 @@ Apache License 2.0
 
 ---
 
-**Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
+**Kubernaut** - AIOps for Kubernetes: from alert to remediation, intelligently. Building the next evolution of Kubernetes operations through AI-driven, CRD-based microservices that learn and adapt.
 
-**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | Scope management ✅ | 1 PR remaining | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
+**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | Scope management ✅ | Full pipeline E2E ✅ | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
 
-**Current Sprint**: Segmented E2E (#39) → V1.0 Pre-release
+**Next**: PagerDuty delivery channel ([#60](https://github.com/jordigilh/kubernaut/issues/60)) | Async AA-HAPI polling ([#64](https://github.com/jordigilh/kubernaut/issues/64))
 

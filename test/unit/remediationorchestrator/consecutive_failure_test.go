@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -100,13 +101,14 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 		// Create reconciler with consecutive failure blocking enabled
 		// DD-METRICS-001: Metrics are required (use fresh registry per test to avoid conflicts)
 		metrics := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
 		reconciler = controller.NewReconciler(
 			fakeClient,
 			fakeClient, // apiReader (same as client for tests)
 			scheme,
-			nil,     // audit store
-			nil,     // recorder
-			metrics, // metrics (DD-METRICS-001: required)
+			nil,      // audit store
+			recorder, // DD-EVENT-001: FakeRecorder for K8s event assertions
+			metrics,  // metrics (DD-METRICS-001: required)
 			controller.TimeoutConfig{},
 			nil, // routing engine
 		)
@@ -162,14 +164,11 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 
 		Context("field selector usage", func() {
 			It("should use spec.signalFingerprint not labels", func() {
-				// Given: RR with fingerprint in spec but wrong label
+				// Given: RR with fingerprint in spec (label no longer exists per BR-GATEWAY-185 v1.1)
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-field-selector-" + generateRandomString(5),
 						Namespace: namespace,
-						Labels: map[string]string{
-							"kubernaut.ai/signal-fingerprint": "wrong-fingerprint-in-label",
-						},
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint, // Correct value in spec

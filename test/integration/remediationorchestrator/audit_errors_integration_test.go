@@ -120,9 +120,14 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 
 			// Now inject invalid timeout via status update (simulates operator error or webhook bypass)
 			// Gap #7: Tests controller detection of invalid configuration
-			rr.Status.TimeoutConfig.Global = &metav1.Duration{Duration: -100 * time.Second} // Invalid: negative
-			err = k8sClient.Status().Update(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
+			// Use Eventually to retry on 409 Conflict (controller may update status concurrently)
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return err
+				}
+				rr.Status.TimeoutConfig.Global = &metav1.Duration{Duration: -100 * time.Second} // Invalid: negative
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed(), "Should update status with invalid timeout (retrying on 409 conflict)")
 
 		// Then: Controller should detect invalid config and transition to Failed
 		Eventually(func() remediationv1.RemediationPhase {

@@ -30,11 +30,11 @@
 ### Rule: Update ONLY HAPI Event Queries/Validations
 
 **HAPI Events (change to `"aiagent"`):**
-- `llm_request`
-- `llm_response`
-- `llm_tool_call`
-- `workflow_validation_attempt`
-- `holmesgpt.response.complete`
+- `aiagent.llm.request`
+- `aiagent.llm.response`
+- `aiagent.llm.tool_call`
+- `aiagent.workflow.validation_attempt`
+- `aiagent.response.complete`
 
 **AIAnalysis Events (keep `"analysis"`):**
 - `aianalysis.investigation.started`
@@ -72,7 +72,7 @@ cd test/integration/aianalysis
 grep -n 'EventCategory.*NewOptString.*"analysis"' *.go
 
 # Find specific HAPI event type queries
-grep -n 'holmesgpt.response.complete\|llm_request\|llm_response' *.go
+grep -n 'aiagent.response.complete\|llm_request\|llm_response' *.go
 ```
 
 ### 2. Find HAPI Event Validations
@@ -82,7 +82,7 @@ grep -n 'holmesgpt.response.complete\|llm_request\|llm_response' *.go
 grep -n 'EventCategory.*AuditEventEventCategoryAnalysis' *.go | grep -i holmesgpt
 
 # Find validators for HAPI event types
-grep -B5 -A5 'EventType.*holmesgpt.response.complete' *.go | grep EventCategory
+grep -B5 -A5 'EventType.*aiagent.response.complete' *.go | grep EventCategory
 ```
 
 ---
@@ -93,21 +93,21 @@ grep -B5 -A5 'EventType.*holmesgpt.response.complete' *.go | grep EventCategory
 
 **BEFORE:**
 ```go
-// When querying for HAPI events (llm_request, holmesgpt.response.complete, etc.)
+// When querying for HAPI events (llm_request, aiagent.response.complete, etc.)
 params := ogenclient.QueryAuditEventsParams{
     CorrelationID: ogenclient.NewOptString(correlationID),
     EventCategory: ogenclient.NewOptString("analysis"),  // ❌ OLD
-    EventType:     ogenclient.NewOptString("holmesgpt.response.complete"),
+    EventType:     ogenclient.NewOptString("aiagent.response.complete"),
 }
 ```
 
 **AFTER:**
 ```go
-// When querying for HAPI events (llm_request, holmesgpt.response.complete, etc.)
+// When querying for HAPI events (llm_request, aiagent.response.complete, etc.)
 params := ogenclient.QueryAuditEventsParams{
     CorrelationID: ogenclient.NewOptString(correlationID),
     EventCategory: ogenclient.NewOptString("aiagent"),  // ✅ NEW
-    EventType:     ogenclient.NewOptString("holmesgpt.response.complete"),
+    EventType:     ogenclient.NewOptString("aiagent.response.complete"),
 }
 ```
 
@@ -119,7 +119,7 @@ params := ogenclient.QueryAuditEventsParams{
 ```go
 // When validating HAPI events
 validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
-    EventType:     "holmesgpt.response.complete",
+    EventType:     "aiagent.response.complete",
     EventCategory: ogenclient.AuditEventEventCategoryAnalysis,  // ❌ OLD
     EventAction:   "response_sent",
     EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
@@ -131,7 +131,7 @@ validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
 ```go
 // When validating HAPI events
 validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
-    EventType:     "holmesgpt.response.complete",
+    EventType:     "aiagent.response.complete",
     EventCategory: ogenclient.AuditEventEventCategoryAiagent,  // ✅ NEW
     EventAction:   "response_sent",
     EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
@@ -176,7 +176,7 @@ EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 
 ### File: `audit_provider_data_integration_test.go`
 
-**Line 266:** Validation of HAPI event (`holmesgpt.response.complete`)
+**Line 266:** Validation of HAPI event (`aiagent.response.complete`)
 ```go
 validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
     EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
@@ -252,8 +252,8 @@ For each file listed above:
 
 1. **Open file**
 2. **Search for HAPI event types:**
-   - `holmesgpt.response.complete`
-   - `llm_request`, `llm_response`, `llm_tool_call`
+   - `aiagent.response.complete`
+   - `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`
 3. **For each HAPI event query/validation:**
    - Change `EventCategory: ogenclient.NewOptString("analysis")` → `"aiagent"`
    - Change `EventCategory: ogenclient.AuditEventEventCategoryAnalysis` → `AuditEventEventCategoryAiagent`
@@ -295,7 +295,7 @@ After making changes, verify:
 
 ```
 Is this a HAPI event?
-├─ YES (llm_request, llm_response, llm_tool_call, holmesgpt.response.complete, workflow_validation_attempt)
+├─ YES (llm_request, llm_response, llm_tool_call, aiagent.response.complete, workflow_validation_attempt)
 │  └─ Change to "aiagent" / AuditEventEventCategoryAiagent
 │
 └─ NO (aianalysis.* prefix)
@@ -359,7 +359,7 @@ params := ogenclient.QueryAuditEventsParams{
 ```go
 // This needs updating - HAPI event type
 params := ogenclient.QueryAuditEventsParams{
-    EventType:     ogenclient.NewOptString("holmesgpt.response.complete"),
+    EventType:     ogenclient.NewOptString("aiagent.response.complete"),
     EventCategory: ogenclient.NewOptString("aiagent"),  // ← UPDATE THIS
 }
 ```

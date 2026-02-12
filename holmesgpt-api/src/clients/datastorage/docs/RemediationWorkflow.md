@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **maintainer** | **str** | Workflow maintainer email | [optional] 
 **content** | **str** | YAML workflow definition | 
 **content_hash** | **str** | SHA-256 hash of content | 
-**parameters** | **object** | Workflow parameters (JSONB) | [optional] 
+**parameters** | **Dict[str, object]** | Workflow parameters (JSONB) | [optional] 
 **execution_engine** | **str** | Execution engine (e.g., argo-workflows) | 
 **container_image** | **str** | OCI image reference | [optional] 
 **container_digest** | **str** | OCI image digest | [optional] 

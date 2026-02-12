@@ -76,7 +76,9 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
-	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-api-timeout", 60*time.Second, "HolmesGPT-API request timeout.")
+	// BR-ORCH-036 v3.0: 10m default accommodates real LLM response times (2-3 min per call).
+	// Will be replaced by session-based pulling design (see BR for details).
+	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-api-timeout", 10*time.Minute, "HolmesGPT-API request timeout.")
 	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
 	flag.StringVar(&dataStorageURL, "datastorage-url", getEnvOrDefault("DATASTORAGE_URL", "http://datastorage:8080"), "Data Storage Service URL for audit events.")
 
@@ -111,9 +113,10 @@ func main() {
 	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
 	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
 	// ========================================
-	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL)
+	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL, "timeout", holmesGPTTimeout.String())
 	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
 		BaseURL: holmesGPTURL,
+		Timeout: holmesGPTTimeout,
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create HolmesGPT-API client")
@@ -183,7 +186,10 @@ func main() {
 	// DD-AUDIT-003: Pass audit client to handlers
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
-	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient)
+	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
+	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient,
+		handlers.WithRecorder(eventRecorder), // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode())           // BR-AA-HAPI-064: Async submit/poll/result flow
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient)
 
 	// ========================================
@@ -198,7 +204,7 @@ func main() {
 	if err = (&aianalysis.AIAnalysisReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
-		Recorder:             mgr.GetEventRecorderFor("aianalysis-controller"),
+		Recorder:             eventRecorder,
 		Log:                  controllerLog,
 		Metrics:              aianalysisMetrics,    // DD-METRICS-001: Injected metrics (P0)
 		StatusManager:        statusManager,        // DD-PERF-001: Atomic status updates

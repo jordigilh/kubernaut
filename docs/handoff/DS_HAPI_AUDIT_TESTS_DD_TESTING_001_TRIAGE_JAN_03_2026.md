@@ -127,9 +127,9 @@ Expect(searchMetadata["duration_ms"]).To(And(
 - `holmesgpt-api/tests/e2e/test_audit_pipeline_e2e.py`
 
 **Audit Events Emitted**:
-- `llm_request` - LLM API call initiated
-- `llm_response` - LLM API response received
-- `workflow_validation_attempt` - Workflow validation performed
+- `aiagent.llm.request` - LLM API call initiated
+- `aiagent.llm.response` - LLM API response received
+- `aiagent.workflow.validation_attempt` - Workflow validation performed
 
 ### **Violations Found** (9)
 

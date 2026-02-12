@@ -293,12 +293,13 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	// Example: localhost/datastorage:workflowexecution-1884d074
 	dsImage := GenerateInfraImageName("datastorage", "workflowexecution")
 
-	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImage)
-	// Use shared build function (includes --no-cache and coverage support)
-	if err := buildDataStorageImageWithTag(dsImage, writer); err != nil {
+	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", dsImage)
+	// Use shared build function (includes --no-cache, coverage support, and registry optimization)
+	actualImage, err := buildDataStorageImageWithTag(dsImage, writer)
+	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image ready: %s\n", actualImage)
 
 	// Mount config directory and set CONFIG_PATH (per ADR-030)
 	configDir := filepath.Join(projectRoot, "test", "integration", "workflowexecution", "config")
@@ -324,7 +325,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 		"-e", "REDIS_HOST=host.containers.internal",
 		"-e", "REDIS_PORT="+fmt.Sprintf("%d", WEIntegrationRedisPort),
 		"-e", "REDIS_DB=0",
-		dsImage, // Use composite tag instead of fixed "latest"
+		actualImage, // Use resolved image (registry or local build)
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

@@ -171,6 +171,8 @@ func (s HumanReviewReason) Validate() error {
 		return nil
 	case "investigation_inconclusive":
 		return nil
+	case "rca_incomplete":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -202,6 +204,17 @@ func (s *IncidentRequest) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "remediation_id",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Severity.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "severity",
 			Error: err,
 		})
 	}
@@ -263,17 +276,6 @@ func (s *IncidentRequest) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s IncidentRequestSignalMode) Validate() error {
-	switch s {
-	case "reactive":
-		return nil
-	case "predictive":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s *IncidentResponse) Validate() error {
@@ -377,12 +379,46 @@ func (s *IncidentResponse) Validate() error {
 	return nil
 }
 
+func (s *OriginalRCA) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Severity.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "severity",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *PreviousExecution) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.OriginalRca.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "original_rca",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := s.Failure.Validate(); err != nil {
 			return err
@@ -472,6 +508,42 @@ func (s *RecoveryRequest) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "previous_execution",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.EnrichmentResults.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "enrichment_results",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Severity.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "severity",
 			Error: err,
 		})
 	}
@@ -615,6 +687,34 @@ func (s RecoveryStrategyEstimatedRisk) Validate() error {
 	case "medium":
 		return nil
 	case "high":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s Severity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SignalMode) Validate() error {
+	switch s {
+	case "reactive":
+		return nil
+	case "predictive":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

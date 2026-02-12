@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -91,12 +92,13 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			// Use MockRoutingEngine to isolate orchestration logic testing from routing business logic
 			// Routing logic is tested separately in integration tests (defense-in-depth)
 			mockRouting := &MockRoutingEngine{}
+			recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
 			reconciler := prodcontroller.NewReconciler(
 				fakeClient,
 				fakeClient, // apiReader (same as client for tests)
 				scheme,
-				nil, // Audit store is nil for unit tests (DD-AUDIT-003 compliant)
-				nil, // No EventRecorder needed for unit tests
+				nil,      // Audit store is nil for unit tests (DD-AUDIT-003 compliant)
+				recorder, // DD-EVENT-001: FakeRecorder for K8s event assertions
 				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
 				prodcontroller.TimeoutConfig{
 					Global:     1 * time.Hour,

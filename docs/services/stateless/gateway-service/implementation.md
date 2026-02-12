@@ -114,12 +114,25 @@ import (
 )
 
 // PrometheusAdapter handles Prometheus AlertManager webhook format
+//
+// Updated 2026-02-09: Now accepts an optional OwnerResolver for owner-chain-based
+// fingerprinting. See BR-GATEWAY-004 for the fingerprint strategy.
 type PrometheusAdapter struct {
-    // No external dependencies needed for parsing
+    ownerResolver OwnerResolver // Optional: resolves top-level owner for fingerprinting
 }
 
-func NewPrometheusAdapter() *PrometheusAdapter {
-    return &PrometheusAdapter{}
+// OwnerResolver resolves the top-level controller owner of a Kubernetes resource.
+// Used to fingerprint at the Deployment/StatefulSet level instead of the Pod level.
+type OwnerResolver interface {
+    ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error)
+}
+
+func NewPrometheusAdapter(ownerResolver ...OwnerResolver) *PrometheusAdapter {
+    adapter := &PrometheusAdapter{}
+    if len(ownerResolver) > 0 && ownerResolver[0] != nil {
+        adapter.ownerResolver = ownerResolver[0]
+    }
+    return adapter
 }
 
 // Parse converts Prometheus webhook payload to NormalizedSignal
@@ -144,8 +157,26 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
         Namespace: alert.Labels["namespace"],
     }
 
-    // Generate fingerprint for deduplication
-    fingerprint := generateFingerprint(alert.Labels["alertname"], resource)
+    // Generate fingerprint for deduplication (adapter-specific strategy per BR-GATEWAY-004)
+    // alertname is EXCLUDED from the fingerprint - LLM investigates resource state, not signal type
+    var fingerprint string
+    if a.ownerResolver != nil {
+        // Owner-chain-based fingerprinting: resolve top-level owner
+        ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
+            ctx, resource.Namespace, resource.Kind, resource.Name)
+        if err == nil {
+            // Fingerprint at owner level (e.g., Deployment)
+            fingerprint = types.CalculateOwnerFingerprint(gateway.ResourceIdentifier{
+                Namespace: resource.Namespace, Kind: ownerKind, Name: ownerName,
+            })
+        } else {
+            // Fallback: resource without alertname
+            fingerprint = types.CalculateOwnerFingerprint(resource)
+        }
+    } else {
+        // No OwnerResolver: fingerprint resource directly (without alertname)
+        fingerprint = types.CalculateOwnerFingerprint(resource)
+    }
 
     internalAlert := &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
@@ -228,16 +259,8 @@ func getSeverity(labels map[string]string) string {
     return "info" // default fallback
 }
 
-func generateFingerprint(alertName string, resource gateway.ResourceIdentifier) string {
-    // SHA256(alertname:namespace:kind:name)
-    key := fmt.Sprintf("%s:%s:%s:%s",
-        alertName,
-        resource.Namespace,
-        resource.Kind,
-        resource.Name,
-    )
-    return fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
-}
+// Note: generateFingerprint() removed - fingerprinting now uses CalculateOwnerFingerprint()
+// from pkg/gateway/types/fingerprint.go, which excludes alertname from the fingerprint.
 ```
 
 **Unit Test** (`test/unit/gateway/prometheus_adapter_test.go`):
@@ -341,15 +364,35 @@ import (
 )
 
 // KubernetesEventAdapter handles Kubernetes Event API format
+//
+// Updated 2026-02-09: Now accepts an optional OwnerResolver for owner-chain-based
+// fingerprinting. See BR-GATEWAY-004 for the fingerprint strategy.
 type KubernetesEventAdapter struct {
-    // Event watcher manages lifecycle
+    ownerResolver OwnerResolver // Optional: resolves top-level owner for fingerprinting
 }
 
-func NewKubernetesEventAdapter() *KubernetesEventAdapter {
-    return &KubernetesEventAdapter{}
+// OwnerResolver resolves the top-level controller owner of a Kubernetes resource.
+// Used to fingerprint at the Deployment/StatefulSet level instead of the Pod level.
+type OwnerResolver interface {
+    ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error)
+}
+
+func NewKubernetesEventAdapter(ownerResolver ...OwnerResolver) *KubernetesEventAdapter {
+    adapter := &KubernetesEventAdapter{}
+    if len(ownerResolver) > 0 && ownerResolver[0] != nil {
+        adapter.ownerResolver = ownerResolver[0]
+    }
+    return adapter
 }
 
 // Parse converts Kubernetes Event to NormalizedSignal
+//
+// Fingerprint strategy (updated 2026-02-09):
+// - If OwnerResolver is configured: resolves owner chain (Pod → RS → Deployment)
+//   and fingerprints as SHA256(namespace:ownerKind:ownerName), excluding event reason.
+// - If OwnerResolver is nil or resolution fails: falls back to
+//   SHA256(namespace:involvedObjectKind:involvedObjectName), still excluding reason.
+// - Legacy behavior (no OwnerResolver): SHA256(reason:namespace:kind:name).
 func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*gateway.NormalizedSignal, error) {
     var event corev1.Event
     if err := json.Unmarshal(rawData, &event); err != nil {
@@ -361,9 +404,6 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
         return nil, fmt.Errorf("ignoring event type: %s (only Warning events)", event.Type)
     }
 
-    // Map event reason to alert name
-    alertName := mapEventReasonToAlertName(event.Reason)
-
     // Extract resource from InvolvedObject
     resource := gateway.ResourceIdentifier{
         Kind:      event.InvolvedObject.Kind,
@@ -371,15 +411,31 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
         Namespace: event.InvolvedObject.Namespace,
     }
 
-    // Generate fingerprint
-    fingerprint := generateFingerprint(alertName, resource)
+    // Generate fingerprint (adapter-specific strategy per BR-GATEWAY-004)
+    var fingerprint string
+    if a.ownerResolver != nil {
+        // Owner-chain-based fingerprinting: resolve top-level owner
+        ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
+            ctx, resource.Namespace, resource.Kind, resource.Name)
+        if err == nil {
+            // Fingerprint at owner level (e.g., Deployment)
+            fingerprint = types.CalculateOwnerFingerprint(gateway.ResourceIdentifier{
+                Namespace: resource.Namespace, Kind: ownerKind, Name: ownerName,
+            })
+        } else {
+            // Fallback: involvedObject without reason
+            fingerprint = types.CalculateOwnerFingerprint(resource)
+        }
+    } else {
+        // Legacy: includes reason in fingerprint
+        fingerprint = types.CalculateFingerprint(event.Reason, resource)
+    }
 
-    // Map event reason to severity
     severity := mapEventReasonToSeverity(event.Reason)
 
     internalAlert := &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
-        AlertName:    alertName,
+        AlertName:    event.Reason,
         Severity:     severity,
         Namespace:    event.InvolvedObject.Namespace,
         Resource:     resource,
@@ -391,7 +447,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
         Annotations: map[string]string{
             "message": event.Message,
         },
-        FiringTime:   event.FirstTimestamp.Time,
+        FiringTime:   event.LastTimestamp.Time, // Prefer lastTimestamp for freshness
         ReceivedTime: time.Now(),
         SourceType:   "kubernetes-event",
         RawPayload:   json.RawMessage(rawData),

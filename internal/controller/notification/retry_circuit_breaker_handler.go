@@ -43,11 +43,15 @@ limitations under the License.
 package notification
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
 // PermanentFailureMarker is the string stored in delivery attempt errors
@@ -173,9 +177,27 @@ func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification 
 // isSlackCircuitBreakerOpen checks if the Slack circuit breaker is open
 // v3.1 Enhancement (Category B): Circuit breaker for graceful degradation
 // BR-NOT-055: Graceful Degradation (prevent cascading failures)
-func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool { //nolint:unused
+func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool {
 	if r.CircuitBreaker == nil {
 		return false // No circuit breaker configured, allow all requests
 	}
 	return !r.CircuitBreaker.AllowRequest("slack")
+}
+
+// checkBeforeDelivery is called by the orchestrator before each channel delivery.
+// DD-EVENT-001 v1.1: For Slack, checks circuit breaker; if open, emits CircuitBreakerOpen and returns error.
+// Returns nil if delivery should proceed.
+func (r *NotificationRequestReconciler) checkBeforeDelivery(notification *notificationv1alpha1.NotificationRequest, channel string) error {
+	if channel != "slack" {
+		return nil
+	}
+	if !r.isSlackCircuitBreakerOpen() {
+		return nil
+	}
+	err := fmt.Errorf("slack circuit breaker is open (too many failures, preventing cascading failures)")
+	if r.Recorder != nil {
+		r.Recorder.Event(notification, corev1.EventTypeWarning, events.EventReasonCircuitBreakerOpen,
+			fmt.Sprintf("Slack channel circuit breaker is open: %s", err.Error()))
+	}
+	return err
 }

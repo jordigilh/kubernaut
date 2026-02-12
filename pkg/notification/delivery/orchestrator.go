@@ -188,6 +188,8 @@ func (o *Orchestrator) DeliverToChannels(
 	getChannelAttemptCount func(*notificationv1alpha1.NotificationRequest, string) int,
 	auditMessageSent func(context.Context, *notificationv1alpha1.NotificationRequest, string) error,
 	auditMessageFailed func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error,
+	// Optional: check before delivery (e.g. circuit breaker). If returns error, delivery is skipped and treated as failure.
+	checkBeforeDelivery func(*notificationv1alpha1.NotificationRequest, string) error,
 ) (*DeliveryResult, error) {
 	log := o.logger.WithValues("notification", notification.Name, "namespace", notification.Namespace)
 
@@ -223,6 +225,31 @@ func (o *Orchestrator) DeliverToChannels(
 			result.DeliveryResults[string(channel)] = fmt.Errorf("max retry attempts exceeded")
 			result.FailureCount++
 			continue
+		}
+
+		// DD-EVENT-001 v1.1: Optional pre-delivery check (e.g. circuit breaker)
+		if checkBeforeDelivery != nil {
+			if checkErr := checkBeforeDelivery(notification, string(channel)); checkErr != nil {
+				log.Info("Pre-delivery check failed, skipping channel", "channel", channel, "error", checkErr)
+				// Treat as delivery failure - record attempt and continue
+				now := metav1.Now()
+				attempt := notificationv1alpha1.DeliveryAttempt{
+					Channel:   string(channel),
+					Attempt:   attemptCount + 1,
+					Timestamp: now,
+					Status:    "failed",
+					Error:     checkErr.Error(),
+				}
+				if auditErr := auditMessageFailed(ctx, notification, string(channel), checkErr); auditErr != nil {
+					log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
+					return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
+				}
+				o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failed")
+				result.DeliveryResults[string(channel)] = checkErr
+				result.FailureCount++
+				result.DeliveryAttempts = append(result.DeliveryAttempts, attempt)
+				continue
+			}
 		}
 
 		// NT-RACE-FIX: Increment in-flight counter BEFORE delivery

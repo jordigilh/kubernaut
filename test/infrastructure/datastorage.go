@@ -155,6 +155,34 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	return nil
 }
 
+// ExportMustGatherLogs exports Kind cluster logs to a local directory for debugging.
+// This is a standalone function that can be called independently of DeleteCluster,
+// e.g., by test suites that use IMAGE_REGISTRY for remote images but still run locally.
+//
+// Parameters:
+//   - clusterName: Name of the Kind cluster
+//   - serviceName: Service name for log directory naming (e.g., "fullpipeline")
+//   - writer: Output writer for logging
+//
+// Exports to: /tmp/{serviceName}-e2e-logs-{timestamp}
+func ExportMustGatherLogs(clusterName, serviceName string, writer io.Writer) {
+	_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
+	_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
+
+	logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
+	exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+
+	if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+		_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
+	} else {
+		_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
+		_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
+		_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+
+		extractKubernautServiceLogs(logsDir, serviceName, writer)
+	}
+}
+
 // extractKubernautServiceLogs finds and displays logs from kubernaut services
 // This helps with immediate debugging without manually navigating Kind log directories
 func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) {
@@ -571,8 +599,11 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 			Labels: map[string]string{
-				"kubernaut.ai/managed": "true",
-				"test":                 "datastorage-e2e",
+				// BR-SCOPE-002: Infrastructure namespaces must NOT be labeled as managed.
+				// Only application/workload namespaces should have kubernaut.ai/managed=true.
+				// Otherwise the Gateway processes events from Kubernaut's own pods
+				// (FailedScheduling, FailedCreate) as signals, creating spurious RRs.
+				"test": "datastorage-e2e",
 			},
 		},
 	}
@@ -2160,13 +2191,42 @@ func getContainerIP(containerName string) string {
 // SHARED E2E HELPER FUNCTIONS (Per DD-TEST-001: Fresh builds with dynamic tags)
 // ═══════════════════════════════════════════════════════════════════════
 
-// buildDataStorageImageWithTag builds DataStorage image with a specific dynamic tag
-// This ensures each service gets a FRESH build with latest DataStorage code
+// buildDataStorageImageWithTag builds or resolves a DataStorage image for use in integration tests.
+//
+// CI/CD Optimization:
+//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Returns the registry image name directly.
+//     Podman will auto-pull from the registry when `podman run` is called with this image name.
+//   - Otherwise: Builds locally with --no-cache and returns the original imageTag.
+//
+// Returns:
+//   - string: The actual image name to use in `podman run` (may differ from imageTag in registry mode)
+//   - error: Any errors during image build
+//
 // Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
+func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, error) {
+	// CI/CD Optimization: Check if we can use a pre-built image from registry
+	registry := os.Getenv("IMAGE_REGISTRY")
+	tag := os.Getenv("IMAGE_TAG")
+	if registry != "" && tag != "" {
+		registryImage := fmt.Sprintf("%s/datastorage:%s", registry, tag)
+		_, _ = fmt.Fprintf(writer, "  🔄 Registry mode: IMAGE_REGISTRY=%s IMAGE_TAG=%s\n", registry, tag)
+		_, _ = fmt.Fprintf(writer, "  🔍 Verifying DataStorage image in registry: %s\n", registryImage)
+
+		exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+		if err == nil && exists {
+			_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image found in registry: %s\n", registryImage)
+			_, _ = fmt.Fprintf(writer, "  💡 Podman will auto-pull during container start (skipping local build)\n")
+			return registryImage, nil
+		}
+
+		// Registry verification failed - fall back to local build
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Registry verification failed (err=%v, exists=%v), falling back to local build...\n", err, exists)
+	}
+
+	// Local build path
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
+		return "", fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "  🔨 Building DataStorage with tag: %s\n", imageTag)
@@ -2195,11 +2255,11 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	buildCmd.Stderr = writer
 
 	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build DataStorage image: %w", err)
+		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image built: %s\n", imageTag)
-	return nil
+	return imageTag, nil
 }
 
 // Removed: loadDataStorageImageWithTag (unused) - E2E tests now use loadImageToKind from shared_integration_utils.go
