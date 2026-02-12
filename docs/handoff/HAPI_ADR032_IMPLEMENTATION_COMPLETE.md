@@ -142,10 +142,10 @@ async def startup_event():
 
 | Test Class | Event Type | Verifies |
 |------------|-----------|----------|
-| `TestLLMRequestAuditEvent` | `llm_request` | Prompt sent to LLM provider |
-| `TestLLMResponseAuditEvent` | `llm_response` | Response from LLM provider |
-| `TestLLMToolCallAuditEvent` | `llm_tool_call` | Tool invocations by LLM |
-| `TestWorkflowValidationAuditEvent` | `workflow_validation_attempt` | Validation retries (2 tests) |
+| `TestLLMRequestAuditEvent` | `aiagent.llm.request` | Prompt sent to LLM provider |
+| `TestLLMResponseAuditEvent` | `aiagent.llm.response` | Response from LLM provider |
+| `TestLLMToolCallAuditEvent` | `aiagent.llm.tool_call` | Tool invocations by LLM |
+| `TestWorkflowValidationAuditEvent` | `aiagent.workflow.validation_attempt` | Validation retries (2 tests) |
 | `TestAuditEventSchemaValidation` | All 4 types | ADR-034 schema compliance |
 
 #### **Each Test Validates**:
@@ -328,10 +328,10 @@ tests/integration/test_audit_integration.py::TestAuditEventSchemaValidation::tes
 
 ### **Phase 2: Integration Tests** ✅
 - [x] Create `test_audit_integration.py` for HAPI audit events
-- [x] Test `llm_request` event → DS service roundtrip
-- [x] Test `llm_response` event → DS service roundtrip
-- [x] Test `llm_tool_call` event → DS service roundtrip
-- [x] Test `workflow_validation_attempt` event → DS service roundtrip
+- [x] Test `aiagent.llm.request` event → DS service roundtrip
+- [x] Test `aiagent.llm.response` event → DS service roundtrip
+- [x] Test `aiagent.llm.tool_call` event → DS service roundtrip
+- [x] Test `aiagent.workflow.validation_attempt` event → DS service roundtrip
 - [x] Verify stored events match sent events (schema validation)
 - [x] Add `data_storage_audit_client` fixture to conftest.py
 

@@ -18,12 +18,15 @@ package remediationorchestrator
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -123,6 +126,65 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 
+		Context("BR-ORCH-001: Error paths", func() {
+			// Client Get returns non-NotFound error → returns error
+			It("should return error when client Get fails with non-NotFound error", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return errors.New("simulated get failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
+			})
+
+			// Client Create fails → returns error
+			It("should return error when client Create fails", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return errors.New("simulated create failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
+			})
+
+			// Idempotency: notification already exists (pre-created) → reuses name without error
+			It("should reuse existing name when notification pre-exists (idempotency)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				existingNR := helpers.NewNotificationRequest("nr-approval-test-rr", "default")
+				existingNR.Spec.Type = notificationv1.NotificationTypeApproval
+
+				client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingNR).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-approval-test-rr"))
+
+				// Verify no duplicate was created
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+		})
+
 		Context("Precondition Validation", func() {
 			// Test #5: Returns error when SelectedWorkflow is nil
 			It("should return error when SelectedWorkflow is nil", func() {
@@ -150,6 +212,52 @@ var _ = Describe("NotificationCreator", func() {
 				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("missing WorkflowID"))
+			})
+		})
+
+		Context("BR-ORCH-001: buildApprovalBody - RootCauseAnalysis.Summary vs legacy RootCause", func() {
+			It("should use RootCauseAnalysis.Summary when present (preferred over legacy RootCause)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.RootCause = "legacy field"
+				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "RCA Summary: Pod crash due to OOM - Deployment should be scaled",
+				}
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Body must contain RCA.Summary (not legacy RootCause)
+				Expect(nr.Spec.Body).To(ContainSubstring("RCA Summary: Pod crash due to OOM - Deployment should be scaled"))
+				Expect(nr.Spec.Body).ToNot(ContainSubstring("legacy field"))
+			})
+
+			It("should use legacy RootCause when RootCauseAnalysis.Summary is empty", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.RootCause = "Legacy root cause text"
+				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "", // Empty - fallback to RootCause
+				}
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("Legacy root cause text"))
 			})
 		})
 
@@ -274,6 +382,41 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
+			})
+
+			// BR-ORCH-034: Error paths
+			It("should return error when client Get fails with non-NotFound error", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return errors.New("simulated get failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 3
+
+				_, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
+			})
+
+			It("should return error when client Create fails", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return errors.New("simulated create failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 3
+
+				_, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
 			})
 
 			// Test #18: Uses correct notification type
@@ -411,6 +554,48 @@ var _ = Describe("NotificationCreator", func() {
 			ctx = context.Background()
 		})
 
+		Context("BR-ORCH-036: Error paths", func() {
+			It("should return error when client Get fails with non-NotFound error", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return errors.New("simulated get failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source: creator.ManualReviewSourceAIAnalysis,
+					Reason: "WorkflowResolutionFailed",
+				}
+
+				_, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
+			})
+
+			It("should return error when client Create fails", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return errors.New("simulated create failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source: creator.ManualReviewSourceAIAnalysis,
+					Reason: "WorkflowResolutionFailed",
+				}
+
+				_, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
+			})
+		})
+
 		Context("BR-ORCH-036: Manual Review Notification Creation", func() {
 			// Test #22: Generates deterministic name for AIAnalysis source
 			It("should generate deterministic name nr-manual-review-{rr.Name}", func() {
@@ -531,13 +716,18 @@ var _ = Describe("NotificationCreator", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(nr.Spec.Priority).To(Equal(expectedPriority))
 				},
-				Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
-				Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
-				Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
-				Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
-				Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
-				Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
-			)
+			// Workflow resolution failures
+			Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
+			Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
+			Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
+			Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
+			Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
+			Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
+			// BR-ORCH-036 v3.0: Infrastructure failures
+			Entry("AC-036-30: MaxRetriesExceeded → High", "MaxRetriesExceeded", notificationv1.NotificationPriorityHigh),
+			Entry("AC-036-31: TransientError → High", "TransientError", notificationv1.NotificationPriorityHigh),
+			Entry("AC-036-32: PermanentError → High", "PermanentError", notificationv1.NotificationPriorityHigh),
+		)
 		})
 
 		Context("BR-ORCH-036: WorkflowExecution Source (Critical Priority)", func() {
@@ -683,6 +873,84 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 
+		Context("BR-ORCH-036: buildManualReviewBody - warnings and WE retry info", func() {
+			It("should include warnings section when Warnings are populated", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            creator.ManualReviewSourceAIAnalysis,
+					Reason:            "WorkflowResolutionFailed",
+					SubReason:         "LowConfidence",
+					Message:           "AI confidence below threshold",
+					RootCauseAnalysis: "Pod OOM - may need resource limits",
+					Warnings:          []string{"Warning 1: Low memory limit", "Warning 2: No readiness probe"},
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("**Warnings**:"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Warning 1: Low memory limit"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Warning 2: No readiness probe"))
+			})
+
+			It("should not include warnings section when Warnings is empty", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "WorkflowNotFound",
+					Message:   "No workflow found",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).ToNot(ContainSubstring("**Warnings**:"))
+			})
+
+			It("should include WE retry info when Source is WorkflowExecution", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            creator.ManualReviewSourceWorkflowExecution,
+					Reason:            "ExhaustedRetries",
+					Message:           "All retries failed",
+					RetryCount:        3,
+					MaxRetries:        3,
+					LastExitCode:      137,
+					PreviousExecution: "we-test-remediation",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Body).To(ContainSubstring("**Retry Information**:"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Retries attempted: 3/3"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Last exit code: 137"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Previous execution: we-test-remediation"))
+			})
+		})
+
 		Context("BR-ORCH-036: Channel Determination", func() {
 			// Test #36: Critical priority → Slack + Email
 			It("should use Slack + Email for Critical priority", func() {
@@ -730,6 +998,312 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Channels).To(ConsistOf(notificationv1.ChannelSlack))
+			})
+		})
+	})
+
+	// ========================================
+	// BR-ORCH-045: COMPLETION NOTIFICATION
+	// ========================================
+	Describe("CreateCompletionNotification", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-045: Error paths", func() {
+			It("should return error when client Get fails with non-NotFound error", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return errors.New("simulated get failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to check existing NotificationRequest"))
+			})
+
+			It("should return error when client Create fails", func() {
+				client := fake.NewClientBuilder().WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return errors.New("simulated create failure")
+						},
+					}).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to create NotificationRequest"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-1: Successful WE completion creates NotificationRequest", func() {
+			It("should create NotificationRequest with type=completion", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-completion-test-rr"))
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
+			})
+		})
+
+		Context("BR-ORCH-045: Deterministic naming", func() {
+			It("should generate deterministic name nr-completion-{rr.Name}", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("my-remediation", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-completion-my-remediation"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-3: Idempotency", func() {
+			It("should be idempotent - return existing name without creating duplicate", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				// First call creates the notification
+				name1, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Second call should return same name without error
+				name2, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1))
+
+				// Verify only one notification exists
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-4: Owner reference for cascade deletion (BR-ORCH-031)", func() {
+			It("should set owner reference to RemediationRequest", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+				Expect(nr.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+			})
+
+			It("should return error when RemediationRequest UID is empty", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				rr.UID = "" // Clear UID
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				_, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("UID is required"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-5: Channels include file and slack", func() {
+			It("should include file and slack channels for completion notification", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Channels).To(ConsistOf(
+					notificationv1.ChannelSlack,
+					notificationv1.ChannelFile,
+				))
+			})
+		})
+
+		Context("BR-ORCH-045: buildCompletionBody - workflow, target resource, content", func() {
+			It("should contain workflow name, execution engine, and target resource in body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.SelectedWorkflow.WorkflowID = "rollback-deployment-v1"
+				ai.Status.SelectedWorkflow.Version = "v2.0.0"
+				ai.Status.SelectedWorkflow.ExecutionEngine = "tekton"
+				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "Deployment rollout failed",
+				}
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// buildCompletionBody must include workflow ID, execution engine, target resource
+				Expect(nr.Spec.Body).To(ContainSubstring("rollback-deployment-v1"))
+				Expect(nr.Spec.Body).To(ContainSubstring("tekton"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Pod"))
+				Expect(nr.Spec.Body).To(ContainSubstring("test-pod"))
+				Expect(nr.Spec.Body).To(ContainSubstring("Deployment rollout failed"))
+			})
+		})
+
+		Context("BR-ORCH-045 AC-045-2: Notification content", func() {
+			It("should contain signal name, RCA summary, workflow ID in body", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.RootCause = "Memory exhaustion in container"
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Subject should contain signal name
+				Expect(nr.Spec.Subject).To(ContainSubstring(rr.Spec.SignalName))
+
+				// Body should contain RCA and workflow ID
+				Expect(nr.Spec.Body).To(ContainSubstring("Memory exhaustion in container"))
+				Expect(nr.Spec.Body).To(ContainSubstring(ai.Status.SelectedWorkflow.WorkflowID))
+			})
+
+			It("should include metadata with remediation context", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("workflowId", ai.Status.SelectedWorkflow.WorkflowID))
+			})
+		})
+
+		Context("BR-ORCH-045: Labels for routing", func() {
+			It("should set kubernaut.ai labels for routing", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "completion"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+			})
+		})
+
+		Context("BR-ORCH-045: RemediationRequestRef for audit correlation (BR-NOT-064)", func() {
+			It("should set RemediationRequestRef with RR details for lineage tracking", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// BR-NOT-064: RemediationRequestRef must be set for audit correlation
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil(),
+					"RemediationRequestRef must be set for audit correlation (BR-NOT-064)")
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+				Expect(nr.Spec.RemediationRequestRef.Namespace).To(Equal(rr.Namespace))
+				Expect(nr.Spec.RemediationRequestRef.UID).To(Equal(rr.UID))
+				Expect(nr.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+				Expect(nr.Spec.RemediationRequestRef.APIVersion).To(Equal(remediationv1.GroupVersion.String()))
+			})
+		})
+
+		Context("BR-ORCH-045: Priority mapping for completions", func() {
+			It("should use low priority for successful completions (informational)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow))
 			})
 		})
 	})

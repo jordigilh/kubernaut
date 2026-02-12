@@ -16,6 +16,7 @@ datastorage/api_response.py
 datastorage/configuration.py
 datastorage/exceptions.py
 datastorage/models/__init__.py
+datastorage/models/ai_agent_response_payload.py
 datastorage/models/ai_analysis_approval_decision_payload.py
 datastorage/models/ai_analysis_audit_payload.py
 datastorage/models/ai_analysis_error_payload.py
@@ -41,7 +42,6 @@ datastorage/models/error_details.py
 datastorage/models/gateway_audit_payload.py
 datastorage/models/health_check200_response.py
 datastorage/models/health_check503_response.py
-datastorage/models/holmes_gpt_response_payload.py
 datastorage/models/incident_response_data.py
 datastorage/models/incident_response_data_alternative_workflows_inner.py
 datastorage/models/incident_response_data_root_cause_analysis.py
@@ -95,6 +95,7 @@ datastorage/models/workflow_update_request.py
 datastorage/models/workflow_validation_payload.py
 datastorage/py.typed
 datastorage/rest.py
+docs/AIAgentResponsePayload.md
 docs/AIAnalysisApprovalDecisionPayload.md
 docs/AIAnalysisAuditPayload.md
 docs/AIAnalysisErrorPayload.md
@@ -123,7 +124,6 @@ docs/GatewayAuditPayload.md
 docs/HealthApi.md
 docs/HealthCheck200Response.md
 docs/HealthCheck503Response.md
-docs/HolmesGPTResponsePayload.md
 docs/IncidentResponseData.md
 docs/IncidentResponseDataAlternativeWorkflowsInner.md
 docs/IncidentResponseDataRootCauseAnalysis.md
@@ -184,6 +184,7 @@ setup.cfg
 setup.py
 test-requirements.txt
 test/__init__.py
+test/test_ai_agent_response_payload.py
 test/test_ai_analysis_approval_decision_payload.py
 test/test_ai_analysis_audit_payload.py
 test/test_ai_analysis_error_payload.py
@@ -212,7 +213,6 @@ test/test_gateway_audit_payload.py
 test/test_health_api.py
 test/test_health_check200_response.py
 test/test_health_check503_response.py
-test/test_holmes_gpt_response_payload.py
 test/test_incident_response_data.py
 test/test_incident_response_data_alternative_workflows_inner.py
 test/test_incident_response_data_root_cause_analysis.py

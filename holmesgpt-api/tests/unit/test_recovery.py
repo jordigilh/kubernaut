@@ -18,45 +18,67 @@ limitations under the License.
 Recovery Analysis Endpoint Tests
 
 Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
+
+Note (BR-AA-HAPI-064): All endpoints now use the async session pattern.
+POST returns 202 + session_id, results are fetched via GET /session/{id}/result.
 """
 
+
+def _submit_and_get_result(client, request_data):
+    """
+    Helper: submit a recovery request and retrieve the result via the session pattern.
+
+    BR-AA-HAPI-064: Async-first endpoints -- POST returns 202 + session_id,
+    BackgroundTasks run synchronously in TestClient, GET result returns 200.
+    """
+    submit_resp = client.post("/api/v1/recovery/analyze", json=request_data)
+    assert submit_resp.status_code == 202, (
+        f"Expected 202 Accepted, got {submit_resp.status_code}: {submit_resp.text}"
+    )
+    session_id = submit_resp.json()["session_id"]
+
+    result_resp = client.get(f"/api/v1/recovery/session/{session_id}/result")
+    assert result_resp.status_code == 200, (
+        f"Expected 200 for completed session, got {result_resp.status_code}: {result_resp.text}"
+    )
+    return result_resp
 
 
 class TestRecoveryEndpoint:
     """Tests for /api/v1/recovery/analyze endpoint"""
 
-    def test_recovery_returns_200_on_valid_request(self, client, sample_recovery_request, mock_analyze_recovery):
-        """Business Requirement: Recovery endpoint accepts valid requests"""
+    def test_recovery_returns_202_on_valid_request(self, client, sample_recovery_request, mock_analyze_recovery):
+        """Business Requirement: Recovery endpoint accepts valid requests (async pattern)"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert response.status_code == 200
+        assert response.status_code == 202
 
     def test_recovery_returns_incident_id(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes incident ID"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         assert data["incident_id"] == sample_recovery_request["incident_id"]
 
     def test_recovery_returns_can_recover_flag(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response indicates if recovery is possible"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         assert "can_recover" in data
         assert isinstance(data["can_recover"], bool)
 
     def test_recovery_returns_strategies_list(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes recovery strategies"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         assert "strategies" in data
         assert isinstance(data["strategies"], list)
 
     def test_recovery_strategy_has_required_fields(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Each strategy has action_type, confidence, rationale"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         if len(data["strategies"]) > 0:
             strategy = data["strategies"][0]
@@ -67,15 +89,15 @@ class TestRecoveryEndpoint:
 
     def test_recovery_includes_primary_recommendation(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes primary recommendation"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         assert "primary_recommendation" in data
 
     def test_recovery_includes_confidence_score(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes overall confidence"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        data = response.json()
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
         assert "analysis_confidence" in data
         assert 0.0 <= data["analysis_confidence"] <= 1.0
@@ -95,10 +117,9 @@ class TestRecoveryAnalysisLogic:
 
     def test_analyze_recovery_generates_strategies(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Analysis generates recovery strategies"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert response.status_code == 200
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
-        data = response.json()
         assert data["can_recover"] is True
         assert len(data["strategies"]) > 0
 
@@ -140,20 +161,18 @@ class TestRecoveryAnalysisLogic:
             "resource_name": "nginx"
         }
 
-        response = client.post("/api/v1/recovery/analyze", json=request)
-        assert response.status_code == 200
+        result_resp = _submit_and_get_result(client, request)
+        data = result_resp.json()
 
-        data = response.json()
         # Warnings field should exist (may be empty depending on mock LLM response)
         assert "warnings" in data
         assert isinstance(data["warnings"], list)
 
     def test_analyze_recovery_returns_metadata(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes analysis metadata"""
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert response.status_code == 200
+        result_resp = _submit_and_get_result(client, sample_recovery_request)
+        data = result_resp.json()
 
-        data = response.json()
         assert "metadata" in data
         assert "analysis_time_ms" in data["metadata"]
 
@@ -166,4 +185,3 @@ class TestRecoveryErrorHandling:
         # This would require mocking internal failures
         # For GREEN phase, test basic error response structure
         pass
-

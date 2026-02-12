@@ -57,11 +57,17 @@ This document provides a comprehensive list of all business requirements for the
 **Tests**: `test/unit/gateway/adapters/validation_test.go`, `test/integration/gateway/signal_validation_test.go`
 
 ### **BR-GATEWAY-004: Signal Fingerprinting**
-**Description**: Gateway must generate deterministic fingerprints for signal deduplication
+**Description**: Gateway must generate deterministic fingerprints for signal deduplication. Fingerprint strategy is **adapter-specific**:
+- **Prometheus alerts**: `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (Pod→Deployment resolution), or `SHA256(namespace:kind:name)` without OwnerResolver. **alertname is EXCLUDED** from the fingerprint. This ensures that multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint and a single RemediationRequest. The LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
+- **Kubernetes events**: `SHA256(namespace:ownerKind:ownerName)` — resolves the top-level controller owner (e.g., Pod → ReplicaSet → Deployment) via K8s API owner references and excludes the event `reason` from the fingerprint. This ensures that multiple events (BackOff, OOMKilling, Failed) from the same crashing Deployment produce a single fingerprint and a single RemediationRequest. Falls back to `SHA256(namespace:kind:name)` (involvedObject) if owner resolution fails (RBAC error, timeout, etc.).
+
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/processing/deduplication.go`
-**Tests**: `test/unit/gateway/deduplication_test.go`
+**Implementation**: `pkg/gateway/types/fingerprint.go` (`CalculateFingerprint`, `CalculateOwnerFingerprint`), `pkg/gateway/adapters/prometheus_adapter.go` (OwnerResolver injection), `pkg/gateway/adapters/kubernetes_event_adapter.go` (owner chain resolution)
+**Tests**: `test/unit/gateway/deduplication_test.go`, `test/unit/gateway/kubernetes_event_dedup_test.go`, `test/unit/gateway/prometheus_dedup_test.go`
+**Change History**: 
+- Updated 2026-02-09 — Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Same pattern as K8s event adapter.
+- Updated 2026-02-09 — K8s events now use owner-chain-based fingerprinting (previously used `SHA256(reason:namespace:kind:name)` which caused duplicate RemediationRequests for events from the same Deployment with different reasons or pod names).
 
 ### **BR-GATEWAY-005: Signal Metadata Extraction**
 **Description**: Gateway must extract severity, namespace, and resource metadata from external signals **without transformation or interpretation**

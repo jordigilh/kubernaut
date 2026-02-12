@@ -177,7 +177,7 @@ All 6 HAPI audit flow tests pass.
 - **Result**: 100% DD-TESTING-001 compliant
 
 ### HolmesGPT API ✅
-- **LLM Events**: Filters by `event_type` (`llm_request`, `llm_response`)
+- **LLM Events**: Filters by `event_type` (`aiagent.llm.request`, `aiagent.llm.response`)
 - **Exact Counts**: Uses deterministic assertions
 - **Direct Business Logic**: Tests call business functions directly (no HTTP)
 - **Result**: 100% DD-TESTING-001 compliant

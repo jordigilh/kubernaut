@@ -46,39 +46,8 @@ data:
         configmapNamespace: "kubernaut-system"
         configmapName: "kubernaut-environment-overrides"
 
-      priority:
-        policyPath: "/etc/gateway-policy/priority-policy.rego"
-
----
-# Gateway Service Rego Policy ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-rego-policy
-  namespace: kubernaut-system
-data:
-  priority-policy.rego: |
-    package priority
-
-    # Default priority assignment based on severity and environment
-    default priority := "P2"
-
-    # P0: Critical alerts in production
-    priority := "P0" if {
-        input.severity == "critical"
-        input.environment == "production"
-    }
-
-    # P1: Critical alerts in staging or warning in production
-    priority := "P1" if {
-        input.severity == "critical"
-        input.environment == "staging"
-    }
-
-    priority := "P1" if {
-        input.severity == "warning"
-        input.environment == "production"
-    }
+      # NOTE: priority.policyPath and gateway-rego-policy ConfigMap removed (2025-02-05).
+      # Priority/Environment classification moved to Signal Processing per DD-CATEGORIZATION-001.
 
 ---
 # Gateway Service Deployment
@@ -111,8 +80,8 @@ spec:
           effect: NoSchedule
       containers:
         - name: gateway
-          image: localhost/kubernaut-gateway:e2e-test
-          imagePullPolicy: Never  # Use local image loaded into Kind
+          image: quay.io/jordigilh/kubernaut-gateway:fullpipeline-e2e-arm64
+          imagePullPolicy: Always
           args:
             - "--config=/etc/gateway/config.yaml"
           ports:
@@ -136,9 +105,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
-              readOnly: true
-            - name: rego-policy
-              mountPath: /etc/gateway-policy
               readOnly: true
           livenessProbe:
             httpGet:
@@ -167,9 +133,6 @@ spec:
         - name: config
           configMap:
             name: gateway-config
-        - name: rego-policy
-          configMap:
-            name: gateway-rego-policy
 
 ---
 # Gateway Service

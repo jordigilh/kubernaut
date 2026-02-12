@@ -199,6 +199,12 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// Build image with optional coverage instrumentation
 	buildArgs := []string{"build", "-t", localImageName, "--no-cache"}
 
+	// Mount host Go module cache to avoid GCS download failures in Podman VM
+	if volumeArgs := goModCacheVolumeArgs(); len(volumeArgs) > 0 {
+		buildArgs = append(buildArgs, volumeArgs...)
+		_, _ = fmt.Fprintf(writer, "   📦 Mounting host Go module cache for faster builds\n")
+	}
+
 	// DD-TEST-007: E2E Coverage Collection
 	// Support coverage instrumentation when E2E_COVERAGE=true or EnableCoverage flag is set
 	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == "true" {
@@ -453,4 +459,30 @@ func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, 
 	_, _ = fmt.Fprintf(writer, "   ✅ Image exists in registry (verified without pull)\n")
 	_, _ = fmt.Fprintf(writer, "   💡 Kubernetes/Podman will pull when needed during deployment\n")
 	return true, nil
+}
+
+// goModCacheVolumeArgs returns Podman volume arguments to mount the host Go module
+// cache into the build container, avoiding redundant module downloads during image builds.
+// Returns an empty slice if GOMODCACHE is not set or empty.
+func goModCacheVolumeArgs() []string {
+	goModCache := os.Getenv("GOMODCACHE")
+	if goModCache == "" {
+		// Fall back to default GOPATH/pkg/mod
+		gopath := os.Getenv("GOPATH")
+		if gopath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil
+			}
+			gopath = filepath.Join(home, "go")
+		}
+		goModCache = filepath.Join(gopath, "pkg", "mod")
+	}
+
+	// Only mount if the directory exists
+	if _, err := os.Stat(goModCache); err != nil {
+		return nil
+	}
+
+	return []string{"-v", fmt.Sprintf("%s:/go/pkg/mod:ro", goModCache)}
 }

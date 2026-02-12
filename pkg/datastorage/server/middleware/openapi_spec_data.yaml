@@ -1667,7 +1667,7 @@ components:
             - $ref: '#/components/schemas/NotificationMessageFailedPayload'
             - $ref: '#/components/schemas/NotificationMessageAcknowledgedPayload'
             - $ref: '#/components/schemas/NotificationMessageEscalatedPayload'
-            - $ref: '#/components/schemas/HolmesGPTResponsePayload'
+            - $ref: '#/components/schemas/AIAgentResponsePayload'
             - $ref: '#/components/schemas/LLMRequestPayload'
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
@@ -1720,11 +1720,11 @@ components:
               'notification.message.failed': '#/components/schemas/NotificationMessageFailedPayload'
               'notification.message.acknowledged': '#/components/schemas/NotificationMessageAcknowledgedPayload'
               'notification.message.escalated': '#/components/schemas/NotificationMessageEscalatedPayload'
-              'holmesgpt.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
-              'llm_request': '#/components/schemas/LLMRequestPayload'
-              'llm_response': '#/components/schemas/LLMResponsePayload'
-              'llm_tool_call': '#/components/schemas/LLMToolCallPayload'
-              'workflow_validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+              'aiagent.response.complete': '#/components/schemas/AIAgentResponsePayload'
+              'aiagent.llm.request': '#/components/schemas/LLMRequestPayload'
+              'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
+              'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
+              'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -1900,8 +1900,8 @@ components:
           example: "OOMKilled"
         severity:
           type: string
-          description: "Severity level this workflow is designed for"
-          enum: [critical, high, medium, low]
+          description: "Severity level this workflow is designed for ('*' matches any severity)"
+          enum: [critical, high, medium, low, "*"]
           example: "critical"
         component:
           type: string
@@ -2050,6 +2050,10 @@ components:
           $ref: '#/components/schemas/CustomLabels'
         detected_labels:
           $ref: '#/components/schemas/DetectedLabels'
+        parameters:
+          type: object
+          additionalProperties: true
+          description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
     RemediationWorkflow:
       type: object
@@ -2102,6 +2106,7 @@ components:
           description: "SHA-256 hash of content"
         parameters:
           type: object
+          additionalProperties: true
           description: "Workflow parameters (JSONB)"
         execution_engine:
           type: string
@@ -3577,14 +3582,14 @@ components:
     # From: holmesgpt-api/src/models/audit_models.py
     # ========================================
 
-    HolmesGPTResponsePayload:
+    AIAgentResponsePayload:
       type: object
       required: [event_type, event_id, incident_id, response_data]
-      description: HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
+      description: AI Agent response completion event payload (aiagent.response.complete) - Provider perspective (DD-AUDIT-005)
       properties:
         event_type:
           type: string
-          enum: ['holmesgpt.response.complete']
+          enum: ['aiagent.response.complete']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
@@ -3620,7 +3625,8 @@ components:
               description: Brief RCA summary
             severity:
               type: string
-              description: Incident severity
+              enum: [critical, high, medium, low, unknown]
+              description: Incident severity (BR-SEVERITY-001)
               example: "high"
             contributing_factors:
               type: array
@@ -3662,8 +3668,8 @@ components:
           description: True when AI could not produce reliable result
         human_review_reason:
           type: string
-          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error]
-          description: Structured reason when needs_human_review=true
+          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete]
+          description: Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)
         target_in_owner_chain:
           type: boolean
           default: true
@@ -3688,11 +3694,11 @@ components:
     LLMRequestPayload:
       type: object
       required: [event_type, event_id, incident_id, model, prompt_length, prompt_preview]
-      description: LLM API request event payload (llm_request)
+      description: LLM API request event payload (aiagent.llm.request)
       properties:
         event_type:
           type: string
-          enum: ['llm_request']
+          enum: ['aiagent.llm.request']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
@@ -3729,11 +3735,11 @@ components:
     LLMResponsePayload:
       type: object
       required: [event_type, event_id, incident_id, has_analysis, analysis_length, analysis_preview]
-      description: LLM API response event payload (llm_response)
+      description: LLM API response event payload (aiagent.llm.response)
       properties:
         event_type:
           type: string
-          enum: ['llm_response']
+          enum: ['aiagent.llm.response']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
@@ -3764,11 +3770,11 @@ components:
     LLMToolCallPayload:
       type: object
       required: [event_type, event_id, incident_id, tool_call_index, tool_name, tool_result]
-      description: LLM tool call event payload (llm_tool_call)
+      description: LLM tool call event payload (aiagent.llm.tool_call)
       properties:
         event_type:
           type: string
-          enum: ['llm_tool_call']
+          enum: ['aiagent.llm.tool_call']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
@@ -3797,11 +3803,11 @@ components:
     WorkflowValidationPayload:
       type: object
       required: [event_type, event_id, incident_id, attempt, max_attempts, is_valid]
-      description: Workflow validation attempt event payload (workflow_validation_attempt)
+      description: Workflow validation attempt event payload (aiagent.workflow.validation_attempt)
       properties:
         event_type:
           type: string
-          enum: ['workflow_validation_attempt']
+          enum: ['aiagent.workflow.validation_attempt']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string

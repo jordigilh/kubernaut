@@ -7,7 +7,7 @@ Structured RCA with summary, severity, contributing_factors
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **summary** | **str** | Brief RCA summary | 
-**severity** | **str** | Incident severity | 
+**severity** | **str** | Incident severity (BR-SEVERITY-001) | 
 **contributing_factors** | **List[str]** | List of contributing factors | 
 
 ## Example

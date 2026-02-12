@@ -51,6 +51,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
@@ -435,10 +436,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if rr.Status.OverallPhase == "" {
 		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
 
-		// Per DD-AUDIT-003: Emit lifecycle.started event for new RR
-		// Must happen BEFORE requeue so audit trail captures first reconcile
-		r.emitLifecycleStartedAudit(ctx, rr)
-
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
 		// Initialize phase + StartTime + TimeoutConfig in single API call
@@ -460,6 +457,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
+	// RO-AUDIT-IDEMPOTENCY: Emit initialization audit events ONLY after winning the
+	// AtomicStatusUpdate. Concurrent reconciles that both see OverallPhase == "" will
+	// race on the status update; only the winner proceeds here, preventing duplicate
+	// lifecycle.started/created events. Same pattern as RAR (ConditionAuditRecorded),
+	// Notification (NT-BUG-001), and WFE (DD-STATUS-001).
+	r.emitLifecycleStartedAudit(ctx, rr)
+
 	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
 	// The rr object passed to AtomicStatusUpdate is updated with the persisted status
 	// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
@@ -469,6 +473,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
 	// This happens AFTER status initialization to capture actual defaults
 	r.emitRemediationCreatedAudit(ctx, rr)
+
+	// DD-EVENT-001: Emit K8s event for new RR acceptance (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCreated,
+			fmt.Sprintf("RemediationRequest accepted for signal %s", rr.Spec.SignalName))
+	}
 
 	// Requeue after short delay to process the Pending phase
 	// Using RequeueAfter instead of deprecated Requeue field
@@ -807,6 +817,12 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			}
 			logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
 
+			// DD-EVENT-001: Emit K8s event for approval required (BR-ORCH-095)
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalRequired,
+					fmt.Sprintf("Human approval required: confidence %.2f below threshold", ai.Status.SelectedWorkflow.Confidence))
+			}
+
 			// Create approval notification (BR-ORCH-001)
 			result, err := r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
 			if err != nil {
@@ -927,6 +943,13 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			// Continue - condition update is best-effort
 		}
 
+		// DD-EVENT-001: Emit EscalatedToManualReview if AI needs human review (BR-ORCH-095)
+		// Emitted from reconciler (handler doesn't have access to Recorder)
+		if ai.Status.NeedsHumanReview && r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonEscalatedToManualReview,
+				fmt.Sprintf("AI analysis requires manual review: %s", ai.Status.Message))
+		}
+
 		// Handle all failure scenarios (BR-ORCH-036: manual review)
 		logger.Info("AIAnalysis failed - delegating to handler")
 		return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -976,6 +999,12 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 
 		// Per DD-AUDIT-003: Emit approval decision event
 		r.emitApprovalDecisionAudit(ctx, rr, "Approved", rar.Status.DecidedBy, rar.Status.DecisionMessage)
+
+		// DD-EVENT-001: Emit K8s event for approval granted (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalGranted,
+				fmt.Sprintf("Approval granted by %s", rar.Status.DecidedBy))
+		}
 
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
@@ -1048,6 +1077,12 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		// Per DD-AUDIT-003: Emit approval decision event
 		r.emitApprovalDecisionAudit(ctx, rr, "Rejected", rar.Status.DecidedBy, rar.Status.DecisionMessage)
 
+		// DD-EVENT-001: Emit K8s event for approval rejected (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalRejected,
+				fmt.Sprintf("Approval rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage))
+		}
+
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
 		// Consolidate 2 conditions → 1 API call with retry
@@ -1075,12 +1110,26 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 
 	case remediationv1.ApprovalDecisionExpired:
 		logger.Info("Approval expired (timeout)")
+
+		// DD-EVENT-001: Emit K8s event for approval expired (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalExpired,
+				"Approval request expired without a decision")
+		}
+
 		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
 
 	default:
 		// Still pending - check if deadline passed (V1.0 timeout handling)
 		if time.Now().After(rar.Spec.RequiredBy.Time) {
 			logger.Info("Approval deadline passed, marking as expired")
+
+			// DD-EVENT-001: Emit K8s event for approval expired (BR-ORCH-095)
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonApprovalExpired,
+					fmt.Sprintf("Approval deadline passed after %v without decision",
+						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)))
+			}
 
 			// ========================================
 			// DD-PERF-001: ATOMIC STATUS UPDATE (RAR)
@@ -1193,6 +1242,18 @@ func (r *Reconciler) handleBlocked(
 
 	// Emit routing blocked audit event (DD-RO-002, ADR-032 §1)
 	r.emitRoutingBlockedAudit(ctx, rr, fromPhase, blocked, workflowID)
+
+	// DD-EVENT-001: Emit K8s event based on blocking reason (BR-ORCH-095)
+	if r.Recorder != nil {
+		switch remediationv1.BlockReason(blocked.Reason) {
+		case remediationv1.BlockReasonRecentlyRemediated, remediationv1.BlockReasonExponentialBackoff:
+			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonCooldownActive,
+				fmt.Sprintf("Remediation deferred: %s", blocked.Message))
+		case remediationv1.BlockReasonConsecutiveFailures:
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonConsecutiveFailureBlocked,
+				fmt.Sprintf("Target blocked: %s", blocked.Message))
+		}
+	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1307,6 +1368,12 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	// Emit audit event (DD-AUDIT-003)
 	r.emitPhaseTransitionAudit(ctx, rr, string(oldPhase), string(newPhase))
 
+	// DD-EVENT-001: Emit K8s event for phase transition (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+			fmt.Sprintf("Phase transition: %s → %s", oldPhase, newPhase))
+	}
+
 	logger.Info("Phase transition successful", "from", oldPhase, "to", newPhase)
 
 	// Requeue with delay to check progress of child CRDs
@@ -1381,6 +1448,50 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 	if oldPhaseBeforeTransition != phase.Completed {
 		durationMs := time.Since(startTime).Milliseconds()
 		r.emitCompletionAudit(ctx, rr, outcome, durationMs)
+
+		// DD-EVENT-001: Emit K8s event for successful completion (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCompleted,
+				fmt.Sprintf("Remediation completed successfully: %s", outcome))
+		}
+	}
+
+	// ========================================
+	// BR-ORCH-045: COMPLETION NOTIFICATION
+	// Notify operators of successful remediation
+	// ========================================
+	if oldPhaseBeforeTransition != phase.Completed {
+		// Fetch AIAnalysis for RCA and workflow context
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
+			// Non-fatal: Log and continue - completion succeeded even if notification fails
+			logger.Error(err, "Failed to fetch AIAnalysis for completion notification", "aiAnalysis", aiName)
+		} else {
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
+			if notifErr != nil {
+				// Non-fatal: Log and continue - completion succeeded even if notification fails
+				logger.Error(notifErr, "Failed to create completion notification")
+			} else {
+				logger.Info("Created completion notification", "notification", notifName)
+				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Completion notification created: %s", notifName))
+				}
+			}
+		}
+
+		// BR-ORCH-034: Create bulk duplicate notification if duplicates exist
+		if rr.Status.DuplicateCount > 0 {
+			bulkName, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
+			if bulkErr != nil {
+				// Non-fatal: Log and continue
+				logger.Error(bulkErr, "Failed to create bulk duplicate notification")
+			} else {
+				logger.Info("Created bulk duplicate notification", "notification", bulkName)
+			}
+		}
 	}
 
 	logger.Info("Remediation completed successfully", "outcome", outcome)
@@ -1482,6 +1593,12 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	if oldPhaseBeforeTransition != phase.Failed {
 		durationMs := time.Since(startTime).Milliseconds()
 		r.emitFailureAudit(ctx, rr, failurePhase, failureErr, durationMs)
+
+		// DD-EVENT-001: Emit K8s event for failure (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationFailed,
+				fmt.Sprintf("Remediation failed during %s: %s", failurePhase, failureReason))
+		}
 	}
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
@@ -1523,6 +1640,12 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 	if rr.Status.StartTime != nil {
 		durationMs := time.Since(rr.Status.StartTime.Time).Milliseconds()
 		r.emitTimeoutAudit(ctx, rr, "global", timeoutPhase, durationMs)
+	}
+
+	// DD-EVENT-001: Emit K8s event for global timeout (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationTimeout,
+			fmt.Sprintf("Global timeout exceeded during %s phase", timeoutPhase))
 	}
 
 	logger.Info("Remediation timed out (global timeout exceeded)",
@@ -1606,6 +1729,12 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 		"notificationName", notificationName,
 		"priority", nr.Spec.Priority,
 		"timeoutPhase", timeoutPhase)
+
+	// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+			fmt.Sprintf("Timeout notification created: %s", notificationName))
+	}
 
 	// Track notification in status (Recommendation #2, BR-ORCH-035)
 	// REFACTOR-RO-001: Using retry helper
@@ -2306,6 +2435,12 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	if rr.Status.StartTime != nil {
 		durationMs := time.Since(rr.Status.StartTime.Time).Milliseconds()
 		r.emitTimeoutAudit(ctx, rr, "phase", string(phase), durationMs)
+	}
+
+	// DD-EVENT-001: Emit K8s event for phase timeout (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationTimeout,
+			fmt.Sprintf("Phase %s exceeded timeout of %s", phase, timeout))
 	}
 
 	logger.Info("RemediationRequest transitioned to TimedOut due to phase timeout",

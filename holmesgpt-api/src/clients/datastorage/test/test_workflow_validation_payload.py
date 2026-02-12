@@ -36,7 +36,7 @@ class TestWorkflowValidationPayload(unittest.TestCase):
         model = WorkflowValidationPayload()
         if include_optional:
             return WorkflowValidationPayload(
-                event_type = 'workflow_validation_attempt',
+                event_type = 'aiagent.workflow.validation_attempt',
                 event_id = '',
                 incident_id = '',
                 attempt = 1,
@@ -53,7 +53,7 @@ class TestWorkflowValidationPayload(unittest.TestCase):
             )
         else:
             return WorkflowValidationPayload(
-                event_type = 'workflow_validation_attempt',
+                event_type = 'aiagent.workflow.validation_attempt',
                 event_id = '',
                 incident_id = '',
                 attempt = 1,

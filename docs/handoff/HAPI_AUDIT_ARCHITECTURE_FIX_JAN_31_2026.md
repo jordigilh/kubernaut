@@ -31,7 +31,7 @@ Two **different services** were using the **same** `event_category="analysis"`:
 
 2. **HolmesGPT API** (Python, `holmesgpt-api/`)
    - **Role:** AI agent provider (autonomous tool-calling)
-   - **Events:** `llm_request`, `llm_response`, `llm_tool_call`, `workflow_validation_attempt`, `holmesgpt.response.complete`
+   - **Events:** `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`
 
 **Impact of Violation:**
 - Impossible to query: "Show me all HAPI events" vs "Show me all AIAnalysis events"
@@ -140,7 +140,7 @@ query_audit_events_with_retry(
 | event_category | Service | Usage | Example Events |
 |---------------|---------|-------|----------------|
 | `analysis` | AI Analysis Controller | Remediation workflow orchestration (NOT HolmesGPT API) | `aianalysis.analysis.completed`, `aianalysis.phase.transition` |
-| `aiagent` | AI Agent Provider (HolmesGPT API) | Autonomous AI agent with tool-calling | `llm_request`, `llm_response`, `llm_tool_call`, `holmesgpt.response.complete` |
+| `aiagent` | AI Agent Provider (HolmesGPT API) | Autonomous AI agent with tool-calling | `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.response.complete` |
 
 **Changelog v1.6:**
 - Fixed event_category collision between AIAnalysis and HolmesGPT API
@@ -179,7 +179,7 @@ params := ogenclient.QueryAuditEventsParams{
 
 // Tests validate HAPI events expecting EventCategory="analysis"
 validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
-    EventType:     "holmesgpt.response.complete",
+    EventType:     "aiagent.response.complete",
     EventCategory: ogenclient.AuditEventEventCategoryAnalysis,  // ← Needs AuditEventEventCategoryAiagent
 })
 ```
@@ -245,7 +245,7 @@ SELECT * FROM audit_events WHERE event_category = 'aiagent';
 
 3. **Update audit validations** (~4 locations):
    ```go
-   // FOR HAPI EVENTS ONLY (holmesgpt.response.complete):
+   // FOR HAPI EVENTS ONLY (aiagent.response.complete):
    // BEFORE
    EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
    
@@ -266,7 +266,7 @@ SELECT * FROM audit_events WHERE event_category = 'aiagent';
 **Search Pattern:**
 ```bash
 # Find HAPI event validations in AIAnalysis tests
-grep -r "holmesgpt.response.complete\|EventTypeHolmesGPTCall" test/integration/aianalysis/
+grep -r "aiagent.response.complete\|EventTypeHolmesGPTCall" test/integration/aianalysis/
 grep -r "EventCategory.*Analysis" test/integration/aianalysis/ | grep -i hapi
 ```
 

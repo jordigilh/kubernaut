@@ -30,7 +30,7 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 
 | Service | Event Type | Purpose | Content |
 |---------|-----------|---------|---------|
-| **HolmesAPI** | `holmesgpt.response.complete` | Provider perspective | Full `IncidentResponse` structure |
+| **HolmesAPI** | `aiagent.response.complete` | Provider perspective | Full `IncidentResponse` structure |
 | **AI Analysis** | `aianalysis.analysis.completed` | Consumer perspective | `provider_response_summary` + business context |
 
 ---
@@ -61,7 +61,7 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 -- Full provider response (authoritative)
 SELECT event_data->'response_data'
 FROM audit_events
-WHERE event_type = 'holmesgpt.response.complete'
+WHERE event_type = 'aiagent.response.complete'
   AND correlation_id = 'req-2025-01-05-abc123';
 
 -- Business context (complementary)
@@ -148,7 +148,7 @@ def create_hapi_response_complete_event(
     )
 
     return _create_adr034_event(
-        event_type="holmesgpt.response.complete",
+        event_type="aiagent.response.complete",
         operation="response_sent",
         outcome="success",
         correlation_id=remediation_id,
@@ -206,13 +206,13 @@ type AnalysisCompletePayload struct {
 	SubReason string `json:"sub_reason,omitempty"`
 
 	// DD-AUDIT-005: Provider response summary (consumer perspective)
-	// NOTE: Full response is in holmesgpt.response.complete event (provider perspective)
+	// NOTE: Full response is in aiagent.response.complete event (provider perspective)
 	// This field provides AA-side context for what AA received
 	ProviderResponseSummary *ProviderResponseSummary `json:"provider_response_summary,omitempty"`
 }
 
 // ProviderResponseSummary provides AA's perspective of Holmes response
-// DD-AUDIT-005: Consumer-side summary (full data in holmesgpt.response.complete)
+// DD-AUDIT-005: Consumer-side summary (full data in aiagent.response.complete)
 type ProviderResponseSummary struct {
 	IncidentID         string  `json:"incident_id"`
 	AnalysisPreview    string  `json:"analysis_preview"`          // First 500 chars
@@ -278,7 +278,7 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
     correlationID := aiAnalysis.Spec.RemediationID
 
     // Verify HAPI audit event (provider perspective)
-    hapiEvents := waitForAuditEvents(correlationID, "holmesgpt.response.complete", 1)
+    hapiEvents := waitForAuditEvents(correlationID, "aiagent.response.complete", 1)
     hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
     Expect(hapiEventData).To(HaveKey("response_data"))
 

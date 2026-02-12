@@ -46,8 +46,9 @@ const (
 	MetricNameChildCRDCreationsTotal = "kubernaut_remediationorchestrator_child_crd_creations_total"
 
 	// Notification metrics
-	MetricNameManualReviewNotificationsTotal = "kubernaut_remediationorchestrator_manual_review_notifications_total"
-	MetricNameApprovalNotificationsTotal     = "kubernaut_remediationorchestrator_approval_notifications_total"
+	MetricNameManualReviewNotificationsTotal  = "kubernaut_remediationorchestrator_manual_review_notifications_total"
+	MetricNameApprovalNotificationsTotal      = "kubernaut_remediationorchestrator_approval_notifications_total"
+	MetricNameCompletionNotificationsTotal    = "kubernaut_remediationorchestrator_completion_notifications_total"
 
 	// Routing decision metrics
 	MetricNameNoActionNeededTotal    = "kubernaut_remediationorchestrator_no_action_needed_total"
@@ -93,6 +94,7 @@ type Metrics struct {
 	// === NOTIFICATION METRICS ===
 	ManualReviewNotificationsTotal *prometheus.CounterVec
 	ApprovalNotificationsTotal     *prometheus.CounterVec
+	CompletionNotificationsTotal   *prometheus.CounterVec // BR-ORCH-045: Completion notifications
 
 	// === ROUTING DECISION METRICS ===
 	NoActionNeededTotal    *prometheus.CounterVec
@@ -176,6 +178,13 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Name: MetricNameApprovalNotificationsTotal, // DD-005 V3.0: Pattern B (full name),
 				Help:      "Total number of approval notifications created",
+			},
+			[]string{"namespace"},
+		),
+		CompletionNotificationsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameCompletionNotificationsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of completion notifications created (BR-ORCH-045)",
 			},
 			[]string{"namespace"},
 		),
@@ -309,6 +318,7 @@ func NewMetrics() *Metrics {
 		m.ChildCRDCreationsTotal,
 		m.ManualReviewNotificationsTotal,
 		m.ApprovalNotificationsTotal,
+		m.CompletionNotificationsTotal,
 		m.NoActionNeededTotal,
 		m.DuplicatesSkippedTotal,
 		m.TimeoutsTotal,
@@ -332,6 +342,7 @@ func NewMetrics() *Metrics {
 	m.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", "default").Add(0)
 	m.ManualReviewNotificationsTotal.WithLabelValues("reconciler", "WorkflowResolutionFailed", "WorkflowNotFound", "default").Add(0)
 	m.ApprovalNotificationsTotal.WithLabelValues("default").Add(0)
+	m.CompletionNotificationsTotal.WithLabelValues("default").Add(0)
 	m.NoActionNeededTotal.WithLabelValues("default", "Completed").Add(0)
 	m.DuplicatesSkippedTotal.WithLabelValues("default", "test_signal").Add(0)
 	m.TimeoutsTotal.WithLabelValues("default", "Pending").Add(0)
@@ -402,6 +413,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			prometheus.CounterOpts{
 				Name: MetricNameApprovalNotificationsTotal, // DD-005 V3.0: Pattern B (full name),
 				Help:      "Total number of approval notifications created",
+			},
+			[]string{"namespace"},
+		),
+		CompletionNotificationsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameCompletionNotificationsTotal, // DD-005 V3.0: Pattern B (full name)
+				Help: "Total number of completion notifications created (BR-ORCH-045)",
 			},
 			[]string{"namespace"},
 		),
@@ -524,6 +542,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		m.ChildCRDCreationsTotal,
 		m.ManualReviewNotificationsTotal,
 		m.ApprovalNotificationsTotal,
+		m.CompletionNotificationsTotal,
 		m.NoActionNeededTotal,
 		m.DuplicatesSkippedTotal,
 		m.TimeoutsTotal,
@@ -547,6 +566,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	m.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", "default").Add(0)
 	m.ManualReviewNotificationsTotal.WithLabelValues("reconciler", "WorkflowResolutionFailed", "WorkflowNotFound", "default").Add(0)
 	m.ApprovalNotificationsTotal.WithLabelValues("default").Add(0)
+	m.CompletionNotificationsTotal.WithLabelValues("default").Add(0)
 	m.NoActionNeededTotal.WithLabelValues("default", "Completed").Add(0)
 	m.DuplicatesSkippedTotal.WithLabelValues("default", "test_signal").Add(0)
 	m.TimeoutsTotal.WithLabelValues("default", "Pending").Add(0)

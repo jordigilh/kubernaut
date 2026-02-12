@@ -34,7 +34,7 @@ from datastorage.models.llm_request_payload import LLMRequestPayload as LLMReque
 from datastorage.models.llm_response_payload import LLMResponsePayload as LLMResponseEventData
 from datastorage.models.llm_tool_call_payload import LLMToolCallPayload as LLMToolCallEventData
 from datastorage.models.workflow_validation_payload import WorkflowValidationPayload as WorkflowValidationEventData
-from datastorage.models.holmes_gpt_response_payload import HolmesGPTResponsePayload as HAPIResponseEventData
+from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload as HAPIResponseEventData
 
 # Re-export for backward compatibility
 __all__ = [

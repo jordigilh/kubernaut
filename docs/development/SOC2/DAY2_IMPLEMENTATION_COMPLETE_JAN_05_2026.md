@@ -105,10 +105,10 @@ PASS
 
 ### **Hybrid Audit Approach**
 
-#### **HAPI Audit Event: `holmesgpt.response.complete`**
+#### **HAPI Audit Event: `aiagent.response.complete`**
 ```json
 {
-  "event_type": "holmesgpt.response.complete",
+  "event_type": "aiagent.response.complete",
   "event_category": "analysis",
   "event_action": "response_sent",
   "event_outcome": "success",

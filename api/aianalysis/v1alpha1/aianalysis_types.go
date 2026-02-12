@@ -398,7 +398,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;MaxRetriesExceeded;SessionRegenerationExceeded
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -507,8 +507,38 @@ type AIAnalysisStatus struct {
 	// Recovery-specific status fields (only populated for recovery attempts)
 	RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
 
+	// ========================================
+	// INVESTIGATION SESSION (BR-AA-HAPI-064)
+	// Tracks the async submit/poll session with HAPI
+	// ========================================
+	// InvestigationSession tracks the async HAPI session for submit/poll pattern
+	// +optional
+	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
+
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// InvestigationSession tracks the async HAPI session lifecycle.
+// BR-AA-HAPI-064.4: AA controller session tracking
+// BR-AA-HAPI-064.5: Session regeneration on 404 (HAPI restart)
+type InvestigationSession struct {
+	// Session ID returned by HAPI on submit (cleared on session loss)
+	ID string `json:"id,omitempty"`
+	// Generation counter tracking session regenerations (0 = first session, incremented on 404)
+	// +kubebuilder:validation:Minimum=0
+	Generation int32 `json:"generation"`
+	// LastPolled timestamp of the last poll attempt
+	// +optional
+	LastPolled *metav1.Time `json:"lastPolled,omitempty"`
+	// CreatedAt timestamp when the current session was created
+	// +optional
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+	// PollCount tracks the number of poll attempts for backoff calculation
+	// BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PollCount int32 `json:"pollCount,omitempty"`
 }
 
 // RootCauseAnalysis contains detailed RCA results
@@ -523,6 +553,27 @@ type RootCauseAnalysis struct {
 	SignalType string `json:"signalType"`
 	// Contributing factors
 	ContributingFactors []string `json:"contributingFactors,omitempty"`
+	// AffectedResource identifies the actual resource the LLM determined should be remediated.
+	// BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+	// the Pod that generated the signal. The WFE creator should prefer this over the RR's
+	// TargetResource when available to ensure the correct resource is patched.
+	// +optional
+	AffectedResource *AffectedResource `json:"affectedResource,omitempty"`
+}
+
+// AffectedResource identifies the Kubernetes resource identified by the LLM as the
+// actual target for remediation. This may differ from the signal's source resource
+// (e.g., the signal comes from a Pod, but the Deployment should be patched).
+type AffectedResource struct {
+	// Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet", "DaemonSet")
+	// +kubebuilder:validation:Required
+	Kind string `json:"kind"`
+	// Name is the resource name
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// Namespace is the resource namespace
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
 }
 
 // SelectedWorkflow contains the AI-selected workflow for execution
@@ -547,6 +598,13 @@ type SelectedWorkflow struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
+	// ExecutionEngine specifies the backend engine for workflow execution.
+	// Populated from HolmesGPT-API workflow recommendation.
+	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+	// When empty, defaults to "tekton" for backwards compatibility.
+	// +kubebuilder:validation:Enum=tekton;job
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

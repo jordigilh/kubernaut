@@ -32,7 +32,7 @@ class MandatoryLabels(BaseModel):
     5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)
     """ # noqa: E501
     signal_type: StrictStr = Field(description="Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)")
-    severity: StrictStr = Field(description="Severity level this workflow is designed for")
+    severity: StrictStr = Field(description="Severity level this workflow is designed for ('*' matches any severity)")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
@@ -41,8 +41,8 @@ class MandatoryLabels(BaseModel):
     @field_validator('severity')
     def severity_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('critical', 'high', 'medium', 'low'):
-            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low')")
+        if value not in ('critical', 'high', 'medium', 'low', '*'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', '*')")
         return value
 
     @field_validator('environment')

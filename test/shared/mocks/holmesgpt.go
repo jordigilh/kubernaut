@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/go-faster/jx"
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
@@ -29,6 +30,7 @@ import (
 // Now uses generated types from HAPI OpenAPI spec for type-safe testing.
 // BR-AI-006: Mock for API call testing
 // BR-AI-082: Updated with InvestigateRecovery support
+// BR-AA-HAPI-064: Extended with async session methods
 type MockHolmesGPTClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
 	InvestigateFunc func(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
@@ -59,6 +61,58 @@ type MockHolmesGPTClient struct {
 
 	// RecoveryErr is the default error for recovery calls (uses Err if nil)
 	RecoveryErr error
+
+	// ========================================
+	// Async session fields (BR-AA-HAPI-064)
+	// ========================================
+
+	// SubmitInvestigationFunc allows tests to customize SubmitInvestigation behavior
+	SubmitInvestigationFunc func(ctx context.Context, req *client.IncidentRequest) (string, error)
+
+	// SubmitRecoveryInvestigationFunc allows tests to customize SubmitRecoveryInvestigation behavior
+	SubmitRecoveryInvestigationFunc func(ctx context.Context, req *client.RecoveryRequest) (string, error)
+
+	// PollSessionFunc allows tests to customize PollSession behavior
+	PollSessionFunc func(ctx context.Context, sessionID string) (*client.SessionStatus, error)
+
+	// GetSessionResultFunc allows tests to customize GetSessionResult behavior
+	GetSessionResultFunc func(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
+
+	// GetRecoverySessionResultFunc allows tests to customize GetRecoverySessionResult behavior
+	GetRecoverySessionResultFunc func(ctx context.Context, sessionID string) (*client.RecoveryResponse, error)
+
+	// SubmitCallCount tracks how many times SubmitInvestigation was called
+	SubmitCallCount int
+
+	// SubmitRecoveryCallCount tracks how many times SubmitRecoveryInvestigation was called
+	SubmitRecoveryCallCount int
+
+	// PollCallCount tracks how many times PollSession was called
+	PollCallCount int
+
+	// GetResultCallCount tracks how many times GetSessionResult was called
+	GetResultCallCount int
+
+	// GetRecoveryResultCallCount tracks how many times GetRecoverySessionResult was called
+	GetRecoveryResultCallCount int
+
+	// DefaultSessionID is returned by SubmitInvestigation/SubmitRecoveryInvestigation when no func is set
+	DefaultSessionID string
+
+	// DefaultSessionStatus is returned by PollSession when no func is set
+	DefaultSessionStatus *client.SessionStatus
+
+	// SubmitErr is the error returned by SubmitInvestigation
+	SubmitErr error
+
+	// PollErr is the error returned by PollSession
+	PollErr error
+
+	// GetResultErr is the error returned by GetSessionResult
+	GetResultErr error
+
+	// mu protects concurrent access to call counts
+	mu sync.Mutex
 }
 
 // NewMockHolmesGPTClient creates a new mock HolmesGPT client with default success behavior.
@@ -218,12 +272,191 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	return m
 }
 
+// ========================================
+// Async Session Methods (BR-AA-HAPI-064)
+// ========================================
+
+// SubmitInvestigation implements HolmesGPTClientInterface for async submit.
+func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *client.IncidentRequest) (string, error) {
+	m.mu.Lock()
+	m.SubmitCallCount++
+	m.LastRequest = req
+	m.mu.Unlock()
+
+	if m.SubmitInvestigationFunc != nil {
+		return m.SubmitInvestigationFunc(ctx, req)
+	}
+
+	if m.SubmitErr != nil {
+		return "", m.SubmitErr
+	}
+
+	sessionID := m.DefaultSessionID
+	if sessionID == "" {
+		sessionID = "mock-session-001"
+	}
+	return sessionID, nil
+}
+
+// SubmitRecoveryInvestigation implements HolmesGPTClientInterface for async recovery submit.
+func (m *MockHolmesGPTClient) SubmitRecoveryInvestigation(ctx context.Context, req *client.RecoveryRequest) (string, error) {
+	m.mu.Lock()
+	m.SubmitRecoveryCallCount++
+	m.LastRecoveryRequest = req
+	m.mu.Unlock()
+
+	if m.SubmitRecoveryInvestigationFunc != nil {
+		return m.SubmitRecoveryInvestigationFunc(ctx, req)
+	}
+
+	if m.SubmitErr != nil {
+		return "", m.SubmitErr
+	}
+
+	sessionID := m.DefaultSessionID
+	if sessionID == "" {
+		sessionID = "mock-recovery-session-001"
+	}
+	return sessionID, nil
+}
+
+// PollSession implements HolmesGPTClientInterface for session polling.
+func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+	m.mu.Lock()
+	m.PollCallCount++
+	m.mu.Unlock()
+
+	if m.PollSessionFunc != nil {
+		return m.PollSessionFunc(ctx, sessionID)
+	}
+
+	if m.PollErr != nil {
+		return nil, m.PollErr
+	}
+
+	if m.DefaultSessionStatus != nil {
+		return m.DefaultSessionStatus, nil
+	}
+
+	return &client.SessionStatus{Status: "completed"}, nil
+}
+
+// GetSessionResult implements HolmesGPTClientInterface for result retrieval.
+func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*client.IncidentResponse, error) {
+	m.mu.Lock()
+	m.GetResultCallCount++
+	m.mu.Unlock()
+
+	if m.GetSessionResultFunc != nil {
+		return m.GetSessionResultFunc(ctx, sessionID)
+	}
+
+	if m.GetResultErr != nil {
+		return nil, m.GetResultErr
+	}
+
+	return m.Response, m.Err
+}
+
+// GetRecoverySessionResult implements HolmesGPTClientInterface for recovery result retrieval.
+func (m *MockHolmesGPTClient) GetRecoverySessionResult(ctx context.Context, sessionID string) (*client.RecoveryResponse, error) {
+	m.mu.Lock()
+	m.GetRecoveryResultCallCount++
+	m.mu.Unlock()
+
+	if m.GetRecoverySessionResultFunc != nil {
+		return m.GetRecoverySessionResultFunc(ctx, sessionID)
+	}
+
+	if m.GetResultErr != nil {
+		return nil, m.GetResultErr
+	}
+
+	return m.RecoveryResponse, m.RecoveryErr
+}
+
+// ========================================
+// Async Session Test Helpers (BR-AA-HAPI-064)
+// ========================================
+
+// WithSessionSubmitResponse configures the mock to return a specific session ID on submit.
+func (m *MockHolmesGPTClient) WithSessionSubmitResponse(sessionID string) *MockHolmesGPTClient {
+	m.DefaultSessionID = sessionID
+	m.SubmitErr = nil
+	return m
+}
+
+// WithSessionSubmitError configures the mock to return an error on submit.
+func (m *MockHolmesGPTClient) WithSessionSubmitError(err error) *MockHolmesGPTClient {
+	m.SubmitErr = err
+	return m
+}
+
+// WithSessionPollStatus configures the mock to return a specific session status on poll.
+func (m *MockHolmesGPTClient) WithSessionPollStatus(status string) *MockHolmesGPTClient {
+	m.DefaultSessionStatus = &client.SessionStatus{Status: status}
+	m.PollErr = nil
+	return m
+}
+
+// WithSessionPollError configures the mock to return an error on poll (e.g., 404 for session lost).
+func (m *MockHolmesGPTClient) WithSessionPollError(err error) *MockHolmesGPTClient {
+	m.PollErr = err
+	return m
+}
+
+// WithSessionResultError configures the mock to return an error on result retrieval.
+func (m *MockHolmesGPTClient) WithSessionResultError(err error) *MockHolmesGPTClient {
+	m.GetResultErr = err
+	return m
+}
+
+// WithSessionPollSequence configures the mock to return different statuses on consecutive polls.
+// Useful for testing the poll flow: pending -> investigating -> completed.
+func (m *MockHolmesGPTClient) WithSessionPollSequence(statuses []string) *MockHolmesGPTClient {
+	callIndex := 0
+	mu := &sync.Mutex{}
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if callIndex >= len(statuses) {
+			return &client.SessionStatus{Status: statuses[len(statuses)-1]}, nil
+		}
+		status := statuses[callIndex]
+		callIndex++
+		return &client.SessionStatus{Status: status}, nil
+	}
+	return m
+}
+
+// WithSessionPollFailThenRecover configures the mock to return 404 for the first N polls,
+// then succeed on subsequent polls. Used for testing session regeneration (IT-AA-064-003).
+func (m *MockHolmesGPTClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockHolmesGPTClient {
+	callIndex := 0
+	mu := &sync.Mutex{}
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		callIndex++
+		if callIndex <= failCount {
+			return nil, sessionLostErr
+		}
+		return &client.SessionStatus{Status: "completed"}, nil
+	}
+	return m
+}
+
 // Reset resets the mock's state (call count and last request).
 func (m *MockHolmesGPTClient) Reset() {
 	m.CallCount = 0
 	m.RecoveryCallCount = 0
 	m.LastRequest = nil
 	m.LastRecoveryRequest = nil
+	m.SubmitCallCount = 0
+	m.SubmitRecoveryCallCount = 0
+	m.PollCallCount = 0
+	m.GetResultCallCount = 0
+	m.GetRecoveryResultCallCount = 0
 }
 
 // ========================================

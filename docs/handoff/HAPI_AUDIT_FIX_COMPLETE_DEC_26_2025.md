@@ -31,9 +31,9 @@ Mock LLM responses now generate audit events correctly. The implementation is co
 **Changes**:
 - Initialize `audit_store` and `remediation_id` at function start (before mock check)
 - Generate 3 audit events in mock path:
-  - `llm_request` (with correct signature: model, prompt, toolsets_enabled, mcp_servers)
-  - `llm_response` (with correct signature: has_analysis, analysis_length, analysis_preview, tool_call_count)
-  - `workflow_validation_attempt` (with correct signature: attempt, max_attempts, is_valid, errors, workflow_id)
+  - `aiagent.llm.request` (with correct signature: model, prompt, toolsets_enabled, mcp_servers)
+  - `aiagent.llm.response` (with correct signature: has_analysis, analysis_length, analysis_preview, tool_call_count)
+  - `aiagent.workflow.validation_attempt` (with correct signature: attempt, max_attempts, is_valid, errors, workflow_id)
 - Remove duplicate audit store initialization in normal LLM flow
 
 **Evidence of Success**:

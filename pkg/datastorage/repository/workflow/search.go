@@ -67,11 +67,15 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	args = append(args, request.Filters.SignalType)
 	argIndex++
 
-	// Mandatory Filter 2: severity (exact match)
+	// Mandatory Filter 2: severity (supports wildcard matching)
+	// Workflow with severity='*' matches ANY search filter (wildcard)
+	// Workflow with severity='critical' matches only 'critical' (exact)
+	// Wildcard support added because LLM severity assessment is non-deterministic —
+	// the same OOMKill may be classified as "medium", "high", or "critical" across runs.
 	if request.Filters.Severity == "" {
 		return nil, fmt.Errorf("filters.severity is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'severity' = $%d", argIndex))
+	whereClauses = append(whereClauses, fmt.Sprintf("(labels->>'severity' = $%d OR labels->>'severity' = '*')", argIndex))
 	args = append(args, request.Filters.Severity)
 	argIndex++
 
@@ -97,11 +101,15 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	argIndex++
 
 
-	// Mandatory Filter 5: priority (exact match)
+	// Mandatory Filter 5: priority (supports wildcard matching)
+	// Workflow with priority='*' matches ANY search filter (wildcard)
+	// Workflow with priority='P0' matches only 'P0' (exact)
+	// Wildcard support added because priority is derived from LLM severity assessment,
+	// which is non-deterministic — a wildcard workflow matches regardless of priority mapping.
 	if request.Filters.Priority == "" {
 		return nil, fmt.Errorf("filters.priority is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'priority' = $%d", argIndex))
+	whereClauses = append(whereClauses, fmt.Sprintf("(labels->>'priority' = $%d OR labels->>'priority' = '*')", argIndex))
 	args = append(args, request.Filters.Priority)
 	argIndex++
 
@@ -227,6 +235,9 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 			// DD-WORKFLOW-001 v1.6: Label columns in response
 			CustomLabels:   result.CustomLabels,
 			DetectedLabels: result.DetectedLabels,
+
+			// BR-HAPI-191: Parameter schema for HAPI validation and LLM guidance
+			Parameters: result.Parameters,
 
 			// Internal: full workflow for audit/logging (not serialized)
 			Workflow: result.RemediationWorkflow,

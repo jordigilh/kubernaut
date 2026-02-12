@@ -17,18 +17,14 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
-	"fmt"
 	"os"
-	"time"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -60,41 +56,16 @@ func init() {
 func main() {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
-	// Priority: CLI flags > Config file > Defaults
+	// Only --config flag is supported. All other settings are in the YAML config file.
 	// ========================================
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to configuration file (optional, uses defaults if not provided)")
 
-	// CLI flags for backwards compatibility and config overrides
-	var metricsAddr string
-	var probeAddr string
-	var enableLeaderElection bool
-	var executionNamespace string
-	var cooldownPeriodMinutes int
-	var serviceAccountName string
-	var baseCooldownSeconds int
-	var maxCooldownMinutes int
-	var maxBackoffExponent int
-	var maxConsecutiveFailures int
-	var dataStorageURL string
-
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "", "Metrics endpoint address (overrides config)")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", "", "Health probe address (overrides config)")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election (overrides config)")
-	flag.StringVar(&executionNamespace, "execution-namespace", "", "PipelineRun namespace (overrides config, DD-WE-002)")
-	flag.IntVar(&cooldownPeriodMinutes, "cooldown-period", 0, "Cooldown period in minutes (overrides config, DD-WE-001)")
-	flag.StringVar(&serviceAccountName, "service-account", "", "ServiceAccount name (overrides config)")
-	flag.IntVar(&baseCooldownSeconds, "base-cooldown-seconds", 0, "Base cooldown in seconds (overrides config, DD-WE-004)")
-	flag.IntVar(&maxCooldownMinutes, "max-cooldown-minutes", 0, "Max cooldown in minutes (overrides config, DD-WE-004)")
-	flag.IntVar(&maxBackoffExponent, "max-backoff-exponent", 0, "Max backoff exponent (overrides config, DD-WE-004)")
-	flag.IntVar(&maxConsecutiveFailures, "max-consecutive-failures", 0, "Max consecutive failures (overrides config, DD-WE-004)")
-	flag.StringVar(&dataStorageURL, "datastorage-url", "", "Data Storage URL (overrides config, DD-AUDIT-003)")
-
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// Load configuration (file if provided, otherwise defaults)
 	var cfg *weconfig.Config
@@ -111,60 +82,11 @@ func main() {
 		setupLog.Info("Using default configuration (no config file provided)")
 	}
 
-	// Apply CLI flag overrides (backwards compatibility)
-	if metricsAddr != "" {
-		cfg.Controller.MetricsAddr = metricsAddr
-	}
-	if probeAddr != "" {
-		cfg.Controller.HealthProbeAddr = probeAddr
-	}
-	if enableLeaderElection {
-		cfg.Controller.LeaderElection = true
-	}
-	if executionNamespace != "" {
-		cfg.Execution.Namespace = executionNamespace
-	}
-	if cooldownPeriodMinutes > 0 {
-		cfg.Execution.CooldownPeriod = time.Duration(cooldownPeriodMinutes) * time.Minute
-	}
-	if serviceAccountName != "" {
-		cfg.Execution.ServiceAccount = serviceAccountName
-	}
-	if baseCooldownSeconds > 0 {
-		cfg.Backoff.BaseCooldown = time.Duration(baseCooldownSeconds) * time.Second
-	}
-	if maxCooldownMinutes > 0 {
-		cfg.Backoff.MaxCooldown = time.Duration(maxCooldownMinutes) * time.Minute
-	}
-	if maxBackoffExponent > 0 {
-		cfg.Backoff.MaxExponent = maxBackoffExponent
-	}
-	if maxConsecutiveFailures > 0 {
-		cfg.Backoff.MaxConsecutiveFailures = maxConsecutiveFailures
-	}
-	if dataStorageURL != "" {
-		cfg.Audit.DataStorageURL = dataStorageURL
-	}
-
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		setupLog.Error(err, "Configuration validation failed")
 		os.Exit(1)
 	}
-
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	// ========================================
-	// ADR-030: Validate Tekton CRDs are available
-	// The controller MUST crash if Tekton is not installed
-	// ========================================
-	setupLog.Info("Validating Tekton Pipelines availability (ADR-030)")
-	if err := checkTektonAvailable(); err != nil {
-		setupLog.Error(err, "Required dependency check failed: Tekton Pipelines not available")
-		setupLog.Info("Tekton Pipelines CRDs must be installed before starting this controller")
-		os.Exit(1)
-	}
-	setupLog.Info("Tekton Pipelines CRDs verified")
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
@@ -267,7 +189,9 @@ func main() {
 
 	// ========================================
 	// BR-WE-014: Executor Registry (Strategy Pattern)
-	// Registers Tekton and Job execution backends for dispatch
+	// Both Tekton and Job backends are always registered.
+	// If a workflow uses executionEngine: "tekton", the operator is responsible
+	// for ensuring Tekton Pipelines is installed in the cluster.
 	// ========================================
 	executorRegistry := weexecutor.NewRegistry()
 	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
@@ -328,27 +252,4 @@ func main() {
 			setupLog.Info("Audit store closed successfully")
 		}
 	}
-}
-
-// ========================================
-// ADR-030: Tekton CRD Availability Check
-// Controller MUST crash if Tekton is not installed
-// ========================================
-
-// checkTektonAvailable verifies that Tekton Pipeline CRDs are installed
-// Returns error if Tekton CRDs are not available
-func checkTektonAvailable() error {
-	config := ctrl.GetConfigOrDie()
-	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create client for Tekton check: %w", err)
-	}
-
-	// Try to list PipelineRuns - this verifies the CRD exists
-	var prList tektonv1.PipelineRunList
-	if err := k8sClient.List(context.Background(), &prList, client.Limit(1)); err != nil {
-		return fmt.Errorf("Tekton PipelineRun CRD not available: %w", err)
-	}
-
-	return nil
 }

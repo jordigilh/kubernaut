@@ -128,7 +128,7 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 			uniqueSignalType := fmt.Sprintf("OOMKilled-p%d", GinkgoParallelProcess())
 
 			// ADR-043 compliant workflow-schema.yaml content
-			// V1.0: 4 mandatory labels (severity, component, priority, environment)
+			// V1.0: 6 mandatory labels (signal_type, severity, risk_tolerance, component, priority, environment)
 			workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
@@ -136,9 +136,11 @@ metadata:
   version: "1.0.0"
   description: Recover from OOMKilled using kubectl rollout restart
 labels:
+  signal_type: %s
   severity: critical
+  risk_tolerance: medium
   environment: production
-  priority: P0
+  priority: p0
   component: deployment
 parameters:
   - name: DEPLOYMENT_NAME
@@ -152,7 +154,7 @@ parameters:
 execution:
   engine: tekton
   bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0
-`, workflowID)
+`, workflowID, uniqueSignalType)
 
 			// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
 			containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0@sha256:%064d", 1)
@@ -177,7 +179,7 @@ execution:
 				// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  uniqueSignalType,                                                                           // mandatory - unique per process
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,                                                      // mandatory
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
 					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
 					Component:   "deployment",                                                                               // mandatory

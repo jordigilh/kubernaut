@@ -23,7 +23,7 @@ They do NOT require any external infrastructure.
 ADR-034 Required Fields (top-level):
   - version: Schema version ("1.0")
   - service: Service name ("holmesgpt-api")
-  - event_type: Event type (e.g., "llm_request")
+  - event_type: Event type (e.g., "aiagent.llm.request")
   - event_timestamp: ISO 8601 timestamp
   - correlation_id: Remediation ID for correlation
   - operation: Action performed
@@ -67,7 +67,7 @@ class TestAuditEventStructure:
         # Verify envelope values
         assert event.version == "1.0"
         assert event.event_category == "aiagent"  # ADR-034 v1.6: HAPI uses "aiagent" service category
-        assert event.event_type == "llm_request"
+        assert event.event_type == "aiagent.llm.request"
         assert event.correlation_id == "rem-456"
         assert event.event_action == "llm_request_sent"
         assert event.event_outcome == "success"
@@ -108,7 +108,7 @@ class TestAuditEventStructure:
             assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event.event_type == "llm_response"
+        assert event.event_type == "aiagent.llm.response"
         assert event.event_action == "llm_response_received"
         assert event.event_outcome == "success"  # has_analysis=True
 
@@ -162,7 +162,7 @@ class TestAuditEventStructure:
             assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event.event_type == "workflow_validation_attempt"
+        assert event.event_type == "aiagent.workflow.validation_attempt"
         assert event.event_action == "validation_executed"
         assert event.event_outcome == "pending"  # Will retry (attempt 1 of 3)
 
@@ -232,7 +232,7 @@ class TestAuditEventStructure:
             assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event.event_type == "llm_tool_call"
+        assert event.event_type == "aiagent.llm.tool_call"
         assert event.event_action == "tool_invoked"
         assert event.event_outcome == "success"
 

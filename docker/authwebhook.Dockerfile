@@ -1,36 +1,34 @@
 # AuthWebhook Service - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
-# Per ADR-028-EXCEPTION-001: Using upstream Go builder mirrored to quay.io for ARM64 compatibility
-
-# Build stage - Upstream Go 1.25 (ADR-028-EXCEPTION-001: ARM64 runtime fix)
-# FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
-# REASON: ARM64 crash with taggedPointerPack bug
-FROM quay.io/jordigilh/golang:1.25-bookworm AS builder
-# Using ADR-028 compliant mirror for ARM64 compatibility
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 # Build arguments for multi-architecture support
 ARG GOFLAGS=""
 ARG GOOS=linux
 ARG GOARCH=amd64
 
-# Install build dependencies (upstream Debian image uses apt-get)
-RUN apt-get update && \
-	apt-get install -y git ca-certificates tzdata && \
-	apt-get clean && \
-	rm -rf /var/lib/apt/lists/*
+# Switch to root for package installation
+USER root
+
+# Install build dependencies
+RUN dnf update -y && \
+	dnf install -y git ca-certificates tzdata && \
+	dnf clean all
+
+# Switch back to default user for security
+USER 1001
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /opt/app-root/src
 
 # Copy go mod files
-COPY go.mod go.sum ./
+COPY --chown=1001:0 go.mod go.sum ./
 
 # Copy source code
-COPY . .
+COPY --chown=1001:0 . .
 
 # Build the Webhooks service binary
-# Per ADR-028-EXCEPTION-001: Using upstream Go 1.25.5 for ARM64 compatibility
 # -mod=mod: Automatically download dependencies during build (DD-BUILD-001)
 # DD-TEST-007: Coverage build uses SIMPLE flags
 # - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
@@ -64,7 +62,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root webhooks-user
 
 # Copy the binary from builder stage
-COPY --from=builder /workspace/authwebhook /usr/local/bin/authwebhook
+COPY --from=builder /opt/app-root/src/authwebhook /usr/local/bin/authwebhook
 
 # Set proper permissions
 RUN chmod +x /usr/local/bin/authwebhook
@@ -103,6 +101,3 @@ LABEL name="kubernaut-authwebhook" \
 	io.k8s.description="AuthWebhook Service for SOC2 CC8.1 operator attribution" \
 	io.k8s.display-name="Kubernaut AuthWebhook Service" \
 	io.openshift.tags="kubernaut,authwebhook,admission,authentication,soc2,audit,attribution,microservice"
-
-
-

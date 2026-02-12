@@ -253,6 +253,7 @@ spec:
                 - status-update
                 - approval
                 - manual-review
+                - completion
                 type: string
             required:
             - body

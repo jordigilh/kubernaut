@@ -34,6 +34,7 @@ type ParsedAuditData struct {
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
 	AlertName         string
+	SignalFingerprint string // BR-AUDIT-005: SHA256 deduplication fingerprint
 	SignalLabels      map[string]string
 	SignalAnnotations map[string]string
 	OriginalPayload   string
@@ -105,6 +106,7 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 		CorrelationID:     event.CorrelationID,
 		SignalType:        string(payload.SignalType),
 		AlertName:         payload.AlertName,
+		SignalFingerprint: payload.Fingerprint, // BR-AUDIT-005: SHA256 deduplication identity
 		SignalLabels:      make(map[string]string),
 		SignalAnnotations: make(map[string]string),
 	}

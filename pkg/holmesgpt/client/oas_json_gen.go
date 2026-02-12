@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
-	"github.com/ogen-go/ogen/json"
 	"github.com/ogen-go/ogen/validate"
 )
 
@@ -822,27 +821,23 @@ func (s *HTTPError) Encode(e *jx.Encoder) {
 func (s *HTTPError) encodeFields(e *jx.Encoder) {
 	{
 		e.FieldStart("type")
-		json.EncodeURI(e, s.Type)
+		e.Str(s.Type)
 	}
 	{
 		e.FieldStart("title")
 		e.Str(s.Title)
 	}
 	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
 		e.FieldStart("status")
-		e.Int32(s.Status)
+		e.Int(s.Status)
 	}
 	{
-		if s.Detail.Set {
-			e.FieldStart("detail")
-			s.Detail.Encode(e)
-		}
-	}
-	{
-		if s.Instance.Set {
-			e.FieldStart("instance")
-			s.Instance.Encode(e)
-		}
+		e.FieldStart("instance")
+		e.Str(s.Instance)
 	}
 	{
 		if s.RequestID.Set {
@@ -855,8 +850,8 @@ func (s *HTTPError) encodeFields(e *jx.Encoder) {
 var jsonFieldsNameOfHTTPError = [6]string{
 	0: "type",
 	1: "title",
-	2: "status",
-	3: "detail",
+	2: "detail",
+	3: "status",
 	4: "instance",
 	5: "request_id",
 }
@@ -873,8 +868,8 @@ func (s *HTTPError) Decode(d *jx.Decoder) error {
 		case "type":
 			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := json.DecodeURI(d)
-				s.Type = v
+				v, err := d.Str()
+				s.Type = string(v)
 				if err != nil {
 					return err
 				}
@@ -894,11 +889,23 @@ func (s *HTTPError) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"title\"")
 			}
-		case "status":
+		case "detail":
 			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				v, err := d.Int32()
-				s.Status = int32(v)
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
 				if err != nil {
 					return err
 				}
@@ -906,20 +913,12 @@ func (s *HTTPError) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"status\"")
 			}
-		case "detail":
-			if err := func() error {
-				s.Detail.Reset()
-				if err := s.Detail.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"detail\"")
-			}
 		case "instance":
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
-				s.Instance.Reset()
-				if err := s.Instance.Decode(d); err != nil {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
 					return err
 				}
 				return nil
@@ -946,7 +945,7 @@ func (s *HTTPError) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000111,
+		0b00011111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -1022,6 +1021,8 @@ func (s *HumanReviewReason) Decode(d *jx.Decoder) error {
 		*s = HumanReviewReasonLlmParsingError
 	case HumanReviewReasonInvestigationInconclusive:
 		*s = HumanReviewReasonInvestigationInconclusive
+	case HumanReviewReasonRcaIncomplete:
+		*s = HumanReviewReasonRcaIncomplete
 	default:
 		*s = HumanReviewReason(v)
 	}
@@ -1042,17 +1043,17 @@ func (s *HumanReviewReason) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest as json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) Encode(e *jx.Encoder) {
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) Decode(d *jx.Decoder) error {
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest to nil")
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -1063,34 +1064,34 @@ func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) Decode(d *jx
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest(unwrapped)
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) MarshalJSON() ([]byte, error) {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequest) UnmarshalJSON(data []byte) error {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden as json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) Encode(e *jx.Encoder) {
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) Decode(d *jx.Decoder) error {
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden to nil")
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -1101,34 +1102,34 @@ func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) Decode(d *jx.
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden(unwrapped)
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) MarshalJSON() ([]byte, error) {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbidden) UnmarshalJSON(data []byte) error {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError as json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Encode(e *jx.Encoder) {
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Decode(d *jx.Decoder) error {
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError to nil")
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -1139,34 +1140,34 @@ func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) Dec
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError(unwrapped)
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) MarshalJSON() ([]byte, error) {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerError) UnmarshalJSON(data []byte) error {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized as json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) Encode(e *jx.Encoder) {
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) Decode(d *jx.Decoder) error {
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized to nil")
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -1177,34 +1178,34 @@ func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) Decode(d *
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized(unwrapped)
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) MarshalJSON() ([]byte, error) {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorized) UnmarshalJSON(data []byte) error {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity as json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Encode(e *jx.Encoder) {
+// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity as json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Decode(d *jx.Decoder) error {
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity to nil")
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -1215,19 +1216,924 @@ func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) Dec
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity(unwrapped)
+	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) MarshalJSON() ([]byte, error) {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntity) UnmarshalJSON(data []byte) error {
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) {
+					name = jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) {
+					name = jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) {
+					name = jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) {
+					name = jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON from json.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) {
+					name = jsonFieldsNameOfIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -1255,7 +2161,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		e.Str(s.Severity)
+		s.Severity.Encode(e)
 	}
 	{
 		e.FieldStart("signal_source")
@@ -1477,9 +2383,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := d.Str()
-				s.Severity = string(v)
-				if err != nil {
+				if err := s.Severity.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -1877,46 +2781,6 @@ func (s IncidentRequestSignalLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentRequestSignalLabels) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes IncidentRequestSignalMode as json.
-func (s IncidentRequestSignalMode) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes IncidentRequestSignalMode from json.
-func (s *IncidentRequestSignalMode) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode IncidentRequestSignalMode to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch IncidentRequestSignalMode(v) {
-	case IncidentRequestSignalModeReactive:
-		*s = IncidentRequestSignalModeReactive
-	case IncidentRequestSignalModePredictive:
-		*s = IncidentRequestSignalModePredictive
-	default:
-		*s = IncidentRequestSignalMode(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s IncidentRequestSignalMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentRequestSignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -2773,55 +3637,6 @@ func (s *OptNilIncidentRequestSignalLabels) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes IncidentRequestSignalMode as json.
-func (o OptNilIncidentRequestSignalMode) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	if o.Null {
-		e.Null()
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes IncidentRequestSignalMode from json.
-func (o *OptNilIncidentRequestSignalMode) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptNilIncidentRequestSignalMode to nil")
-	}
-	if d.Next() == jx.Null {
-		if err := d.Null(); err != nil {
-			return err
-		}
-
-		var v IncidentRequestSignalMode
-		o.Value = v
-		o.Set = true
-		o.Null = true
-		return nil
-	}
-	o.Set = true
-	o.Null = false
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptNilIncidentRequestSignalMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptNilIncidentRequestSignalMode) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes IncidentResponseSelectedWorkflow as json.
 func (o OptNilIncidentResponseSelectedWorkflow) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -2972,56 +3787,6 @@ func (s *OptNilPreviousExecution) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryRequestEnrichmentResults as json.
-func (o OptNilRecoveryRequestEnrichmentResults) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	if o.Null {
-		e.Null()
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes RecoveryRequestEnrichmentResults from json.
-func (o *OptNilRecoveryRequestEnrichmentResults) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptNilRecoveryRequestEnrichmentResults to nil")
-	}
-	if d.Next() == jx.Null {
-		if err := d.Null(); err != nil {
-			return err
-		}
-
-		var v RecoveryRequestEnrichmentResults
-		o.Value = v
-		o.Set = true
-		o.Null = true
-		return nil
-	}
-	o.Set = true
-	o.Null = false
-	o.Value = make(RecoveryRequestEnrichmentResults)
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptNilRecoveryRequestEnrichmentResults) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptNilRecoveryRequestEnrichmentResults) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes RecoveryResponseRecoveryAnalysis as json.
 func (o OptNilRecoveryResponseRecoveryAnalysis) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -3118,6 +3883,104 @@ func (s OptNilRecoveryResponseSelectedWorkflow) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilRecoveryResponseSelectedWorkflow) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Severity as json.
+func (o OptNilSeverity) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes Severity from json.
+func (o *OptNilSeverity) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilSeverity to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v Severity
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilSeverity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilSeverity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalMode as json.
+func (o OptNilSignalMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SignalMode from json.
+func (o *OptNilSignalMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilSignalMode to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v SignalMode
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilSignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilSignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3339,41 +4202,6 @@ func (s *OptString) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes url.URL as json.
-func (o OptURI) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	json.EncodeURI(e, o.Value)
-}
-
-// Decode decodes url.URL from json.
-func (o *OptURI) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptURI to nil")
-	}
-	o.Set = true
-	v, err := json.DecodeURI(d)
-	if err != nil {
-		return err
-	}
-	o.Value = v
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptURI) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptURI) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode implements json.Marshaler.
 func (s *OriginalRCA) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -3393,7 +4221,7 @@ func (s *OriginalRCA) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		e.Str(s.Severity)
+		s.Severity.Encode(e)
 	}
 	{
 		if s.ContributingFactors != nil {
@@ -3450,9 +4278,7 @@ func (s *OriginalRCA) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				v, err := d.Str()
-				s.Severity = string(v)
-				if err != nil {
+				if err := s.Severity.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -3692,17 +4518,17 @@ func (s *PreviousExecution) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest as json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) Encode(e *jx.Encoder) {
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest from json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) Decode(d *jx.Decoder) error {
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest to nil")
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -3713,34 +4539,34 @@ func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) Decode(d *jx
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest(unwrapped)
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) MarshalJSON() ([]byte, error) {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequest) UnmarshalJSON(data []byte) error {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden as json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) Encode(e *jx.Encoder) {
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden from json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) Decode(d *jx.Decoder) error {
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden to nil")
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -3751,34 +4577,34 @@ func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) Decode(d *jx.
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden(unwrapped)
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) MarshalJSON() ([]byte, error) {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbidden) UnmarshalJSON(data []byte) error {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONForbidden) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError as json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Encode(e *jx.Encoder) {
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError from json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Decode(d *jx.Decoder) error {
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError to nil")
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -3789,34 +4615,34 @@ func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) Dec
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError(unwrapped)
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) MarshalJSON() ([]byte, error) {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerError) UnmarshalJSON(data []byte) error {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONInternalServerError) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized as json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) Encode(e *jx.Encoder) {
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized from json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) Decode(d *jx.Decoder) error {
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized to nil")
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -3827,34 +4653,34 @@ func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) Decode(d *
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized(unwrapped)
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) MarshalJSON() ([]byte, error) {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorized) UnmarshalJSON(data []byte) error {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnauthorized) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity as json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Encode(e *jx.Encoder) {
+// Encode encodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity as json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity) Encode(e *jx.Encoder) {
 	unwrapped := (*HTTPError)(s)
 
 	unwrapped.Encode(e)
 }
 
-// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity from json.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Decode(d *jx.Decoder) error {
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity to nil")
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity to nil")
 	}
 	var unwrapped HTTPError
 	if err := func() error {
@@ -3865,19 +4691,924 @@ func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) Dec
 	}(); err != nil {
 		return errors.Wrap(err, "alias")
 	}
-	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity(unwrapped)
+	*s = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) MarshalJSON() ([]byte, error) {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntity) UnmarshalJSON(data []byte) error {
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONUnprocessableEntity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) {
+					name = jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostBadRequestApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) {
+					name = jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostForbiddenApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) {
+					name = jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostInternalServerErrorApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) {
+					name = jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnauthorizedApplicationProblemJSON) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("type")
+		e.Str(s.Type)
+	}
+	{
+		e.FieldStart("title")
+		e.Str(s.Title)
+	}
+	{
+		e.FieldStart("detail")
+		e.Str(s.Detail)
+	}
+	{
+		e.FieldStart("status")
+		e.Int(s.Status)
+	}
+	{
+		e.FieldStart("instance")
+		e.Str(s.Instance)
+	}
+	{
+		if s.RequestID.Set {
+			e.FieldStart("request_id")
+			s.RequestID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON = [6]string{
+	0: "type",
+	1: "title",
+	2: "detail",
+	3: "status",
+	4: "instance",
+	5: "request_id",
+}
+
+// Decode decodes RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON from json.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Type = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"type\"")
+			}
+		case "title":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Title = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "detail":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Detail = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.Status = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "instance":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Instance = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"instance\"")
+			}
+		case "request_id":
+			if err := func() error {
+				s.RequestID.Reset()
+				if err := s.RequestID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) {
+					name = jsonFieldsNameOfRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostUnprocessableEntityApplicationProblemJSON) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -4266,64 +5997,6 @@ func (s *RecoveryRequest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RecoveryRequest) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s RecoveryRequestEnrichmentResults) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields implements json.Marshaler.
-func (s RecoveryRequestEnrichmentResults) encodeFields(e *jx.Encoder) {
-	for k, elem := range s {
-		e.FieldStart(k)
-
-		if len(elem) != 0 {
-			e.Raw(elem)
-		}
-	}
-}
-
-// Decode decodes RecoveryRequestEnrichmentResults from json.
-func (s *RecoveryRequestEnrichmentResults) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode RecoveryRequestEnrichmentResults to nil")
-	}
-	m := s.init()
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem jx.Raw
-		if err := func() error {
-			v, err := d.RawAppend(nil)
-			elem = jx.Raw(v)
-			if err != nil {
-				return err
-			}
-			return nil
-		}(); err != nil {
-			return errors.Wrapf(err, "decode field %q", k)
-		}
-		m[string(k)] = elem
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode RecoveryRequestEnrichmentResults")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s RecoveryRequestEnrichmentResults) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *RecoveryRequestEnrichmentResults) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -4857,14 +6530,21 @@ func (s *RecoveryStrategy) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.KubectlCommand.Set {
+			e.FieldStart("kubectl_command")
+			s.KubectlCommand.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRecoveryStrategy = [5]string{
+var jsonFieldsNameOfRecoveryStrategy = [6]string{
 	0: "action_type",
 	1: "confidence",
 	2: "rationale",
 	3: "estimated_risk",
 	4: "prerequisites",
+	5: "kubectl_command",
 }
 
 // Decode decodes RecoveryStrategy from json.
@@ -4940,6 +6620,16 @@ func (s *RecoveryStrategy) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"prerequisites\"")
+			}
+		case "kubectl_command":
+			if err := func() error {
+				s.KubectlCommand.Reset()
+				if err := s.KubectlCommand.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kubectl_command\"")
 			}
 		default:
 			return d.Skip()
@@ -5255,6 +6945,92 @@ func (s SelectedWorkflowSummaryParameters) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SelectedWorkflowSummaryParameters) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Severity as json.
+func (s Severity) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes Severity from json.
+func (s *Severity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode Severity to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch Severity(v) {
+	case SeverityCritical:
+		*s = SeverityCritical
+	case SeverityHigh:
+		*s = SeverityHigh
+	case SeverityMedium:
+		*s = SeverityMedium
+	case SeverityLow:
+		*s = SeverityLow
+	case SeverityUnknown:
+		*s = SeverityUnknown
+	default:
+		*s = Severity(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s Severity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *Severity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalMode as json.
+func (s SignalMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalMode from json.
+func (s *SignalMode) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalMode to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalMode(v) {
+	case SignalModeReactive:
+		*s = SignalModeReactive
+	case SignalModePredictive:
+		*s = SignalModePredictive
+	default:
+		*s = SignalMode(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -17,7 +17,7 @@
 | Category | Requirement | Implemented | Status |
 |----------|-------------|-------------|--------|
 | **Hybrid Approach** | 2 audit events (HAPI + AA) | ✅ 2 events emitted | ✅ COMPLIANT |
-| **HAPI Event Type** | `holmesgpt.response.complete` | ✅ Implemented | ✅ COMPLIANT |
+| **HAPI Event Type** | `aiagent.response.complete` | ✅ Implemented | ✅ COMPLIANT |
 | **AA Event Type** | `aianalysis.analysis.completed` | ✅ Implemented | ✅ COMPLIANT |
 | **Provider Data** | Full IncidentResponse in HAPI | ✅ Complete response | ✅ COMPLIANT |
 | **Consumer Context** | Summary + business fields in AA | ✅ ProviderResponseSummary | ✅ COMPLIANT |
@@ -34,11 +34,11 @@
 
 ### **1. Event Structure Compliance**
 
-#### **1.1 HAPI Event: `holmesgpt.response.complete`**
+#### **1.1 HAPI Event: `aiagent.response.complete`**
 
 | Field | Required By | Implemented | Status |
 |-------|-------------|-------------|--------|
-| **`event_type`** | Test Plan §2.1 | ✅ `"holmesgpt.response.complete"` | ✅ |
+| **`event_type`** | Test Plan §2.1 | ✅ `"aiagent.response.complete"` | ✅ |
 | **`event_category`** | ADR-034 | ✅ `"analysis"` | ✅ |
 | **`event_action`** | ADR-034 | ✅ `"response_sent"` | ✅ |
 | **`event_outcome`** | ADR-034 | ✅ `"success"` | ✅ |
@@ -51,7 +51,7 @@
 ```python
 # holmesgpt-api/src/audit/events.py:387-393
 return _create_adr034_event(
-    event_type="holmesgpt.response.complete",
+    event_type="aiagent.response.complete",
     operation="response_sent",
     outcome="success",
     correlation_id=remediation_id,
@@ -138,7 +138,7 @@ type ProviderResponseSummary struct {
 ✅ Test 1: Hybrid Audit Event Emission (Lines 96-302)
    - Creates AIAnalysis CRD ✅
    - Waits for completion ✅
-   - Queries HAPI event (holmesgpt.response.complete) ✅
+   - Queries HAPI event (aiagent.response.complete) ✅
    - Validates HAPI metadata (actor_id, category, outcome) ✅
    - Validates full IncidentResponse structure ✅
    - Queries AA event (aianalysis.analysis.completed) ✅
@@ -230,7 +230,7 @@ Expect(aaCompletedCount).To(BeNumerically(">=", 1), "Should have at least 1 AA c
 
 | Perspective | Event Type | Fields | Status |
 |-------------|------------|--------|--------|
-| **Provider** (HAPI) | `holmesgpt.response.complete` | Full IncidentResponse | ✅ |
+| **Provider** (HAPI) | `aiagent.response.complete` | Full IncidentResponse | ✅ |
 | **Consumer** (AA) | `aianalysis.analysis.completed` | Summary + business context | ✅ |
 | **Correlation** | Both events | Same `remediation_id` | ✅ |
 
@@ -316,11 +316,11 @@ try:
 except Exception as e:
     # BR-AUDIT-005: Audit writes are MANDATORY, but should not block business operation
     logger.error(
-        f"Failed to emit holmesgpt.response.complete audit event: {e}",
+        f"Failed to emit aiagent.response.complete audit event: {e}",
         extra={
             "incident_id": request.incident_id,
             "remediation_id": request.remediation_id,
-            "event_type": "holmesgpt.response.complete",
+            "event_type": "aiagent.response.complete",
             "adr": "ADR-032 §1",
         },
         exc_info=True

@@ -72,6 +72,18 @@ build_failures.*
 .env.*
 !.env.example
 
+# AI provider credentials (MUST NOT be committed)
+credentials.json
+slack-webhook.url
+*service-account*.json
+*openai-credentials*.json
+*anthropic-credentials*.json
+*google-credentials*.json
+*gcp-credentials*.json
+*vertex-ai*.json
+*azure-credentials*.json
+*aws-credentials*.json
+
 # IDE configuration directories
 .cursor/*
 !.cursor/rules/
@@ -103,6 +115,8 @@ UNIT_TEST_*.md
 
 # Session and infrastructure ephemeral files
 *SESSION*.md
+# Exception: test plan documents containing "session" in docs/testing/
+!docs/testing/**/session_*
 *-HOUR-*.md
 *INFRASTRUCTURE-SETUP*.md
 *INFRASTRUCTURE-FINAL*.md
@@ -141,7 +155,6 @@ TDD-*.md
 [A-Z][A-Z-]*-*-COMPLETE.md
 [A-Z][A-Z-]*-*-STATUS.md
 [A-Z][A-Z-]*-*-PROGRESS.md
-[A-Z][A-Z-]*-*-SESSION*.md
 [A-Z][A-Z-]*-*-TRIAGE.md
 [A-Z][A-Z-]*-*-GAP*.md
 [A-Z][A-Z-]*-*-ASSESSMENT.md
@@ -193,7 +206,6 @@ PR_DESCRIPTION.md
 *_PROGRESS.md
 *_HANDOFF.md
 *_COMPLETE.md
-SESSION_*.md
 SESSION_*.txt
 GOOD_*.md
 OVERNIGHT_*.md

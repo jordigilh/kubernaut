@@ -20,6 +20,7 @@ import re  # noqa: F401
 
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field, StrictStr, ValidationError, field_validator
+from datastorage.models.ai_agent_response_payload import AIAgentResponsePayload
 from datastorage.models.ai_analysis_approval_decision_payload import AIAnalysisApprovalDecisionPayload
 from datastorage.models.ai_analysis_audit_payload import AIAnalysisAuditPayload
 from datastorage.models.ai_analysis_error_payload import AIAnalysisErrorPayload
@@ -27,7 +28,6 @@ from datastorage.models.ai_analysis_holmes_gpt_call_payload import AIAnalysisHol
 from datastorage.models.ai_analysis_phase_transition_payload import AIAnalysisPhaseTransitionPayload
 from datastorage.models.ai_analysis_rego_evaluation_payload import AIAnalysisRegoEvaluationPayload
 from datastorage.models.gateway_audit_payload import GatewayAuditPayload
-from datastorage.models.holmes_gpt_response_payload import HolmesGPTResponsePayload
 from datastorage.models.llm_request_payload import LLMRequestPayload
 from datastorage.models.llm_response_payload import LLMResponsePayload
 from datastorage.models.llm_tool_call_payload import LLMToolCallPayload
@@ -55,7 +55,7 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-AUDITEVENTREQUESTEVENTDATA_ONE_OF_SCHEMAS = ["AIAnalysisApprovalDecisionPayload", "AIAnalysisAuditPayload", "AIAnalysisErrorPayload", "AIAnalysisHolmesGPTCallPayload", "AIAnalysisPhaseTransitionPayload", "AIAnalysisRegoEvaluationPayload", "GatewayAuditPayload", "HolmesGPTResponsePayload", "LLMRequestPayload", "LLMResponsePayload", "LLMToolCallPayload", "NotificationAuditPayload", "NotificationMessageAcknowledgedPayload", "NotificationMessageEscalatedPayload", "NotificationMessageFailedPayload", "NotificationMessageSentPayload", "RemediationApprovalAuditPayload", "RemediationApprovalDecisionPayload", "RemediationOrchestratorAuditPayload", "RemediationRequestWebhookAuditPayload", "SignalProcessingAuditPayload", "WorkflowCatalogCreatedPayload", "WorkflowCatalogUpdatedPayload", "WorkflowExecutionAuditPayload", "WorkflowExecutionWebhookAuditPayload", "WorkflowSearchAuditPayload", "WorkflowValidationPayload"]
+AUDITEVENTREQUESTEVENTDATA_ONE_OF_SCHEMAS = ["AIAgentResponsePayload", "AIAnalysisApprovalDecisionPayload", "AIAnalysisAuditPayload", "AIAnalysisErrorPayload", "AIAnalysisHolmesGPTCallPayload", "AIAnalysisPhaseTransitionPayload", "AIAnalysisRegoEvaluationPayload", "GatewayAuditPayload", "LLMRequestPayload", "LLMResponsePayload", "LLMToolCallPayload", "NotificationAuditPayload", "NotificationMessageAcknowledgedPayload", "NotificationMessageEscalatedPayload", "NotificationMessageFailedPayload", "NotificationMessageSentPayload", "RemediationApprovalAuditPayload", "RemediationApprovalDecisionPayload", "RemediationOrchestratorAuditPayload", "RemediationRequestWebhookAuditPayload", "SignalProcessingAuditPayload", "WorkflowCatalogCreatedPayload", "WorkflowCatalogUpdatedPayload", "WorkflowExecutionAuditPayload", "WorkflowExecutionWebhookAuditPayload", "WorkflowSearchAuditPayload", "WorkflowValidationPayload"]
 
 class AuditEventRequestEventData(BaseModel):
     """
@@ -103,8 +103,8 @@ class AuditEventRequestEventData(BaseModel):
     oneof_schema_20_validator: Optional[NotificationMessageAcknowledgedPayload] = None
     # data type: NotificationMessageEscalatedPayload
     oneof_schema_21_validator: Optional[NotificationMessageEscalatedPayload] = None
-    # data type: HolmesGPTResponsePayload
-    oneof_schema_22_validator: Optional[HolmesGPTResponsePayload] = None
+    # data type: AIAgentResponsePayload
+    oneof_schema_22_validator: Optional[AIAgentResponsePayload] = None
     # data type: LLMRequestPayload
     oneof_schema_23_validator: Optional[LLMRequestPayload] = None
     # data type: LLMResponsePayload
@@ -115,8 +115,8 @@ class AuditEventRequestEventData(BaseModel):
     oneof_schema_26_validator: Optional[WorkflowValidationPayload] = None
     # data type: RemediationRequestWebhookAuditPayload
     oneof_schema_27_validator: Optional[RemediationRequestWebhookAuditPayload] = None
-    actual_instance: Optional[Union[AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, HolmesGPTResponsePayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload]] = None
-    one_of_schemas: List[str] = Literal["AIAnalysisApprovalDecisionPayload", "AIAnalysisAuditPayload", "AIAnalysisErrorPayload", "AIAnalysisHolmesGPTCallPayload", "AIAnalysisPhaseTransitionPayload", "AIAnalysisRegoEvaluationPayload", "GatewayAuditPayload", "HolmesGPTResponsePayload", "LLMRequestPayload", "LLMResponsePayload", "LLMToolCallPayload", "NotificationAuditPayload", "NotificationMessageAcknowledgedPayload", "NotificationMessageEscalatedPayload", "NotificationMessageFailedPayload", "NotificationMessageSentPayload", "RemediationApprovalAuditPayload", "RemediationApprovalDecisionPayload", "RemediationOrchestratorAuditPayload", "RemediationRequestWebhookAuditPayload", "SignalProcessingAuditPayload", "WorkflowCatalogCreatedPayload", "WorkflowCatalogUpdatedPayload", "WorkflowExecutionAuditPayload", "WorkflowExecutionWebhookAuditPayload", "WorkflowSearchAuditPayload", "WorkflowValidationPayload"]
+    actual_instance: Optional[Union[AIAgentResponsePayload, AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload]] = None
+    one_of_schemas: List[str] = Literal["AIAgentResponsePayload", "AIAnalysisApprovalDecisionPayload", "AIAnalysisAuditPayload", "AIAnalysisErrorPayload", "AIAnalysisHolmesGPTCallPayload", "AIAnalysisPhaseTransitionPayload", "AIAnalysisRegoEvaluationPayload", "GatewayAuditPayload", "LLMRequestPayload", "LLMResponsePayload", "LLMToolCallPayload", "NotificationAuditPayload", "NotificationMessageAcknowledgedPayload", "NotificationMessageEscalatedPayload", "NotificationMessageFailedPayload", "NotificationMessageSentPayload", "RemediationApprovalAuditPayload", "RemediationApprovalDecisionPayload", "RemediationOrchestratorAuditPayload", "RemediationRequestWebhookAuditPayload", "SignalProcessingAuditPayload", "WorkflowCatalogCreatedPayload", "WorkflowCatalogUpdatedPayload", "WorkflowExecutionAuditPayload", "WorkflowExecutionWebhookAuditPayload", "WorkflowSearchAuditPayload", "WorkflowValidationPayload"]
 
     model_config = {
         "validate_assignment": True,
@@ -247,9 +247,9 @@ class AuditEventRequestEventData(BaseModel):
             error_messages.append(f"Error! Input type `{type(v)}` is not `NotificationMessageEscalatedPayload`")
         else:
             match += 1
-        # validate data type: HolmesGPTResponsePayload
-        if not isinstance(v, HolmesGPTResponsePayload):
-            error_messages.append(f"Error! Input type `{type(v)}` is not `HolmesGPTResponsePayload`")
+        # validate data type: AIAgentResponsePayload
+        if not isinstance(v, AIAgentResponsePayload):
+            error_messages.append(f"Error! Input type `{type(v)}` is not `AIAgentResponsePayload`")
         else:
             match += 1
         # validate data type: LLMRequestPayload
@@ -279,10 +279,10 @@ class AuditEventRequestEventData(BaseModel):
             match += 1
         if match > 1:
             # more than 1 match
-            raise ValueError("Multiple matches found when setting `actual_instance` in AuditEventRequestEventData with oneOf schemas: AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, HolmesGPTResponsePayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
+            raise ValueError("Multiple matches found when setting `actual_instance` in AuditEventRequestEventData with oneOf schemas: AIAgentResponsePayload, AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
         elif match == 0:
             # no match
-            raise ValueError("No match found when setting `actual_instance` in AuditEventRequestEventData with oneOf schemas: AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, HolmesGPTResponsePayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
+            raise ValueError("No match found when setting `actual_instance` in AuditEventRequestEventData with oneOf schemas: AIAgentResponsePayload, AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
         else:
             return v
 
@@ -423,9 +423,9 @@ class AuditEventRequestEventData(BaseModel):
             match += 1
         except (ValidationError, ValueError) as e:
             error_messages.append(str(e))
-        # deserialize data into HolmesGPTResponsePayload
+        # deserialize data into AIAgentResponsePayload
         try:
-            instance.actual_instance = HolmesGPTResponsePayload.from_json(json_str)
+            instance.actual_instance = AIAgentResponsePayload.from_json(json_str)
             match += 1
         except (ValidationError, ValueError) as e:
             error_messages.append(str(e))
@@ -462,10 +462,10 @@ class AuditEventRequestEventData(BaseModel):
 
         if match > 1:
             # more than 1 match
-            raise ValueError("Multiple matches found when deserializing the JSON string into AuditEventRequestEventData with oneOf schemas: AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, HolmesGPTResponsePayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
+            raise ValueError("Multiple matches found when deserializing the JSON string into AuditEventRequestEventData with oneOf schemas: AIAgentResponsePayload, AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
         elif match == 0:
             # no match
-            raise ValueError("No match found when deserializing the JSON string into AuditEventRequestEventData with oneOf schemas: AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, HolmesGPTResponsePayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
+            raise ValueError("No match found when deserializing the JSON string into AuditEventRequestEventData with oneOf schemas: AIAgentResponsePayload, AIAnalysisApprovalDecisionPayload, AIAnalysisAuditPayload, AIAnalysisErrorPayload, AIAnalysisHolmesGPTCallPayload, AIAnalysisPhaseTransitionPayload, AIAnalysisRegoEvaluationPayload, GatewayAuditPayload, LLMRequestPayload, LLMResponsePayload, LLMToolCallPayload, NotificationAuditPayload, NotificationMessageAcknowledgedPayload, NotificationMessageEscalatedPayload, NotificationMessageFailedPayload, NotificationMessageSentPayload, RemediationApprovalAuditPayload, RemediationApprovalDecisionPayload, RemediationOrchestratorAuditPayload, RemediationRequestWebhookAuditPayload, SignalProcessingAuditPayload, WorkflowCatalogCreatedPayload, WorkflowCatalogUpdatedPayload, WorkflowExecutionAuditPayload, WorkflowExecutionWebhookAuditPayload, WorkflowSearchAuditPayload, WorkflowValidationPayload. Details: " + ", ".join(error_messages))
         else:
             return instance
 

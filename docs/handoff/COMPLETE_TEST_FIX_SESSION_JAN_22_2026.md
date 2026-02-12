@@ -121,13 +121,13 @@ os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:18140"  # Changed from 8080
 **Failures**: 3 tests (audit flow assertions)
 
 **Root Cause**:
-- Tests expected exactly 2 `llm_events` (`llm_request` + `llm_response`)
+- Tests expected exactly 2 `llm_events` (`aiagent.llm.request` + `aiagent.llm.response`)
 - **Actual business logic** (ADR-034 v1.1+): Tool-using LLMs emit MORE events:
-  - `llm_request`
-  - `llm_tool_call` (workflow catalog search)
+  - `aiagent.llm.request`
+  - `aiagent.llm.tool_call` (workflow catalog search)
   - `workflow.catalog.search_completed`
-  - `llm_response` (per tool call)
-  - `llm_response` (final analysis)
+  - `aiagent.llm.response` (per tool call)
+  - `aiagent.llm.response` (final analysis)
 
 **Fix**:
 ```python
@@ -192,7 +192,7 @@ if is_recovery and not recovery_analysis:
 ### 4. HAPI E2E Tests
 **Status**: 2 failures → ✅ 35/35 passing (100%)
 
-#### Issue 1: Multiple `llm_response` Events
+#### Issue 1: Multiple `aiagent.llm.response` Events
 **Failure**: `test_llm_response_event_persisted`
 
 **Root Cause**: Same as integration tests (tool-using LLMs)
@@ -213,7 +213,7 @@ if len(llm_responses) == 0:
 
 ---
 
-#### Issue 2: Missing `workflow_validation_attempt` Events
+#### Issue 2: Missing `aiagent.workflow.validation_attempt` Events
 **Failure**: `test_complete_audit_trail_persisted`
 
 **Root Cause Analysis** (using must-gather logs):

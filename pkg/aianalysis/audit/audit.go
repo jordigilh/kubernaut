@@ -41,6 +41,11 @@ const (
 	EventTypeApprovalDecision  = "aianalysis.approval.decision"
 	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
 	EventTypeError             = "aianalysis.error.occurred"
+
+	// Session audit event types (BR-AA-HAPI-064)
+	EventTypeHolmesGPTSubmit      = "aianalysis.holmesgpt.submit"
+	EventTypeHolmesGPTResult      = "aianalysis.holmesgpt.result"
+	EventTypeHolmesGPTSessionLost = "aianalysis.holmesgpt.session_lost"
 )
 
 // Event category constant (per DD-AUDIT-003)
@@ -128,7 +133,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	}
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective)
-	// This complements the holmesgpt.response.complete event (provider perspective)
+	// This complements the aiagent.response.complete event (provider perspective)
 	if analysis.Status.InvestigationID != "" {
 		summary := ogenclient.ProviderResponseSummary{
 			IncidentID:       analysis.Status.InvestigationID,
@@ -433,6 +438,83 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 	}
 
 	return false
+}
+
+// ========================================
+// SESSION AUDIT METHODS (BR-AA-HAPI-064)
+// Stubs for async submit/poll audit events - implementation in GREEN phase
+// ========================================
+
+// RecordHolmesGPTSubmit records an async HAPI submit event with session ID.
+// BR-AA-HAPI-064: Audit trail for session creation
+func (c *AuditClient) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeHolmesGPTSubmit)
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, "holmesgpt_submit")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
+	audit.SetResource(event, "AIAnalysis", analysis.Name)
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
+	audit.SetNamespace(event, analysis.Namespace)
+
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write HolmesGPT submit audit", "sessionID", sessionID)
+	}
+}
+
+// RecordHolmesGPTResult records an async HAPI result retrieval with investigation time.
+// BR-AA-HAPI-064: Audit trail for result retrieval.
+//
+// For backward compatibility with existing audit tests (DD-AUDIT-003), this also
+// emits an EventTypeHolmesGPTCall event, which is the sync-era equivalent of
+// "HAPI was called and returned a result." This ensures tests that expect
+// aianalysis.holmesgpt.call events continue to pass in session mode.
+func (c *AuditClient) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+	// Emit the session-specific result event
+	resultEvent := audit.NewAuditEventRequest()
+	resultEvent.Version = "1.0"
+	audit.SetEventType(resultEvent, EventTypeHolmesGPTResult)
+	audit.SetEventCategory(resultEvent, EventCategoryAIAnalysis)
+	audit.SetEventAction(resultEvent, "holmesgpt_result")
+	audit.SetEventOutcome(resultEvent, audit.OutcomeSuccess)
+	audit.SetActor(resultEvent, ActorTypeService, ActorIDAIAnalysisController)
+	audit.SetResource(resultEvent, "AIAnalysis", analysis.Name)
+	audit.SetCorrelationID(resultEvent, getCorrelationID(analysis))
+	audit.SetNamespace(resultEvent, analysis.Namespace)
+	audit.SetDuration(resultEvent, int(investigationTimeMs))
+
+	if err := c.store.StoreAudit(ctx, resultEvent); err != nil {
+		c.log.Error(err, "Failed to write HolmesGPT result audit")
+	}
+
+	// Backward compatibility: emit holmesgpt.call event (DD-AUDIT-003)
+	// Determines endpoint from recovery status
+	endpoint := "/api/v1/incident/analyze"
+	if analysis.Spec.IsRecoveryAttempt {
+		endpoint = "/api/v1/recovery/analyze"
+	}
+	c.RecordHolmesGPTCall(ctx, analysis, endpoint, 200, int(investigationTimeMs))
+}
+
+// RecordHolmesGPTSessionLost records a session lost event with generation count.
+// BR-AA-HAPI-064: Audit trail for session regeneration
+func (c *AuditClient) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeHolmesGPTSessionLost)
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, "holmesgpt_session_lost")
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
+	audit.SetResource(event, "AIAnalysis", analysis.Name)
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
+	audit.SetNamespace(event, analysis.Namespace)
+
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write HolmesGPT session lost audit", "generation", generation)
+	}
 }
 
 // RecordAnalysisFailed records an audit event for analysis failure.

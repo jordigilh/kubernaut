@@ -9,6 +9,49 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+func (s *AIAgentResponsePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResponseData.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "response_data",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentResponsePayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.response.complete":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAnalysisApprovalDecisionPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -377,8 +420,8 @@ func (s AuditEventEventData) Validate() error {
 		return nil // no validation needed
 	case NotificationMessageEscalatedPayloadAuditEventEventData:
 		return nil // no validation needed
-	case HolmesGPTResponsePayloadAuditEventEventData:
-		if err := s.HolmesGPTResponsePayload.Validate(); err != nil {
+	case AIAgentResponsePayloadAuditEventEventData:
+		if err := s.AIAgentResponsePayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -667,8 +710,8 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil // no validation needed
 	case NotificationMessageEscalatedPayloadAuditEventRequestEventData:
 		return nil // no validation needed
-	case HolmesGPTResponsePayloadAuditEventRequestEventData:
-		if err := s.HolmesGPTResponsePayload.Validate(); err != nil {
+	case AIAgentResponsePayloadAuditEventRequestEventData:
+		if err := s.AIAgentResponsePayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -1283,49 +1326,6 @@ func (s HealthCheckServiceUnavailableStatus) Validate() error {
 	}
 }
 
-func (s *HolmesGPTResponsePayload) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.EventType.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "event_type",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.ResponseData.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "response_data",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s HolmesGPTResponsePayloadEventType) Validate() error {
-	switch s {
-	case "holmesgpt.response.complete":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s *IncidentResponseData) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1420,6 +1420,10 @@ func (s IncidentResponseDataHumanReviewReason) Validate() error {
 		return nil
 	case "llm_parsing_error":
 		return nil
+	case "investigation_inconclusive":
+		return nil
+	case "rca_incomplete":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -1431,6 +1435,17 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Severity.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "severity",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if s.ContributingFactors == nil {
 			return errors.New("nil is invalid value")
@@ -1446,6 +1461,23 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s IncidentResponseDataRootCauseAnalysisSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *IncidentResponseDataSelectedWorkflow) Validate() error {
@@ -1562,7 +1594,7 @@ func (s *LLMRequestPayload) Validate() error {
 
 func (s LLMRequestPayloadEventType) Validate() error {
 	switch s {
-	case "llm_request":
+	case "aiagent.llm.request":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1671,7 +1703,7 @@ func (s *LLMResponsePayload) Validate() error {
 
 func (s LLMResponsePayloadEventType) Validate() error {
 	switch s {
-	case "llm_response":
+	case "aiagent.llm.response":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1724,7 +1756,7 @@ func (s *LLMToolCallPayload) Validate() error {
 
 func (s LLMToolCallPayloadEventType) Validate() error {
 	switch s {
-	case "llm_tool_call":
+	case "aiagent.llm.tool_call":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1859,6 +1891,8 @@ func (s MandatoryLabelsSeverity) Validate() error {
 	case "medium":
 		return nil
 	case "low":
+		return nil
+	case "*":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -4937,7 +4971,7 @@ func (s *WorkflowValidationPayload) Validate() error {
 
 func (s WorkflowValidationPayloadEventType) Validate() error {
 	switch s {
-	case "workflow_validation_attempt":
+	case "aiagent.workflow.validation_attempt":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

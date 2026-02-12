@@ -439,6 +439,200 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 			// TODO: Add rca_incomplete test once HAPI OpenAPI spec is updated with BR-HAPI-212 enum value
 		)
 	})
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// BR-HAPI-200.6: Incident Response Classification Fix
+	// Bug: ProcessIncidentResponse misclassifies "active problem, no workflow"
+	//       as "ProblemResolved" when confidence >= 0.7 regardless of
+	//       needs_human_review or warning signals.
+	// Fix: Align decision tree with BR-HAPI-200.6 detection patterns:
+	//   Outcome A (ProblemResolved): needs_human_review=false AND
+	//       selected_workflow=null AND confidence >= 0.7 AND no warning signals
+	//   Outcome B (WorkflowResolutionFailed): needs_human_review=true
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	Context("BR-HAPI-200.6: Incident Response Classification", func() {
+		BeforeEach(func() {
+			analysis = &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-classification",
+					Namespace: "default",
+					UID:       types.UID("test-uid-class-001"),
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationID: "test-rr-class-001",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+				},
+			}
+		})
+
+		// UT-AA-200-BUG-001: Investigation inconclusive with high confidence
+		// Reproduces the memory-eater bug: HAPI says needs_human_review=true with
+		// investigation_inconclusive, but high confidence causes misclassification
+		// as ProblemResolved instead of WorkflowResolutionFailed.
+		It("UT-AA-200-BUG-001: should route to WorkflowResolutionFailed when needs_human_review=true even with high confidence", func() {
+			// GIVEN: HAPI response with explicit needs_human_review=true
+			// AND: investigation_inconclusive reason (BR-HAPI-200 Outcome B)
+			// AND: high confidence (0.95) -- LLM is confident in its analysis
+			// AND: no workflow selected (problem is real, but no automated fix)
+			hapiResp := &client.IncidentResponse{
+				IncidentID:        "test-inconclusive-high-conf-001",
+				NeedsHumanReview:  client.NewOptBool(true),
+				HumanReviewReason: client.NewOptNilHumanReviewReason(client.HumanReviewReasonInvestigationInconclusive),
+				Confidence:        0.95, // High confidence -- this is the key trigger for the bug
+				Warnings: []string{
+					"Investigation inconclusive - human review recommended",
+				},
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: Phase MUST be Failed (NOT Completed)
+			// BUG: Current code routes to handleProblemResolvedFromIncident → Phase=Completed
+			// FIX: needsHumanReview check must take priority → Phase=Failed
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"BR-HAPI-200.6 AC-5: Phase must be Failed for inconclusive investigation")
+
+			// AND: Reason must indicate workflow resolution failure
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				"BR-HAPI-200.6 AC-5: Reason must be WorkflowResolutionFailed")
+
+			// AND: SubReason must reflect the inconclusive investigation
+			Expect(analysis.Status.SubReason).To(Equal("InvestigationInconclusive"),
+				"BR-HAPI-200.6 AC-5: SubReason must be InvestigationInconclusive")
+
+			// AND: NeedsHumanReview MUST be true (HAPI explicitly said so)
+			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				"BR-HAPI-197: HAPI's needs_human_review=true must be respected")
+
+			// AND: HumanReviewReason must be preserved
+			Expect(analysis.Status.HumanReviewReason).To(Equal("investigation_inconclusive"),
+				"BR-HAPI-200: HumanReviewReason must be investigation_inconclusive")
+		})
+
+		// UT-AA-200-BUG-002: No matching workflows with high confidence
+		// HAPI correctly sets needs_human_review=true when catalog search found
+		// no matching workflows, but high confidence causes misclassification.
+		It("UT-AA-200-BUG-002: should route to WorkflowResolutionFailed when needs_human_review=true with no_matching_workflows", func() {
+			// GIVEN: HAPI response with needs_human_review=true
+			// AND: no_matching_workflows reason (catalog had no match)
+			// AND: high confidence (LLM is confident about its RCA)
+			hapiResp := &client.IncidentResponse{
+				IncidentID:        "test-no-match-high-conf-001",
+				NeedsHumanReview:  client.NewOptBool(true),
+				HumanReviewReason: client.NewOptNilHumanReviewReason(client.HumanReviewReasonNoMatchingWorkflows),
+				Confidence:        0.80,
+				Warnings: []string{
+					"No workflows matched the search criteria",
+				},
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: Phase MUST be Failed (NOT Completed)
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"Phase must be Failed when no matching workflows found")
+
+			// AND: Reason must indicate workflow resolution failure
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				"Reason must be WorkflowResolutionFailed")
+
+			// AND: NeedsHumanReview must be true
+			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				"NeedsHumanReview must be true when HAPI says so")
+
+			// AND: HumanReviewReason must be preserved
+			Expect(analysis.Status.HumanReviewReason).To(Equal("no_matching_workflows"),
+				"HumanReviewReason must be no_matching_workflows")
+		})
+
+		// UT-AA-200-BUG-003: Defense-in-depth -- LLM incorrectly overrides needs_human_review
+		// Edge case: LLM sets needs_human_review=false but HAPI still appends
+		// "inconclusive" warnings. The warnings-based check must catch this.
+		It("UT-AA-200-BUG-003: should NOT classify as ProblemResolved when warnings indicate inconclusive investigation", func() {
+			// GIVEN: HAPI response where LLM incorrectly set needs_human_review=false
+			// BUT: HAPI's result_parser added "inconclusive" warning
+			// AND: high confidence, no workflow
+			hapiResp := &client.IncidentResponse{
+				IncidentID:       "test-warning-override-001",
+				NeedsHumanReview: client.NewOptBool(false), // LLM incorrectly overrode
+				Confidence:       0.85,                     // High confidence
+				Warnings: []string{
+					"Investigation inconclusive - human review recommended", // HAPI safety signal
+				},
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: Phase MUST be Failed (defense-in-depth catches via warnings)
+			// Even though needs_human_review=false, the "inconclusive" warning
+			// prevents misclassification as ProblemResolved
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"Defense-in-depth: inconclusive warnings must prevent ProblemResolved classification")
+
+			// AND: Must require human review (set by NoWorkflowTerminalFailure path)
+			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				"NoWorkflowTerminalFailure path sets NeedsHumanReview=true")
+
+			// AND: Reason must indicate failure, not success
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				"Reason must be WorkflowResolutionFailed, NOT WorkflowNotNeeded")
+		})
+
+		// UT-AA-200-REG-001: Genuine problem resolved (regression test)
+		// Ensures the fix doesn't break the legitimate ProblemResolved path.
+		It("UT-AA-200-REG-001: should classify as ProblemResolved when genuinely resolved with self-resolved warning", func() {
+			// GIVEN: HAPI response confirming problem self-resolved
+			// AND: needs_human_review=false (LLM and HAPI agree: no review needed)
+			// AND: high confidence, no workflow
+			// AND: "Problem self-resolved" warning (HAPI's resolved outcome signal)
+			hapiResp := &client.IncidentResponse{
+				IncidentID:       "test-genuine-resolved-001",
+				NeedsHumanReview: client.NewOptBool(false),
+				Confidence:       0.92, // Very high confidence
+				Warnings: []string{
+					"Problem self-resolved - no remediation required",
+					"Pod automatically recovered from OOMKilled event",
+				},
+			}
+
+			// WHEN: Processing the incident response
+			_, err := processor.ProcessIncidentResponse(ctx, analysis, hapiResp)
+
+			// THEN: Processing should succeed
+			Expect(err).ToNot(HaveOccurred(), "Processing should succeed")
+
+			// AND: Phase MUST be Completed (genuine problem resolution)
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+				"BR-HAPI-200.6 AC-4: Phase must be Completed for genuine resolution")
+
+			// AND: Reason must indicate no workflow needed
+			Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"),
+				"BR-HAPI-200.6 AC-4: Reason must be WorkflowNotNeeded")
+
+			// AND: SubReason must indicate problem resolved
+			Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"),
+				"BR-HAPI-200.6 AC-4: SubReason must be ProblemResolved")
+
+			// AND: NeedsHumanReview must be false
+			Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+				"No human review needed for genuinely resolved problems")
+		})
+	})
 })
 
 // ═══════════════════════════════════════════════════════════════════════════

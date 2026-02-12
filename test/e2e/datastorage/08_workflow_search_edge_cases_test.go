@@ -237,8 +237,30 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// Workflow 1: Created first
 			// DD-API-001: Use typed OpenAPI struct
-			content1 := `{"steps":[{"action":"scale","replicas":3}]}`
+			// ADR-043: WorkflowSchema format required (rejects raw JSON content)
 			workflow1ID = fmt.Sprintf("tie-breaking-workflow-1-%s", testID)
+			content1 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: First workflow (oldest)
+labels:
+  signal_type: tie-breaking-test
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: p0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/tie-breaking-1:v1.0.0
+`, workflow1ID)
 			workflow1 := dsgen.RemediationWorkflow{
 				WorkflowName: workflow1ID,
 				Version:      "v1.0.0",
@@ -246,7 +268,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "First workflow (oldest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -263,8 +285,30 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// Workflow 2: Created second
 			// DD-API-001: Use typed OpenAPI struct
-			content2 := `{"steps":[{"action":"scale","replicas":5}]}`
+			// ADR-043: WorkflowSchema format required (rejects raw JSON content)
 			workflow2ID = fmt.Sprintf("tie-breaking-workflow-2-%s", testID)
+			content2 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: Second workflow (middle)
+labels:
+  signal_type: tie-breaking-test
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: p0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/tie-breaking-2:v1.0.0
+`, workflow2ID)
 			workflow2 := dsgen.RemediationWorkflow{
 				WorkflowName: workflow2ID,
 				Version:      "v1.0.0",
@@ -272,7 +316,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Second workflow (middle)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -289,8 +333,30 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// Workflow 3: Created last (most recent)
 			// DD-API-001: Use typed OpenAPI struct
-			content3 := `{"steps":[{"action":"scale","replicas":7}]}`
+			// ADR-043: WorkflowSchema format required (rejects raw JSON content)
 			workflow3ID = fmt.Sprintf("tie-breaking-workflow-3-%s", testID)
+			content3 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: Third workflow (newest)
+labels:
+  signal_type: tie-breaking-test
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: p0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/tie-breaking-3:v1.0.0
+`, workflow3ID)
 			workflow3 := dsgen.RemediationWorkflow{
 				WorkflowName: workflow3ID,
 				Version:      "v1.0.0",
@@ -298,7 +364,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Description:  "Third workflow (newest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   baseLabels["component"].(string),
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem(baseLabels["environment"].(string))},
@@ -388,15 +454,38 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// Workflow with wildcard: component="*" (matches any)
 			// DD-API-001: Use typed OpenAPI struct
-			content1 := `{"steps":[{"action":"scale","replicas":3}]}`
+			// ADR-043: WorkflowSchema format required (rejects raw JSON content)
+			wildcardWorkflowName := fmt.Sprintf("wildcard-workflow-%s", testID)
+			content1 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: Accepts any component
+labels:
+  signal_type: wildcard-test
+  severity: critical
+  risk_tolerance: medium
+  component: "*"
+  environment: production
+  priority: p0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/wildcard:v1.0.0
+`, wildcardWorkflowName)
 			wildcardWorkflow := dsgen.RemediationWorkflow{
-				WorkflowName: fmt.Sprintf("wildcard-workflow-%s", testID),
+				WorkflowName: wildcardWorkflowName,
 				Version:      "v1.0.0",
 				Name:         "Wildcard Component Workflow",
 				Description:  "Accepts any component",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   "*", // Wildcard
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
@@ -417,15 +506,38 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// Workflow with specific: component="deployment"
 			// DD-API-001: Use typed OpenAPI struct
-			content2 := `{"steps":[{"action":"restart","delay":10}]}`
+			// ADR-043: WorkflowSchema format required (rejects raw JSON content)
+			specificWorkflowName := fmt.Sprintf("specific-workflow-%s", testID)
+			content2 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "v1.0.0"
+  description: Only accepts deployment component
+labels:
+  signal_type: wildcard-test
+  severity: critical
+  risk_tolerance: medium
+  component: deployment
+  environment: production
+  priority: p0
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/specific:v1.0.0
+`, specificWorkflowName)
 			specificWorkflow := dsgen.RemediationWorkflow{
-				WorkflowName: fmt.Sprintf("specific-workflow-%s", testID),
+				WorkflowName: specificWorkflowName,
 				Version:      "v1.0.0",
 				Name:         "Specific Component Workflow",
 				Description:  "Only accepts deployment component",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,
+					Severity:    dsgen.MandatoryLabelsSeverity_critical,
 					Component:   "deployment", // Specific
 					Priority:    dsgen.MandatoryLabelsPriority_P0,
 					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},

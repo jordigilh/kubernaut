@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-01-11
-**Version**: 2.5
+**Last Updated**: 2026-02-05
+**Version**: 2.7
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -70,6 +70,10 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
+| **Full Pipeline E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fullpipeline-config.yaml` |
+| &nbsp;&nbsp;→ Gateway | 30080 | 30080 | — | — | — | — | (Gateway ingress for event-exporter webhook) |
+| &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | — | — | — | — | (DataStorage for workflow catalog seeding) |
+| &nbsp;&nbsp;→ Mock LLM | — | ClusterIP | — | — | — | — | (Internal only - accessed by HAPI) |
 
 **Note**:
 - Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
@@ -873,6 +877,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.7 | 2026-02-05 | AI Assistant | **FULL PIPELINE E2E**: Added Full Pipeline E2E port allocations for end-to-end remediation lifecycle test (Issue #39); Gateway ingress NodePort 30080 (event-exporter webhook), DataStorage NodePort 30081 (workflow catalog seeding), Mock LLM ClusterIP (internal only, accessed by HAPI); Kind config: `test/infrastructure/kind-fullpipeline-config.yaml`; All ports verified against Port Collision Matrix - no conflicts |
 | 2.6 | 2026-01-15 | AI Assistant | **IMMUDB REMOVAL**: Removed all Immudb port allocations (13322-13331 range) from integration tests; **USER MANDATE**: "Immudb is deprecated, we don't use this DB anymore by authoritative mandate"; **IMPACT**: Simpler infrastructure (one less container per service), faster startup, reduced port allocation requirements; **AFFECTED SERVICES**: Gateway (removed 13323), DataStorage (removed 13322), SignalProcessing (removed 13324), all other services; Port range 13322-13331 now available for future allocation; Updated Port Collision Matrix, service-specific sections, and example usage |
 | 2.5 | 2026-01-11 | AI Assistant | **NAMESPACE CONSOLIDATION**: Mock LLM E2E moved to `kubernaut-system` namespace (from dedicated `mock-llm` namespace); **Simplified DNS**: `http://mock-llm:8080` (from `http://mock-llm.mock-llm.svc.cluster.local:8080`); **Rationale**: Matches established E2E pattern (AuthWebhook, DataStorage all use `kubernaut-system`); Kubernetes auto-resolves short DNS names within same namespace; Consistent with test dependency co-location pattern; Integration tests unchanged (still use podman ports 18140/18141) |
 | 2.4 | 2026-01-11 | AI Assistant | **ARCHITECTURE FIX**: Mock LLM E2E service changed from NodePort to ClusterIP (internal only); E2E access pattern: Test runner → HAPI (NodePort 30088) → Mock LLM (ClusterIP); Removed NodePort 30091 allocation (not needed - Mock LLM never accessed directly from host); Matches DataStorage pattern (ClusterIP in E2E); Integration tests unchanged (still use podman ports 18140/18141); **Rationale**: Mock LLM accessed only by services inside Kind cluster, no external access required |

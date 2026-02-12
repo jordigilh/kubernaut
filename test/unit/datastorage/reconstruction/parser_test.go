@@ -42,8 +42,9 @@ var _ = Describe("Audit Event Parser", func() {
 	})
 
 	Context("PARSER-GW-01: Parse gateway.signal.received events (Gaps #1-3)", func() {
-		It("should extract signal type, labels, and annotations", func() {
-			// Validates extraction of Signal, SignalLabels, SignalAnnotations from gateway audit events
+		It("should extract signal type, labels, annotations, and fingerprint", func() {
+			// Validates extraction of Signal, SignalLabels, SignalAnnotations, Fingerprint from gateway audit events
+			// BR-AUDIT-005: signalFingerprint is required for RR reconstruction (deduplication identity)
 			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
@@ -54,6 +55,9 @@ var _ = Describe("Audit Event Parser", func() {
 			Expect(parsedData.AlertName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
 			Expect(parsedData.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
+			// BR-AUDIT-005: Fingerprint must be extracted for RR.Spec.SignalFingerprint
+			Expect(parsedData.SignalFingerprint).To(Equal("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"),
+				"Parser must extract fingerprint from gateway audit payload")
 		})
 
 		It("should return error for missing alert name", func() {
@@ -118,6 +122,7 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType:        ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
 				AlertName:         "HighCPU",
+				Fingerprint:       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
 			},

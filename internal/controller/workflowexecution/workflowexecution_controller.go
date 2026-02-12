@@ -55,6 +55,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
@@ -71,6 +72,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -178,6 +180,7 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
+
 
 	// ========================================
 	// DEPRECATED: EXPONENTIAL BACKOFF CONFIGURATION (BR-WE-012, DD-WE-004)
@@ -360,6 +363,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// ========================================
 	if err := r.ValidateSpec(wfe); err != nil {
 		logger.Error(err, "Spec validation failed")
+		// DD-EVENT-001 v1.1: Emit WorkflowValidationFailed event (P2: Decision Point)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Spec validation failed: %v", err))
 		// Mark as Failed with ConfigurationError reason
 		// This is a pre-execution failure (wasExecutionFailure: false)
 		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error()); markErr != nil {
@@ -367,6 +373,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		}
 		return ctrl.Result{}, nil
 	}
+
+	// DD-EVENT-001 v1.1: Emit WorkflowValidated event (P2: Decision Point)
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowValidated,
+		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
@@ -387,6 +397,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 				return ctrl.Result{}, fmt.Errorf("failed to update phase to Pending during cooldown: %w", err)
 			}
 		}
+		// DD-EVENT-001 v1.1: Emit CooldownActive event (P2: Decision Point)
+		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonCooldownActive,
+			fmt.Sprintf("Execution deferred: cooldown active for %s (remaining: %s)", wfe.Spec.TargetResource, remaining.Round(time.Second)))
+
 		// Stay in Pending, requeue after cooldown expires
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
@@ -507,8 +521,11 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(wfe, "Normal", "ExecutionCreated",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonExecutionCreated,
 		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.ExecutionEngine, r.ExecutionNamespace, createdName))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Running
+	r.emitPhaseTransition(wfe, "Pending", "Running")
 
 	// Requeue to check execution status
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
@@ -644,6 +661,9 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
 				logger.Error(err, "Failed to cleanup execution resource after cooldown",
 					"engine", exec.Engine())
+				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+					fmt.Sprintf("Cleanup failed after cooldown: %v", err))
 				return ctrl.Result{}, err
 			}
 			logger.Info("Lock released after cooldown",
@@ -674,7 +694,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	}
 
 	// Emit LockReleased event
-	r.Recorder.Event(wfe, "Normal", "LockReleased",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonLockReleased,
 		fmt.Sprintf("Lock released for %s after cooldown", wfe.Spec.TargetResource))
 
 	return ctrl.Result{}, nil
@@ -777,6 +797,9 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
 				logger.Error(err, "Failed to cleanup execution resource during finalization",
 					"engine", exec.Engine())
+				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+					fmt.Sprintf("Cleanup failed during finalization: %v", err))
 				return ctrl.Result{}, err
 			}
 			logger.Info("Finalizer: cleaned up execution resource", "engine", exec.Engine())
@@ -803,7 +826,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	// ========================================
 	// Emit deletion event (finalizers-lifecycle.md)
 	// ========================================
-	r.Recorder.Event(wfe, "Normal", "WorkflowExecutionDeleted",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowExecutionDeleted,
 		fmt.Sprintf("WorkflowExecution cleanup completed (phase: %s)", wfe.Status.Phase))
 
 	// ========================================
@@ -844,56 +867,68 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Index already exists - safe to continue
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
 		// WE-BUG-001: Prevent duplicate reconciles from status-only updates
 		// Use GenerationChangedPredicate to only reconcile on spec changes
 		// Status updates (PipelineRunStatus) are informational and don't require reconciliation
 		// Rationale: Controller only needs to act on spec changes, not status updates
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
-		// Watch PipelineRuns in execution namespace (cross-namespace via label)
-		// Only watch PipelineRuns with our label to avoid unnecessary reconciles
-		// Watch for status updates (not just metadata changes)
-		Watches(
-			&tektonv1.PipelineRun{},
-			handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
-			builder.WithPredicates(predicate.Funcs{
-				CreateFunc: func(e event.CreateEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					// Watch for status updates on labeled PipelineRuns
-					labels := e.ObjectNew.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					labels := e.Object.GetLabels()
-					if labels == nil {
-						return false
-					}
-					_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-			}),
-		).
-		Complete(r)
+		WithEventFilter(predicate.GenerationChangedPredicate{})
+
+	// BR-WE-014: Only watch PipelineRuns if Tekton CRDs are installed.
+	// This is a runtime optimization - if Tekton is not installed, the controller
+	// still works for "job" engine workflows via polling (RequeueAfter).
+	// If a workflow uses executionEngine: "tekton", the operator must ensure Tekton is installed.
+	_, tektonDiscoveryErr := mgr.GetRESTMapper().RESTMapping(
+		schema.GroupKind{Group: "tekton.dev", Kind: "PipelineRun"}, "v1",
+	)
+	if tektonDiscoveryErr == nil {
+		ctrlBuilder = ctrlBuilder.
+			// Watch PipelineRuns in execution namespace (cross-namespace via label)
+			// Only watch PipelineRuns with our label to avoid unnecessary reconciles
+			// Watch for status updates (not just metadata changes)
+			Watches(
+				&tektonv1.PipelineRun{},
+				handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
+				builder.WithPredicates(predicate.Funcs{
+					CreateFunc: func(e event.CreateEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					UpdateFunc: func(e event.UpdateEvent) bool {
+						// Watch for status updates on labeled PipelineRuns
+						labels := e.ObjectNew.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					DeleteFunc: func(e event.DeleteEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+					GenericFunc: func(e event.GenericEvent) bool {
+						labels := e.Object.GetLabels()
+						if labels == nil {
+							return false
+						}
+						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+						return hasLabel
+					},
+				}),
+			)
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 // ========================================
@@ -974,7 +1009,7 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 			return ctrl.Result{}, fmt.Errorf("failed to update status in HandleAlreadyExists: %w", err)
 		}
 
-		r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
+		r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPipelineRunCreated,
 			fmt.Sprintf("PipelineRun %s/%s (already exists, ours)", pr.Namespace, pr.Name))
 
 		// Requeue to check PipelineRun status
@@ -1206,8 +1241,11 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
 
 	// Emit event
-	r.Recorder.Event(wfe, "Normal", "WorkflowCompleted",
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonWorkflowCompleted,
 		fmt.Sprintf("Workflow %s completed successfully in %s", wfe.Spec.WorkflowRef.WorkflowID, wfe.Status.Duration))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Completed
+	r.emitPhaseTransition(wfe, "Running", "Completed")
 
 	logger.Info("WorkflowExecution completed (atomic status update)")
 
@@ -1325,8 +1363,11 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	if wfe.Status.FailureDetails != nil {
 		reason = wfe.Status.FailureDetails.Reason
 	}
-	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
+	r.emitPhaseTransition(wfe, "Running", "Failed")
 
 	return ctrl.Result{}, nil
 }
@@ -1439,8 +1480,11 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
 
 	// Emit event
-	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
 		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Failed
+	r.emitPhaseTransition(wfe, "Pending", "Failed")
 
 	logger.Info("WorkflowExecution failed with reason (atomic status update)", "reason", reason)
 
@@ -1504,4 +1548,15 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 	}
 
 	return nil
+}
+
+// ========================================
+// DD-EVENT-001 v1.1: K8s Event Emission Helpers
+// BR-WE-095: K8s Event Observability for WorkflowExecution Controller
+// ========================================
+
+// emitPhaseTransition emits a PhaseTransition breadcrumb event for WFE phase changes.
+func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, from, to string) {
+	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
+		fmt.Sprintf("Phase transition: %s → %s", from, to))
 }

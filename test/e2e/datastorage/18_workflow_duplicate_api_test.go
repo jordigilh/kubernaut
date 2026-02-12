@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -153,8 +154,30 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 func createTestWorkflowRequest(workflowName, version string) *ogenclient.RemediationWorkflow {
 	name := "Test Duplicate Workflow"
 	description := "Test workflow for duplicate detection"
-	content := "apiVersion: kubernaut.io/v1alpha1\nkind: WorkflowSchema\nmetadata:\n  name: test"
-	contentHash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	// ADR-043: Full WorkflowSchema format required (rejects minimal/incomplete schemas)
+	content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "%s"
+  description: %s
+labels:
+  signal_type: OOMKilled
+  severity: medium
+  risk_tolerance: medium
+  component: pod
+  environment: test
+  priority: p2
+parameters:
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: Name of the deployment to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/duplicate-test:%s
+`, workflowName, version, description, version)
+	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 	executionEngine := string(models.ExecutionEngineTekton)
 	status := ogenclient.RemediationWorkflowStatusActive
 	containerImage := testContainerImage

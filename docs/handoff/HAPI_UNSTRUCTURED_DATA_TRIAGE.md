@@ -386,10 +386,10 @@ def create_llm_request_event(...) -> Dict[str, Any]:
 
 | Event Type | Factory Function | Current Type | Proposed Model |
 |-----------|------------------|--------------|----------------|
-| `llm_request` | `create_llm_request_event` | `Dict[str, Any]` | `LLMRequestEventData` |
-| `llm_response` | `create_llm_response_event` | `Dict[str, Any]` | `LLMResponseEventData` |
-| `llm_tool_call` | `create_tool_call_event` | `Dict[str, Any]` | `LLMToolCallEventData` |
-| `workflow_validation_attempt` | `create_validation_attempt_event` | `Dict[str, Any]` | `WorkflowValidationEventData` |
+| `aiagent.llm.request` | `create_llm_request_event` | `Dict[str, Any]` | `LLMRequestEventData` |
+| `aiagent.llm.response` | `create_llm_response_event` | `Dict[str, Any]` | `LLMResponseEventData` |
+| `aiagent.llm.tool_call` | `create_tool_call_event` | `Dict[str, Any]` | `LLMToolCallEventData` |
+| `aiagent.workflow.validation_attempt` | `create_validation_attempt_event` | `Dict[str, Any]` | `WorkflowValidationEventData` |
 
 **Total Audit Fixes**: Create 4 Pydantic models + update 4 factory functions, **~2-3 hours**
 

@@ -210,8 +210,9 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// COMPLIANCE: SOC2, HIPAA require audit trails for all operations
 
 			By("1. Send Prometheus alert to Gateway")
-			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Signal should be processed")
+			// BR-SCOPE-002: Use sendWebhookExpectCreated to handle scope checker
+			// informer cache propagation delay for newly created test namespaces
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var gatewayResp GatewayResponse
 			err := json.Unmarshal(resp.Body, &gatewayResp)
@@ -414,8 +415,9 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// 3. MUST emit audit event for compliance
 
 			By("1. Send first alert (creates RR)")
-			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+			// BR-SCOPE-002: Use sendWebhookExpectCreated to handle scope checker
+			// informer cache propagation delay for newly created test namespaces
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var resp1Data GatewayResponse
 			err := json.Unmarshal(resp1.Body, &resp1Data)
@@ -610,8 +612,9 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// COMPLIANCE: SOC2, ISO 27001 require CRD creation tracking
 
 			By("1. Send Prometheus alert to Gateway")
-			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Signal should be processed")
+			// BR-SCOPE-002: Use sendWebhookExpectCreated to handle scope checker
+			// informer cache propagation delay for newly created test namespaces
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 
 			var gatewayResp GatewayResponse
 			err := json.Unmarshal(resp.Body, &gatewayResp)

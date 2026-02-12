@@ -25,7 +25,7 @@ event_data:
       'llm_response': '#/components/schemas/LLMResponsePayload'
       'llm_tool_call': '#/components/schemas/LLMToolCallPayload'
       'workflow_validation_attempt': '#/components/schemas/WorkflowValidationPayload'
-      'holmesgpt.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
+      'aiagent.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
       # ... 32 more mappings
   x-go-type: interface{}                        # ❌ PROBLEM: Overrides oneOf!
   x-go-type-skip-optional-pointer: true         # ❌ PROBLEM: Forces interface{}
@@ -59,7 +59,7 @@ event_data:
       'llm_response': '#/components/schemas/LLMResponsePayload'
       'llm_tool_call': '#/components/schemas/LLMToolCallPayload'
       'workflow_validation_attempt': '#/components/schemas/WorkflowValidationPayload'
-      'holmesgpt.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
+      'aiagent.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
       # ... 32 more mappings
   # ✅ REMOVED: x-go-type: interface{}
   # ✅ REMOVED: x-go-type-skip-optional-pointer: true

@@ -24,7 +24,7 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review
+// +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review;completion
 type NotificationType string
 
 const (
@@ -38,6 +38,10 @@ const (
 	// Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
 	// Distinct from 'escalation' to enable label-based routing rules (BR-NOT-065)
 	NotificationTypeManualReview NotificationType = "manual-review"
+	// NotificationTypeCompletion is used for successful remediation completion notifications (BR-ORCH-045)
+	// Created when WorkflowExecution completes successfully and RR transitions to Completed phase
+	// Enables operators to track successful autonomous remediations
+	NotificationTypeCompletion NotificationType = "completion"
 )
 
 // +kubebuilder:validation:Enum=critical;high;medium;low

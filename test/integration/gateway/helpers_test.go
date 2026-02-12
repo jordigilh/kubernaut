@@ -1327,6 +1327,7 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
+	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
 	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 
@@ -1518,19 +1519,27 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics, sharedAuditStore audit.AuditStore) (*gateway.Server, error) {
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
+	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
 	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload
 // Used for testing Gateway adapter pass-through behavior
 func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlationID string) []byte {
+	return createPrometheusAlertForPod(namespace, alertName, severity, fingerprint, correlationID, "test-pod-123")
+}
+
+// createPrometheusAlertForPod creates a Prometheus AlertManager webhook payload targeting a specific pod.
+// Use this when tests need different resources to produce different fingerprints (Issue #63:
+// alertname is excluded from fingerprint, so different alertnames for the same pod produce the same fingerprint).
+func createPrometheusAlertForPod(namespace, alertName, severity, fingerprint, correlationID, podName string) []byte {
 	payload := fmt.Sprintf(`{
 		"alerts": [{
 			"labels": {
 				"alertname": "%s",
 				"severity": "%s",
 				"namespace": "%s",
-				"pod": "test-pod-123"
+				"pod": "%s"
 			},
 			"annotations": {
 				"summary": "Test alert",
@@ -1539,7 +1548,7 @@ func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlat
 			},
 			"startsAt": "2025-01-15T10:00:00Z"
 		}]
-	}`, alertName, severity, namespace, correlationID)
+	}`, alertName, severity, namespace, podName, correlationID)
 
 	return []byte(payload)
 }

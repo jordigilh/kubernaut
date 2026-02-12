@@ -61,7 +61,7 @@
 | Gap | Field | Service | SOC2 Status | Evidence |
 |-----|-------|---------|-------------|----------|
 | **1** | `OriginalPayload` | Gateway | ✅ **COMPLETE** | `payload.OriginalPayload.SetTo(convertMapToJxRaw(...))` |
-| **2** | `ProviderData` | AI Analysis | ✅ **COMPLETE** | HYBRID: `holmesgpt.response.complete` + `aianalysis.analysis.completed` |
+| **2** | `ProviderData` | AI Analysis | ✅ **COMPLETE** | HYBRID: `aiagent.response.complete` + `aianalysis.analysis.completed` |
 | **3** | `SignalLabels` | Gateway | ✅ **COMPLETE** | `payload.SignalLabels.SetTo(labels)` |
 
 **Evidence**:
@@ -186,7 +186,7 @@
 1. Query audit events by correlation_id (RR name)
 2. Group events by service:
    - gateway.signal.received → Spec fields (signal data)
-   - holmesgpt.response.complete → Spec.ProviderData
+   - aiagent.response.complete → Spec.ProviderData
    - orchestration.remediation.created → Status.TimeoutConfig
    - workflowexecution.workflow.selected → Status.SelectedWorkflowRef
    - workflowexecution.execution.started → Status.ExecutionRef
@@ -251,7 +251,7 @@ func ReconstructRemediationRequest(
 
     // Step 2: Parse events by type
     gatewayEvent := findEventByType(events, "gateway.signal.received")
-    hapiEvent := findEventByType(events, "holmesgpt.response.complete")
+    hapiEvent := findEventByType(events, "aiagent.response.complete")
     orchestratorEvent := findEventByType(events, "orchestration.remediation.created")
     workflowSelectionEvent := findEventByType(events, "workflowexecution.workflow.selected")
     executionEvent := findEventByType(events, "workflowexecution.execution.started")
@@ -581,13 +581,13 @@ rr.Spec.OriginalPayload = gatewayEvent.EventData.Gateway.OriginalPayload
 **Evidence**:
 ```go
 // HYBRID approach (DD-AUDIT-005 v1.0):
-// 1. HolmesGPT API emits holmesgpt.response.complete with full IncidentResponse
+// 1. HolmesGPT API emits aiagent.response.complete with full IncidentResponse
 // 2. AIAnalysis emits aianalysis.analysis.completed with provider_response_summary
 ```
 
 **Reconstruction Code**:
 ```go
-hapiEvent := findEventByType(events, "holmesgpt.response.complete")
+hapiEvent := findEventByType(events, "aiagent.response.complete")
 rr.Spec.ProviderData = hapiEvent.EventData.HolmesGPT.IncidentResponse
 ```
 

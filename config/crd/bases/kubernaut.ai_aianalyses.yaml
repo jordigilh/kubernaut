@@ -967,6 +967,43 @@ spec:
                   HolmesGPT investigation ID for correlation
                 maxLength: 253
                 type: string
+              investigationSession:
+                description: |-
+                  ========================================
+                  INVESTIGATION SESSION (BR-AA-HAPI-064)
+                  Tracks the async submit/poll session with HAPI
+                  ========================================
+                  InvestigationSession tracks the async HAPI session for submit/poll pattern
+                properties:
+                  createdAt:
+                    description: CreatedAt timestamp when the current session was
+                      created
+                    format: date-time
+                    type: string
+                  generation:
+                    description: Generation counter tracking session regenerations
+                      (0 = first session, incremented on 404)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  id:
+                    description: Session ID returned by HAPI on submit (cleared on
+                      session loss)
+                    type: string
+                  lastPolled:
+                    description: LastPolled timestamp of the last poll attempt
+                    format: date-time
+                    type: string
+                  pollCount:
+                    description: |-
+                      PollCount tracks the number of poll attempts for backoff calculation
+                      BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                required:
+                - generation
+                type: object
               investigationTime:
                 description: |-
                   NOTE: TokensUsed REMOVED (Dec 2025)
@@ -1053,6 +1090,28 @@ spec:
               rootCauseAnalysis:
                 description: Root cause analysis details
                 properties:
+                  affectedResource:
+                    description: |-
+                      AffectedResource identifies the actual resource the LLM determined should be remediated.
+                      BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+                      the Pod that generated the signal. The WFE creator should prefer this over the RR's
+                      TargetResource when available to ensure the correct resource is patched.
+                    properties:
+                      kind:
+                        description: Kind is the Kubernetes resource kind (e.g., "Deployment",
+                          "StatefulSet", "DaemonSet")
+                        type: string
+                      name:
+                        description: Name is the resource name
+                        type: string
+                      namespace:
+                        description: Namespace is the resource namespace
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    - namespace
+                    type: object
                   contributingFactors:
                     description: Contributing factors
                     items:
@@ -1098,6 +1157,16 @@ spec:
                   containerImage:
                     description: Container image (OCI bundle) - resolved by HolmesGPT-API
                     type: string
+                  executionEngine:
+                    description: |-
+                      ExecutionEngine specifies the backend engine for workflow execution.
+                      Populated from HolmesGPT-API workflow recommendation.
+                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                      When empty, defaults to "tekton" for backwards compatibility.
+                    enum:
+                    - tekton
+                    - job
+                    type: string
                   parameters:
                     additionalProperties:
                       type: string
@@ -1141,6 +1210,7 @@ spec:
                 - InvestigationInconclusive
                 - ProblemResolved
                 - MaxRetriesExceeded
+                - SessionRegenerationExceeded
                 type: string
               targetInOwnerChain:
                 description: |-

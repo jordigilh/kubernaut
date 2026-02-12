@@ -28,7 +28,7 @@ including cluster context, MCP filter instructions, and validation error feedbac
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from src.models.incident_models import DetectedLabels
 from .constants import (
@@ -179,12 +179,14 @@ with the detected cluster environment.
 """
 
 
-def build_validation_error_feedback(errors: List[str], attempt: int) -> str:
+def build_validation_error_feedback(
+    errors: List[str], attempt: int, schema_hint: Optional[str] = None
+) -> str:
     """
     Build validation error feedback to append to LLM prompt for self-correction.
 
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
-    Business Requirement: BR-HAPI-197 (needs_human_review field)
+    Business Requirement: BR-HAPI-197 (needs_human_review field), BR-HAPI-191 (Parameter Schema)
 
     This feedback is appended to the conversation when the LLM's workflow response
     fails validation. The LLM uses this to self-correct while context is preserved.
@@ -192,12 +194,27 @@ def build_validation_error_feedback(errors: List[str], attempt: int) -> str:
     Args:
         errors: List of validation error messages
         attempt: Current attempt number (0-indexed)
+        schema_hint: Optional parameter schema hint for LLM self-correction (BR-HAPI-191).
+                     When present, includes the expected parameter names and types so the
+                     LLM can correct parameter mismatches.
 
     Returns:
         Formatted error feedback section for the prompt
     """
     attempt_display = attempt + 1  # Convert to 1-indexed for display
     errors_list = "\n".join(f"- {error}" for error in errors)
+
+    # BR-HAPI-191: Include parameter schema hint when available
+    schema_section = ""
+    if schema_hint:
+        schema_section = f"""
+
+**Expected Parameter Schema:**
+```
+{schema_hint}
+```
+Use the parameter names, types, and constraints shown above when correcting your response.
+"""
 
     return f"""
 
@@ -206,7 +223,7 @@ def build_validation_error_feedback(errors: List[str], attempt: int) -> str:
 Your previous workflow response had validation errors:
 
 {errors_list}
-
+{schema_section}
 **Please correct your response:**
 1. Re-check the workflow ID exists in the catalog (use MCP search_workflow_catalog)
 2. Ensure container_image matches the catalog exactly (or omit to use catalog default)
@@ -455,6 +472,15 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 **Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
 
+### Phase 3b: Identify the Affected Resource (MANDATORY for remediation)
+
+Determine the **root owner** resource that the remediation should target:
+- From the signal resource (e.g., Pod), trace the OwnerReferences chain UP to the root owner.
+- **Example**: Pod `memory-eater-abc` → owned by ReplicaSet `memory-eater-xyz` → owned by **Deployment** `memory-eater`
+- The `affectedResource` in your response MUST be the **root owner** (e.g., Deployment, StatefulSet, DaemonSet), **NOT** the Pod.
+- Use `kubectl get pod <name> -n <ns> -o jsonpath='{{.metadata.ownerReferences}}'` to find the owner.
+- Include `kind`, `name`, and `namespace` in the `affectedResource` field of `root_cause_analysis`.
+
 ### Phase 4: Search for Workflow (MANDATORY)
 **YOU MUST** call MCP `search_workflow_catalog` tool with:
 - **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
@@ -470,14 +496,20 @@ Based on your RCA, determine the signal_type that best describes the effect:
 {{
   "root_cause_analysis": {{
     "summary": "Brief summary of root cause from investigation",
-    "severity": "critical|high|medium|low",
-    "contributing_factors": ["factor1", "factor2"]
+    "severity": "critical|high|medium|low|unknown",
+    "contributing_factors": ["factor1", "factor2"],
+    "affectedResource": {{
+      "kind": "Deployment",
+      "name": "resource-name",
+      "namespace": "resource-namespace"
+    }}
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
     "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
+    "execution_engine": "tekton|job",
     "parameters": {{
       "PARAM_NAME": "value-from-investigation"
     }}
@@ -493,13 +525,29 @@ Based on your RCA, determine the signal_type that best describes the effect:
 }}
 ```
 
+**CRITICAL**: The `affectedResource` field in `root_cause_analysis` is **REQUIRED**.
+It identifies the Kubernetes resource that the remediation workflow will act upon.
+- **kind**: The root owner resource type (e.g., "Deployment", "StatefulSet"). **NEVER use "Pod"** — always trace up the OwnerReferences chain to the root owner.
+- **name**: The root owner resource name (e.g., if the Pod is `memory-eater-abc-123`, the Deployment is `memory-eater`)
+- **namespace**: The namespace where the resource lives
+
+**Example**: For an OOMKilled Pod named `memory-eater-7f86bb8877-4hv68` in namespace `production`:
+```json
+"affectedResource": {{"kind": "Deployment", "name": "memory-eater", "namespace": "production"}}
+```
+
 **If MCP search fails or returns no workflows**:
 ```json
 {{
   "root_cause_analysis": {{
     "summary": "Root cause from investigation",
-    "severity": "critical|high|medium|low",
-    "contributing_factors": ["factor1", "factor2"]
+    "severity": "critical|high|medium|low|unknown",
+    "contributing_factors": ["factor1", "factor2"],
+    "affectedResource": {{
+      "kind": "Deployment",
+      "name": "resource-name",
+      "namespace": "resource-namespace"
+    }}
   }},
   "selected_workflow": null,
   "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
@@ -508,11 +556,13 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 ## Special Investigation Outcomes (BR-HAPI-200)
 
-**IMPORTANT**: Not all investigations result in a workflow recommendation. Handle these cases explicitly:
+**IMPORTANT**: Not all investigations result in a workflow recommendation. Handle these cases explicitly.
+
+**CRITICAL RULE**: `investigation_outcome: resolved` means the problem is **no longer occurring** and the resource is **currently healthy RIGHT NOW**. If the problem is still happening (e.g., pod is still in CrashLoopBackOff, OOMKilled, or Error state), you MUST NOT use `resolved`. Understanding the root cause is NOT the same as the problem being resolved.
 
 ### Outcome A: Problem Self-Resolved (No Remediation Needed)
 
-If your investigation confirms the problem has **already resolved** (e.g., pod recovered, resource pressure normalized):
+If your investigation confirms the problem has **already resolved on its own** and the resource is **currently healthy**:
 
 # root_cause_analysis
 {{"summary": "Problem self-resolved. [Describe what you found]", "severity": "low", "contributing_factors": ["Transient condition", "Auto-recovery"]}}
@@ -526,11 +576,16 @@ None
 # investigation_outcome
 resolved
 
-**When to use**: High confidence (≥0.7) that the problem is resolved:
-- Pod status shows Running/Ready after previous OOMKilled
-- Resource metrics normalized (CPU/memory within limits)
-- Error rate returned to baseline
-- Node conditions cleared
+**When to use**: High confidence (>=0.7) that the problem is **no longer occurring**:
+- Pod status is **currently** Running/Ready (not CrashLoopBackOff, not OOMKilled)
+- Resource metrics are **currently** within normal limits
+- Error rate has **already** returned to baseline
+- The issue was transient and self-corrected without intervention
+
+**When NOT to use**: Do NOT use `resolved` if:
+- The pod is still crashing, OOMKilling, or in an error state
+- You identified the root cause but the problem persists
+- The issue requires manual intervention or a configuration change to fix
 
 ### Outcome B: Investigation Inconclusive (Human Review Required)
 
@@ -557,13 +612,34 @@ inconclusive
 
 **DO NOT** guess or hallucinate when uncertain. Return `investigation_outcome: "inconclusive"` instead.
 
+### Outcome C: Problem Identified, No Automated Remediation Available
+
+If your investigation **successfully identifies** the root cause, the problem is **still occurring**, but no workflow matched in the catalog search:
+
+# root_cause_analysis
+{{"summary": "[Describe the identified root cause]", "severity": "[appropriate severity]", "contributing_factors": ["[specific factors]"], "affectedResource": {{"kind": "[root owner kind, e.g. Deployment]", "name": "[root owner name]", "namespace": "[namespace]"}}}}
+
+# confidence
+[your confidence in the RCA, typically >=0.7]
+
+# selected_workflow
+None
+
+Do NOT include `investigation_outcome` in this case. The system will automatically flag this for human review.
+
+**When to use**:
+- You clearly identified the root cause (high confidence)
+- The problem is still active (pod still crashing, resource still unhealthy)
+- The MCP workflow catalog search returned no matching workflows
+- Human intervention is needed to resolve the issue
+
 ## RCA Severity Assessment
 
 After your investigation, assess the severity of the root cause using these levels.
 
 **IMPORTANT**: Your RCA severity may differ from the input signal severity. Use your analysis to determine the actual severity based on business impact.
 
-### Severity Levels (DD-SEVERITY-001):
+### Severity Levels (BR-SEVERITY-001, DD-SEVERITY-001 v1.1):
 
 **critical** - Immediate remediation required
 - Production service completely unavailable
@@ -572,24 +648,38 @@ After your investigation, assess the severity of the root cause using these leve
 - SLA violation in progress
 - Revenue-impacting outage
 - Affects >50% of users
-- High error rate (>10% of requests failing)
+- Example: All replicas of a Deployment are in CrashLoopBackOff — zero available endpoints, requests fail with 503
 
-**warning** - Remediation needed
+**high** - Urgent remediation needed
 - Significant service degradation (>50% performance loss)
-- Moderate error rate (1-10% of requests failing)
-- Production issue that needs attention
+- High error rate (>10% of requests failing)
+- Production issue escalating toward critical
 - Affects 10-50% of users
 - SLA at risk
-- Non-production critical issues
+- Example: 1 of 3 replicas OOMKilled and restarting — service degraded, another failure would cause outage
 
-**info** - Remediation recommended or informational
+**medium** - Remediation recommended
 - Minor service degradation (<50% performance loss)
-- Low error rate (<1% of requests failing)
-- Development/staging environment issues
+- Moderate error rate (1-10% of requests failing)
+- Non-production critical issues
 - Affects <10% of users
+- Staging/development critical issues
+- Example: 1 of 5 replicas in CrashLoopBackOff — 4 healthy replicas handle load, but headroom is reduced
+
+**low** - Remediation optional
+- Informational issues
 - Optimization opportunities
+- Development environment issues
+- No user impact
 - Capacity planning alerts
-- No immediate user impact
+- Example: Pod is over-provisioned (using 40% of CPU request with 10x limit) — no impact, wasted capacity
+
+**unknown** - Human triage required
+- Root cause could not be determined
+- Conflicting signals prevent confident assessment
+- Insufficient monitoring data or logs to evaluate impact
+- Novel condition with no precedent in the system
+- Example: Pod in CrashLoopBackOff but container logs are empty and no events provide context
 
 ## MCP Workflow Search Guidance
 
@@ -641,13 +731,13 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 **REQUIRED FORMAT** - Each field must be on its own line with section header:
 
 # root_cause_analysis
-{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low", "contributing_factors": ["factor1", "factor2"]}}
+{{"summary": "Brief summary of root cause", "severity": "critical|high|medium|low|unknown", "contributing_factors": ["factor1", "factor2"], "affectedResource": {{"kind": "Deployment", "name": "the-deployment-name", "namespace": "the-namespace"}}}}
 
 # confidence
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
 [{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
