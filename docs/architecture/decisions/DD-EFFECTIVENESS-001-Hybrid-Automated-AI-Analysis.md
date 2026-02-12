@@ -3,6 +3,8 @@
 **Date**: October 16, 2025
 **Status**: ✅ APPROVED
 **Confidence**: 95%
+
+**Note**: Per DD-017 v2.0, Level 1 (Automated Assessment) is in V1.0 scope. Level 2 (AI-Powered Analysis via HolmesGPT PostExec) remains V1.1.
 **Decision Makers**: Architecture Team, Product Owner
 **Replaces**: N/A (New decision)
 

@@ -932,10 +932,11 @@ histogram_quantile(0.95, effectiveness_ai_call_duration_seconds_bucket)
 | **BR-INS-010**: Multi-dimensional assessment | `AssessEffectiveness()` | E2E test: complete assessment workflow |
 
 **BR Range Allocation**:
-- **V1 Scope**: BR-INS-001 to BR-INS-010 (Core effectiveness assessment with graceful degradation strategy)
+- **V1.0 Scope (Level 1)**: BR-INS-001, BR-INS-002, BR-INS-005 (Automated assessment: dual spec hash, health checks, metrics, alert resolution, formula-based scoring, side-effect detection)
+- **V1.1 Scope (Level 2)**: BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010 (AI-powered analysis: HolmesGPT PostExec, pattern learning, batch processing)
 - **Reserved for V2**: BR-INS-011 to BR-INS-100 (Multi-cloud support: AWS CloudWatch, Azure Monitor, Datadog, GCP Monitoring; Advanced ML-based effectiveness prediction)
 
-**Rationale for Limited V1 Scope**: Effectiveness Monitor focuses on core assessment capabilities for Kubernetes-only environments, with graceful degradation (Week 5: insufficient data → Week 13+: full capability). V2 will expand to multi-cloud observability sources and ML-based prediction models.
+**Rationale for Limited V1 Scope**: Per DD-017 v2.0, Level 1 (V1.0) provides Day-1 value with no data dependency. Level 2 (V1.1) requires 8+ weeks of Level 1 assessment data for high-confidence AI analysis. V2 will expand to multi-cloud observability sources and ML-based prediction models.
 
 ---
 

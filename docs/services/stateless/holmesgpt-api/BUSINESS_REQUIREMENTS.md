@@ -53,7 +53,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Implementation Status**:
 - ✅ Implemented: 52 BRs (100% of V1.0 scope)
-- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (endpoint not exposed per DD-017)
+- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (PostExec endpoint deferred to V1.1; EM Level 1 exists in V1.0 per DD-017 v2.0 but does not call PostExec; Level 2 (V1.1) is the PostExec consumer)
 - BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
 - BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
 - BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
@@ -72,7 +72,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 |----------|--------|
 | `/api/v1/incident/analyze` | ✅ Available |
 | `/api/v1/recovery/analyze` | ✅ Available |
-| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017) |
+| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017); EM Level 2 consumer |
 
 **Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 
@@ -258,7 +258,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### Category 3: Post-Execution Analysis (BR-HAPI-POSTEXEC-001 to 005)
 
-> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md), the `/postexec/analyze` endpoint is deferred to V1.1. The Effectiveness Monitor service (the only consumer) is not available in V1.0. Implementation exists but endpoint is not exposed.
+> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) v2.0, the PostExec endpoint is deferred to V1.1. EM Level 1 exists in V1.0 but does not call PostExec. EM Level 2 (V1.1) is the PostExec consumer. Implementation exists but endpoint is not exposed.
 
 #### BR-HAPI-POSTEXEC-001: Post-Execution Effectiveness Analysis
 
@@ -288,7 +288,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - Integration: `test_sdk_integration.py` (post-execution analysis)
 - E2E: ⏸️ Skipped in V1.0 (DD-017)
 
-**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0. EM Level 1 (V1.0) does not call PostExec; Level 2 (V1.1) is the PostExec consumer (DD-017 v2.0)
 
 **Related BRs**: BR-HAPI-RECOVERY-001 (Recovery Analysis), BR-HAPI-001 (Investigation)
 
@@ -304,7 +304,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Priority**: P0 (CRITICAL)
 
-**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0 (DD-017)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0. EM Level 1 (V1.0) does not call PostExec; Level 2 (V1.1) is the PostExec consumer (DD-017 v2.0)
 
 **Related BRs**: BR-HAPI-POSTEXEC-001 (Core Post-Execution Analysis)
 
