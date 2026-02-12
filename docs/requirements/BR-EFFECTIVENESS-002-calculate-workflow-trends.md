@@ -1,10 +1,20 @@
 # BR-EFFECTIVENESS-002: Calculate Playbook Effectiveness Trends
 
+> **ARCHIVED** (February 2026)
+>
+> This BR describes trend calculation and REST API design that has been **superseded** by DD-017 v2.0.
+> Trend calculation and playbook effectiveness scoring are Level 2 capabilities (V1.1), not Level 1.
+> DD-017 v2.0 defines the authoritative EM Level 1 scope: automated health checks, metric comparison,
+> formula-based scoring, and audit event emission.
+>
+> **Authoritative source**: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md` (v2.0)
+> **V1.0 BRs**: BR-INS-001, BR-INS-002, BR-INS-005 (from DD-017 v2.0)
+
 **Business Requirement ID**: BR-EFFECTIVENESS-002
 **Category**: Effectiveness Monitor Service
 **Priority**: P1
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: ⚠️ ARCHIVED — Superseded by DD-017 v2.0
 **Date**: November 5, 2025
 
 ---

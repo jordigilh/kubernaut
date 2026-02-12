@@ -1,10 +1,21 @@
 # BR-EFFECTIVENESS-001: Consume Success Rate Data
 
+> **ARCHIVED** (February 2026)
+>
+> This BR describes a Context API polling design that has been **superseded** by DD-017 v2.0.
+> DD-017 v2.0 defines the authoritative EM Level 1 architecture: a Kubernetes controller
+> watching RemediationRequest CRDs, performing automated assessment, and emitting structured
+> audit events to DataStorage. The Context API polling and trend table design described here
+> is NOT being implemented.
+>
+> **Authoritative source**: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md` (v2.0)
+> **V1.0 BRs**: BR-INS-001, BR-INS-002, BR-INS-005 (from DD-017 v2.0)
+
 **Business Requirement ID**: BR-EFFECTIVENESS-001
 **Category**: Effectiveness Monitor Service
 **Priority**: P1
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: ⚠️ ARCHIVED — Superseded by DD-017 v2.0
 **Date**: November 5, 2025
 
 ---
