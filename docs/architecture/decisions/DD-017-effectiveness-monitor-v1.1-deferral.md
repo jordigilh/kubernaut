@@ -1,7 +1,7 @@
 # DD-017: Effectiveness Monitor Service — V1.0 Level 1 + V1.1 Level 2
 
-**Status**: ✅ APPROVED (v2.0 — Partial Reinstatement)
-**Last Reviewed**: 2026-02-05
+**Status**: ✅ APPROVED (v2.1 — Design Refinements)
+**Last Reviewed**: 2026-02-09
 **Confidence**: 95%
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.1 | 2026-02-09 | Architecture Team | Design refinements from gap analysis: (1) Correlation ID is RR.Name, not UID. (2) EM reads exclusively from audit traces, never from RR CRD. (3) RO must query API server directly for target resource spec (not cache). (4) No graceful degradation for Prometheus/AlertManager — fail-fast via config toggles. (5) Superseded BR-EFFECTIVENESS-001/002/003 and archived stale docs. (6) DD-EFFECTIVENESS-002 DB-backed idempotency superseded — EM uses audit-event dedup via DS. |
 | 2.0 | 2026-02-05 | Architecture Team | Partial reinstatement: Level 1 (automated assessment) moves to V1.0. Level 2 (AI-powered analysis) remains V1.1. Dual spec hash design, audit-trace storage, cooldown alignment, RR immutability via CEL. Supersedes v1.0 full deferral. |
 | 1.0 | 2025-12-01 | Architecture Team | Initial DD-017: Full Effectiveness Monitor deferred to V1.1 due to end-of-2025 timeline constraint |
 
@@ -201,20 +202,53 @@ All EM assessment data is stored as **structured audit events**, leveraging the 
 }
 ```
 
-**No new database tables**. DataStorage correlates RO and EM audit events by `remediation_request_uid` to build the complete picture. DS may add internal indexes on hash columns for query performance — this is a DS implementation detail.
+**No new database tables**. DataStorage correlates RO and EM audit events by **`RR.Name`** (the RemediationRequest name, which is the correlation ID across all audit traces) to build the complete picture. DS may add internal indexes on hash columns for query performance — this is a DS implementation detail.
 
 The existing `migrations/v1.1/006_effectiveness_assessment.sql` (`action_assessments`, `effectiveness_results` tables) can be repurposed as DS-internal materialized views for performance optimization, not as a separate write target.
 
-### Graceful Degradation
+> **v2.1 Clarification**: DD-EFFECTIVENESS-002's DB-backed idempotency design (direct PostgreSQL tables for `effectiveness_results` and `action_assessments`) is superseded. The EM does not have its own database connection. Idempotency is achieved through audit event deduplication in DataStorage (DS checks for existing `effectiveness.assessment.completed` event for the given RR.Name before accepting a new one).
 
-The EM operates on a best-effort basis for external dependencies:
+### EM Data Source: Audit Traces Only
 
-| Dependency | Unavailable Behavior |
-|------------|---------------------|
-| K8s API | Assessment fails — retry on next reconcile |
-| Prometheus | Skip metric comparison, compute score from health checks + signal resolution only |
-| AlertManager | Skip alert resolution check, mark as `unknown` |
-| DataStorage | Buffer audit events locally, retry delivery |
+> **v2.1 Clarification**: The EM MUST NOT read from the RemediationRequest CRD directly. The RR is transient — it may be deleted, tampered, or have its status modified after the EM assessment window. The EM reads all required data (correlation ID, signal metadata, workflow details, completion timestamps) from the **audit trace** stored in DataStorage.
+>
+> This guarantees:
+> - EM can assess remediations even if the RR CRD is deleted before assessment
+> - EM is immune to RR status tampering
+> - EM can handle all RR terminal states (Completed, Failed, TimedOut) uniformly
+> - The assessment is based on the immutable audit record, not mutable K8s state
+
+### RO Pre-Remediation Hash: Direct API Server Query
+
+> **v2.1 Clarification**: When the RO computes the `pre_remediation_spec_hash`, it MUST query the Kubernetes API server directly (`client.Get()` with uncached reader) for the target resource's current `.spec`. The RO does NOT cache full resource specs — it only caches partial object metadata for scope management. The hash MUST be computed and emitted in the `remediation.workflow_created` audit event BEFORE creating the WorkflowExecution CRD, ensuring the hash captures the true pre-remediation state.
+
+### Dependency Configuration: Fail-Fast, No Fallbacks
+
+> **v2.1 Clarification**: The EM requires **deterministic outcomes**. There is no graceful degradation for Prometheus or AlertManager.
+
+The EM configuration (`config.yaml`) includes individual toggles for each external dependency:
+
+```yaml
+# config.yaml
+prometheus:
+  enabled: true          # Enable/disable Prometheus metric comparison
+  url: "http://prometheus:9090"
+alertmanager:
+  enabled: true          # Enable/disable AlertManager alert resolution check
+  url: "http://alertmanager:9093"
+```
+
+**Startup behavior**:
+- If `prometheus.enabled: true` and Prometheus is unreachable → **EM fails to start** (fail-fast)
+- If `alertmanager.enabled: true` and AlertManager is unreachable → **EM fails to start** (fail-fast)
+- If either is `enabled: false` → that capability is excluded from the assessment and scoring formula is adjusted accordingly (the weight is redistributed to remaining capabilities)
+
+| Dependency | `enabled: true` + unreachable | `enabled: false` |
+|------------|-------------------------------|-------------------|
+| K8s API | Assessment fails — retry on next reconcile | N/A (always required) |
+| Prometheus | **EM fails to start** | Skip metric comparison, adjust scoring weights |
+| AlertManager | **EM fails to start** | Skip alert resolution, adjust scoring weights |
+| DataStorage | Buffer audit events locally, retry delivery | N/A (always required) |
 
 ### New Service
 
@@ -301,7 +335,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 - New service in V1.0 (`cmd/effectivenessmonitor/`) adds operational complexity
 - RBAC requires Prometheus and AlertManager access — not all clusters may have these
-  - **Mitigation**: Graceful degradation (skip unavailable dependencies)
+  - **Mitigation**: Configuration toggles (`prometheus.enabled`, `alertmanager.enabled`) allow disabling at deployment time. When enabled, fail-fast ensures deterministic outcomes.
 - Formula-based scoring may not capture nuance (e.g., "CPU dropped 3% but crossed below alert threshold" vs. "CPU dropped 3% but still critical")
   - **Mitigation**: Level 2 AI analysis in V1.1 addresses nuanced cases
 
@@ -311,7 +345,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 - **DD-HAPI-016**: Remediation History Context Enrichment (depends on this DD for effectiveness data)
 - **DD-EFFECTIVENESS-001**: Hybrid Automated + AI Analysis approach (Level 1 architecture, Level 2 triggers)
-- **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency for assessments)
+- **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
 - **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
 - **DD-EVENT-001**: Controller Event Registry (event reason constants)
@@ -329,5 +363,5 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ---
 
-**Status**: ✅ APPROVED (v2.0) — Level 1 in V1.0, Level 2 in V1.1
+**Status**: ✅ APPROVED (v2.1) — Level 1 in V1.0, Level 2 in V1.1
 **Next Review**: V1.1 planning (estimated Q2 2026)

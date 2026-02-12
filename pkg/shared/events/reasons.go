@@ -238,6 +238,25 @@ const (
 )
 
 // ============================================================
+// Effectiveness Monitor Controller Events
+// ============================================================
+
+const (
+	// EventReasonRemediationIneffective is emitted when the Effectiveness Monitor
+	// determines that a remediation's effectiveness score is below the configured
+	// threshold (default 0.5). Indicates the remediation did not sufficiently
+	// improve the situation and operators should investigate.
+	// Type: Warning
+	// DD-017 v2.0: Level 1 Automated Assessment
+	EventReasonRemediationIneffective = "RemediationIneffective"
+
+	// EventReasonEffectivenessAssessed is emitted when the Effectiveness Monitor
+	// completes a post-remediation assessment (regardless of score).
+	// DD-017 v2.0: Level 1 Automated Assessment
+	EventReasonEffectivenessAssessed = "EffectivenessAssessed"
+)
+
+// ============================================================
 // Shared Events (used by multiple controllers)
 // ============================================================
 
