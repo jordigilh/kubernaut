@@ -174,6 +174,11 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		"risk_tolerance": schema.Labels.RiskTolerance,
 	}
 
+	// DD-WORKFLOW-016/017: Include action_type for discovery indexing
+	if schema.Labels.ActionType != "" {
+		labels["action_type"] = schema.Labels.ActionType
+	}
+
 	// Add optional labels if present
 	if schema.Labels.BusinessCategory != "" {
 		labels["business_category"] = schema.Labels.BusinessCategory

@@ -118,6 +118,12 @@ type WorkflowSchemaLabels struct {
 	// Examples: "pod", "deployment", "node", "service"
 	Component string `yaml:"component,omitempty" json:"component,omitempty" validate:"omitempty"`
 
+	// ActionType is the action type for workflow discovery indexing (REQUIRED)
+	// DD-WORKFLOW-016: Used as FK into action_type_taxonomy for three-step discovery
+	// DD-WORKFLOW-017: Extracted from workflow-schema.yaml during OCI-based registration
+	// Examples: "restart_pod", "scale_deployment", "drain_node"
+	ActionType string `yaml:"action_type" json:"action_type" validate:"required"`
+
 	// CustomLabels contains additional operator-defined labels
 	// No character limits (unlike K8s labels)
 	CustomLabels map[string]string `yaml:"-" json:"-"` // Populated from remaining YAML keys
