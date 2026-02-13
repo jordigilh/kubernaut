@@ -43,7 +43,7 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
     def test_get_workflow_by_id(self) -> None:
         """Test case for get_workflow_by_id
 
-        Get workflow by UUID
+        Get workflow by UUID (with optional security gate)
         """
         pass
 
@@ -51,13 +51,6 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
         """Test case for list_workflows
 
         List workflows
-        """
-        pass
-
-    def test_search_workflows(self) -> None:
-        """Test case for search_workflows
-
-        Label-based workflow search
         """
         pass
 

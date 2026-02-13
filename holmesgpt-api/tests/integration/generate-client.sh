@@ -26,6 +26,15 @@ if [ ! -f "${OPENAPI_SPEC}" ]; then
     exit 1
 fi
 
+# Skip generation if client already exists and --force is not passed.
+# This avoids failures in nested container environments (e.g., CI Docker builds)
+# where podman/docker are unavailable for running the generator image.
+if [ -d "${CLIENT_OUTPUT}" ] && [ "${1:-}" != "--force" ]; then
+    echo "✅ Client already exists at ${CLIENT_OUTPUT}, skipping generation."
+    echo "   Pass --force to regenerate."
+    exit 0
+fi
+
 # Remove old client if it exists
 if [ -d "${CLIENT_OUTPUT}" ]; then
     echo "   Removing old client..."
@@ -43,7 +52,13 @@ if command -v podman &> /dev/null; then
 elif command -v docker &> /dev/null; then
     CONTAINER_RUNTIME="docker"
 else
-    echo "❌ Error: Neither podman nor docker found. Please install one."
+    echo "⚠️  Warning: Neither podman nor docker found."
+    echo "   Cannot regenerate client. If the client directory exists, tests can still run."
+    if [ -d "${CLIENT_OUTPUT}" ]; then
+        echo "✅ Using existing client at ${CLIENT_OUTPUT}"
+        exit 0
+    fi
+    echo "❌ Error: No container runtime and no pre-existing client. Cannot proceed."
     exit 1
 fi
 

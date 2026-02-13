@@ -360,7 +360,11 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | Event Type | Description | Priority |
 |------------|-------------|----------|
 | `datastorage.workflow.created` | Workflow added to catalog (business logic) | P0 |
-| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable) | P0 |
+| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable, deprecate) | P0 |
+| `workflow.catalog.actions_listed` | Step 1: Action types returned for signal context (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.workflows_listed` | Step 2: Workflows returned for selected action type (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.workflow_retrieved` | Step 3: Single workflow parameter schema retrieved (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.selection_validated` | Post-selection: HAPI validation re-query result (DD-WORKFLOW-014 v3.0) | P0 |
 
 **Note**: Data Storage **NO LONGER** audits meta-operations (audit writes, DLQ fallback) per DD-AUDIT-002 V2.0.1 (December 14, 2025). These were redundant because:
 - **Successful writes**: Event in DB **IS** proof of success
@@ -369,7 +373,8 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 **What Data Storage DOES Audit**: Workflow catalog operations involve state changes and business decisions:
 - Workflow creation (sets `status="active"`, marks as latest version)
-- Workflow updates (mutable field changes, status transitions, disable operations)
+- Workflow updates (mutable field changes, status transitions, disable/deprecate operations)
+- Workflow discovery (three-step protocol queries per DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016)
 
 **Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs (audit business operations, not CRUD operations)
 

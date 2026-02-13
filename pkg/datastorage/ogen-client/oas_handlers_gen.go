@@ -1103,7 +1103,14 @@ func (s *Server) handleGetMetricsRequest(args [0]string, argsEscaped bool, w htt
 // handleGetWorkflowByIDRequest handles getWorkflowByID operation.
 //
 // Retrieve a specific workflow by its UUID.
-// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key).
+// Step 3 of the three-step workflow discovery protocol when context filters are provided.
+// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+// **Without context filters**: Returns workflow by ID (existing behavior).
+// **With context filters**: Returns workflow only if it matches the signal context.
+// Returns 404 if the workflow exists but does not match the context filters
+// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
 //
 // GET /api/v1/workflows/{workflow_id}
 func (s *Server) handleGetWorkflowByIDRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -1193,7 +1200,7 @@ func (s *Server) handleGetWorkflowByIDRequest(args [1]string, argsEscaped bool, 
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    GetWorkflowByIDOperation,
-			OperationSummary: "Get workflow by UUID",
+			OperationSummary: "Get workflow by UUID (with optional security gate)",
 			OperationID:      "getWorkflowByID",
 			Body:             nil,
 			RawBody:          rawBody,
@@ -1202,6 +1209,34 @@ func (s *Server) handleGetWorkflowByIDRequest(args [1]string, argsEscaped bool, 
 					Name: "workflow_id",
 					In:   "path",
 				}: params.WorkflowID,
+				{
+					Name: "severity",
+					In:   "query",
+				}: params.Severity,
+				{
+					Name: "component",
+					In:   "query",
+				}: params.Component,
+				{
+					Name: "environment",
+					In:   "query",
+				}: params.Environment,
+				{
+					Name: "priority",
+					In:   "query",
+				}: params.Priority,
+				{
+					Name: "custom_labels",
+					In:   "query",
+				}: params.CustomLabels,
+				{
+					Name: "detected_labels",
+					In:   "query",
+				}: params.DetectedLabels,
+				{
+					Name: "remediation_id",
+					In:   "query",
+				}: params.RemediationID,
 			},
 			Raw: r,
 		}
@@ -1357,6 +1392,189 @@ func (s *Server) handleHealthCheckRequest(args [0]string, argsEscaped bool, w ht
 	}
 
 	if err := encodeHealthCheckResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleListAvailableActionsRequest handles listAvailableActions operation.
+//
+// Step 1 of the three-step workflow discovery protocol.
+// Returns action types from the taxonomy that have active workflows matching
+// the provided signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **Behavior**:
+// - Queries action_type_taxonomy joined with remediation_workflow_catalog
+// - Filters by active workflows matching signal context (severity, component, environment, priority)
+// - Returns action types with descriptions and workflow counts
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions
+func (s *Server) handleListAvailableActionsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("listAvailableActions"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/workflows/actions"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAvailableActionsOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ListAvailableActionsOperation,
+			ID:   "listAvailableActions",
+		}
+	)
+	params, err := decodeListAvailableActionsParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response ListAvailableActionsRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ListAvailableActionsOperation,
+			OperationSummary: "List available action types",
+			OperationID:      "listAvailableActions",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "severity",
+					In:   "query",
+				}: params.Severity,
+				{
+					Name: "component",
+					In:   "query",
+				}: params.Component,
+				{
+					Name: "environment",
+					In:   "query",
+				}: params.Environment,
+				{
+					Name: "priority",
+					In:   "query",
+				}: params.Priority,
+				{
+					Name: "custom_labels",
+					In:   "query",
+				}: params.CustomLabels,
+				{
+					Name: "detected_labels",
+					In:   "query",
+				}: params.DetectedLabels,
+				{
+					Name: "remediation_id",
+					In:   "query",
+				}: params.RemediationID,
+				{
+					Name: "offset",
+					In:   "query",
+				}: params.Offset,
+				{
+					Name: "limit",
+					In:   "query",
+				}: params.Limit,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ListAvailableActionsParams
+			Response = ListAvailableActionsRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackListAvailableActionsParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ListAvailableActions(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ListAvailableActions(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeListAvailableActionsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -1653,6 +1871,195 @@ func (s *Server) handleListWorkflowsRequest(args [0]string, argsEscaped bool, w 
 	}
 
 	if err := encodeListWorkflowsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleListWorkflowsByActionTypeRequest handles listWorkflowsByActionType operation.
+//
+// Step 2 of the three-step workflow discovery protocol.
+// Returns all active workflows matching the specified action type and
+// signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+// before selecting one. Do not select from an incomplete list.
+// **Behavior**:
+// - Filters by action_type + signal context (severity, component, environment, priority)
+// - Excludes disabled and deprecated workflows
+// - Returns workflow metadata including effectiveness data
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions/{action_type}
+func (s *Server) handleListWorkflowsByActionTypeRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("listWorkflowsByActionType"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/workflows/actions/{action_type}"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListWorkflowsByActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ListWorkflowsByActionTypeOperation,
+			ID:   "listWorkflowsByActionType",
+		}
+	)
+	params, err := decodeListWorkflowsByActionTypeParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response ListWorkflowsByActionTypeRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ListWorkflowsByActionTypeOperation,
+			OperationSummary: "List workflows for action type",
+			OperationID:      "listWorkflowsByActionType",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "action_type",
+					In:   "path",
+				}: params.ActionType,
+				{
+					Name: "severity",
+					In:   "query",
+				}: params.Severity,
+				{
+					Name: "component",
+					In:   "query",
+				}: params.Component,
+				{
+					Name: "environment",
+					In:   "query",
+				}: params.Environment,
+				{
+					Name: "priority",
+					In:   "query",
+				}: params.Priority,
+				{
+					Name: "custom_labels",
+					In:   "query",
+				}: params.CustomLabels,
+				{
+					Name: "detected_labels",
+					In:   "query",
+				}: params.DetectedLabels,
+				{
+					Name: "remediation_id",
+					In:   "query",
+				}: params.RemediationID,
+				{
+					Name: "offset",
+					In:   "query",
+				}: params.Offset,
+				{
+					Name: "limit",
+					In:   "query",
+				}: params.Limit,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ListWorkflowsByActionTypeParams
+			Response = ListWorkflowsByActionTypeRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackListWorkflowsByActionTypeParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ListWorkflowsByActionType(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ListWorkflowsByActionType(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeListWorkflowsByActionTypeResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -2552,156 +2959,6 @@ func (s *Server) handleReleaseLegalHoldRequest(args [1]string, argsEscaped bool,
 	}
 
 	if err := encodeReleaseLegalHoldResponse(response, w, span); err != nil {
-		defer recordError("EncodeResponse", err)
-		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
-			s.cfg.ErrorHandler(ctx, w, r, err)
-		}
-		return
-	}
-}
-
-// handleSearchWorkflowsRequest handles searchWorkflows operation.
-//
-// Search workflows using label-based matching with wildcard support and weighted scoring.
-// **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-// **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-// **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
-// **Behavior**:
-// - Mandatory filters: signal_type, severity, component, environment, priority
-// - Optional filters: custom_labels, detected_labels
-// - Wildcard support: "*" matches any non-null value
-// - Weighted scoring: Exact matches > Wildcard matches
-// - Returns top_k results sorted by confidence score (0.0-1.0).
-//
-// POST /api/v1/workflows/search
-func (s *Server) handleSearchWorkflowsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
-	statusWriter := &codeRecorder{ResponseWriter: w}
-	w = statusWriter
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("searchWorkflows"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/v1/workflows/search"),
-	}
-
-	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), SearchWorkflowsOperation,
-		trace.WithAttributes(otelAttrs...),
-		serverSpanKind,
-	)
-	defer span.End()
-
-	// Add Labeler to context.
-	labeler := &Labeler{attrs: otelAttrs}
-	ctx = contextWithLabeler(ctx, labeler)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		elapsedDuration := time.Since(startTime)
-
-		attrSet := labeler.AttributeSet()
-		attrs := attrSet.ToSlice()
-		code := statusWriter.status
-		if code != 0 {
-			codeAttr := semconv.HTTPResponseStatusCode(code)
-			attrs = append(attrs, codeAttr)
-			span.SetAttributes(codeAttr)
-		}
-		attrOpt := metric.WithAttributes(attrs...)
-
-		// Increment request counter.
-		s.requests.Add(ctx, 1, attrOpt)
-
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
-	}()
-
-	var (
-		recordError = func(stage string, err error) {
-			span.RecordError(err)
-
-			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
-			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
-			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
-			// max redirects exceeded), in which case status MUST be set to Error.
-			code := statusWriter.status
-			if code < 100 || code >= 500 {
-				span.SetStatus(codes.Error, stage)
-			}
-
-			attrSet := labeler.AttributeSet()
-			attrs := attrSet.ToSlice()
-			if code != 0 {
-				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
-			}
-
-			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		err          error
-		opErrContext = ogenerrors.OperationContext{
-			Name: SearchWorkflowsOperation,
-			ID:   "searchWorkflows",
-		}
-	)
-
-	var rawBody []byte
-	request, rawBody, close, err := s.decodeSearchWorkflowsRequest(r)
-	if err != nil {
-		err = &ogenerrors.DecodeRequestError{
-			OperationContext: opErrContext,
-			Err:              err,
-		}
-		defer recordError("DecodeRequest", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-	defer func() {
-		if err := close(); err != nil {
-			recordError("CloseRequest", err)
-		}
-	}()
-
-	var response SearchWorkflowsRes
-	if m := s.cfg.Middleware; m != nil {
-		mreq := middleware.Request{
-			Context:          ctx,
-			OperationName:    SearchWorkflowsOperation,
-			OperationSummary: "Label-based workflow search",
-			OperationID:      "searchWorkflows",
-			Body:             request,
-			RawBody:          rawBody,
-			Params:           middleware.Parameters{},
-			Raw:              r,
-		}
-
-		type (
-			Request  = *WorkflowSearchRequest
-			Params   = struct{}
-			Response = SearchWorkflowsRes
-		)
-		response, err = middleware.HookMiddleware[
-			Request,
-			Params,
-			Response,
-		](
-			m,
-			mreq,
-			nil,
-			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.SearchWorkflows(ctx, request)
-				return response, err
-			},
-		)
-	} else {
-		response, err = s.h.SearchWorkflows(ctx, request)
-	}
-	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	if err := encodeSearchWorkflowsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

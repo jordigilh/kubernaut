@@ -38,6 +38,7 @@ class TestRemediationWorkflow(unittest.TestCase):
             return RemediationWorkflow(
                 workflow_id = '',
                 workflow_name = '',
+                action_type = 'ScaleReplicas',
                 version = '',
                 name = '',
                 description = '',
@@ -90,6 +91,7 @@ class TestRemediationWorkflow(unittest.TestCase):
         else:
             return RemediationWorkflow(
                 workflow_name = '',
+                action_type = 'ScaleReplicas',
                 version = '',
                 name = '',
                 description = '',

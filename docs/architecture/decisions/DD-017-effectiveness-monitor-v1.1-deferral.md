@@ -1,7 +1,7 @@
 # DD-017: Effectiveness Monitor Service — V1.0 Level 1 + V1.1 Level 2
 
-**Status**: ✅ APPROVED (v2.2 — EA CRD Pattern)
-**Last Reviewed**: 2026-02-09
+**Status**: ✅ APPROVED (v2.3 — EA CRD Pattern)
+**Last Reviewed**: 2026-02-12
 **Confidence**: 95%
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
 | 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
 | 2.1 | 2026-02-09 | Architecture Team | Design refinements from gap analysis: (1) Correlation ID is RR.Name, not UID. (2) EM reads exclusively from audit traces, never from RR CRD. (3) RO must query API server directly for target resource spec (not cache). (4) No graceful degradation for Prometheus/AlertManager — fail-fast via config toggles. (5) Superseded BR-EFFECTIVENESS-001/002/003 and archived stale docs. (6) DD-EFFECTIVENESS-002 DB-backed idempotency superseded — EM uses audit-event dedup via DS. |
 | 2.0 | 2026-02-05 | Architecture Team | Partial reinstatement: Level 1 (automated assessment) moves to V1.0. Level 2 (AI-powered analysis) remains V1.1. Dual spec hash design, audit-trace storage, cooldown alignment, RR immutability via CEL. Supersedes v1.0 full deferral. |
@@ -144,6 +145,8 @@ recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationIneffec
 > This provides: restart recovery via EA CRD `status.components`, `kubectl` observability, assessment deadline enforcement, and consistent lifecycle ownership by the RO.
 >
 > See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 9.4 for the full EA CRD definition and Section 3 for the lifecycle sequence diagram.
+>
+> **v2.3 Clarification**: EA CRD `validityDeadline` is in **status** (not spec), computed by the EM on first reconciliation. Status also includes `prometheusCheckAfter` and `alertManagerCheckAfter` for derived timing. The EM emits an `effectiveness.assessment.scheduled` audit event when scheduling the assessment, capturing these derived timestamps for audit trail correlation.
 
 ### Stabilization Window & Cooldown Alignment
 
@@ -182,7 +185,9 @@ All EM assessment data is stored as **structured audit events**, leveraging the 
 }
 ```
 
-**EM audit event** (after assessment):
+**EM audit events**:
+- `effectiveness.assessment.scheduled` (v2.3): Emitted when the EM schedules the assessment; captures derived timing (validityDeadline, prometheusCheckAfter, alertManagerCheckAfter).
+- `effectiveness.assessment.completed`: Emitted after assessment completes:
 ```json
 {
     "event_type": "effectiveness.assessment.completed",
@@ -379,6 +384,6 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ---
 
-**Status**: ✅ APPROVED (v2.2) — Level 1 in V1.0 (EA CRD pattern), Level 2 in V1.1
+**Status**: ✅ APPROVED (v2.3) — Level 1 in V1.0 (EA CRD pattern), Level 2 in V1.1
 **Authoritative Integration Architecture**: [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md)
 **Next Review**: V1.1 planning (estimated Q2 2026)

@@ -1,6 +1,7 @@
 {
 	"go.buildTags": "unit,integration,e2e",
 	"go.testTags": "unit,integration,e2e",
+	"telemetry.telemetryLevel": "off",
 	"gopls": {
 		"build.buildFlags": [
 			"-tags=unit,integration,e2e"

@@ -170,6 +170,7 @@ execution:
 
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
+				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
 				Version:         "v1.0.0",
 				Name:            "OOM Recovery - Conservative Memory Increase",
 				Description:     "Increases memory limits conservatively for OOMKilled pods",
@@ -243,6 +244,7 @@ execution:
 
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
+				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
 				Version:         "v1.1.0",
 				Name:            "OOM Recovery - Conservative Memory Increase (Improved)",
 				Description:     "Improved version with better memory calculation",
@@ -325,6 +327,7 @@ execution:
 
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
+				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
 				Version:         "v2.0.0",
 				Name:            "OOM Recovery - Major Refactor",
 				Description:     "Major version with horizontal scaling support",
@@ -367,59 +370,10 @@ execution:
 			testLogger.Info("✅ Only v2.0.0 is marked as latest", "latest_count", latestCount)
 		})
 
-		It("should return flat response structure in search (DD-WORKFLOW-002 v3.0)", func() {
-			testLogger.Info("🔍 Testing search response structure...")
-
-			// V1.0: Label-only search with 5 mandatory filters (DD-WORKFLOW-001 v1.4)
-			// DD-API-001: Use typed OpenAPI struct
-			topK := 10
-			searchReq := dsgen.WorkflowSearchRequest{
-				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  "OOMKilled",                                 // mandatory
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
-					Component:   "deployment",                                // mandatory
-					Environment: "production",                                // mandatory
-					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
-				},
-				TopK: dsgen.NewOptInt(topK),
-			}
-
-			resp, err := DSClient.SearchWorkflows(ctx, &searchReq)
-			Expect(err).ToNot(HaveOccurred())
-			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
-			testLogger.Info("Search response", "status", 201)
-
-			Expect(searchResults).ToNot(BeNil())
-			Expect(searchResults.Workflows).ToNot(BeNil())
-
-			// DD-WORKFLOW-002 v3.0: Verify flat response structure
-			workflows := searchResults.Workflows
-			Expect(len(workflows)).To(BeNumerically(">", 0), "Should return at least one workflow")
-
-			// Check first workflow has flat structure
-			firstWorkflow := workflows[0]
-
-			// DD-WORKFLOW-002 v3.0: workflow_id is UUID (top-level, not nested)
-			workflowID := firstWorkflow.WorkflowID.String()
-			Expect(workflowID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "workflow_id should be UUID format")
-
-			// DD-WORKFLOW-002 v3.0: 'title' field exists (typed as string in generated client)
-			Expect(firstWorkflow.Title).ToNot(BeEmpty(), "Response should have non-empty 'title' field")
-
-			// DD-WORKFLOW-002 v3.0: 'signal_type' (singular string) instead of 'signal_types' (array)
-			Expect(firstWorkflow.SignalType).ToNot(BeEmpty(), "Response should have 'signal_type' field (singular)")
-
-			// DD-WORKFLOW-002 v3.0: 'confidence' at top level
-			Expect(firstWorkflow.Confidence).ToNot(BeNil(), "Response should have 'confidence' at top level")
-
-			// DD-WORKFLOW-002 v3.0: Typed response enforces flat structure
-			// (No nested 'workflow' object possible in generated client)
-
-			testLogger.Info("✅ Flat response structure verified",
-				"workflow_id", workflowID,
-				"signal_type", firstWorkflow.SignalType)
-		})
+		// REMOVED: "should return flat response structure in search" test case
+		// DD-HAPI-017: POST /api/v1/workflows/search endpoint removed.
+		// Search response structure testing replaced by discovery endpoint E2E tests
+		// in 04_workflow_discovery_test.go.
 
 		It("should retrieve workflow by UUID", func() {
 			testLogger.Info("🔍 Getting workflow by UUID...")

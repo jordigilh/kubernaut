@@ -242,18 +242,40 @@ const (
 // ============================================================
 
 const (
+	// EventReasonAssessmentStarted is emitted when an EffectivenessAssessment
+	// transitions from Pending to Assessing (assessment processing begins).
+	// Priority: P1
+	EventReasonAssessmentStarted = "AssessmentStarted"
+
+	// EventReasonEffectivenessAssessed is emitted when the Effectiveness Monitor
+	// completes a post-remediation assessment with score at or above threshold.
+	// Priority: P1
+	// DD-017 v2.0: Level 1 Automated Assessment
+	EventReasonEffectivenessAssessed = "EffectivenessAssessed"
+
 	// EventReasonRemediationIneffective is emitted when the Effectiveness Monitor
 	// determines that a remediation's effectiveness score is below the configured
 	// threshold (default 0.5). Indicates the remediation did not sufficiently
 	// improve the situation and operators should investigate.
 	// Type: Warning
+	// Priority: P1
 	// DD-017 v2.0: Level 1 Automated Assessment
 	EventReasonRemediationIneffective = "RemediationIneffective"
 
-	// EventReasonEffectivenessAssessed is emitted when the Effectiveness Monitor
-	// completes a post-remediation assessment (regardless of score).
-	// DD-017 v2.0: Level 1 Automated Assessment
-	EventReasonEffectivenessAssessed = "EffectivenessAssessed"
+	// EventReasonAssessmentExpired is emitted when the validity window expires
+	// before the assessment can collect sufficient data. The EA is completed
+	// with reason "expired" and whatever partial data was collected.
+	// Type: Warning
+	// Priority: P1
+	// ADR-EM-001: Validity window enforcement
+	EventReasonAssessmentExpired = "AssessmentExpired"
+
+	// EventReasonComponentAssessed is emitted when an individual component
+	// (health, alert, metrics, hash) completes its assessment. The component
+	// name is included in the event message for differentiation.
+	// Type: Normal (success) or Warning (error)
+	// Priority: P2
+	EventReasonComponentAssessed = "ComponentAssessed"
 )
 
 // ============================================================

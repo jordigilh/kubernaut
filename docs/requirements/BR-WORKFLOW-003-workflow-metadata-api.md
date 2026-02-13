@@ -1,10 +1,14 @@
 # BR-WORKFLOW-003: Workflow Metadata API
 
+> **SUPERSEDED** by [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) and [DD-WORKFLOW-012](../architecture/decisions/DD-WORKFLOW-012-workflow-immutability-constraints.md).
+>
+> DD-WORKFLOW-012 establishes workflow immutability -- metadata updates after registration are not permitted. DD-WORKFLOW-017 defines the authoritative registration flow where all metadata is extracted from the OCI image's `/workflow-schema.yaml` (per ADR-043). The metadata update API (`PATCH .../metadata`) and tag-based filtering defined in this document conflict with the immutability model. Refer to DD-WORKFLOW-016 for the current discovery and filtering design.
+
 **Business Requirement ID**: BR-WORKFLOW-003
 **Category**: Workflow Catalog Service
 **Priority**: P1
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: **SUPERSEDED** by DD-WORKFLOW-017, DD-WORKFLOW-012
 **Date**: November 5, 2025
 
 ---

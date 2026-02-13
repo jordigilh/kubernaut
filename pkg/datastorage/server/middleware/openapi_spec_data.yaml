@@ -83,9 +83,16 @@ tags:
       Implements BR-STORAGE-021.
   - name: Workflow Catalog API
     description: |
-      Workflow catalog management and label-based search.
-      Implements BR-STORAGE-013, BR-STORAGE-014.
-      V1.0: Label-only search (no embeddings/semantic search).
+      Workflow catalog management and three-step discovery protocol.
+      Implements BR-STORAGE-013, BR-STORAGE-014, BR-HAPI-017-001.
+      V1.0: Label-only matching via action_type taxonomy (DD-WORKFLOW-016).
+  - name: Workflow Discovery API
+    description: |
+      Three-step workflow discovery protocol for LLM-driven remediation.
+      Step 1: List available action types (GET /actions)
+      Step 2: List workflows for action type (GET /actions/{action_type})
+      Step 3: Get workflow with security gate (GET /workflows/{id} + context filters)
+      Authority: DD-WORKFLOW-016, DD-HAPI-017.
   - name: Health
     description: Health check endpoints (DD-007 graceful shutdown support)
   - name: Metrics
@@ -96,39 +103,198 @@ tags:
       Implements BR-AUDIT-006 (SOC2 compliance).
 
 paths:
-  /api/v1/workflows/search:
-    post:
+  /api/v1/workflows/actions:
+    get:
       tags:
-        - Workflow Catalog API
-      summary: Label-based workflow search
+        - Workflow Discovery API
+      summary: List available action types
       description: |
-        Search workflows using label-based matching with wildcard support and weighted scoring.
+        Step 1 of the three-step workflow discovery protocol.
+        Returns action types from the taxonomy that have active workflows matching
+        the provided signal context filters.
 
-        **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-
-        **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-        **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
+        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
 
         **Behavior**:
-        - Mandatory filters: signal_type, severity, component, environment, priority
-        - Optional filters: custom_labels, detected_labels
-        - Wildcard support: "*" matches any non-null value
-        - Weighted scoring: Exact matches > Wildcard matches
-        - Returns top_k results sorted by confidence score (0.0-1.0)
-      operationId: searchWorkflows
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowSearchRequest'
+        - Queries action_type_taxonomy joined with remediation_workflow_catalog
+        - Filters by active workflows matching signal context (severity, component, environment, priority)
+        - Returns action types with descriptions and workflow counts
+        - Paginated (default 10 per page)
+        - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0)
+      operationId: listAvailableActions
+      parameters:
+        - name: severity
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: Signal severity level
+        - name: component
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Kubernetes resource type (pod, deployment, node, etc.)
+        - name: environment
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Target environment (production, staging, etc.)
+        - name: priority
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: Business priority level
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded custom labels (e.g., {\"constraint\":[\"cost-constrained\"]})"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded detected labels (e.g., {\"gitOpsManaged\":true})"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+          description: Pagination limit (max 100)
       responses:
         '200':
-          description: Workflow search results
+          description: Action types with matching workflow counts
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkflowSearchResponse'
+                $ref: '#/components/schemas/ActionTypeListResponse'
+        '400':
+          description: Validation error (missing required filters)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/actions/{action_type}:
+    get:
+      tags:
+        - Workflow Discovery API
+      summary: List workflows for action type
+      description: |
+        Step 2 of the three-step workflow discovery protocol.
+        Returns all active workflows matching the specified action type and
+        signal context filters.
+
+        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+
+        **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+        before selecting one. Do not select from an incomplete list.
+
+        **Behavior**:
+        - Filters by action_type + signal context (severity, component, environment, priority)
+        - Excludes disabled and deprecated workflows
+        - Returns workflow metadata including effectiveness data
+        - Paginated (default 10 per page)
+        - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0)
+      operationId: listWorkflowsByActionType
+      parameters:
+        - name: action_type
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Action type from taxonomy (e.g., ScaleReplicas, RestartPod)"
+        - name: severity
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: Signal severity level
+        - name: component
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Kubernetes resource type
+        - name: environment
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Target environment
+        - name: priority
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: Business priority level
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded custom labels"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded detected labels"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+          description: Pagination limit (max 100)
+      responses:
+        '200':
+          description: Workflows for the specified action type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDiscoveryResponse'
         '400':
           description: Validation error
           content:
@@ -267,11 +433,21 @@ paths:
     get:
       tags:
         - Workflow Catalog API
-      summary: Get workflow by UUID
+        - Workflow Discovery API
+      summary: Get workflow by UUID (with optional security gate)
       description: |
         Retrieve a specific workflow by its UUID.
+        Step 3 of the three-step workflow discovery protocol when context filters are provided.
 
         **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+        **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+
+        **Without context filters**: Returns workflow by ID (existing behavior).
+        **With context filters**: Returns workflow only if it matches the signal context.
+        Returns 404 if the workflow exists but does not match the context filters
+        (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+
+        Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
       operationId: getWorkflowByID
       parameters:
         - name: workflow_id
@@ -280,6 +456,50 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: "Security gate: signal severity level"
+        - name: component
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: Kubernetes resource type"
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: target environment"
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: "Security gate: business priority level"
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: JSON-encoded custom labels"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: JSON-encoded detected labels"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
       responses:
         '200':
           description: Workflow found
@@ -1578,7 +1798,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness]
           description: |
             Service-level event category (ADR-034 v1.7).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
@@ -1593,6 +1813,7 @@ components:
             - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+            - effectiveness: Effectiveness Monitor Controller (ADR-EM-001)
           example: gateway
         event_action:
           type: string
@@ -1655,7 +1876,7 @@ components:
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalDecisionPayload'
-            - $ref: '#/components/schemas/WorkflowSearchAuditPayload'
+            - $ref: '#/components/schemas/WorkflowDiscoveryAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
             - $ref: '#/components/schemas/AIAnalysisPhaseTransitionPayload'
@@ -1673,6 +1894,7 @@ components:
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
+            - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -1708,7 +1930,10 @@ components:
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
-              'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
+              'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.selection_validated': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
               'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
               'aianalysis.phase.transition': '#/components/schemas/AIAnalysisPhaseTransitionPayload'
@@ -1725,6 +1950,12 @@ components:
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+              'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.metrics.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.assessment.scheduled': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.assessment.completed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -1809,10 +2040,154 @@ components:
               description: "Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage."
 
     # ========================================
-    # WORKFLOW CATALOG SCHEMAS
+    # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)
     # ========================================
-    # Authority: pkg/datastorage/models/workflow.go
-    # V1.0: Label-only search (no embeddings/semantic search)
+    # Three-step discovery protocol response types
+    # Step 1: ActionTypeListResponse (list available actions)
+    # Step 2: WorkflowDiscoveryResponse (list workflows for action type)
+    # Step 3: RemediationWorkflow (get workflow - uses existing schema with security gate)
+
+    ActionTypeListResponse:
+      type: object
+      description: "Response for Step 1: list available action types (DD-WORKFLOW-016)"
+      required:
+        - actionTypes
+        - pagination
+      properties:
+        actionTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionTypeEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    ActionTypeEntry:
+      type: object
+      description: "Single action type with description and workflow count"
+      required:
+        - actionType
+        - description
+        - workflowCount
+      properties:
+        actionType:
+          type: string
+          description: "Action type identifier (e.g., ScaleReplicas, RestartPod)"
+          example: "ScaleReplicas"
+        description:
+          type: object
+          description: "Curated description with what, when_to_use, when_not_to_use, preconditions"
+          properties:
+            what:
+              type: string
+              description: "What this action type does"
+            when_to_use:
+              type: string
+              description: "When to use this action type"
+            when_not_to_use:
+              type: string
+              description: "When NOT to use this action type"
+            preconditions:
+              type: string
+              description: "Preconditions that must be met"
+        workflowCount:
+          type: integer
+          description: "Number of active workflows matching this action type and context filters"
+          minimum: 0
+
+    WorkflowDiscoveryResponse:
+      type: object
+      description: "Response for Step 2: list workflows for an action type (DD-WORKFLOW-016)"
+      required:
+        - actionType
+        - workflows
+        - pagination
+      properties:
+        actionType:
+          type: string
+          description: "The action type these workflows belong to"
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowDiscoveryEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    WorkflowDiscoveryEntry:
+      type: object
+      description: "Workflow summary for discovery (Step 2) - no parameter schema, no scores"
+      required:
+        - workflowId
+        - workflowName
+        - name
+        - description
+        - version
+        - containerImage
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+          description: "UUID primary key"
+        workflowName:
+          type: string
+          description: "Human-readable workflow identifier (e.g., scale-conservative-v1)"
+        name:
+          type: string
+          description: "Display name"
+        description:
+          type: string
+          description: "Workflow description for LLM comparison"
+        version:
+          type: string
+          description: "Semantic version"
+        containerImage:
+          type: string
+          description: "OCI image reference"
+        executionEngine:
+          type: string
+          description: "Execution engine (tekton, job)"
+          enum: [tekton, job]
+        actualSuccessRate:
+          type: number
+          format: float
+          description: "Historical success rate (0.0-1.0)"
+          minimum: 0.0
+          maximum: 1.0
+        totalExecutions:
+          type: integer
+          description: "Total times this workflow has been executed"
+          minimum: 0
+
+    PaginationMetadata:
+      type: object
+      description: "Pagination metadata for discovery endpoints (DD-WORKFLOW-016)"
+      required:
+        - totalCount
+        - offset
+        - limit
+        - hasMore
+      properties:
+        totalCount:
+          type: integer
+          description: "Total number of results across all pages"
+          minimum: 0
+        offset:
+          type: integer
+          description: "Current offset (0-based)"
+          minimum: 0
+        limit:
+          type: integer
+          description: "Page size"
+          minimum: 1
+        hasMore:
+          type: boolean
+          description: "True if more pages exist beyond current offset+limit"
+
+    # ========================================
+    # WORKFLOW SEARCH SCHEMAS (DEPRECATED - superseded by DD-WORKFLOW-016)
+    # ========================================
+    # These schemas supported the old POST /api/v1/workflows/search endpoint.
+    # Retained temporarily for reference. Will be removed after all consumers migrate.
+    # Superseded by: ActionTypeListResponse, WorkflowDiscoveryResponse, PaginationMetadata
 
     WorkflowSearchRequest:
       type: object
@@ -2067,6 +2442,7 @@ components:
         - labels
         - execution_engine
         - status
+        - action_type
       properties:
         workflow_id:
           type: string
@@ -2076,6 +2452,10 @@ components:
           type: string
           maxLength: 255
           description: "Workflow name (identifier for versions)"
+        action_type:
+          type: string
+          description: "Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy."
+          example: "ScaleReplicas"
         version:
           type: string
           maxLength: 50
@@ -3142,6 +3522,101 @@ components:
           description: New timeout configuration after operator modification
 
     # ========================================
+    # Effectiveness Monitor Audit Payloads
+    # From: pkg/effectivenessmonitor/audit/
+    # Authority: ADR-EM-001, DD-AUDIT-003, BR-EM-095
+    # ========================================
+
+    EffectivenessAssessmentAuditPayload:
+      type: object
+      required: [correlation_id, namespace, event_type, component]
+      description: |
+        Type-safe audit event payload for Effectiveness Monitor controller.
+        Covers component-level events (health, alert, metrics, hash),
+        the scheduling event (assessment.scheduled), and the lifecycle
+        completion event (assessment.completed).
+        Per ADR-EM-001: Each component assessment emits its own audit event.
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'effectiveness.health.assessed'
+            - 'effectiveness.hash.computed'
+            - 'effectiveness.alert.assessed'
+            - 'effectiveness.metrics.assessed'
+            - 'effectiveness.assessment.scheduled'
+            - 'effectiveness.assessment.completed'
+          description: Event type for discriminator (matches parent event_type)
+        correlation_id:
+          type: string
+          description: Correlation ID (EA spec.correlationID, matches parent RR name)
+          example: "restart-payment-api-2026-02-12-abc123"
+        namespace:
+          type: string
+          description: Kubernetes namespace of the EffectivenessAssessment
+          example: "production"
+        ea_name:
+          type: string
+          description: Name of the EffectivenessAssessment CRD
+          example: "ea-restart-payment-api-abc123"
+        component:
+          type: string
+          enum: [health, alert, metrics, hash, scheduled, completed]
+          description: Assessment component that produced this event
+          example: "health"
+        assessed:
+          type: boolean
+          description: Whether the component was successfully assessed
+          example: true
+        score:
+          type: number
+          format: double
+          nullable: true
+          description: Component score (0.0-1.0), null if not assessed
+          example: 0.85
+        details:
+          type: string
+          description: Human-readable details about the assessment result
+          example: "1 of 1 replicas ready"
+        reason:
+          type: string
+          description: Assessment completion reason (only for assessment.completed events)
+          example: "full"
+        validity_deadline:
+          type: string
+          format: date-time
+          description: |
+            Computed validity deadline (only for assessment.scheduled events).
+            EA.creationTimestamp + validityWindow from EM config.
+          example: "2026-02-12T15:30:00Z"
+        prometheus_check_after:
+          type: string
+          format: date-time
+          description: |
+            Computed earliest time for Prometheus check (only for assessment.scheduled events).
+            EA.creationTimestamp + stabilizationWindow.
+          example: "2026-02-12T15:05:00Z"
+        alertmanager_check_after:
+          type: string
+          format: date-time
+          description: |
+            Computed earliest time for AlertManager check (only for assessment.scheduled events).
+            EA.creationTimestamp + stabilizationWindow.
+          example: "2026-02-12T15:05:00Z"
+        validity_window:
+          type: string
+          description: |
+            Validity window duration from EM config (only for assessment.scheduled events).
+            Included for operational observability.
+          example: "30m0s"
+        stabilization_window:
+          type: string
+          description: |
+            Stabilization window duration from EA spec (only for assessment.scheduled events).
+            Included for operational observability.
+          example: "5m0s"
+
+    # ========================================
     # DataStorage Audit Payloads
     # From: pkg/datastorage/audit/
     # ========================================
@@ -3229,16 +3704,24 @@ components:
           description: Updated description
           example: "Updated workflow description"
 
-    # Workflow Search Events
-    WorkflowSearchAuditPayload:
+    # Workflow Discovery Events (DD-HAPI-017, DD-WORKFLOW-014 v3.0)
+    WorkflowDiscoveryAuditPayload:
       type: object
       required: [event_type, query, results, search_metadata]
-      description: Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
+      description: |
+        Audit event payload for three-step workflow discovery operations.
+        Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+        Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
+        Replaces WorkflowSearchAuditPayload (search endpoint removed).
       properties:
         event_type:
           type: string
-          enum: ['workflow.catalog.search_completed']
-          description: Discriminator for event data union type
+          enum:
+            - 'workflow.catalog.actions_listed'
+            - 'workflow.catalog.workflows_listed'
+            - 'workflow.catalog.workflow_retrieved'
+            - 'workflow.catalog.selection_validated'
+          description: Discriminator for event data union type (matches parent event_type)
         query:
           $ref: '#/components/schemas/QueryMetadata'
         results:

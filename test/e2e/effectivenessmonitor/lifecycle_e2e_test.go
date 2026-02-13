@@ -58,10 +58,14 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		createTargetPod(testNS, "target-pod")
 		waitForPodReady(testNS, "target-pod")
 
-		// Inject a resolved alert for this target
+		// The reconciler queries AM using alertname=<correlationID>.
+		// Define correlationID before injecting alerts so the alert name matches.
+		correlationID := uniqueName("corr-rc-happy")
+
+		// Inject a resolved alert for this target (alertname must match correlationID)
 		err := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
 			{
-				Name: "HighCPUUsage",
+				Name: correlationID,
 				Labels: map[string]string{
 					"namespace": testNS,
 					"pod":       "target-pod",
@@ -73,7 +77,9 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		})
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject alerts")
 
-		// Inject before/after metrics showing improvement
+		// Inject before/after metrics showing improvement.
+		// Use time.Now() for both to avoid Prometheus TSDB "out of bounds" rejection.
+		// Inject sequentially with a short sleep for timestamp separation.
 		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
@@ -83,8 +89,14 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 					"container": "workload",
 				},
 				Value:     0.90,
-				Timestamp: time.Now().Add(-5 * time.Minute),
+				Timestamp: time.Now(),
 			},
+		})
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'before' metrics")
+
+		time.Sleep(2 * time.Second) // Ensure timestamp separation
+
+		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
 				Labels: map[string]string{
@@ -96,11 +108,10 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 				Timestamp: time.Now(),
 			},
 		})
-		Expect(err).ToNot(HaveOccurred(), "Failed to inject metrics")
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'after' metrics")
 
 		By("Creating an EffectivenessAssessment CRD with all components enabled")
 		name := uniqueName("ea-rc-happy")
-		correlationID := uniqueName("corr-rc-happy")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 		)
@@ -135,10 +146,13 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		createTargetPod(testNS, "target-pod")
 		waitForPodReady(testNS, "target-pod")
 
-		// Inject resolved alert
+		// Define correlationID before injecting alerts (reconciler queries by correlationID)
+		correlationID := uniqueName("corr-ae-events")
+
+		// Inject resolved alert (alertname must match correlationID)
 		err := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
 			{
-				Name:     "TestAlert",
+				Name:     correlationID,
 				Labels:   map[string]string{"namespace": testNS, "pod": "target-pod"},
 				Status:   "resolved",
 				StartsAt: time.Now().Add(-10 * time.Minute),
@@ -147,14 +161,20 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Inject metrics
+		// Inject metrics sequentially with time.Now() to avoid TSDB "out of bounds".
 		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
 			{
 				Name:      "container_cpu_usage_seconds_total",
 				Labels:    map[string]string{"namespace": testNS, "pod": "target-pod", "container": "workload"},
 				Value:     0.80,
-				Timestamp: time.Now().Add(-5 * time.Minute),
+				Timestamp: time.Now(),
 			},
+		})
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'before' metrics")
+
+		time.Sleep(2 * time.Second) // Ensure timestamp separation
+
+		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
 			{
 				Name:      "container_cpu_usage_seconds_total",
 				Labels:    map[string]string{"namespace": testNS, "pod": "target-pod", "container": "workload"},
@@ -162,10 +182,9 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 				Timestamp: time.Now(),
 			},
 		})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'after' metrics")
 
 		name := uniqueName("ea-ae-events")
-		correlationID := uniqueName("corr-ae-events")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 		)

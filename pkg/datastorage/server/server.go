@@ -473,22 +473,23 @@ func (s *Server) Handler() http.Handler {
 		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
 		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
-		// BR-STORAGE-013: Semantic search for remediation workflows
-		// BR-STORAGE-014: Workflow catalog management
-		// DD-STORAGE-008: Workflow catalog schema
+		// BR-STORAGE-013, BR-STORAGE-014: Workflow catalog management
 		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
 		// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
 		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
 		r.Post("/workflows", s.handler.HandleCreateWorkflow)
-		r.Post("/workflows/search", s.handler.HandleWorkflowSearch)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
+		// DD-WORKFLOW-016, DD-HAPI-017: Three-step workflow discovery protocol
+		// Step 1: List available action types (with signal context filters)
+		r.Get("/workflows/actions", s.handler.HandleListAvailableActions)
+		// Step 2: List workflows for a specific action type
+		r.Get("/workflows/actions/{action_type}", s.handler.HandleListWorkflowsByActionType)
+		// Step 3 + existing: Get workflow by UUID (with optional security gate via context filters)
 		r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
 		// DD-WORKFLOW-012: Update mutable fields (status, metrics) - immutable fields require new version
 		r.Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
 		// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
 		r.Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
-		// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
-		r.Get("/workflows/by-name/{workflowName}/versions", s.handler.HandleListWorkflowVersions)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")

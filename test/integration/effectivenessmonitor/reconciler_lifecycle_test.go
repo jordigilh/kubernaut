@@ -121,8 +121,9 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 				"Expired EA should reach Completed phase")
 		}, timeout, interval).Should(Succeed())
 
-		// Verify the expired deadline was stored correctly in spec
-		Expect(fetchedEA.Spec.Config.ValidityDeadline.Time.Before(time.Now())).To(BeTrue(),
+		// Verify the expired deadline was stored correctly in status
+		Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
+		Expect(fetchedEA.Status.ValidityDeadline.Time.Before(time.Now())).To(BeTrue(),
 			"validity deadline should be in the past")
 
 		// The reason should reflect that the assessment expired

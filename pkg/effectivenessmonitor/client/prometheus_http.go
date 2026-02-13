@@ -184,10 +184,11 @@ func parsePromResponse(body io.Reader) (*QueryResult, error) {
 			if err := json.Unmarshal(raw, &mr); err != nil {
 				continue
 			}
-			// Use the last value in the range for scoring
-			if len(mr.Values) > 0 {
-				last := mr.Values[len(mr.Values)-1]
-				sample, err := parseValuePair(mr.Metric, last)
+			// Return ALL data points from the matrix result.
+			// QueryRange returns time series with multiple [timestamp, value] pairs;
+			// callers need the full set to compare earliest vs latest (pre/post remediation).
+			for _, valuePair := range mr.Values {
+				sample, err := parseValuePair(mr.Metric, valuePair)
 				if err != nil {
 					continue
 				}

@@ -1,10 +1,14 @@
 # BR-WORKFLOW-001: Workflow Registry Management
 
+> **SUPERSEDED** by [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) (Workflow Lifecycle Component Interactions, February 2026).
+>
+> DD-WORKFLOW-017 replaces the registry model defined here with OCI pullspec-only registration, `action_type`-based indexing (DD-WORKFLOW-016), and a three-step discovery protocol. The `/playbooks` API paths, full JSON registration payload, and `incident_type`-based querying defined in this document are no longer valid. Refer to DD-WORKFLOW-017 for the current authoritative workflow lifecycle design.
+
 **Business Requirement ID**: BR-WORKFLOW-001
 **Category**: Workflow Catalog Service
 **Priority**: P0
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: **SUPERSEDED** by DD-WORKFLOW-017
 **Date**: November 5, 2025
 
 ---

@@ -670,6 +670,20 @@ func decodeExportAuditEventsParams(args [0]string, argsEscaped bool, r *http.Req
 // GetWorkflowByIDParams is parameters of getWorkflowByID operation.
 type GetWorkflowByIDParams struct {
 	WorkflowID uuid.UUID
+	// Security gate: signal severity level.
+	Severity OptGetWorkflowByIDSeverity `json:",omitempty,omitzero"`
+	// Security gate: Kubernetes resource type.
+	Component OptString `json:",omitempty,omitzero"`
+	// Security gate: target environment.
+	Environment OptString `json:",omitempty,omitzero"`
+	// Security gate: business priority level.
+	Priority OptGetWorkflowByIDPriority `json:",omitempty,omitzero"`
+	// Security gate: JSON-encoded custom labels.
+	CustomLabels OptString `json:",omitempty,omitzero"`
+	// Security gate: JSON-encoded detected labels.
+	DetectedLabels OptString `json:",omitempty,omitzero"`
+	// Remediation request ID for audit correlation (BR-AUDIT-021).
+	RemediationID OptString `json:",omitempty,omitzero"`
 }
 
 func unpackGetWorkflowByIDParams(packed middleware.Parameters) (params GetWorkflowByIDParams) {
@@ -680,10 +694,74 @@ func unpackGetWorkflowByIDParams(packed middleware.Parameters) (params GetWorkfl
 		}
 		params.WorkflowID = packed[key].(uuid.UUID)
 	}
+	{
+		key := middleware.ParameterKey{
+			Name: "severity",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Severity = v.(OptGetWorkflowByIDSeverity)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "component",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Component = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "environment",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Environment = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "priority",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Priority = v.(OptGetWorkflowByIDPriority)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "custom_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.CustomLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "detected_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.DetectedLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "remediation_id",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.RemediationID = v.(OptString)
+		}
+	}
 	return params
 }
 
 func decodeGetWorkflowByIDParams(args [1]string, argsEscaped bool, r *http.Request) (params GetWorkflowByIDParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode path: workflow_id.
 	if err := func() error {
 		param := args[0]
@@ -726,6 +804,827 @@ func decodeGetWorkflowByIDParams(args [1]string, argsEscaped bool, r *http.Reque
 		return params, &ogenerrors.DecodeParamError{
 			Name: "workflow_id",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: severity.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSeverityVal GetWorkflowByIDSeverity
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSeverityVal = GetWorkflowByIDSeverity(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Severity.SetTo(paramsDotSeverityVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Severity.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "severity",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: component.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotComponentVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotComponentVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Component.SetTo(paramsDotComponentVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "component",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: environment.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotEnvironmentVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotEnvironmentVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Environment.SetTo(paramsDotEnvironmentVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "environment",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: priority.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotPriorityVal GetWorkflowByIDPriority
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotPriorityVal = GetWorkflowByIDPriority(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Priority.SetTo(paramsDotPriorityVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Priority.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "priority",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: custom_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotCustomLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotCustomLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.CustomLabels.SetTo(paramsDotCustomLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "custom_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: detected_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotDetectedLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotDetectedLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.DetectedLabels.SetTo(paramsDotDetectedLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "detected_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: remediation_id.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotRemediationIDVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotRemediationIDVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.RemediationID.SetTo(paramsDotRemediationIDVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "remediation_id",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListAvailableActionsParams is parameters of listAvailableActions operation.
+type ListAvailableActionsParams struct {
+	// Signal severity level.
+	Severity ListAvailableActionsSeverity
+	// Kubernetes resource type (pod, deployment, node, etc.).
+	Component string
+	// Target environment (production, staging, etc.).
+	Environment string
+	// Business priority level.
+	Priority ListAvailableActionsPriority
+	// JSON-encoded custom labels (e.g., {"constraint":["cost-constrained"]}).
+	CustomLabels OptString `json:",omitempty,omitzero"`
+	// JSON-encoded detected labels (e.g., {"gitOpsManaged":true}).
+	DetectedLabels OptString `json:",omitempty,omitzero"`
+	// Remediation request ID for audit correlation (BR-AUDIT-021).
+	RemediationID OptString `json:",omitempty,omitzero"`
+	// Pagination offset.
+	Offset OptInt `json:",omitempty,omitzero"`
+	// Pagination limit (max 100).
+	Limit OptInt `json:",omitempty,omitzero"`
+}
+
+func unpackListAvailableActionsParams(packed middleware.Parameters) (params ListAvailableActionsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "severity",
+			In:   "query",
+		}
+		params.Severity = packed[key].(ListAvailableActionsSeverity)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "component",
+			In:   "query",
+		}
+		params.Component = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "environment",
+			In:   "query",
+		}
+		params.Environment = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "priority",
+			In:   "query",
+		}
+		params.Priority = packed[key].(ListAvailableActionsPriority)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "custom_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.CustomLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "detected_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.DetectedLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "remediation_id",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.RemediationID = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "offset",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Offset = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "limit",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Limit = v.(OptInt)
+		}
+	}
+	return params
+}
+
+func decodeListAvailableActionsParams(args [0]string, argsEscaped bool, r *http.Request) (params ListAvailableActionsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode query: severity.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Severity = ListAvailableActionsSeverity(c)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := params.Severity.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "severity",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: component.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Component = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "component",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: environment.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Environment = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "environment",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: priority.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Priority = ListAvailableActionsPriority(c)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := params.Priority.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "priority",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: custom_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotCustomLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotCustomLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.CustomLabels.SetTo(paramsDotCustomLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "custom_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: detected_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotDetectedLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotDetectedLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.DetectedLabels.SetTo(paramsDotDetectedLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "detected_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: remediation_id.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotRemediationIDVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotRemediationIDVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.RemediationID.SetTo(paramsDotRemediationIDVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "remediation_id",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: offset.
+	{
+		val := int(0)
+		params.Offset.SetTo(val)
+	}
+	// Decode query: offset.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "offset",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotOffsetVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotOffsetVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Offset.SetTo(paramsDotOffsetVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "offset",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: limit.
+	{
+		val := int(10)
+		params.Limit.SetTo(val)
+	}
+	// Decode query: limit.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotLimitVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotLimitVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Limit.SetTo(paramsDotLimitVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Limit.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        false,
+							Min:           0,
+							MaxSet:        true,
+							Max:           100,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "limit",
+			In:   "query",
 			Err:  err,
 		}
 	}
@@ -1146,6 +2045,564 @@ func decodeListWorkflowsParams(args [0]string, argsEscaped bool, r *http.Request
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "offset",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListWorkflowsByActionTypeParams is parameters of listWorkflowsByActionType operation.
+type ListWorkflowsByActionTypeParams struct {
+	// Action type from taxonomy (e.g., ScaleReplicas, RestartPod).
+	ActionType string
+	// Signal severity level.
+	Severity ListWorkflowsByActionTypeSeverity
+	// Kubernetes resource type.
+	Component string
+	// Target environment.
+	Environment string
+	// Business priority level.
+	Priority ListWorkflowsByActionTypePriority
+	// JSON-encoded custom labels.
+	CustomLabels OptString `json:",omitempty,omitzero"`
+	// JSON-encoded detected labels.
+	DetectedLabels OptString `json:",omitempty,omitzero"`
+	// Remediation request ID for audit correlation (BR-AUDIT-021).
+	RemediationID OptString `json:",omitempty,omitzero"`
+	// Pagination offset.
+	Offset OptInt `json:",omitempty,omitzero"`
+	// Pagination limit (max 100).
+	Limit OptInt `json:",omitempty,omitzero"`
+}
+
+func unpackListWorkflowsByActionTypeParams(packed middleware.Parameters) (params ListWorkflowsByActionTypeParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "action_type",
+			In:   "path",
+		}
+		params.ActionType = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "severity",
+			In:   "query",
+		}
+		params.Severity = packed[key].(ListWorkflowsByActionTypeSeverity)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "component",
+			In:   "query",
+		}
+		params.Component = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "environment",
+			In:   "query",
+		}
+		params.Environment = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "priority",
+			In:   "query",
+		}
+		params.Priority = packed[key].(ListWorkflowsByActionTypePriority)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "custom_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.CustomLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "detected_labels",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.DetectedLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "remediation_id",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.RemediationID = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "offset",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Offset = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "limit",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Limit = v.(OptInt)
+		}
+	}
+	return params
+}
+
+func decodeListWorkflowsByActionTypeParams(args [1]string, argsEscaped bool, r *http.Request) (params ListWorkflowsByActionTypeParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode path: action_type.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "action_type",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ActionType = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "action_type",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: severity.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Severity = ListWorkflowsByActionTypeSeverity(c)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := params.Severity.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "severity",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: component.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Component = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "component",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: environment.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Environment = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "environment",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: priority.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Priority = ListWorkflowsByActionTypePriority(c)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := params.Priority.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "priority",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: custom_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotCustomLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotCustomLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.CustomLabels.SetTo(paramsDotCustomLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "custom_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: detected_labels.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotDetectedLabelsVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotDetectedLabelsVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.DetectedLabels.SetTo(paramsDotDetectedLabelsVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "detected_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: remediation_id.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotRemediationIDVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotRemediationIDVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.RemediationID.SetTo(paramsDotRemediationIDVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "remediation_id",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: offset.
+	{
+		val := int(0)
+		params.Offset.SetTo(val)
+	}
+	// Decode query: offset.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "offset",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotOffsetVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotOffsetVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Offset.SetTo(paramsDotOffsetVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "offset",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: limit.
+	{
+		val := int(10)
+		params.Limit.SetTo(val)
+	}
+	// Decode query: limit.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotLimitVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotLimitVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Limit.SetTo(paramsDotLimitVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Limit.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        false,
+							Min:           0,
+							MaxSet:        true,
+							Max:           100,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "limit",
 			In:   "query",
 			Err:  err,
 		}

@@ -1,6 +1,6 @@
 # Effectiveness Monitor (EM) Comprehensive Test Plan
 
-**Version**: 1.0.5
+**Version**: 1.1.0
 **Created**: 2026-02-09
 **Status**: Draft
 **Service Type**: CRD Controller
@@ -47,8 +47,8 @@ Coverage is measured **per tier against the tier-specific code subset** (see `sc
 
 ### Key References
 
-- [ADR-EM-001](../../../architecture/decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) (v1.2) -- EM integration architecture
-- [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) (v2.2) -- EM v1.1 deferral and Level 1 scope
+- [ADR-EM-001](../../../architecture/decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) (v1.3) -- EM integration architecture (v1.3: derived timing in status)
+- [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) (v2.3) -- EM v1.1 deferral and Level 1 scope
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md) -- Testing strategy and policies
 - [V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md](../../development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md) -- Test plan template
 
@@ -77,6 +77,7 @@ Coverage is measured **per tier against the tier-specific code subset** (see `sc
 | **KE** | Kubernetes Events | EventRecorder emissions for phase transitions |
 | **CF** | Configuration | Config parsing, validation, defaults |
 | **FF** | Fail-Fast | Startup dependency checks |
+| **DT** | Derived Timing | First-reconciliation timing computation (ValidityDeadline, check-after times) |
 | **OM** | Operational Metrics | Controller-runtime metrics (reconciliation counts, durations) |
 | **RR** | Restart Recovery | Mid-assessment restart and resumption |
 | **GS** | Graceful Shutdown | Audit flush, in-flight completion, shutdown timeout (DD-007) |
@@ -95,7 +96,9 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | Metric comparison | 9.2 (event 4) | PromQL before/after, improvement/no-change/degradation scoring |
 | Spec hash computation | 9.2 (event 2) | Pre vs post remediation spec hash, changed/unchanged |
 | Validity window | Design Principles | Assessment expiry after `validityDeadline`, `expired` reason |
-| Audit event emission | 9.2 | 4 component events + 1 lifecycle marker to DataStorage |
+| Derived timing computation | 9.4, Principle 7 (v1.3) | EM computes ValidityDeadline, PrometheusCheckAfter, AlertManagerCheckAfter in status on first reconciliation |
+| Assessment scheduled audit | 9.2.0 (v1.3) | `effectiveness.assessment.scheduled` event emitted on first reconciliation with derived timing |
+| Audit event emission | 9.2 | 4 component events + 1 scheduling event + 1 lifecycle marker to DataStorage |
 | K8s Event emission | DD-EVENT-001 | EventRecorder events for phase transitions and scoring |
 | Fail-fast startup | Error Handling | FATAL if enabled dependency unreachable at startup |
 | Configuration | 9.5 | validityWindow, scrapeInterval, thresholds, enable/disable toggles |
@@ -212,7 +215,7 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 |----|----------|------|-------------|-----|-------|
 | UT-EM-VW-001 | Current time within validity window -> assessment proceeds | X | | | |
 | UT-EM-VW-002 | Current time past validity deadline -> EA marked expired, no assessment | X | | | |
-| UT-EM-VW-003 | Validity deadline computed correctly from creation + config window | X | | | |
+| UT-EM-VW-003 | Validity deadline computed correctly from creation + config window (now in status, see DT domain) | X | | | Moved to DT-001 |
 | UT-EM-VW-004 | Partial data collected, then validity expires -> complete with partial | X | | | metrics_timed_out reason |
 | UT-EM-VW-005 | No data collected before expiry -> complete with expired reason | X | | | |
 | IT-EM-VW-001 | EA with past deadline -> marked expired on first reconcile | | X | | |
@@ -221,6 +224,28 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-VW-004 | No data collected before expiry -> EA Completed with expired reason, no component events | | X | | |
 | IT-EM-VW-005 | EA with tight validity window (e.g., 1s) -> expires before any check completes | | X | | Edge case: fast expiry |
 | E2E-EM-VW-001 | Delayed assessment -> EA marked expired | | | X | |
+
+### Derived Timing (DT) -- ADR-EM-001 v1.3
+
+| ID | Scenario | Unit | Integration | E2E | Notes |
+|----|----------|------|-------------|-----|-------|
+| UT-EM-DT-001 | ValidityDeadline computed as creationTimestamp + config.ValidityWindow | X | | | Core computation |
+| UT-EM-DT-002 | PrometheusCheckAfter computed as creationTimestamp + StabilizationWindow | X | | | Derived from spec |
+| UT-EM-DT-003 | AlertManagerCheckAfter computed as creationTimestamp + StabilizationWindow | X | | | Derived from spec |
+| UT-EM-DT-004 | All three fields are nil before first reconciliation (Pending EA) | X | | | Pre-condition |
+| UT-EM-DT-005 | ValidityDeadline > StabilizationWindow end (guaranteed by config validation) | X | | | Invariant: EM config enforces ValidityWindow > StabilizationWindow |
+| UT-EM-DT-006 | Derived times persist in status across reconcile loops (no recomputation) | X | | | Idempotency check |
+| IT-EM-DT-001 | First reconciliation sets ValidityDeadline in EA status | | X | | Verify via K8s API |
+| IT-EM-DT-002 | First reconciliation sets PrometheusCheckAfter in EA status | | X | | Verify via K8s API |
+| IT-EM-DT-003 | First reconciliation sets AlertManagerCheckAfter in EA status | | X | | Verify via K8s API |
+| IT-EM-DT-004 | Subsequent reconciliations do not overwrite derived timing fields | | X | | Idempotency: values stable |
+| IT-EM-DT-005 | `effectiveness.assessment.scheduled` audit event emitted on first reconciliation | | X | | Verify event in DS |
+| IT-EM-DT-006 | Scheduled audit event contains correct validity_deadline, prometheus_check_after, alertmanager_check_after | | X | | Payload correctness |
+| IT-EM-DT-007 | Scheduled audit event contains validity_window and stabilization_window durations | | X | | Config observability |
+| IT-EM-DT-008 | Reconciler uses status.ValidityDeadline for expiry check (not recomputed) | | X | | Behavioral: status field drives logic |
+| IT-EM-DT-009 | Custom ValidityWindow in ReconcilerConfig produces correct ValidityDeadline | | X | | Config override |
+| E2E-EM-DT-001 | Full pipeline: EA status shows all 3 derived timing fields after first reconciliation | | | X | kubectl verify |
+| E2E-EM-DT-002 | Full pipeline: `effectiveness.assessment.scheduled` event present in DS | | | X | DS API query |
 
 ### Audit Events (AE)
 
@@ -233,7 +258,8 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | UT-EM-AE-005 | Completed event payload: lifecycle marker, no score, components_assessed list | X | | | |
 | UT-EM-AE-006 | Correlation ID matches EA.spec.correlationID (= RR.Name) | X | | | |
 | UT-EM-AE-007 | Events emitted incrementally as components complete | X | | | |
-| IT-EM-AE-001 | All 5 events present in DS after successful assessment | | X | | Query DS API |
+| UT-EM-AE-008 | Scheduled event payload: correct fields (validity_deadline, prometheus_check_after, alertmanager_check_after, validity_window, stabilization_window) | X | | | ADR-EM-001 v1.3 |
+| IT-EM-AE-001 | All 6 events present in DS after successful assessment (scheduled + 4 components + completed) | | X | | Query DS API |
 | IT-EM-AE-002 | Events have correct event_type field values | | X | | |
 | IT-EM-AE-003 | Only completed event emitted when validity expired with no data | | X | | |
 | IT-EM-AE-004 | Events emitted incrementally (health first, then hash, alert, metrics, completed) | | X | | Verify ordering by timestamp |
@@ -241,7 +267,7 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-AE-006 | Partial assessment (Prom disabled): 4 events emitted (health, hash, alert, completed) | | X | | Config: prometheus.enabled=false |
 | IT-EM-AE-007 | Partial assessment (AM disabled): 4 events emitted (health, hash, metrics, completed) | | X | | Config: alertmanager.enabled=false |
 | IT-EM-AE-008 | DS write failure for component event -> reconcile requeues, retries event emission | | X | | DS mock returns 500 on first attempt |
-| E2E-EM-AE-001 | Full pipeline -> all 5 events in DS with correct payloads | | | X | |
+| E2E-EM-AE-001 | Full pipeline -> all 6 events in DS with correct payloads (scheduled + 4 components + completed) | | | X | |
 
 ### Kubernetes Events (KE)
 
@@ -606,6 +632,7 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1.0 | 2026-02-12 | AI Assistant | Added Derived Timing (DT) domain: 6 UT + 9 IT + 2 E2E = 17 scenarios (ADR-EM-001 v1.3); updated AE domain with UT-EM-AE-008 (scheduled event payload); updated IT-EM-AE-001 and E2E-EM-AE-001 counts from 5 to 6 events; ValidityDeadline moved from spec to status |
 | 1.0.5 | 2026-02-13 | AI Assistant | Added Scenario Implementation Status Audit section; updated Phase 2-4 statuses (infra, CI, Makefile completed; 11/67 IT scenarios implemented); corrected E2E count to 11 |
 | 1.0.4 | 2026-02-13 | AI Assistant | Added Graceful Shutdown (GS) domain: 4 UT + 3 IT + 1 E2E = 8 scenarios (DD-007, ADR-032); grand total now 153 scenarios; aligned with AIAnalysis/SignalProcessing/Gateway GS patterns |
 | 1.0.3 | 2026-02-09 | AI Assistant | Updated coverage targets to >=80% per tier (TDD mandate: all business requirements must be implemented); updated coverage_report.py quality targets |

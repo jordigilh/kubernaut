@@ -22,7 +22,7 @@ including tool calls for testing the full HolmesGPT workflow.
 
 Features:
 - Deterministic responses for E2E testing
-- Tool call support (search_workflow_catalog, etc.)
+- Tool call support (three-step discovery + legacy search_workflow_catalog)
 - Multi-turn conversation handling
 - Configurable scenarios for different test cases
 - Validation of tool call format
@@ -35,8 +35,15 @@ Usage:
         # Run tests...
 
 Architecture:
-    1. Initial request → Return tool call (search_workflow_catalog)
-    2. Tool result received → Return final analysis with selected workflow
+    Legacy two-phase flow (search_workflow_catalog):
+      1. Initial request → Return tool call (search_workflow_catalog)
+      2. Tool result received → Return final analysis with selected workflow
+
+    DD-HAPI-017 three-step discovery flow:
+      1. Initial request → Return list_available_actions tool call
+      2. After step 1 result → Return list_workflows tool call
+      3. After step 2 result → Return get_workflow tool call
+      4. After step 3 result → Return final analysis with selected workflow
 """
 
 import json
@@ -686,7 +693,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if self.force_text_response or not tools:
             # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
-        elif has_tool_result:
+
+        # DD-HAPI-017: Three-step discovery protocol
+        # Detect if the tools list includes the three-step discovery tools
+        if self._has_three_step_tools(tools):
+            tool_result_count = self._count_tool_results(messages)
+            logger.info(f"🔍 Three-step discovery: {tool_result_count} tool results so far")
+            if tool_result_count >= 3:
+                # All 3 tool calls completed → return final analysis
+                return self._final_analysis_response(scenario, request_data)
+            else:
+                # Return the next tool call in the sequence
+                return self._three_step_tool_call_response(scenario, request_data, tool_result_count)
+
+        # Legacy two-phase flow (search_workflow_catalog)
+        if has_tool_result:
             # Phase 2: After tool result → return final analysis
             return self._final_analysis_response(scenario, request_data)
         else:
@@ -821,6 +842,131 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             if "tool_call_id" in str(msg):
                 return True
         return False
+
+    def _count_tool_results(self, messages: List[Dict[str, Any]]) -> int:
+        """
+        Count the number of tool result messages in the conversation.
+
+        DD-HAPI-017: Used by the three-step discovery protocol to determine
+        which step we're on:
+          0 tool results → return list_available_actions (Step 1)
+          1 tool result  → return list_workflows (Step 2)
+          2 tool results → return get_workflow (Step 3)
+          3+ tool results → return final analysis
+        """
+        count = 0
+        for msg in messages:
+            if msg.get("role") == "tool":
+                count += 1
+        return count
+
+    def _has_three_step_tools(self, tools: List[Dict[str, Any]]) -> bool:
+        """
+        Check if the tools list includes three-step discovery tools.
+
+        DD-HAPI-017: When HAPI registers the three-step toolset, the tools
+        list will include 'list_available_actions'. If it only has
+        'search_workflow_catalog', we use the legacy two-phase flow.
+        """
+        for tool in tools:
+            func = tool.get("function", {})
+            if func.get("name") == "list_available_actions":
+                return True
+        return False
+
+    def _three_step_tool_call_response(
+        self, scenario: MockScenario, request_data: Dict[str, Any], step: int
+    ) -> Dict[str, Any]:
+        """
+        Generate the next tool call in the three-step discovery sequence.
+
+        DD-HAPI-017: Three-Step Workflow Discovery Protocol
+          Step 0 (0 tool results): list_available_actions
+          Step 1 (1 tool result):  list_workflows  (with action_type from scenario)
+          Step 2 (2 tool results): get_workflow     (with workflow_id from scenario)
+
+        Args:
+            scenario: The detected MockScenario
+            request_data: Original request data
+            step: Current step index (0, 1, or 2)
+        """
+        call_id = f"call_{uuid.uuid4().hex[:12]}"
+
+        if step == 0:
+            # Step 1: list_available_actions
+            tool_name = "list_available_actions"
+            tool_args = {"limit": 100}
+            logger.info(f"🔧 Three-step Step 1: {tool_name}")
+
+        elif step == 1:
+            # Step 2: list_workflows — use action_type derived from scenario
+            # Map scenario signal types to action types
+            action_type = self._scenario_to_action_type(scenario)
+            tool_name = "list_workflows"
+            tool_args = {"action_type": action_type, "limit": 10}
+            logger.info(f"🔧 Three-step Step 2: {tool_name} (action_type={action_type})")
+
+        else:
+            # Step 3: get_workflow — use workflow_id from scenario
+            tool_name = "get_workflow"
+            tool_args = {"workflow_id": scenario.workflow_id}
+            logger.info(f"🔧 Three-step Step 3: {tool_name} (workflow_id={scenario.workflow_id})")
+
+        # Record for test validation
+        tool_call_tracker.record(tool_name, tool_args, call_id)
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": json.dumps(tool_args)
+                                }
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 500,
+                "completion_tokens": 50,
+                "total_tokens": 550
+            }
+        }
+
+    @staticmethod
+    def _scenario_to_action_type(scenario: MockScenario) -> str:
+        """
+        Map a MockScenario to its action_type for three-step discovery.
+
+        DD-WORKFLOW-016: Action types must match values seeded in
+        action_type_taxonomy by migration 025.
+        """
+        # Map by workflow_name (matches Go/Python fixture action_type assignments)
+        action_type_map = {
+            "oomkill-increase-memory-v1": "AdjustResources",
+            "memory-optimize-v1": "ScaleReplicas",
+            "crashloop-config-fix-v1": "ReconfigureService",
+            "node-drain-reboot-v1": "RestartPod",
+            "image-pull-backoff-fix-credentials": "ReconfigureService",
+            "generic-restart-v1": "RestartPod",
+            "test-signal-handler-v1": "RestartPod",
+        }
+        action_type = action_type_map.get(scenario.workflow_name, "ScaleReplicas")
+        return action_type
 
     def _tool_call_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a response with tool call (Phase 1)."""

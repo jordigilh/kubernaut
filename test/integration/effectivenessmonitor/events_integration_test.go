@@ -139,7 +139,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})
 
 		By("Creating an EA with low scoring threshold so score >= threshold")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-002",
@@ -157,7 +156,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.1, // Low threshold
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,
@@ -202,7 +200,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 		})
 
 		By("Creating an EA with high scoring threshold")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-003",
@@ -220,7 +217,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.9, // High threshold - scores will be below this
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,

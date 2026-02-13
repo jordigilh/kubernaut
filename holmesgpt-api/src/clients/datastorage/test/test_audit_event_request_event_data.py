@@ -36,7 +36,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
         model = AuditEventRequestEventData()
         if include_optional:
             return AuditEventRequestEventData(
-                event_type = 'webhook.remediationrequest.timeout_modified',
+                event_type = 'effectiveness.health.assessed',
                 original_payload = { },
                 signal_labels = {
                     'key' : ''
@@ -77,7 +77,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 rejected_by = '',
                 rejection_reason = '',
                 message = '',
-                reason = '',
+                reason = 'full',
                 sub_reason = '',
                 notification_name = '',
                 timeout_config = datastorage.models.timeout_config.TimeoutConfig(
@@ -301,11 +301,22 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     global = '30m', 
                     processing = '10m', 
                     analyzing = '5m', 
-                    executing = '15m', )
+                    executing = '15m', ),
+                correlation_id = 'restart-payment-api-2026-02-12-abc123',
+                ea_name = 'ea-restart-payment-api-abc123',
+                component = 'health',
+                assessed = True,
+                score = 0.85,
+                details = '1 of 1 replicas ready',
+                validity_deadline = '2026-02-12T15:30Z',
+                prometheus_check_after = '2026-02-12T15:05Z',
+                alertmanager_check_after = '2026-02-12T15:05Z',
+                validity_window = '30m0s',
+                stabilization_window = '5m0s'
             )
         else:
             return AuditEventRequestEventData(
-                event_type = 'webhook.remediationrequest.timeout_modified',
+                event_type = 'effectiveness.health.assessed',
                 signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'production',
@@ -315,7 +326,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 duration_ms = 50,
                 workflow_id = '',
                 decision = 'requires_approval',
-                reason = '',
+                reason = 'full',
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 environment = 'production',
@@ -449,6 +460,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 is_valid = True,
                 modified_by = 'ops-user@example.com',
                 modified_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                correlation_id = 'restart-payment-api-2026-02-12-abc123',
+                component = 'health',
         )
         """
 

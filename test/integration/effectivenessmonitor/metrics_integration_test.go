@@ -155,7 +155,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		mockProm.SetQueryResponse(infrastructure.NewPromEmptyVectorResponse())
 
 		By("Creating an EA with a tight validity window so it expires")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-004",
@@ -173,7 +172,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(10 * time.Second)}, // Short window
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,
@@ -203,21 +201,29 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		ns := createTestNamespace("em-mc-005")
 		defer deleteTestNamespace(ns)
 
-		queryCount := 0
+		queryRangeCount := 0
 		By("Configuring mock Prometheus to return 503 initially, then recover")
-		mockProm.SetQueryResponse(nil) // Clear default response
-		// Override with custom handler that fails first, then succeeds
+		mockProm.SetQueryRangeResponse(nil) // Clear default range response
+		// Override with custom handler that fails first on query_range, then succeeds.
+		// The reconciler uses QueryRange (not instant Query) for metrics assessment.
 		mockProm.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/query" {
-				queryCount++
-				if queryCount <= 2 {
+			if r.URL.Path == "/api/v1/query_range" {
+				queryRangeCount++
+				if queryRangeCount <= 2 {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = fmt.Fprint(w, "Service Unavailable")
 					return
 				}
-				// After failures, return valid data
+				// After failures, return valid matrix data with 2 samples (pre/post remediation)
+				now := time.Now().Unix()
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"cpu"},"value":[%d,"0.5"]}]}}`, time.Now().Unix())
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"cpu"},"values":[[%d,"0.5"],[%d,"0.25"]]}]}}`, now-60, now)
+				return
+			}
+			if r.URL.Path == "/api/v1/query" {
+				// Instant query fallback (not used by reconciler, but keep for completeness)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 				return
 			}
 			if r.URL.Path == "/-/ready" || r.URL.Path == "/-/healthy" {
@@ -254,7 +260,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with Prometheus DISABLED")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-006",
@@ -272,7 +277,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   false, // DISABLED
 					AlertManagerEnabled: true,
@@ -372,11 +376,11 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		requests := mockProm.GetRequestLog()
 		queryRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query" {
+			if req.Path == "/api/v1/query_range" {
 				queryRequests++
 			}
 		}
 		Expect(queryRequests).To(BeNumerically(">", 0),
-			"Prometheus should have been queried at least once")
+			"Prometheus should have been queried via query_range at least once")
 	})
 })

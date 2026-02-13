@@ -772,8 +772,8 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				"needs_human_review must be false for confident recovery")
 			Expect(recoveryResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
-			Expect(recoveryResp.AnalysisConfidence).To(BeNumerically("~", 0.85, 0.05),
-				"Mock LLM 'recovery' scenario returns confidence = 0.85 ± 0.05 (server.py:130)")
+			Expect(recoveryResp.AnalysisConfidence).To(BeNumerically("~", 0.70, 0.10),
+				"DD-HAPI-017: Three-step discovery sources confidence from DS workflow catalog (~0.70)")
 
 			// CORRECTNESS: Recovery workflow appropriate for CrashLoopBackOff
 			// (Verified by workflow catalog logic)

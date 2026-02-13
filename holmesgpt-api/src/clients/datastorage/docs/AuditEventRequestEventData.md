@@ -12,7 +12,7 @@ Name | Type | Description | Notes
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
 **signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
 **alert_name** | **str** | Name of the alert | 
-**namespace** | **str** | Kubernetes namespace | 
+**namespace** | **str** | Kubernetes namespace of the EffectivenessAssessment | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
@@ -38,7 +38,7 @@ Name | Type | Description | Notes
 **rejected_by** | **str** | User who rejected the request | [optional] 
 **rejection_reason** | **str** | Reason for rejection | [optional] 
 **message** | **str** | Additional message or context for the event | [optional] 
-**reason** | **str** |  | 
+**reason** | **str** | Assessment completion reason (only for assessment.completed events) | 
 **sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **notification_name** | **str** | Alias for notification_id | [optional] 
 **timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
@@ -161,6 +161,17 @@ Name | Type | Description | Notes
 **modified_at** | **datetime** | When the modification occurred | 
 **old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**correlation_id** | **str** | Correlation ID (EA spec.correlationID, matches parent RR name) | 
+**ea_name** | **str** | Name of the EffectivenessAssessment CRD | [optional] 
+**component** | **str** | Assessment component that produced this event | 
+**assessed** | **bool** | Whether the component was successfully assessed | [optional] 
+**score** | **float** | Component score (0.0-1.0), null if not assessed | [optional] 
+**details** | **str** | Human-readable details about the assessment result | [optional] 
+**validity_deadline** | **datetime** | Computed validity deadline (only for assessment.scheduled events). EA.creationTimestamp + validityWindow from EM config.  | [optional] 
+**prometheus_check_after** | **datetime** | Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
+**alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
+**validity_window** | **str** | Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability.  | [optional] 
+**stabilization_window** | **str** | Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability.  | [optional] 
 
 ## Example
 

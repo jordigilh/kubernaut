@@ -6,6 +6,7 @@ test-slm
 *coverage.out
 bin/
 mcp-server
+effectivenessmonitor
 *.log
 *.bak
 *.bak2

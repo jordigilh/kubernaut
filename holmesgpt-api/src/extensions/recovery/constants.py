@@ -27,6 +27,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ========================================
+# LLM SELF-CORRECTION CONSTANTS (DD-HAPI-002 v1.2)
+# ========================================
+MAX_VALIDATION_ATTEMPTS = 3  # BR-HAPI-017-004: Max attempts before human review
+
 
 class MinimalDAL:
     """

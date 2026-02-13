@@ -51,7 +51,8 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	// ========================================================================
 	It("E2E-EM-MC-001: should produce metrics score > 0 when improvement is detected", func() {
 		By("Injecting 'before' metrics (high CPU) into Prometheus")
-		beforeTime := time.Now().Add(-5 * time.Minute)
+		// Use time.Now() to avoid Prometheus TSDB "out of bounds" rejection.
+		// Prometheus OTLP receiver rejects samples with timestamps outside the ingestion window.
 		beforeMetrics := []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
@@ -61,14 +62,16 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 					"container": "workload",
 				},
 				Value:     0.85, // 85% CPU before remediation
-				Timestamp: beforeTime,
+				Timestamp: time.Now(),
 			},
 		}
 		err := infrastructure.InjectMetrics(prometheusURL, beforeMetrics)
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'before' metrics")
 
+		By("Waiting briefly to ensure timestamp separation between before/after samples")
+		time.Sleep(2 * time.Second)
+
 		By("Injecting 'after' metrics (low CPU) into Prometheus")
-		afterTime := time.Now()
 		afterMetrics := []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
@@ -78,7 +81,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 					"container": "workload",
 				},
 				Value:     0.25, // 25% CPU after remediation (improvement)
-				Timestamp: afterTime,
+				Timestamp: time.Now(),
 			},
 		}
 		err = infrastructure.InjectMetrics(prometheusURL, afterMetrics)
@@ -112,7 +115,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	// ========================================================================
 	It("E2E-EM-MC-002: should produce metrics score 0.0 when no change is detected", func() {
 		By("Injecting 'before' metrics into Prometheus")
-		beforeTime := time.Now().Add(-5 * time.Minute)
+		// Use time.Now() to avoid Prometheus TSDB "out of bounds" rejection.
 		sameValue := 0.50 // Same CPU before and after
 		beforeMetrics := []infrastructure.TestMetric{
 			{
@@ -123,14 +126,16 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 					"container": "workload",
 				},
 				Value:     sameValue,
-				Timestamp: beforeTime,
+				Timestamp: time.Now(),
 			},
 		}
 		err := infrastructure.InjectMetrics(prometheusURL, beforeMetrics)
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject 'before' metrics")
 
+		By("Waiting briefly to ensure timestamp separation between before/after samples")
+		time.Sleep(2 * time.Second)
+
 		By("Injecting 'after' metrics with same values into Prometheus")
-		afterTime := time.Now()
 		afterMetrics := []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
@@ -140,7 +145,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 					"container": "workload",
 				},
 				Value:     sameValue, // Same value = no improvement
-				Timestamp: afterTime,
+				Timestamp: time.Now(),
 			},
 		}
 		err = infrastructure.InjectMetrics(prometheusURL, afterMetrics)

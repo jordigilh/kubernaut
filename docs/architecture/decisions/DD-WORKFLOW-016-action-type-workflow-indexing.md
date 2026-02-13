@@ -18,8 +18,8 @@
 
 - Replaces `signal_type` as primary workflow matching key with `action_type`
 - Defines enforced action type taxonomy (V1.0 initial set)
-- Introduces `ListAvailableActions` context-aware HAPI tool
-- Defines LLM two-step workflow discovery protocol
+- Introduces `ListAvailableActions` and `ListWorkflows` context-aware HAPI tools
+- Defines LLM three-step workflow discovery protocol (list actions -> list workflows -> get parameters)
 - Aligns with DD-HAPI-016 remediation history context (action-based history)
 
 ---
@@ -102,9 +102,11 @@ The LLM bridges the gap between source-specific signals and remediation actions:
 1. Receives the signal (any source vocabulary)
 2. Performs RCA investigation (kubectl, metrics, logs, etc.)
 3. If problem identified and needs remediation:
-   a. Discovers available actions (filtered by signal context, fresh in context window)
+   a. Discovers available action types (Step 1: taxonomy descriptions, filtered by signal context)
    b. Selects the action type that addresses the root cause
-   c. Fetches matching workflows for that action and selects the best fit
+   c. Lists available workflows for that action type (Step 2: per-workflow descriptions, same filters)
+   d. Reviews ALL workflows and selects the best fit
+   e. Fetches the selected workflow's parameter schema (Step 3) and provides values
 4. If problem resolved or inconclusive: follows existing paths without action discovery
 
 ### Escalation Behavior Unchanged
@@ -332,7 +334,7 @@ A new HAPI MCP tool that returns the action types available for the current sign
 
 **Name**: `list_available_actions`
 
-**Description** (for LLM): "Returns the list of remediation action types that have registered workflows matching the current signal context. Call this after your RCA investigation determines that remediation is needed, BEFORE selecting a specific workflow. You MUST select only from the returned action types."
+**Description** (for LLM): "Returns the remediation action types available for the current signal context. Each action type includes a structured description of what it does and when to use it. Call this after your RCA investigation determines that remediation is needed. Select the action type that best fits your root cause. You MUST select only from the returned list."
 
 **Parameters**:
 
@@ -344,8 +346,10 @@ A new HAPI MCP tool that returns the action types available for the current sign
 | `priority` | string | Yes | SP status | Business priority (P0, P1, P2, P3) |
 | `custom_labels` | object | No | SP status (Rego) | Operator-defined labels (e.g., `{"constraint": ["cost-constrained"], "team": ["name=payments"]}`) |
 | `detected_labels` | object | No | SP status | Auto-detected labels (e.g., `{"gitOpsManaged": true, "pdbProtected": true}`) |
+| `offset` | integer | No | LLM | Pagination offset (default: 0). Set to retrieve subsequent pages. |
+| `limit` | integer | No | LLM | Page size (default: 10). |
 
-**Note**: All parameters are auto-populated from the SP signal context. The LLM does not need to determine them. The filter set must match the same criteria used by `search_workflow_catalog` (minus `action_type`, which is what this tool discovers) to ensure every returned action type has at least one matching workflow when the full filters are applied.
+**Note**: All parameters except `offset` and `limit` are auto-populated from the SP signal context. The LLM does not need to determine them. The filter set must match the same criteria used by `get_workflow` (minus `action_type`, which is what this tool discovers) to ensure every returned action type has at least one matching workflow when the full filters are applied.
 
 **Response**:
 
@@ -369,16 +373,6 @@ A new HAPI MCP tool that returns the action types available for the current sign
         "preconditions": "Container is actively CPU-throttled, and CPU usage pattern is consistent with legitimate workload."
       },
       "workflow_count": 1
-    },
-    {
-      "action_type": "DeletePod",
-      "description": {
-        "what": "Delete one or more specific pods without waiting for graceful termination.",
-        "when_to_use": "Pods are stuck in a terminal state and cannot be restarted through normal means.",
-        "when_not_to_use": "Do not use as a general restart mechanism. Use RestartPod instead.",
-        "preconditions": "Pod is genuinely stuck and not responding to graceful termination."
-      },
-      "workflow_count": 1
     }
   ],
   "signal_context": {
@@ -388,14 +382,22 @@ A new HAPI MCP tool that returns the action types available for the current sign
     "priority": "P0",
     "custom_labels": {"constraint": ["cost-constrained"]},
     "detected_labels": {"gitOpsManaged": true}
+  },
+  "pagination": {
+    "total_count": 2,
+    "offset": 0,
+    "limit": 10,
+    "has_more": false
   }
 }
 ```
 
+**Note**: This response contains only action type taxonomy data (static, structured descriptions) and a `workflow_count` indicating how many workflows are available for each type. No workflow-level details are included -- the LLM uses this clean, consistent information to decide which action type fits the root cause. After selecting an action type, the LLM calls `list_workflows` to see the available workflows.
+
 **LLM-Rendered Format** (how the tool presents it to the LLM, optional fields omitted when absent):
 
 ```
-Available actions for severity=critical, component=deployment, environment=production:
+Available actions for severity=critical, component=deployment, environment=production (showing 1-2 of 2):
 
 1. ScaleReplicas (2 workflows)
    - What: Horizontally scale a workload by adjusting the replica count.
@@ -406,12 +408,16 @@ Available actions for severity=critical, component=deployment, environment=produ
    - What: Increase CPU resource limits on containers.
    - Use when: CPU throttling caused by limits too low relative to workload requirements.
    - Requires: Container is actively CPU-throttled, CPU usage consistent with legitimate workload.
+```
 
-3. DeletePod (1 workflow)
-   - What: Delete one or more specific pods without waiting for graceful termination.
-   - Use when: Pods are stuck in a terminal state and cannot be restarted normally.
-   - Do not use if: As a general restart mechanism. Use RestartPod instead.
-   - Requires: Pod is genuinely stuck and not responding to graceful termination.
+When more action types are available than fit in one page:
+
+```
+Available actions for severity=critical, component=deployment, environment=production (showing 1-10 of 14):
+
+... (action types with taxonomy descriptions) ...
+
+[4 more action types available - call list_available_actions with offset=10 to see next page]
 ```
 
 ### Action Type Taxonomy Table
@@ -437,7 +443,7 @@ ALTER TABLE remediation_workflow_catalog
 | Level | Stored In | Purpose | Used By |
 |-------|----------|---------|---------|
 | **Action type description** | `action_type_taxonomy.description` (structured JSONB) | What the action category does, when to use it, exclusions, preconditions | `list_available_actions` -- LLM selects action type |
-| **Workflow description** | `remediation_workflow_catalog.description` (free-form text) | What this specific workflow does differently (approach, parameters, scope, constraints) | `search_workflow_catalog` -- LLM selects specific workflow |
+| **Workflow description** | `remediation_workflow_catalog.description` (free-form text) | What this specific workflow does differently (approach, strategy, scope, constraints) | `list_workflows` -- LLM reviews all workflows and selects one |
 
 **Example** for `ScaleReplicas`:
 - **Taxonomy**: `{"what": "Horizontally scale a workload...", "when_to_use": "Root cause is insufficient capacity..."}`
@@ -458,6 +464,8 @@ ALTER TABLE remediation_workflow_catalog
 | `priority` | string | Yes | `P0` |
 | `custom_labels` | JSON string | No | `{"constraint":["cost-constrained"]}` |
 | `detected_labels` | JSON string | No | `{"gitOpsManaged":true,"pdbProtected":true}` |
+| `offset` | integer | No | `0` (default) |
+| `limit` | integer | No | `10` (default) |
 
 **Example request**:
 
@@ -468,6 +476,23 @@ GET /api/v1/workflows/actions?severity=critical&component=deployment&environment
 **SQL**:
 
 ```sql
+-- Count query (for total_count in pagination response -- counts distinct action types)
+SELECT COUNT(*) AS total_count
+FROM (
+    SELECT t.action_type
+    FROM action_type_taxonomy t
+    INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
+    WHERE w.status = 'active'
+      AND w.is_latest_version = true
+      AND (w.labels->>'severity' = $1 OR w.labels->>'severity' = '*')
+      AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
+      AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
+      AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
+      AND (w.custom_labels @> $5 OR $5 IS NULL)
+    GROUP BY t.action_type
+) AS action_count;
+
+-- Data query (paginated -- returns one row per action type with taxonomy description)
 SELECT
     t.action_type,
     t.description,                         -- Structured JSONB from taxonomy table
@@ -476,30 +501,202 @@ FROM action_type_taxonomy t
 INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
 WHERE w.status = 'active'
   AND w.is_latest_version = true
-  -- Mandatory labels (same filters as search endpoint)
+  -- Context filters (same filters applied to all three endpoints)
   AND (w.labels->>'severity' = $1 OR w.labels->>'severity' = '*')
   AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
   AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
   AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
-  -- Custom labels (operator-defined via Rego, JSONB containment)
   AND (w.custom_labels @> $5 OR $5 IS NULL)
-  -- Detected labels (auto-detected by SP, scoring boost/filter)
-  -- Uses same detected label matching logic as search endpoint
 GROUP BY t.action_type, t.description
-ORDER BY t.action_type;
+ORDER BY t.action_type
+LIMIT $6 OFFSET $7;                        -- Default: LIMIT 10 OFFSET 0
 ```
 
-**Key principle**: The filter set for `ListAvailableActions` must be identical to `SearchWorkflowCatalog` (minus `action_type`). This guarantees that every action type returned has at least one matching workflow when the LLM subsequently calls `search_workflow_catalog` with the same context.
+**Note**: This query returns one row per action type with its taxonomy description and count of matching workflows. Pagination is based on action type count. Only action types that have at least one active, matching workflow are returned (INNER JOIN ensures this).
+
+**Key principle**: The context filter set must be identical across all three endpoints (`list_available_actions`, `list_workflows`, `get_workflow`). This guarantees that (a) every action type from Step 1 has matching workflows in Step 2, (b) every workflow from Step 2 will pass the security gate in Step 3, and (c) the LLM cannot bypass context restrictions by guessing workflow IDs.
+
+**Pagination**: Results are paginated with a default page size of 10. The response includes `total_count`, `offset`, `limit`, and `has_more`. For V1.0 (10 taxonomy types), pagination is unlikely to be needed but is included for consistency with `get_workflow` and future taxonomy growth.
 
 **Sorting**: Results are sorted alphabetically by `action_type` for deterministic, predictable ordering. The LLM selects action types based on structured descriptions and root cause analysis, not list position. Confidence scores are not exposed to the LLM and not used for sorting in this endpoint.
 
 ---
 
-## SearchWorkflowCatalog Changes
+## ListWorkflows Tool (Step 2: Workflow Selection)
 
-### Updated Primary Key
+### Purpose
 
-`action_type` replaces `signal_type` as the required primary filter:
+After the LLM selects an action type from `list_available_actions`, it calls `list_workflows` to see all available workflows for that action type within the current signal context. The LLM **must read all listed workflows** before selecting one -- this prevents premature selection bias and ensures the best-fit workflow is chosen.
+
+### Tool Specification
+
+**Name**: `list_workflows`
+
+**Description** (for LLM): "Returns all available workflows for a specific action type matching the current signal context. Each workflow includes a description of its unique approach and strategy. You MUST read ALL listed workflows before selecting one. Do not select the first match -- compare all options against your root cause analysis."
+
+**Parameters**:
+
+| Parameter | Type | Required | Source | Description |
+|-----------|------|----------|--------|-------------|
+| `action_type` | string | Yes | LLM selection | The action type selected from `list_available_actions` results |
+| `severity` | string | Yes | SP status | Signal severity (same as list_available_actions) |
+| `component` | string | Yes | SP status | Kubernetes resource type (same as list_available_actions) |
+| `environment` | string | Yes | SP status | Deployment environment (same as list_available_actions) |
+| `priority` | string | Yes | SP status | Business priority (same as list_available_actions) |
+| `custom_labels` | object | No | SP status (Rego) | Operator-defined labels (same as list_available_actions) |
+| `detected_labels` | object | No | SP status | Auto-detected labels (same as list_available_actions) |
+| `offset` | integer | No | LLM | Pagination offset (default: 0) |
+| `limit` | integer | No | LLM | Page size (default: 10) |
+
+**Note**: All parameters except `action_type`, `offset`, and `limit` are auto-populated from the SP signal context. The same context filters are applied to ensure only workflows matching the current signal context are returned.
+
+**Response**:
+
+```json
+{
+  "action_type": "ScaleReplicas",
+  "workflows": [
+    {
+      "workflow_id": "wf-scale-conservative-001",
+      "description": "Percentage-based replica scaling with a configurable upper bound. Conservative approach suitable for stateful workloads where gradual capacity increases are preferred."
+    },
+    {
+      "workflow_id": "wf-scale-aggressive-002",
+      "description": "Multiplier-based replica scaling for rapid capacity increase. Aggressive approach designed for traffic spike emergencies where speed takes priority over cost."
+    }
+  ],
+  "pagination": {
+    "total_count": 2,
+    "offset": 0,
+    "limit": 10,
+    "has_more": false
+  }
+}
+```
+
+**LLM-Rendered Format**:
+
+```
+Workflows for ScaleReplicas (showing 1-2 of 2):
+
+1. wf-scale-conservative-001
+   Percentage-based replica scaling with a configurable upper bound. Conservative approach suitable for stateful workloads where gradual capacity increases are preferred.
+
+2. wf-scale-aggressive-002
+   Multiplier-based replica scaling for rapid capacity increase. Aggressive approach designed for traffic spike emergencies where speed takes priority over cost.
+
+IMPORTANT: Review ALL workflows above before selecting. Do not select the first match.
+```
+
+### DataStorage Endpoint
+
+**Endpoint**: `GET /api/v1/workflows/actions/{action_type}`
+
+**Path parameters**:
+
+| Parameter | Type | Required | Example |
+|-----------|------|----------|---------|
+| `action_type` | string | Yes | `ScaleReplicas` |
+
+**Query parameters**:
+
+| Parameter | Type | Required | Example |
+|-----------|------|----------|---------|
+| `severity` | string | Yes | `critical` |
+| `component` | string | Yes | `deployment` |
+| `environment` | string | Yes | `production` |
+| `priority` | string | Yes | `P0` |
+| `custom_labels` | JSON string | No | `{"constraint":["cost-constrained"]}` |
+| `detected_labels` | JSON string | No | `{"gitOpsManaged":true}` |
+| `offset` | integer | No | `0` (default) |
+| `limit` | integer | No | `10` (default) |
+
+**SQL**:
+
+```sql
+-- Count query
+SELECT COUNT(*) AS total_count
+FROM remediation_workflow_catalog
+WHERE action_type = $1
+  AND status = 'active'
+  AND is_latest_version = true
+  AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
+  AND (labels->>'component' = $3 OR labels->>'component' = '*')
+  AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
+  AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
+  AND (custom_labels @> $6 OR $6 IS NULL);
+
+-- Data query (paginated)
+SELECT
+    workflow_id,
+    description,          -- Free-form text: per-workflow approach
+    final_score           -- Internal: used by HAPI for sorting, stripped before LLM rendering
+FROM remediation_workflow_catalog
+WHERE action_type = $1    -- Selected action type from Step 1
+  AND status = 'active'
+  AND is_latest_version = true
+  -- Same context filters as list_available_actions
+  AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
+  AND (labels->>'component' = $3 OR labels->>'component' = '*')
+  AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
+  AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
+  AND (custom_labels @> $6 OR $6 IS NULL)
+ORDER BY final_score DESC, workflow_id ASC  -- Best matches first, deterministic tiebreaker
+LIMIT $7 OFFSET $8;                        -- Default: LIMIT 10 OFFSET 0
+```
+
+**Note on `final_score`**: HAPI uses `final_score` internally for sorting results, but **strips it from the LLM tool response**. The LLM sees workflow descriptions and workflow IDs -- not scores. This prevents the LLM from over-indexing on numeric scores instead of reasoning about which workflow best fits the root cause.
+
+**Workflow description guidelines**:
+- Describe the **strategy and approach** (conservative, aggressive, adaptive, etc.)
+- Describe **constraints and guardrails** the workflow enforces
+- Describe the **scope** (what types of workloads or scenarios it targets)
+- Do **NOT** include hardcoded parameter values -- the LLM provides parameter values based on the RCA context and the workflow's parameter schema
+
+---
+
+## GetWorkflow (Step 3: Workflow Parameter Lookup)
+
+### Role: Single-Workflow Parameter Lookup
+
+After selecting a workflow from `list_workflows`, the LLM calls `get_workflow` with the `workflow_id` to retrieve the full parameter schema needed to populate the remediation request. This is an exact lookup (not a search) -- it returns exactly one workflow or an error.
+
+### GetWorkflow Tool Parameters
+
+| Parameter | Type | Required | Source | Description |
+|-----------|------|----------|--------|-------------|
+| `workflow_id` | string | Yes | LLM selection | The workflow ID selected from `list_workflows` results |
+| `severity` | string | Yes | SP status | Signal severity (same context filters) |
+| `component` | string | Yes | SP status | Kubernetes resource type (same context filters) |
+| `environment` | string | Yes | SP status | Deployment environment (same context filters) |
+| `priority` | string | Yes | SP status | Business priority (same context filters) |
+| `custom_labels` | object | No | SP status (Rego) | Operator-defined labels (same context filters) |
+| `detected_labels` | object | No | SP status | Auto-detected labels (same context filters) |
+
+**Note**: All parameters except `workflow_id` are auto-populated from the SP signal context. The filter parameters are applied as a **security gate** -- even though the `workflow_id` uniquely identifies the workflow, the context filters ensure the LLM cannot use a workflow that doesn't match the current signal context. If the LLM provides a valid `workflow_id` that belongs to a different environment or severity, the query returns 0 results.
+
+### DataStorage Endpoint
+
+**Endpoint**: `GET /api/v1/workflows/{workflow_id}`
+
+**Path parameters**:
+
+| Parameter | Type | Required | Example |
+|-----------|------|----------|---------|
+| `workflow_id` | string | Yes | `wf-scale-conservative-001` |
+
+**Query parameters** (security gate):
+
+| Parameter | Type | Required | Example |
+|-----------|------|----------|---------|
+| `severity` | string | Yes | `critical` |
+| `component` | string | Yes | `deployment` |
+| `environment` | string | Yes | `production` |
+| `priority` | string | Yes | `P0` |
+| `custom_labels` | JSON string | No | `{"constraint":["cost-constrained"]}` |
+| `detected_labels` | JSON string | No | `{"gitOpsManaged":true}` |
+
+### SQL
 
 **Before (DD-WORKFLOW-001 v2.5)**:
 ```sql
@@ -510,40 +707,53 @@ WHERE labels->>'signal_type' = $1  -- Required, exact match
 ```sql
 SELECT
     workflow_id,
-    description,          -- Free-form text: what THIS specific workflow does differently
-    parameters,           -- Workflow parameters (mandatory/optional)
-    final_score           -- Used internally by HAPI for sorting; stripped before LLM rendering
+    action_type,
+    description,          -- Free-form text: per-workflow approach (already seen in list_available_actions)
+    parameters            -- Full parameter schema (mandatory/optional, types, descriptions)
 FROM remediation_workflow_catalog
-WHERE action_type = $1    -- Required, exact match (new primary key)
+WHERE workflow_id = $1    -- Exact match by ID (selected from list_available_actions)
   AND status = 'active'
   AND is_latest_version = true
-  -- Mandatory labels (same filters as list_available_actions)
+  -- Security: same context filters as list_available_actions
+  -- Prevents LLM from using a workflow outside the allowed signal context
   AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
   AND (labels->>'component' = $3 OR labels->>'component' = '*')
   AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
   AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
-  -- Custom labels (operator-defined via Rego, JSONB containment)
-  AND (custom_labels @> $6 OR $6 IS NULL)
-  -- Detected labels (same matching logic as list_available_actions)
-ORDER BY final_score DESC, workflow_id ASC  -- Score for ranking, workflow_id for deterministic tiebreaker
+  AND (custom_labels @> $6 OR $6 IS NULL);
 ```
 
-Multiple workflows per action type is expected and encouraged. Each workflow provides its own description explaining its unique approach, making it possible for the LLM to choose the most appropriate one for the specific root cause.
+**Response** (single workflow):
 
-**Note on `final_score`**: HAPI uses `final_score` internally for sorting results and validation, but **strips it from the LLM tool response**. The LLM sees workflow descriptions, parameters, and workflow IDs -- not scores. This prevents the LLM from over-indexing on numeric scores instead of reasoning about which workflow best fits the root cause.
+```json
+{
+  "workflow_id": "wf-scale-conservative-001",
+  "action_type": "ScaleReplicas",
+  "description": "Percentage-based replica scaling with a configurable upper bound. Conservative approach suitable for stateful workloads.",
+  "parameters": {
+    "scale_percentage": {"type": "integer", "required": true, "description": "Percentage to scale by"},
+    "max_replicas": {"type": "integer", "required": false, "description": "Upper bound for replica count"}
+  }
+}
+```
+
+**LLM-rendered format**:
+
+```
+Workflow: wf-scale-conservative-001 (ScaleReplicas)
+Description: Percentage-based replica scaling with a configurable upper bound. Conservative approach suitable for stateful workloads.
+Parameters:
+  * scale_percentage (integer, required): Percentage to scale by
+  * max_replicas (integer, optional): Upper bound for replica count
+```
+
+No pagination needed -- this always returns exactly one workflow or an error if the workflow_id is invalid/inactive.
 
 **Workflow description guidelines**:
 - Describe the **strategy and approach** (conservative, aggressive, adaptive, etc.)
 - Describe **constraints and guardrails** the workflow enforces
 - Describe the **scope** (what types of workloads or scenarios it targets)
 - Do **NOT** include hardcoded parameter values -- the LLM provides parameter values based on the RCA context and the workflow's parameter schema
-
-### Updated Query Format (DD-LLM-001 Amendment)
-
-**Before**: `'<signal_type> <severity> [optional_keywords]'`
-**After**: `'<action_type> <severity> [optional_keywords]'`
-
-Example: `"ScaleReplicas critical"` instead of `"OOMKilled critical"`
 
 ### Signal Type as Optional Secondary Filter
 
@@ -553,7 +763,7 @@ Example: `"ScaleReplicas critical"` instead of `"OOMKilled critical"`
 
 ---
 
-## LLM Two-Step Workflow Discovery Protocol
+## LLM Three-Step Workflow Discovery Protocol
 
 ### Sequence
 
@@ -565,47 +775,68 @@ Example: `"ScaleReplicas critical"` instead of `"OOMKilled critical"`
    -> Skip action discovery entirely
 4. IF problem identified and needs remediation:
    a. LLM calls list_available_actions(severity, component, environment, priority, ...)
-      -> HAPI queries DS, returns filtered action types with descriptions (fresh in context)
-   b. LLM selects action_type based on root cause + action type descriptions
+      -> HAPI queries DS, returns action types with taxonomy descriptions (clean, static data)
+      -> Paginated (default 10 action types per page)
+      -> If has_more=true and no action fits, LLM may request next page
+   b. LLM selects action_type based on root cause + taxonomy descriptions
       -> MUST select from returned list; if none fit, report no_matching_workflows
-   c. LLM calls search_workflow_catalog(action_type, ...)
-      -> HAPI queries DS, returns matching workflows with per-workflow descriptions
-         and parameters (confidence scores are stripped before LLM rendering)
-      -> LLM reviews workflow-specific descriptions to pick the best match
+   c. LLM calls list_workflows(action_type, severity, component, environment, priority, ...)
+      -> HAPI queries DS, returns all matching workflows for that action type
+      -> Paginated (default 10 workflows per page)
+      -> LLM MUST read ALL listed workflows before selecting one
+   d. LLM selects workflow_id based on root cause + per-workflow descriptions
+      -> MUST select from returned list; if none fit, report no_matching_workflows
+   e. LLM calls get_workflow(workflow_id, severity, component, environment, ...)
+      -> HAPI queries DS with security gate filters, returns parameter schema
+      -> Single result (no pagination); returns error if workflow_id doesn't match context
+   f. LLM populates parameters based on RCA context and the parameter schema
 5. HAPI validates the LLM's returned workflow by querying DS directly
    -> Ensures workflow data is current (not stale)
-   -> Confirms action_type, workflow_id, and parameter schema match
+   -> Confirms workflow_id, action_type, and parameter schema match
 ```
 
 **Rationale for post-RCA action discovery**: The action type list must be fresh in the LLM's context window at the moment of selection. RCA investigation generates many tool call responses (kubectl, metrics, logs) that push earlier context deeper into the window, risking summarization loss. By calling `list_available_actions` only after RCA concludes that remediation is needed, we: (a) avoid wasting tokens when no remediation is needed (problem resolved, inconclusive), and (b) ensure action descriptions are immediately adjacent to the selection decision.
+
+**Rationale for three-step protocol** (list actions -> list workflows -> get parameters):
+1. **Reduce noise**: Step 1 shows only clean taxonomy data (static, structured descriptions). The LLM focuses on action type selection without being distracted by workflow details.
+2. **Force comprehensive review**: Step 2 lists all workflows for the selected action type. The LLM is explicitly instructed to read ALL workflows before selecting, preventing premature selection bias.
+3. **Separation of concerns**: Each step serves a single decision -- what action type, which workflow, what parameters. This makes each decision clearer and more auditable.
+4. **Security**: Step 3 applies context filters as a security gate, ensuring the LLM cannot use a workflow outside the allowed signal context even if it provides a valid workflow_id.
 
 ### LLM Prompt Contract
 
 The HAPI system prompt must instruct the LLM to:
 
 1. **Perform RCA first**: Investigate the signal thoroughly before considering remediation actions.
-2. **Call `list_available_actions` only when remediation is needed**: After RCA, if the problem is identified and active, discover what actions are available for the current context. Do not call this tool if the problem is resolved or the investigation is inconclusive.
-3. **Select only from the returned list**: Never hallucinate or invent an action type. If the root cause does not match any available action's description, report `no_matching_workflows`.
-4. **Validate fit before selecting**: Even if only one action type is available, verify that its description matches the root cause. Do not blindly select the only option.
-5. **Use descriptions as guidance**: The description explains when to use each action. Match the root cause to the action whose description best fits the situation.
+2. **Call `list_available_actions` only when remediation is needed**: After RCA, if the problem is identified and active, discover what action types are available. Do not call this tool if the problem is resolved or the investigation is inconclusive.
+3. **Select an action type**: Review all returned action type descriptions. Select the one whose description best matches your root cause. Never hallucinate or invent an action type. If none fit, report `no_matching_workflows`.
+4. **Call `list_workflows` with the selected action type**: Retrieve all available workflows for that action type.
+5. **Read ALL workflows before selecting**: You MUST review every listed workflow before making a selection. Do not select the first match. Compare all workflow descriptions against your root cause analysis to identify the best fit. If no workflow fits, report `no_matching_workflows`.
+6. **Call `get_workflow` with the selected `workflow_id`**: Retrieve the full parameter schema. Use the parameter descriptions and your RCA findings to provide appropriate values.
+7. **Pagination**: `list_available_actions` and `list_workflows` return paginated results (default 10 per page).
+   - **Step 1** (`list_available_actions`): You may select from the first page if a clear action type match exists. Request the next page only if none of the current results fit.
+   - **Step 2** (`list_workflows`): You MUST review ALL available workflows before selecting. If `has_more` is true, request the next page and continue reviewing until all workflows have been seen. Do not select from an incomplete list.
+   - If all pages are exhausted without a suitable match, report `no_matching_workflows`.
 
 ### HAPI Validation
 
-After the LLM returns its selected workflow, HAPI validates the selection by querying DS directly. This ensures validation is performed against current data, avoiding stale state if workflows were updated or deactivated during the investigation. The validation checks:
+After the LLM returns its selected workflow and parameters, HAPI validates the selection by querying DS directly. This ensures validation is performed against current data, avoiding stale state if workflows were updated or deactivated during the investigation. The validation checks:
 
-1. The `action_type` is valid and has active workflows matching the signal context
-2. The `workflow_id` exists and is active for the given `action_type`
+1. The `workflow_id` exists and is active
+2. The `workflow_id` belongs to a valid `action_type` from the taxonomy
 3. The parameter types and mandatory/optional flags match the workflow schema
+4. All required parameters are provided with valid types
 
-This is the same validation pattern currently used (DD-WORKFLOW-010), updated to use `action_type` instead of `signal_type`.
+This is the same validation pattern currently used (DD-WORKFLOW-010), updated to validate by `workflow_id` instead of `signal_type`.
 
 ### Single Action Type Edge Case
 
-When `ListAvailableActions` returns only one action type, the LLM must still:
+When `ListAvailableActions` returns only one action type and `ListWorkflows` returns only one workflow, the LLM must still:
 
 1. Perform full RCA investigation
-2. Validate that the action's description matches the root cause
-3. Report `no_matching_workflows` if the fit is poor
+2. Validate that the action type's description matches the root cause
+3. Validate that the workflow's description matches the root cause
+4. Report `no_matching_workflows` if the fit is poor
 
 The confidence score (existing mechanism, internal to HAPI) provides an additional quality gate even in single-action scenarios -- HAPI can reject low-confidence matches before they reach workflow execution.
 
@@ -644,28 +875,30 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 |-------|--------|---------|
 | `action_type` | **NEW** (required) | TEXT, FK to `action_type_taxonomy(action_type)`, indexed |
 | `signal_type` | **CHANGED** to optional | Was required primary key, now optional metadata |
-| `description` | **CLARIFIED** (two levels) | **Action type description**: Structured JSONB in `action_type_taxonomy` (used by `list_available_actions` for action type selection). **Workflow description**: Free-form text on each workflow entry describing the workflow's unique approach, strategy, and scope (used by `search_workflow_catalog` for specific workflow selection). |
+| `description` | **CLARIFIED** (two levels) | **Action type description**: Structured JSONB in `action_type_taxonomy` (returned by `list_available_actions`). **Workflow description**: Free-form text per workflow (returned by `list_workflows`). LLM uses action descriptions in Step 1 to select action type, then workflow descriptions in Step 2 to select workflow. |
 
 ### DataStorage Endpoints
 
 | Endpoint | Change | Details |
 |----------|--------|---------|
-| `GET /api/v1/workflows/actions` | **NEW** | Context-aware action type discovery |
-| `POST /api/v1/workflows/search` | **UPDATED** | `action_type` replaces `signal_type` as required filter |
+| `GET /api/v1/workflows/actions` | **NEW** | Step 1: Context-aware action type discovery (paginated, default 10) |
+| `GET /api/v1/workflows/actions/{action_type}` | **NEW** | Step 2: List workflows for a specific action type (paginated, default 10) |
+| `GET /api/v1/workflows/{workflow_id}` | **UPDATED** | Step 3: Single-workflow parameter lookup with context filter security gate |
 
 ### HAPI Toolset
 
 | Tool | Change | Details |
 |------|--------|---------|
-| `list_available_actions` | **NEW** | Context-aware MCP tool for action discovery |
-| `search_workflow_catalog` | **UPDATED** | Primary key changes to `action_type` |
+| `list_available_actions` | **NEW** | Step 1: Context-aware action type discovery from taxonomy |
+| `list_workflows` | **NEW** | Step 2: List workflows for a selected action type |
+| `get_workflow` | **UPDATED** | Step 3: Renamed from `search_workflow_catalog`. Single-workflow parameter lookup by `workflow_id` with context filter security gate. |
 
 ### Prompt Templates
 
 | Template | Change | Details |
 |----------|--------|---------|
-| Incident prompt | **UPDATED** | Two-step protocol: discover actions, then search catalog |
-| Recovery prompt | **UPDATED** | Same two-step protocol |
+| Incident prompt | **UPDATED** | Three-step protocol: list actions -> list workflows -> get parameters |
+| Recovery prompt | **UPDATED** | Same three-step protocol |
 
 ---
 
@@ -687,7 +920,7 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 
 1. **V1.0 catalog is small/empty**: No significant migration burden. Existing workflows (if any) receive an `action_type` assignment as part of the migration.
 2. **Workflow registration API**: Requires `action_type` (must reference a valid taxonomy entry) + per-workflow `description` (free-form text describing the workflow's unique approach) going forward. `signal_type` becomes optional.
-3. **Transition period**: During migration, catalog search falls back to `signal_type` if `action_type` is absent on a workflow entry. This fallback is removed once all workflows are migrated.
+3. **Transition period**: During migration, `list_available_actions` falls back to `signal_type` filtering if `action_type` is absent on a workflow entry. This fallback is removed once all workflows are migrated.
 
 ### ADR-054 Signal Mode Classification
 
@@ -732,36 +965,58 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 workflow discovery)
-- **Description**: MUST implement `list_available_actions` MCP tool in HAPI that returns context-filtered action types with descriptions from the workflow catalog.
+- **Description**: MUST implement `list_available_actions` MCP tool in HAPI that returns context-filtered, paginated action types with taxonomy descriptions from the `action_type_taxonomy` table.
 - **Acceptance Criteria**:
-  - Tool accepts severity, component, environment, priority, custom_labels, detected_labels parameters (same filter set as search_workflow_catalog minus action_type)
-  - Returns distinct action types with descriptions (from `action_type_taxonomy` table) and workflow counts
+  - Tool accepts severity, component, environment, priority, custom_labels, detected_labels parameters
+  - Response includes action types with structured taxonomy descriptions and workflow count per action type
+  - Only returns action types that have at least one active, matching workflow (INNER JOIN)
+  - Supports pagination via `offset` and `limit` parameters (default: limit=10, offset=0). Pagination is based on action type count.
+  - Response includes `pagination` object with `total_count`, `offset`, `limit`, `has_more`
   - Returns empty list when no workflows match context (triggers existing no-match path)
   - Parameters are auto-populated from SP signal context
-  - Unit and integration tests cover all filter combinations
+  - Unit and integration tests cover all filter combinations and pagination edge cases
 
-#### BR-WORKFLOW-016-003: SearchWorkflowCatalog Action Type Migration
+#### BR-WORKFLOW-016-005: ListWorkflows HAPI Tool
+
+- **Category**: WORKFLOW
+- **Priority**: P0 (blocking for V1.0 workflow selection)
+- **Description**: MUST implement `list_workflows` MCP tool in HAPI that returns context-filtered, paginated workflows for a specific action type.
+- **Acceptance Criteria**:
+  - Tool accepts action_type (from Step 1 selection), plus severity, component, environment, priority, custom_labels, detected_labels parameters
+  - Response includes workflow_id and per-workflow description (free-form text)
+  - `final_score` is used internally for sorting but stripped before LLM rendering
+  - Supports pagination via `offset` and `limit` parameters (default: limit=10, offset=0)
+  - Response includes `pagination` object with `total_count`, `offset`, `limit`, `has_more`
+  - LLM tool description explicitly instructs: "You MUST read ALL listed workflows before selecting one"
+  - Returns empty list when no workflows match for the action type (triggers no-match path)
+  - Unit and integration tests cover filter combinations, pagination, and empty results
+
+#### BR-WORKFLOW-016-003: GetWorkflow Parameter Lookup
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 catalog matching)
-- **Description**: MUST update `search_workflow_catalog` to use `action_type` as primary matching key instead of `signal_type`.
+- **Description**: MUST implement `get_workflow` as a single-workflow parameter lookup by `workflow_id` (renamed from `search_workflow_catalog`). Applies signal context filters as a security gate to prevent the LLM from using workflows outside the allowed context.
 - **Acceptance Criteria**:
-  - `action_type` is required filter (replaces `signal_type`)
-  - `signal_type` becomes optional metadata on workflow entries
-  - Existing scoring logic (detected labels, custom labels) unchanged
+  - `workflow_id` is the primary lookup key (exact match)
+  - Signal context filters (severity, component, environment, priority, custom_labels, detected_labels) applied as security gate
+  - DS endpoint: `GET /api/v1/workflows/{workflow_id}` with context filters as query parameters
+  - Returns exactly one workflow with full parameter schema, or error if not found / not allowed
+  - Returns 0 results if `workflow_id` exists but doesn't match the signal context (defense in depth)
+  - `signal_type` is optional metadata on workflow entries, not a filter
   - HAPI validation confirms workflow by querying DS directly (current data, not cached)
-  - Unit and integration tests cover action-type-based search
+  - Unit and integration tests cover valid lookups, invalid workflow_id, and context mismatch scenarios
 
-#### BR-WORKFLOW-016-004: LLM Two-Step Discovery Protocol
+#### BR-WORKFLOW-016-004: LLM Three-Step Discovery Protocol
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 LLM integration)
-- **Description**: MUST update HAPI prompt templates to instruct the LLM to follow the workflow discovery protocol (RCA -> ListAvailableActions -> SearchWorkflowCatalog). RCA is performed first; action discovery only happens when remediation is needed.
+- **Description**: MUST update HAPI prompt templates to instruct the LLM to follow the three-step workflow discovery protocol (RCA -> ListAvailableActions -> ListWorkflows -> GetWorkflow). RCA is performed first; action discovery only happens when remediation is needed.
 - **Acceptance Criteria**:
-  - Incident and recovery prompts include two-step protocol instructions
-  - LLM is instructed to select only from returned action types
-  - LLM is instructed to validate fit before selecting (even with single action)
-  - Integration tests validate protocol compliance
+  - Incident and recovery prompts include three-step protocol instructions
+  - LLM is instructed to select action type from Step 1, then review ALL workflows in Step 2 before selecting
+  - LLM is instructed to validate fit before selecting (even with single action or single workflow)
+  - LLM is instructed on pagination behavior: for Step 1, prefer first page and request more only if no fit; for Step 2, LLM MUST review ALL pages before selecting (request next page if `has_more` is true). Report `no_matching_workflows` if all pages exhausted without a match.
+  - Integration tests validate protocol compliance including pagination scenarios and workflow review enforcement
 
 ---
 
@@ -784,7 +1039,7 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
 
 **Confidence Gap (4%)**:
 - LLM action-type selection accuracy (~2%): Edge cases with ambiguous root causes where multiple actions could apply. Mitigated by structured descriptions and remediation history context. Testable through integration tests with real signals.
-- Two-step protocol compliance (~1%): LLM must reliably follow post-RCA discovery protocol. Mitigated by explicit prompt contract. Testable through prompt engineering iteration.
+- Three-step protocol compliance (~1%): LLM must reliably follow post-RCA discovery protocol (three steps). Mitigated by explicit prompt contract and clear tool descriptions. Testable through prompt engineering iteration.
 - Taxonomy completeness (~1%): V1.0 taxonomy (10 types) covers common Kubernetes remediation patterns but may need additions as new signal sources are integrated. Additive change via DD amendment.
 
 **Next Review**: After V1.0 implementation validates LLM action-type selection accuracy

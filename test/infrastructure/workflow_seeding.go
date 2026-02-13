@@ -36,6 +36,7 @@ type TestWorkflow struct {
 	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
 	Name            string
 	Description     string
+	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
 	SignalType      string // Must match test scenarios (e.g., "OOMKilled")
 	Severity        string // "critical", "high", "medium", "low"
 	Component       string // "deployment", "pod", "node", etc.
@@ -169,10 +170,17 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		executionEngine = "tekton"
 	}
 
+	// DD-WORKFLOW-016: Default to ScaleReplicas if action_type not specified
+	actionType := wf.ActionType
+	if actionType == "" {
+		actionType = "ScaleReplicas"
+	}
+
 	// Build workflow request using OpenAPI generated types (compile-time validation)
 	workflowReq := &ogenclient.RemediationWorkflow{
 		// Note: WorkflowID is NOT set - DataStorage auto-generates it
 		WorkflowName:    wf.WorkflowID, // Human-readable identifier (workflow_name field)
+		ActionType:      actionType,     // DD-WORKFLOW-016: FK to action_type_taxonomy
 		Version:         version,
 		Name:            wf.Name,
 		Description:     wf.Description,

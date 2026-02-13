@@ -101,6 +101,18 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 			ffNamespace := createTestNamespace("em-ff-e2e")
 			defer deleteTestNamespace(ffNamespace)
 
+			// Get the actual EM image from the running deployment (built by SetupEMInfrastructure).
+			// The image has a dynamically generated tag, so we can't hardcode it.
+			imageCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+				"get", "deployment", "effectivenessmonitor-controller",
+				"-n", "kubernaut-system",
+				"-o", "jsonpath={.spec.template.spec.containers[0].image}")
+			imageOut, err := imageCmd.Output()
+			Expect(err).ToNot(HaveOccurred(), "Failed to get EM image from deployment")
+			emImage := string(imageOut)
+			Expect(emImage).ToNot(BeEmpty(), "EM image name should not be empty")
+			GinkgoWriter.Printf("  Using EM image: %s\n", emImage)
+
 			manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
@@ -110,14 +122,17 @@ metadata:
 data:
   effectivenessmonitor.yaml: |
     assessment:
-      stabilizationWindow: 10s
+      stabilizationWindow: 30s
       validityWindow: 5m
       scoringThreshold: 0.5
     audit:
       dataStorageUrl: http://data-storage-service.kubernaut-system:8080
       timeout: 5s
-      bufferSize: 10
-      flushInterval: 5s
+      buffer:
+        bufferSize: 10
+        batchSize: 10
+        flushInterval: 5s
+        maxRetries: 3
     controller:
       leaderElection: false
     external:
@@ -144,7 +159,7 @@ spec:
     spec:
       containers:
       - name: controller
-        image: kubernaut/effectivenessmonitor:latest
+        image: %[2]s
         imagePullPolicy: Never
         args:
         - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
@@ -157,7 +172,7 @@ spec:
       - name: config
         configMap:
           name: em-ff-test-config
-`, ffNamespace)
+`, ffNamespace, emImage)
 
 			cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(manifest)

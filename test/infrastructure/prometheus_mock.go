@@ -294,6 +294,27 @@ func NewPromEmptyVectorResponse() *PromQueryResponse {
 	return resp
 }
 
+// NewPromMatrixResponse creates a Prometheus range query response with a single matrix
+// result containing the provided time-series values. Each entry in the values slice is
+// a [timestamp, "value"] pair. This is the response format for /api/v1/query_range.
+//
+// The reconciler's assessMetrics() requires at least 2 samples (pre- and post-remediation)
+// to produce a metric comparison score. Tests that enable PrometheusEnabled MUST configure
+// a QueryRangeResponse with >= 2 values to avoid infinite requeue.
+func NewPromMatrixResponse(metric map[string]string, values [][]interface{}) *PromQueryResponse {
+	resp := &PromQueryResponse{
+		Status: "success",
+	}
+	resp.Data.ResultType = "matrix"
+	resp.Data.Result = []PromQueryResult{
+		{
+			Metric: metric,
+			Values: values,
+		},
+	}
+	return resp
+}
+
 // NewPromErrorResponse creates a Prometheus error response.
 func NewPromErrorResponse(errorType, message string) *PromQueryResponse {
 	return &PromQueryResponse{

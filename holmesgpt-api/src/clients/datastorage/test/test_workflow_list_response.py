@@ -40,6 +40,7 @@ class TestWorkflowListResponse(unittest.TestCase):
                     datastorage.models.remediation_workflow.RemediationWorkflow(
                         workflow_id = '', 
                         workflow_name = '', 
+                        action_type = 'ScaleReplicas', 
                         version = '', 
                         name = '', 
                         description = '', 

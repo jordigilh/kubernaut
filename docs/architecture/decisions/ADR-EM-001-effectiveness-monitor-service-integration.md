@@ -20,6 +20,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2026-02-12 | Architecture Team | ValidityDeadline moved from EA spec to status (EM computes on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event emitted on first reconciliation capturing all derived timing. Follows K8s spec/status convention: RO sets desired state (StabilizationWindow in spec), EM computes derived state (timing fields in status). |
 | 1.2 | 2026-02-09 | Architecture Team | EM emits individual component audit events (health, alert, metrics, hash); DS computes weighted score on demand. Assessment validity window (30m default) prevents stale data collection. Replaces single `effectiveness.assessment.completed` data event with component events + lifecycle marker. |
 | 1.1 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD (follows AA/WFE/NR pattern). EM watches EA CRDs instead of RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation with assessment deadline. Side-effect detection deferred to post-V1.0. Scoring formula updated (3 components: health 0.40, signal 0.35, metrics 0.25). DD-EFFECTIVENESS-003 RR-watch superseded by EA CRD trigger. |
 | 1.0 | 2026-02-09 | Architecture Team | Initial ADR: EM service integration, sequence diagrams, data models, SOC2 chain |
@@ -58,8 +59,9 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 4. **Idempotent assessment**: The EA CRD spec is immutable (CEL: `self == oldSelf`), and the EA status tracks assessment progress. Duplicate EM reconciles check `status.phase` and `status.components` before proceeding. DS deduplicates component audit events by correlation ID + event type.
 5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events.
 6. **Assessment validity window**: Component data is only meaningful within a bounded time after remediation. If the EM cannot assess a component within the `validityWindow` (default 30m), it marks the EA as expired rather than collecting misleading data that may reflect system drift or subsequent remediations.
-7. **SOC2 chain of custody**: Every hop in the remediation chain emits an audit event capturing what it decided/applied, enabling end-to-end traceability.
-8. **Side-effect detection deferred**: V1.0 does not assess side effects (new alerts, collateral degradation). The complexity of determining causality and the dependency on multiple AlertManager scrapes makes this a post-V1.0 concern.
+7. **Derived timing in status**: The EM computes all timing-derived fields (`validityDeadline`, `prometheusCheckAfter`, `alertManagerCheckAfter`) on first reconciliation and persists them in EA status. This follows K8s spec/status convention (RO sets spec, EM computes status), avoids redundant recomputation, prevents StabilizationWindow > ValidityDeadline misconfiguration, and provides operator observability.
+8. **SOC2 chain of custody**: Every hop in the remediation chain emits an audit event capturing what it decided/applied, enabling end-to-end traceability.
+9. **Side-effect detection deferred**: V1.0 does not assess side effects (new alerts, collateral degradation). The complexity of determining causality and the dependency on multiple AlertManager scrapes makes this a post-V1.0 concern.
 
 ---
 
@@ -250,8 +252,15 @@ sequenceDiagram
     Note over Ctrl,EA: Triggered by EA CRD (created by RO)
     Ctrl->>EA: Read EA spec (correlationID, targetResource, config)
 
+    Note over Ctrl: First Reconciliation: Compute Derived Timing
+    Ctrl->>Ctrl: Compute ValidityDeadline = EA.creationTimestamp + config.ValidityWindow
+    Ctrl->>Ctrl: Compute PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow
+    Ctrl->>Ctrl: Compute AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
+    Ctrl->>EA: Update status: validityDeadline, prometheusCheckAfter, alertManagerCheckAfter
+    Ctrl->>DS: POST audit: effectiveness.assessment.scheduled (timeline computed)
+
     Note over Ctrl: Guard 1: Validity window
-    Ctrl->>Ctrl: Check: now > EA.creationTimestamp + validityWindow?
+    Ctrl->>Ctrl: Check: now > EA.status.validityDeadline?
     alt validity window expired
         Ctrl->>EA: Update: phase=Completed, reason=expired
         Ctrl->>DS: POST audit: effectiveness.assessment.completed (reason=expired, no score)
@@ -259,7 +268,7 @@ sequenceDiagram
     end
 
     Note over Ctrl: Guard 2: Stabilization window
-    Ctrl->>Ctrl: Check: time since EA.creationTimestamp >= stabilizationWindow?
+    Ctrl->>Ctrl: Check: now >= EA.status.prometheusCheckAfter?
     alt stabilization not elapsed
         Ctrl-->>Ctrl: RequeueAfter(remaining time)
     end
@@ -385,8 +394,11 @@ flowchart TD
     Start["EM Triggered by EA CRD
     (created by RO)"] --> CheckPhase{EA.status.phase?}
     CheckPhase -->|Completed| AlreadyDone[No-op: assessment already finalized]
-    CheckPhase -->|Pending/Assessing| CheckValidity{"Validity window expired?
-    (now > creation + validityWindow)"}
+    CheckPhase -->|Pending/Assessing| ComputeTiming["Compute Derived Timing
+    validityDeadline, prometheusCheckAfter,
+    alertManagerCheckAfter in status"]
+    ComputeTiming --> CheckValidity{"Validity window expired?
+    (now > status.validityDeadline)"}
     CheckValidity -->|Yes| Expired["EA phase=Completed
     reason=expired, no score
     Emit assessment.completed (expired)"]
@@ -528,6 +540,9 @@ flowchart LR
     end
 
     subgraph outcome [Outcome Assessment — Component Events]
+        A5sched["effectiveness.assessment.scheduled
+        validity_deadline, prometheus_check_after,
+        alertmanager_check_after"]
         A5a["effectiveness.health.assessed
         pod_running, readiness, restarts,
         crash_loops, oom_killed, health_score"]
@@ -544,10 +559,11 @@ flowchart LR
     A1 --> A2
     A2 --> A3
     A3 --> A4
-    A4 --> A5a
-    A4 --> A5b
-    A4 --> A5c
-    A4 --> A5d
+    A4 --> A5sched
+    A5sched --> A5a
+    A5sched --> A5b
+    A5sched --> A5c
+    A5sched --> A5d
     A5a --> A5e
     A5b --> A5e
     A5c --> A5e
@@ -609,8 +625,10 @@ gantt
 
 ```
 T+0:      WorkflowExecution completes → RO transitions RR to Completed
-T+0:      RO creates EA CRD + NotificationRequest CRD (parallel)
+T+0:      RO creates EA CRD + NotificationRequest CRD (parallel). EM computes derived timing on first reconcile
 T+0:      RO sets RR Condition: EffectivenessAssessed=False
+T+0:      EM first reconcile: computes validityDeadline, prometheusCheckAfter, alertManagerCheckAfter in status
+T+0:      EM emits effectiveness.assessment.scheduled audit event
 T+0-5m:   RO cooldown active → new RRs for same target BLOCKED
 T+5m:     EM stabilization elapsed → health, alert, hash assessed immediately
            → component events emitted to DS (health, alert, hash)
@@ -666,6 +684,22 @@ All component events share these common fields:
 | `target_resource` | string | Yes | `"Kind/Namespace/Name"` |
 | `ea_name` | string | Yes | Name of the EffectivenessAssessment CRD |
 | `assessed_at` | string (RFC3339) | Yes | Timestamp when this component was assessed |
+
+#### 9.2.0 `effectiveness.assessment.scheduled` (timeline event)
+
+Emitted on first reconciliation when the EM transitions the EA from Pending to Assessing. Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | string | `"effectiveness.assessment.scheduled"` |
+| `correlation_id` | string | `RR.Name` (from `ea.spec.correlationID`) |
+| `service` | string | `"effectivenessmonitor"` |
+| `ea_name` | string | EA CRD name |
+| `validity_deadline` | string (RFC3339) | Computed: `EA.creationTimestamp + validityWindow` |
+| `prometheus_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
+| `alertmanager_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
+| `validity_window` | string | Duration from EM config (e.g., "30m0s") |
+| `stabilization_window` | string | Duration from EA spec (e.g., "5m0s") |
 
 #### 9.2.1 `effectiveness.health.assessed`
 
@@ -781,12 +815,14 @@ spec:
     namespace: prod
   config:
     stabilizationWindow: 5m
-    validityDeadline: "2026-02-09T15:30:00Z"     # creationTimestamp + validityWindow (30m default)
     scoringThreshold: 0.5
     prometheusEnabled: true
     alertManagerEnabled: true
 status:
   phase: Assessing   # Pending → Assessing → Completed → Failed
+  validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + validityWindow
+  prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Computed by EM: creationTimestamp + stabilizationWindow
+  alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Computed by EM: creationTimestamp + stabilizationWindow
   components:
     healthAssessed: false
     healthScore: null
@@ -871,9 +907,11 @@ assessment:
   maxConcurrentAssessments: 10           # controller-runtime MaxConcurrentReconciles
 ```
 
-The `validityWindow` is written into each EA CRD spec and enforced by the EM:
+The `validityWindow` is used by the EM to compute `validityDeadline` in the EA status on first reconciliation:
 ```
-validityDeadline = EA.creationTimestamp + validityWindow
+EA.status.validityDeadline = EA.creationTimestamp + validityWindow  (computed by EM)
+EA.status.prometheusCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
+EA.status.alertManagerCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
 ```
 
 If `now > validityDeadline`, the EM marks the EA as `expired` without collecting data — the system state may no longer reflect this remediation (the cooldown has long expired, new remediations may have run, workloads have drifted).
@@ -949,6 +987,7 @@ Events NOT read by EM (informational only, not needed for assessment):
 - `notification.*` — delivery status
 
 Events WRITTEN by EM (consumed by DS for scoring):
+- `effectiveness.assessment.scheduled` — derived timing computed on first reconciliation
 - `effectiveness.health.assessed` — health check results + `health_score`
 - `effectiveness.hash.computed` — pre/post spec hash comparison (not scored)
 - `effectiveness.alert.assessed` — alert resolution + `alert_score`
