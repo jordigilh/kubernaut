@@ -270,13 +270,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Configure mock Prometheus with a default query response containing metric
 	// samples so the reconciler's assessMetrics() can complete (empty results would
 	// cause infinite requeue as "no data available yet").
+	now := float64(time.Now().Unix())
+	preRemediationTime := now - 60 // 60 seconds ago (pre-remediation)
 	mockProm = infrastructure.NewMockPrometheus(infrastructure.MockPrometheusConfig{
 		Ready:   true,
 		Healthy: true,
 		QueryResponse: infrastructure.NewPromVectorResponse(
 			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
 			0.25, // 25% CPU -- baseline metric for assessment
-			float64(time.Now().Unix()),
+			now,
+		),
+		// QueryRangeResponse is used by the reconciler's assessMetrics() via QueryRange().
+		// It requires >= 2 samples (pre- and post-remediation) to compute a metric score.
+		// Pre-remediation: 0.50 (50% CPU), Post-remediation: 0.25 (25% CPU) → improvement.
+		QueryRangeResponse: infrastructure.NewPromMatrixResponse(
+			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
+			[][]interface{}{
+				{preRemediationTime, "0.500000"}, // pre-remediation: 50% CPU
+				{now, "0.250000"},                 // post-remediation: 25% CPU (improvement)
+			},
 		),
 	})
 	GinkgoWriter.Printf("✅ Mock Prometheus started at %s (with default metric data)\n", mockProm.URL())
@@ -345,10 +357,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		controllerMetrics,
 		promClient,
 		amClient,
-		controller.ReconcilerConfig{
-			PrometheusEnabled:   true,
-			AlertManagerEnabled: true,
-		},
+		nil, // AuditManager: nil for integration tests (audit tested in E2E)
+		func() controller.ReconcilerConfig {
+			c := controller.DefaultReconcilerConfig()
+			c.PrometheusEnabled = true
+			c.AlertManagerEnabled = true
+			return c
+		}(),
 	)
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -459,8 +474,9 @@ func deleteTestNamespace(ns string) {
 }
 
 // createEffectivenessAssessment creates an EA CRD for testing.
+// ValidityDeadline is NOT set in spec - the EM controller computes it on first reconciliation
+// as EA.creationTimestamp + config.ValidityWindow.
 func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
-	now := metav1.Now()
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -478,7 +494,6 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 			},
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: 1 * time.Second}, // Very short for tests
-				ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 				ScoringThreshold:    0.5,
 				PrometheusEnabled:   true,
 				AlertManagerEnabled: true,
@@ -491,6 +506,10 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 }
 
 // createExpiredEffectivenessAssessment creates an EA with an already-expired validity deadline.
+// ValidityDeadline is computed by the EM controller on first reconcile. To test expired behavior,
+// we create the EA normally, then patch the status with an expired ValidityDeadline before the
+// controller's first reconcile (or we race with it). Using Status().Update() ensures the
+// reconciler will see the expired deadline on its next reconcile.
 func createExpiredEffectivenessAssessment(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -509,7 +528,6 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 			},
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-				ValidityDeadline:    metav1.Time{Time: time.Now().Add(-1 * time.Minute)}, // Already expired
 				ScoringThreshold:    0.5,
 				PrometheusEnabled:   true,
 				AlertManagerEnabled: true,
@@ -517,6 +535,10 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		},
 	}
 	Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+	// Patch status with expired ValidityDeadline so reconciler treats it as expired
+	expired := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+	ea.Status.ValidityDeadline = &expired
+	Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
 	GinkgoWriter.Printf("✅ Created expired EffectivenessAssessment: %s/%s\n", namespace, name)
 	return ea
 }

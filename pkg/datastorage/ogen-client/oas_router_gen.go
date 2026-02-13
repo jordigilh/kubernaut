@@ -316,24 +316,56 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							break
 						}
 						switch elem[0] {
-						case 's': // Prefix: "search"
+						case 'a': // Prefix: "actions"
 							origElem := elem
-							if l := len("search"); len(elem) >= l && elem[0:l] == "search" {
+							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
 								switch r.Method {
-								case "POST":
-									s.handleSearchWorkflowsRequest([0]string{}, elemIsEscaped, w, r)
+								case "GET":
+									s.handleListAvailableActionsRequest([0]string{}, elemIsEscaped, w, r)
 								default:
-									s.notAllowed(w, r, "POST")
+									s.notAllowed(w, r, "GET")
 								}
 
 								return
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/"
+
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								// Param: "action_type"
+								// Leaf parameter, slashes are prohibited
+								idx := strings.IndexByte(elem, '/')
+								if idx >= 0 {
+									break
+								}
+								args[0] = elem
+								elem = ""
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "GET":
+										s.handleListWorkflowsByActionTypeRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, "GET")
+									}
+
+									return
+								}
+
 							}
 
 							elem = origElem
@@ -899,29 +931,64 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							break
 						}
 						switch elem[0] {
-						case 's': // Prefix: "search"
+						case 'a': // Prefix: "actions"
 							origElem := elem
-							if l := len("search"); len(elem) >= l && elem[0:l] == "search" {
+							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
 								switch method {
-								case "POST":
-									r.name = SearchWorkflowsOperation
-									r.summary = "Label-based workflow search"
-									r.operationID = "searchWorkflows"
+								case "GET":
+									r.name = ListAvailableActionsOperation
+									r.summary = "List available action types"
+									r.operationID = "listAvailableActions"
 									r.operationGroup = ""
-									r.pathPattern = "/api/v1/workflows/search"
+									r.pathPattern = "/api/v1/workflows/actions"
 									r.args = args
 									r.count = 0
 									return r, true
 								default:
 									return
 								}
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/"
+
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								// Param: "action_type"
+								// Leaf parameter, slashes are prohibited
+								idx := strings.IndexByte(elem, '/')
+								if idx >= 0 {
+									break
+								}
+								args[0] = elem
+								elem = ""
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "GET":
+										r.name = ListWorkflowsByActionTypeOperation
+										r.summary = "List workflows for action type"
+										r.operationID = "listWorkflowsByActionType"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/actions/{action_type}"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
 							}
 
 							elem = origElem
@@ -939,7 +1006,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							switch method {
 							case "GET":
 								r.name = GetWorkflowByIDOperation
-								r.summary = "Get workflow by UUID"
+								r.summary = "Get workflow by UUID (with optional security gate)"
 								r.operationID = "getWorkflowByID"
 								r.operationGroup = ""
 								r.pathPattern = "/api/v1/workflows/{workflow_id}"

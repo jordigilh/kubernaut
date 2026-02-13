@@ -32,8 +32,6 @@ from typing import Optional
 from datastorage.models.remediation_workflow import RemediationWorkflow
 from datastorage.models.workflow_disable_request import WorkflowDisableRequest
 from datastorage.models.workflow_list_response import WorkflowListResponse
-from datastorage.models.workflow_search_request import WorkflowSearchRequest
-from datastorage.models.workflow_search_response import WorkflowSearchResponse
 from datastorage.models.workflow_update_request import WorkflowUpdateRequest
 
 from datastorage.api_client import ApiClient
@@ -633,6 +631,13 @@ class WorkflowCatalogAPIApi:
     def get_workflow_by_id(
         self,
         workflow_id: StrictStr,
+        severity: Annotated[Optional[StrictStr], Field(description="Security gate: signal severity level")] = None,
+        component: Annotated[Optional[StrictStr], Field(description="Security gate: Kubernetes resource type")] = None,
+        environment: Annotated[Optional[StrictStr], Field(description="Security gate: target environment")] = None,
+        priority: Annotated[Optional[StrictStr], Field(description="Security gate: business priority level")] = None,
+        custom_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded custom labels")] = None,
+        detected_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded detected labels")] = None,
+        remediation_id: Annotated[Optional[StrictStr], Field(description="Remediation request ID for audit correlation (BR-AUDIT-021)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -646,12 +651,26 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RemediationWorkflow:
-        """Get workflow by UUID
+        """Get workflow by UUID (with optional security gate)
 
-        Retrieve a specific workflow by its UUID.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) 
+        Retrieve a specific workflow by its UUID. Step 3 of the three-step workflow discovery protocol when context filters are provided.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017  **Without context filters**: Returns workflow by ID (existing behavior). **With context filters**: Returns workflow only if it matches the signal context. Returns 404 if the workflow exists but does not match the context filters (security gate - prevents info leakage by not distinguishing \"not found\" from \"filtered out\").  Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present. 
 
         :param workflow_id: (required)
         :type workflow_id: str
+        :param severity: Security gate: signal severity level
+        :type severity: str
+        :param component: Security gate: Kubernetes resource type
+        :type component: str
+        :param environment: Security gate: target environment
+        :type environment: str
+        :param priority: Security gate: business priority level
+        :type priority: str
+        :param custom_labels: Security gate: JSON-encoded custom labels
+        :type custom_labels: str
+        :param detected_labels: Security gate: JSON-encoded detected labels
+        :type detected_labels: str
+        :param remediation_id: Remediation request ID for audit correlation (BR-AUDIT-021)
+        :type remediation_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -676,6 +695,13 @@ class WorkflowCatalogAPIApi:
 
         _param = self._get_workflow_by_id_serialize(
             workflow_id=workflow_id,
+            severity=severity,
+            component=component,
+            environment=environment,
+            priority=priority,
+            custom_labels=custom_labels,
+            detected_labels=detected_labels,
+            remediation_id=remediation_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -702,6 +728,13 @@ class WorkflowCatalogAPIApi:
     def get_workflow_by_id_with_http_info(
         self,
         workflow_id: StrictStr,
+        severity: Annotated[Optional[StrictStr], Field(description="Security gate: signal severity level")] = None,
+        component: Annotated[Optional[StrictStr], Field(description="Security gate: Kubernetes resource type")] = None,
+        environment: Annotated[Optional[StrictStr], Field(description="Security gate: target environment")] = None,
+        priority: Annotated[Optional[StrictStr], Field(description="Security gate: business priority level")] = None,
+        custom_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded custom labels")] = None,
+        detected_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded detected labels")] = None,
+        remediation_id: Annotated[Optional[StrictStr], Field(description="Remediation request ID for audit correlation (BR-AUDIT-021)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -715,12 +748,26 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[RemediationWorkflow]:
-        """Get workflow by UUID
+        """Get workflow by UUID (with optional security gate)
 
-        Retrieve a specific workflow by its UUID.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) 
+        Retrieve a specific workflow by its UUID. Step 3 of the three-step workflow discovery protocol when context filters are provided.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017  **Without context filters**: Returns workflow by ID (existing behavior). **With context filters**: Returns workflow only if it matches the signal context. Returns 404 if the workflow exists but does not match the context filters (security gate - prevents info leakage by not distinguishing \"not found\" from \"filtered out\").  Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present. 
 
         :param workflow_id: (required)
         :type workflow_id: str
+        :param severity: Security gate: signal severity level
+        :type severity: str
+        :param component: Security gate: Kubernetes resource type
+        :type component: str
+        :param environment: Security gate: target environment
+        :type environment: str
+        :param priority: Security gate: business priority level
+        :type priority: str
+        :param custom_labels: Security gate: JSON-encoded custom labels
+        :type custom_labels: str
+        :param detected_labels: Security gate: JSON-encoded detected labels
+        :type detected_labels: str
+        :param remediation_id: Remediation request ID for audit correlation (BR-AUDIT-021)
+        :type remediation_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -745,6 +792,13 @@ class WorkflowCatalogAPIApi:
 
         _param = self._get_workflow_by_id_serialize(
             workflow_id=workflow_id,
+            severity=severity,
+            component=component,
+            environment=environment,
+            priority=priority,
+            custom_labels=custom_labels,
+            detected_labels=detected_labels,
+            remediation_id=remediation_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -771,6 +825,13 @@ class WorkflowCatalogAPIApi:
     def get_workflow_by_id_without_preload_content(
         self,
         workflow_id: StrictStr,
+        severity: Annotated[Optional[StrictStr], Field(description="Security gate: signal severity level")] = None,
+        component: Annotated[Optional[StrictStr], Field(description="Security gate: Kubernetes resource type")] = None,
+        environment: Annotated[Optional[StrictStr], Field(description="Security gate: target environment")] = None,
+        priority: Annotated[Optional[StrictStr], Field(description="Security gate: business priority level")] = None,
+        custom_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded custom labels")] = None,
+        detected_labels: Annotated[Optional[StrictStr], Field(description="Security gate: JSON-encoded detected labels")] = None,
+        remediation_id: Annotated[Optional[StrictStr], Field(description="Remediation request ID for audit correlation (BR-AUDIT-021)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -784,12 +845,26 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Get workflow by UUID
+        """Get workflow by UUID (with optional security gate)
 
-        Retrieve a specific workflow by its UUID.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) 
+        Retrieve a specific workflow by its UUID. Step 3 of the three-step workflow discovery protocol when context filters are provided.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017  **Without context filters**: Returns workflow by ID (existing behavior). **With context filters**: Returns workflow only if it matches the signal context. Returns 404 if the workflow exists but does not match the context filters (security gate - prevents info leakage by not distinguishing \"not found\" from \"filtered out\").  Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present. 
 
         :param workflow_id: (required)
         :type workflow_id: str
+        :param severity: Security gate: signal severity level
+        :type severity: str
+        :param component: Security gate: Kubernetes resource type
+        :type component: str
+        :param environment: Security gate: target environment
+        :type environment: str
+        :param priority: Security gate: business priority level
+        :type priority: str
+        :param custom_labels: Security gate: JSON-encoded custom labels
+        :type custom_labels: str
+        :param detected_labels: Security gate: JSON-encoded detected labels
+        :type detected_labels: str
+        :param remediation_id: Remediation request ID for audit correlation (BR-AUDIT-021)
+        :type remediation_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -814,6 +889,13 @@ class WorkflowCatalogAPIApi:
 
         _param = self._get_workflow_by_id_serialize(
             workflow_id=workflow_id,
+            severity=severity,
+            component=component,
+            environment=environment,
+            priority=priority,
+            custom_labels=custom_labels,
+            detected_labels=detected_labels,
+            remediation_id=remediation_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -835,6 +917,13 @@ class WorkflowCatalogAPIApi:
     def _get_workflow_by_id_serialize(
         self,
         workflow_id,
+        severity,
+        component,
+        environment,
+        priority,
+        custom_labels,
+        detected_labels,
+        remediation_id,
         _request_auth,
         _content_type,
         _headers,
@@ -857,6 +946,34 @@ class WorkflowCatalogAPIApi:
         if workflow_id is not None:
             _path_params['workflow_id'] = workflow_id
         # process the query parameters
+        if severity is not None:
+            
+            _query_params.append(('severity', severity))
+            
+        if component is not None:
+            
+            _query_params.append(('component', component))
+            
+        if environment is not None:
+            
+            _query_params.append(('environment', environment))
+            
+        if priority is not None:
+            
+            _query_params.append(('priority', priority))
+            
+        if custom_labels is not None:
+            
+            _query_params.append(('custom_labels', custom_labels))
+            
+        if detected_labels is not None:
+            
+            _query_params.append(('detected_labels', detected_labels))
+            
+        if remediation_id is not None:
+            
+            _query_params.append(('remediation_id', remediation_id))
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1243,283 +1360,6 @@ class WorkflowCatalogAPIApi:
         return self.api_client.param_serialize(
             method='GET',
             resource_path='/api/v1/workflows',
-            path_params=_path_params,
-            query_params=_query_params,
-            header_params=_header_params,
-            body=_body_params,
-            post_params=_form_params,
-            files=_files,
-            auth_settings=_auth_settings,
-            collection_formats=_collection_formats,
-            _host=_host,
-            _request_auth=_request_auth
-        )
-
-
-
-
-    @validate_call
-    def search_workflows(
-        self,
-        workflow_search_request: WorkflowSearchRequest,
-        _request_timeout: Union[
-            None,
-            Annotated[StrictFloat, Field(gt=0)],
-            Tuple[
-                Annotated[StrictFloat, Field(gt=0)],
-                Annotated[StrictFloat, Field(gt=0)]
-            ]
-        ] = None,
-        _request_auth: Optional[Dict[StrictStr, Any]] = None,
-        _content_type: Optional[StrictStr] = None,
-        _headers: Optional[Dict[StrictStr, Any]] = None,
-        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> WorkflowSearchResponse:
-        """Label-based workflow search
-
-        Search workflows using label-based matching with wildcard support and weighted scoring.  **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)  **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search) **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)  **Behavior**: - Mandatory filters: signal_type, severity, component, environment, priority - Optional filters: custom_labels, detected_labels - Wildcard support: \"*\" matches any non-null value - Weighted scoring: Exact matches > Wildcard matches - Returns top_k results sorted by confidence score (0.0-1.0) 
-
-        :param workflow_search_request: (required)
-        :type workflow_search_request: WorkflowSearchRequest
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :type _request_timeout: int, tuple(int, int), optional
-        :param _request_auth: set to override the auth_settings for an a single
-                              request; this effectively ignores the
-                              authentication in the spec for a single request.
-        :type _request_auth: dict, optional
-        :param _content_type: force content-type for the request.
-        :type _content_type: str, Optional
-        :param _headers: set to override the headers for a single
-                         request; this effectively ignores the headers
-                         in the spec for a single request.
-        :type _headers: dict, optional
-        :param _host_index: set to override the host_index for a single
-                            request; this effectively ignores the host_index
-                            in the spec for a single request.
-        :type _host_index: int, optional
-        :return: Returns the result object.
-        """ # noqa: E501
-
-        _param = self._search_workflows_serialize(
-            workflow_search_request=workflow_search_request,
-            _request_auth=_request_auth,
-            _content_type=_content_type,
-            _headers=_headers,
-            _host_index=_host_index
-        )
-
-        _response_types_map: Dict[str, Optional[str]] = {
-            '200': "WorkflowSearchResponse",
-            '400': "RFC7807Problem",
-            '500': "RFC7807Problem",
-        }
-        response_data = self.api_client.call_api(
-            *_param,
-            _request_timeout=_request_timeout
-        )
-        response_data.read()
-        return self.api_client.response_deserialize(
-            response_data=response_data,
-            response_types_map=_response_types_map,
-        ).data
-
-
-    @validate_call
-    def search_workflows_with_http_info(
-        self,
-        workflow_search_request: WorkflowSearchRequest,
-        _request_timeout: Union[
-            None,
-            Annotated[StrictFloat, Field(gt=0)],
-            Tuple[
-                Annotated[StrictFloat, Field(gt=0)],
-                Annotated[StrictFloat, Field(gt=0)]
-            ]
-        ] = None,
-        _request_auth: Optional[Dict[StrictStr, Any]] = None,
-        _content_type: Optional[StrictStr] = None,
-        _headers: Optional[Dict[StrictStr, Any]] = None,
-        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> ApiResponse[WorkflowSearchResponse]:
-        """Label-based workflow search
-
-        Search workflows using label-based matching with wildcard support and weighted scoring.  **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)  **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search) **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)  **Behavior**: - Mandatory filters: signal_type, severity, component, environment, priority - Optional filters: custom_labels, detected_labels - Wildcard support: \"*\" matches any non-null value - Weighted scoring: Exact matches > Wildcard matches - Returns top_k results sorted by confidence score (0.0-1.0) 
-
-        :param workflow_search_request: (required)
-        :type workflow_search_request: WorkflowSearchRequest
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :type _request_timeout: int, tuple(int, int), optional
-        :param _request_auth: set to override the auth_settings for an a single
-                              request; this effectively ignores the
-                              authentication in the spec for a single request.
-        :type _request_auth: dict, optional
-        :param _content_type: force content-type for the request.
-        :type _content_type: str, Optional
-        :param _headers: set to override the headers for a single
-                         request; this effectively ignores the headers
-                         in the spec for a single request.
-        :type _headers: dict, optional
-        :param _host_index: set to override the host_index for a single
-                            request; this effectively ignores the host_index
-                            in the spec for a single request.
-        :type _host_index: int, optional
-        :return: Returns the result object.
-        """ # noqa: E501
-
-        _param = self._search_workflows_serialize(
-            workflow_search_request=workflow_search_request,
-            _request_auth=_request_auth,
-            _content_type=_content_type,
-            _headers=_headers,
-            _host_index=_host_index
-        )
-
-        _response_types_map: Dict[str, Optional[str]] = {
-            '200': "WorkflowSearchResponse",
-            '400': "RFC7807Problem",
-            '500': "RFC7807Problem",
-        }
-        response_data = self.api_client.call_api(
-            *_param,
-            _request_timeout=_request_timeout
-        )
-        response_data.read()
-        return self.api_client.response_deserialize(
-            response_data=response_data,
-            response_types_map=_response_types_map,
-        )
-
-
-    @validate_call
-    def search_workflows_without_preload_content(
-        self,
-        workflow_search_request: WorkflowSearchRequest,
-        _request_timeout: Union[
-            None,
-            Annotated[StrictFloat, Field(gt=0)],
-            Tuple[
-                Annotated[StrictFloat, Field(gt=0)],
-                Annotated[StrictFloat, Field(gt=0)]
-            ]
-        ] = None,
-        _request_auth: Optional[Dict[StrictStr, Any]] = None,
-        _content_type: Optional[StrictStr] = None,
-        _headers: Optional[Dict[StrictStr, Any]] = None,
-        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> RESTResponseType:
-        """Label-based workflow search
-
-        Search workflows using label-based matching with wildcard support and weighted scoring.  **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)  **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search) **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)  **Behavior**: - Mandatory filters: signal_type, severity, component, environment, priority - Optional filters: custom_labels, detected_labels - Wildcard support: \"*\" matches any non-null value - Weighted scoring: Exact matches > Wildcard matches - Returns top_k results sorted by confidence score (0.0-1.0) 
-
-        :param workflow_search_request: (required)
-        :type workflow_search_request: WorkflowSearchRequest
-        :param _request_timeout: timeout setting for this request. If one
-                                 number provided, it will be total request
-                                 timeout. It can also be a pair (tuple) of
-                                 (connection, read) timeouts.
-        :type _request_timeout: int, tuple(int, int), optional
-        :param _request_auth: set to override the auth_settings for an a single
-                              request; this effectively ignores the
-                              authentication in the spec for a single request.
-        :type _request_auth: dict, optional
-        :param _content_type: force content-type for the request.
-        :type _content_type: str, Optional
-        :param _headers: set to override the headers for a single
-                         request; this effectively ignores the headers
-                         in the spec for a single request.
-        :type _headers: dict, optional
-        :param _host_index: set to override the host_index for a single
-                            request; this effectively ignores the host_index
-                            in the spec for a single request.
-        :type _host_index: int, optional
-        :return: Returns the result object.
-        """ # noqa: E501
-
-        _param = self._search_workflows_serialize(
-            workflow_search_request=workflow_search_request,
-            _request_auth=_request_auth,
-            _content_type=_content_type,
-            _headers=_headers,
-            _host_index=_host_index
-        )
-
-        _response_types_map: Dict[str, Optional[str]] = {
-            '200': "WorkflowSearchResponse",
-            '400': "RFC7807Problem",
-            '500': "RFC7807Problem",
-        }
-        response_data = self.api_client.call_api(
-            *_param,
-            _request_timeout=_request_timeout
-        )
-        return response_data.response
-
-
-    def _search_workflows_serialize(
-        self,
-        workflow_search_request,
-        _request_auth,
-        _content_type,
-        _headers,
-        _host_index,
-    ) -> Tuple:
-
-        _host = None
-
-        _collection_formats: Dict[str, str] = {
-        }
-
-        _path_params: Dict[str, str] = {}
-        _query_params: List[Tuple[str, str]] = []
-        _header_params: Dict[str, Optional[str]] = _headers or {}
-        _form_params: List[Tuple[str, str]] = []
-        _files: Dict[str, str] = {}
-        _body_params: Optional[bytes] = None
-
-        # process the path parameters
-        # process the query parameters
-        # process the header parameters
-        # process the form parameters
-        # process the body parameter
-        if workflow_search_request is not None:
-            _body_params = workflow_search_request
-
-
-        # set the HTTP header `Accept`
-        _header_params['Accept'] = self.api_client.select_header_accept(
-            [
-                'application/json', 
-                'application/problem+json'
-            ]
-        )
-
-        # set the HTTP header `Content-Type`
-        if _content_type:
-            _header_params['Content-Type'] = _content_type
-        else:
-            _default_content_type = (
-                self.api_client.select_header_content_type(
-                    [
-                        'application/json'
-                    ]
-                )
-            )
-            if _default_content_type is not None:
-                _header_params['Content-Type'] = _default_content_type
-
-        # authentication setting
-        _auth_settings: List[str] = [
-        ]
-
-        return self.api_client.param_serialize(
-            method='POST',
-            resource_path='/api/v1/workflows/search',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,

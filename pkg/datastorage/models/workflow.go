@@ -68,6 +68,13 @@ type RemediationWorkflow struct {
 	ContentHash string `json:"content_hash" db:"content_hash" validate:"required,len=64"`
 
 	// ========================================
+	// ACTION TYPE (DD-WORKFLOW-016, DD-HAPI-017)
+	// ========================================
+	// ActionType links to action_type_taxonomy table (migration 025)
+	// Required for three-step discovery protocol (list actions -> list workflows -> get workflow)
+	ActionType string `json:"action_type" db:"action_type" validate:"required"`
+
+	// ========================================
 	// EXECUTION (ADR-043, DD-WORKFLOW-002 v2.4)
 	// ========================================
 	// Parameters is nullable JSONB - use pointer to handle NULL values from database

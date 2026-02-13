@@ -29,11 +29,11 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class WorkflowSearchAuditPayload(BaseModel):
+class WorkflowDiscoveryAuditPayload(BaseModel):
     """
-    Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
+    Audit event payload for three-step workflow discovery operations. Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration) Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail) Replaces WorkflowSearchAuditPayload (search endpoint removed). 
     """ # noqa: E501
-    event_type: StrictStr = Field(description="Discriminator for event data union type")
+    event_type: StrictStr = Field(description="Discriminator for event data union type (matches parent event_type)")
     query: QueryMetadata
     results: ResultsMetadata
     search_metadata: SearchExecutionMetadata
@@ -42,8 +42,8 @@ class WorkflowSearchAuditPayload(BaseModel):
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('workflow.catalog.search_completed'):
-            raise ValueError("must be one of enum values ('workflow.catalog.search_completed')")
+        if value not in ('workflow.catalog.actions_listed', 'workflow.catalog.workflows_listed', 'workflow.catalog.workflow_retrieved', 'workflow.catalog.selection_validated'):
+            raise ValueError("must be one of enum values ('workflow.catalog.actions_listed', 'workflow.catalog.workflows_listed', 'workflow.catalog.workflow_retrieved', 'workflow.catalog.selection_validated')")
         return value
 
     model_config = {
@@ -64,7 +64,7 @@ class WorkflowSearchAuditPayload(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of WorkflowSearchAuditPayload from a JSON string"""
+        """Create an instance of WorkflowDiscoveryAuditPayload from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -96,7 +96,7 @@ class WorkflowSearchAuditPayload(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of WorkflowSearchAuditPayload from a dict"""
+        """Create an instance of WorkflowDiscoveryAuditPayload from a dict"""
         if obj is None:
             return None
 

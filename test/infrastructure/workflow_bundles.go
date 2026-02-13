@@ -157,6 +157,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 	// CRITICAL: Environment must be []dsgen.MandatoryLabelsEnvironmentItem, not string!
 	workflow := dsgen.RemediationWorkflow{
 		WorkflowName:    workflowName,
+		ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: Default action type for bundle test workflows
 		Version:         version,
 		Name:            fmt.Sprintf("Test Workflow: %s", workflowName),
 		Description:     description,

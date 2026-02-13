@@ -29,6 +29,14 @@ type HealthCheckRes interface {
 	healthCheckRes()
 }
 
+type ListAvailableActionsRes interface {
+	listAvailableActionsRes()
+}
+
+type ListWorkflowsByActionTypeRes interface {
+	listWorkflowsByActionTypeRes()
+}
+
 type ListWorkflowsRes interface {
 	listWorkflowsRes()
 }
@@ -47,10 +55,6 @@ type ReconstructRemediationRequestRes interface {
 
 type ReleaseLegalHoldRes interface {
 	releaseLegalHoldRes()
-}
-
-type SearchWorkflowsRes interface {
-	searchWorkflowsRes()
 }
 
 type UpdateWorkflowRes interface {

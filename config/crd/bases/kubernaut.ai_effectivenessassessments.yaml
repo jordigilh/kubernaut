@@ -77,21 +77,16 @@ spec:
                     minimum: 0
                     type: number
                   stabilizationWindow:
-                    description: StabilizationWindow is the duration to wait after
-                      remediation before assessment.
-                    type: string
-                  validityDeadline:
                     description: |-
-                      ValidityDeadline is the absolute time after which the assessment expires.
-                      Computed as: EA.creationTimestamp + validityWindow (from EM config).
-                    format: date-time
+                      StabilizationWindow is the duration to wait after remediation before assessment.
+                      Set by the Remediation Orchestrator. The EM uses this to delay assessment
+                      until the system stabilizes post-remediation.
                     type: string
                 required:
                 - alertManagerEnabled
                 - prometheusEnabled
                 - scoringThreshold
                 - stabilizationWindow
-                - validityDeadline
                 type: object
               correlationID:
                 description: |-
@@ -130,6 +125,15 @@ spec:
             description: EffectivenessAssessmentStatus defines the observed state
               of an EffectivenessAssessment.
             properties:
+              alertManagerCheckAfter:
+                description: |-
+                  AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                  Stored in status to avoid recomputation on every reconcile and for
+                  operator observability of the assessment timeline.
+                format: date-time
+                type: string
               assessmentReason:
                 description: AssessmentReason describes why the assessment completed
                   with this outcome.
@@ -250,6 +254,26 @@ spec:
                 - Assessing
                 - Completed
                 - Failed
+                type: string
+              prometheusCheckAfter:
+                description: |-
+                  PrometheusCheckAfter is the earliest time to query Prometheus for metrics.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                  Stored in status to avoid recomputation on every reconcile and for
+                  operator observability of the assessment timeline.
+                format: date-time
+                type: string
+              validityDeadline:
+                description: |-
+                  ValidityDeadline is the absolute time after which the assessment expires.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + validityWindow (from EM config).
+                  This follows Kubernetes spec/status convention: the RO sets desired state
+                  (StabilizationWindow in spec), and the EM computes observed/derived state
+                  (ValidityDeadline in status). This prevents misconfiguration where
+                  StabilizationWindow > ValidityDeadline.
+                format: date-time
                 type: string
             type: object
         type: object

@@ -80,6 +80,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 	// DD-WORKFLOW-002 v2.4: Added container_image and container_digest columns
 	// Use QueryRowContext with positional parameters to get the RETURNING value
 	// sqlx doesn't support RETURNING with NamedExecContext, so we need to use positional parameters
+	// DD-WORKFLOW-016: Added action_type column (migration 025)
 	insertQuery := `
 		INSERT INTO remediation_workflow_catalog (
 			workflow_name, version, name, description, owner, maintainer,
@@ -87,14 +88,14 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			labels, custom_labels, detected_labels, status,
 			is_latest_version, previous_version, version_notes, change_summary,
 			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-			created_by
+			created_by, action_type
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16,
 			$17, $18, $19, $20,
 			$21, $22, $23, $24,
-			$25
+			$25, $26
 		)
 		RETURNING workflow_id
 	`
@@ -110,7 +111,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 		workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status, // V1.0: Structured types
 		workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
 		workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
-		workflow.CreatedBy,
+		workflow.CreatedBy, workflow.ActionType, // DD-WORKFLOW-016: action_type FK
 	).Scan(&generatedID)
 	if err != nil {
 		r.logger.Error(err, "failed to create workflow",

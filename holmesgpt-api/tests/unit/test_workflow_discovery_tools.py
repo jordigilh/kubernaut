@@ -496,3 +496,202 @@ class TestWorkflowDiscoveryToolset:
             assert tool._component == "pod"
             assert tool._environment == "production"
             assert tool._priority == "P0"
+
+
+# ========================================
+# PHASE 5: remediationId Propagation Tests
+# (UT-HAPI-017-005-001 through 004)
+# ========================================
+
+class TestRemediationIdPropagation:
+    """
+    UT-HAPI-017-005: Verify remediationId is propagated as a query parameter
+    on all three discovery steps for audit correlation (BR-HAPI-017-005).
+    """
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_list_available_actions_passes_remediation_id_ut_005_001(self, mock_get):
+        """
+        UT-HAPI-017-005-001: ListAvailableActionsTool passes remediationId.
+
+        BR: BR-HAPI-017-005
+        Tool includes remediation_id as query parameter in DS call.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"action_types": [], "total": 0}),
+            raise_for_status=Mock(),
+        )
+
+        tool = ListAvailableActionsTool(remediation_id="rem-uuid-123")
+        tool.invoke({})
+
+        # Verify remediation_id in query params
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert params.get("remediation_id") == "rem-uuid-123"
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_list_workflows_passes_remediation_id_ut_005_002(self, mock_get):
+        """
+        UT-HAPI-017-005-002: ListWorkflowsTool passes remediationId.
+
+        BR: BR-HAPI-017-005
+        Tool includes remediation_id as query parameter in DS call.
+        """
+        from src.toolsets.workflow_discovery import ListWorkflowsTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"workflows": [], "total": 0, "hasMore": False}),
+            raise_for_status=Mock(),
+        )
+
+        tool = ListWorkflowsTool(remediation_id="rem-uuid-123")
+        tool.invoke({"action_type": "scale_up"})
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert params.get("remediation_id") == "rem-uuid-123"
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_get_workflow_passes_remediation_id_ut_005_003(self, mock_get):
+        """
+        UT-HAPI-017-005-003: GetWorkflowTool passes remediationId.
+
+        BR: BR-HAPI-017-005
+        Tool includes remediation_id as query parameter in DS call.
+        """
+        from src.toolsets.workflow_discovery import GetWorkflowTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={
+                "workflow_id": "wf-001",
+                "name": "Test Workflow",
+                "action_type": "scale_up",
+                "version": "1.0.0",
+                "container_image": "registry.io/wf:1.0",
+                "parameters": {},
+            }),
+            raise_for_status=Mock(),
+        )
+
+        tool = GetWorkflowTool(remediation_id="rem-uuid-123")
+        tool.invoke({"workflow_id": "wf-001"})
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert params.get("remediation_id") == "rem-uuid-123"
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_empty_remediation_id_handled_gracefully_ut_005_004(self, mock_get):
+        """
+        UT-HAPI-017-005-004: Empty remediationId handled gracefully.
+
+        BR: BR-HAPI-017-005
+        Tool proceeds normally when remediationId is None or empty.
+        No error raised; remediation_id omitted from query params.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"action_types": [], "total": 0}),
+            raise_for_status=Mock(),
+        )
+
+        # Test with None
+        tool = ListAvailableActionsTool(remediation_id=None)
+        result = tool.invoke({})
+
+        # Should succeed
+        assert result is not None
+
+        # remediation_id should NOT be in params (empty/None is excluded)
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert "remediation_id" not in params
+
+
+# ========================================
+# PHASE 6: Old Tool Removal Verification
+# (UT-HAPI-017-006-001 through 002)
+# ========================================
+
+class TestOldToolRemoval:
+    """
+    UT-HAPI-017-006: Verify the old SearchWorkflowCatalogTool is no longer
+    importable from production code paths and no references remain.
+    """
+
+    def test_search_workflow_catalog_tool_not_in_discovery_module_ut_006_001(self):
+        """
+        UT-HAPI-017-006-001: SearchWorkflowCatalogTool not exported from discovery module.
+
+        BR: BR-HAPI-017-006
+        The new workflow_discovery module should NOT export SearchWorkflowCatalogTool.
+        """
+        import src.toolsets.workflow_discovery as discovery_module
+
+        # The discovery module should not have SearchWorkflowCatalogTool
+        assert not hasattr(discovery_module, "SearchWorkflowCatalogTool"), (
+            "SearchWorkflowCatalogTool should not be in the new discovery module"
+        )
+
+    def test_no_active_search_workflow_catalog_usage_in_source_ut_006_002(self):
+        """
+        UT-HAPI-017-006-002: No active usage of search_workflow_catalog in source.
+
+        BR: BR-HAPI-017-006
+        No Python source file in holmesgpt-api/src/ should actively USE the old tool
+        (import it, instantiate it, or register it). Docstrings, comments, and
+        historical references are acceptable. The old workflow_catalog.py module
+        and generated test files are excluded.
+        """
+        import os
+
+        src_dir = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+        src_dir = os.path.abspath(src_dir)
+
+        # Patterns that indicate ACTIVE USAGE (not just documentation)
+        active_usage_patterns = [
+            "import searchworkflowcatalogtool",      # import statement
+            "searchworkflowcatalogtool(",             # instantiation
+            'name="search_workflow_catalog"',         # tool name registration
+            "name='search_workflow_catalog'",         # tool name registration (single quotes)
+        ]
+
+        # Files to exclude (legacy module and generated test files)
+        excluded_paths = {"workflow_catalog.py", "test_", "__pycache__"}
+
+        matches = []
+        for root, _dirs, files in os.walk(src_dir):
+            for fname in files:
+                if not fname.endswith(".py"):
+                    continue
+                # Skip excluded files
+                if any(excl in fname for excl in excluded_paths):
+                    continue
+                # Skip test directories under src/ (generated client tests)
+                if "/test/" in root or "/tests/" in root:
+                    continue
+
+                fpath = os.path.join(root, fname)
+                with open(fpath, "r") as f:
+                    for line_no, line in enumerate(f, 1):
+                        stripped = line.strip()
+                        if stripped.startswith("#"):
+                            continue
+                        line_lower = line.lower().replace(" ", "")
+                        for pattern in active_usage_patterns:
+                            if pattern.replace(" ", "") in line_lower:
+                                matches.append(f"{fpath}:{line_no}: {stripped}")
+                                break
+
+        assert len(matches) == 0, (
+            f"Found {len(matches)} active usage(s) of search_workflow_catalog in src/:\n"
+            + "\n".join(matches)
+        )

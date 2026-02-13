@@ -24,19 +24,20 @@ import (
 // HAPIWorkflowFixture defines test workflow data for HAPI integration tests
 // Pattern: Matches holmesgpt-api/tests/fixtures/workflow_fixtures.py structure
 type HAPIWorkflowFixture struct {
-	WorkflowName     string
-	Version          string
-	DisplayName      string
-	Description      string
-	SignalType       string
-	Severity         string
-	Component        string
-	Environment      string
-	Priority         string
-	RiskTolerance    string
-	ContainerImage   string
-	ContainerDigest  string
-	ContentHash      string
+	WorkflowName    string
+	Version         string
+	DisplayName     string
+	Description     string
+	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "AdjustResources", "ScaleReplicas")
+	SignalType      string
+	Severity        string
+	Component       string
+	Environment     string
+	Priority        string
+	RiskTolerance   string
+	ContainerImage  string
+	ContainerDigest string
+	ContentHash     string
 }
 
 // ToYAMLContent generates workflow YAML content (matches Python fixture)
@@ -78,6 +79,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Increase Memory Limits",
 			Description:     "Increases memory limits for pods experiencing OOMKilled events",
+			ActionType:      "AdjustResources", // DD-WORKFLOW-016: Modify resource requests/limits
 			SignalType:      "OOMKilled",
 			Severity:        "critical",
 			Component:       "pod",
@@ -92,6 +94,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Scale Down Replicas",
 			Description:     "Reduces replica count for deployments experiencing OOMKilled",
+			ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: Horizontally scale workload
 			SignalType:      "OOMKilled",
 			Severity:        "high",
 			Component:       "deployment",
@@ -106,6 +109,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "CrashLoopBackOff - Fix Configuration",
 			Description:     "Identifies and fixes configuration issues causing CrashLoopBackOff",
+			ActionType:      "ReconfigureService", // DD-WORKFLOW-016: Update ConfigMap/Secret values
 			SignalType:      "CrashLoopBackOff",
 			Severity:        "high",
 			Component:       "pod",
@@ -120,6 +124,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "NodeNotReady - Drain and Reboot",
 			Description:     "Safely drains and reboots nodes in NotReady state",
+			ActionType:      "RestartPod", // DD-WORKFLOW-016: Delete and recreate to recover
 			SignalType:      "NodeNotReady",
 			Severity:        "critical",
 			Component:       "node",
@@ -134,6 +139,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "ImagePullBackOff - Fix Registry Credentials",
 			Description:     "Fixes ImagePullBackOff errors by updating registry credentials",
+			ActionType:      "ReconfigureService", // DD-WORKFLOW-016: Update credentials = configuration
 			SignalType:      "ImagePullBackOff",
 			Severity:        "high",
 			Component:       "pod",

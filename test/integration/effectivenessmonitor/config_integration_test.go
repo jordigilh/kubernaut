@@ -73,8 +73,9 @@ var _ = Describe("Configuration Integration (BR-EM-006, BR-EM-007, BR-EM-008)", 
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// The default validity window is 30 minutes from creation
-		Expect(fetchedEA.Spec.Config.ValidityDeadline.Time).To(BeTemporally(">", time.Now()))
-		Expect(fetchedEA.Spec.Config.ValidityDeadline.Time).To(BeTemporally("<", time.Now().Add(31*time.Minute)))
+		// The default validity window is 30 minutes from creation (computed by EM controller in status)
+		Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
+		Expect(fetchedEA.Status.ValidityDeadline.Time).To(BeTemporally(">", time.Now()))
+		Expect(fetchedEA.Status.ValidityDeadline.Time).To(BeTemporally("<", time.Now().Add(31*time.Minute)))
 	})
 })

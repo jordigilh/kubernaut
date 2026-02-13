@@ -184,7 +184,6 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with AlertManager DISABLED")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ar-005",
@@ -202,7 +201,6 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: false, // DISABLED

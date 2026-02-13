@@ -157,10 +157,12 @@ Class | Method | HTTP request | Description
 *MetricsApi* | [**get_metrics**](docs/MetricsApi.md#get_metrics) | **GET** /metrics | Prometheus metrics
 *WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Create workflow
 *WorkflowCatalogAPIApi* | [**disable_workflow**](docs/WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
-*WorkflowCatalogAPIApi* | [**get_workflow_by_id**](docs/WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID
+*WorkflowCatalogAPIApi* | [**get_workflow_by_id**](docs/WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 *WorkflowCatalogAPIApi* | [**list_workflows**](docs/WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
-*WorkflowCatalogAPIApi* | [**search_workflows**](docs/WorkflowCatalogAPIApi.md#search_workflows) | **POST** /api/v1/workflows/search | Label-based workflow search
 *WorkflowCatalogAPIApi* | [**update_workflow**](docs/WorkflowCatalogAPIApi.md#update_workflow) | **PATCH** /api/v1/workflows/{workflow_id} | Update workflow mutable fields
+*WorkflowDiscoveryAPIApi* | [**get_workflow_by_id**](docs/WorkflowDiscoveryAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
+*WorkflowDiscoveryAPIApi* | [**list_available_actions**](docs/WorkflowDiscoveryAPIApi.md#list_available_actions) | **GET** /api/v1/workflows/actions | List available action types
+*WorkflowDiscoveryAPIApi* | [**list_workflows_by_action_type**](docs/WorkflowDiscoveryAPIApi.md#list_workflows_by_action_type) | **GET** /api/v1/workflows/actions/{action_type} | List workflows for action type
 
 
 ## Documentation For Models
@@ -172,6 +174,9 @@ Class | Method | HTTP request | Description
  - [AIAnalysisHolmesGPTCallPayload](docs/AIAnalysisHolmesGPTCallPayload.md)
  - [AIAnalysisPhaseTransitionPayload](docs/AIAnalysisPhaseTransitionPayload.md)
  - [AIAnalysisRegoEvaluationPayload](docs/AIAnalysisRegoEvaluationPayload.md)
+ - [ActionTypeEntry](docs/ActionTypeEntry.md)
+ - [ActionTypeEntryDescription](docs/ActionTypeEntryDescription.md)
+ - [ActionTypeListResponse](docs/ActionTypeListResponse.md)
  - [AsyncAcceptanceResponse](docs/AsyncAcceptanceResponse.md)
  - [AuditEvent](docs/AuditEvent.md)
  - [AuditEventRequest](docs/AuditEventRequest.md)
@@ -187,6 +192,7 @@ Class | Method | HTTP request | Description
  - [BatchAuditEventResponse](docs/BatchAuditEventResponse.md)
  - [CreateNotificationAudit202Response](docs/CreateNotificationAudit202Response.md)
  - [DetectedLabels](docs/DetectedLabels.md)
+ - [EffectivenessAssessmentAuditPayload](docs/EffectivenessAssessmentAuditPayload.md)
  - [ErrorDetails](docs/ErrorDetails.md)
  - [GatewayAuditPayload](docs/GatewayAuditPayload.md)
  - [HealthCheck200Response](docs/HealthCheck200Response.md)
@@ -209,6 +215,7 @@ Class | Method | HTTP request | Description
  - [NotificationMessageEscalatedPayload](docs/NotificationMessageEscalatedPayload.md)
  - [NotificationMessageFailedPayload](docs/NotificationMessageFailedPayload.md)
  - [NotificationMessageSentPayload](docs/NotificationMessageSentPayload.md)
+ - [PaginationMetadata](docs/PaginationMetadata.md)
  - [PlaceLegalHoldRequest](docs/PlaceLegalHoldRequest.md)
  - [ProviderResponseSummary](docs/ProviderResponseSummary.md)
  - [QueryMetadata](docs/QueryMetadata.md)
@@ -231,11 +238,13 @@ Class | Method | HTTP request | Description
  - [WorkflowCatalogUpdatedFields](docs/WorkflowCatalogUpdatedFields.md)
  - [WorkflowCatalogUpdatedPayload](docs/WorkflowCatalogUpdatedPayload.md)
  - [WorkflowDisableRequest](docs/WorkflowDisableRequest.md)
+ - [WorkflowDiscoveryAuditPayload](docs/WorkflowDiscoveryAuditPayload.md)
+ - [WorkflowDiscoveryEntry](docs/WorkflowDiscoveryEntry.md)
+ - [WorkflowDiscoveryResponse](docs/WorkflowDiscoveryResponse.md)
  - [WorkflowExecutionAuditPayload](docs/WorkflowExecutionAuditPayload.md)
  - [WorkflowExecutionWebhookAuditPayload](docs/WorkflowExecutionWebhookAuditPayload.md)
  - [WorkflowListResponse](docs/WorkflowListResponse.md)
  - [WorkflowResultAudit](docs/WorkflowResultAudit.md)
- - [WorkflowSearchAuditPayload](docs/WorkflowSearchAuditPayload.md)
  - [WorkflowSearchFilters](docs/WorkflowSearchFilters.md)
  - [WorkflowSearchRequest](docs/WorkflowSearchRequest.md)
  - [WorkflowSearchResponse](docs/WorkflowSearchResponse.md)

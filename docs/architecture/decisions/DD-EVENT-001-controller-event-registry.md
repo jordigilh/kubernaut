@@ -2,9 +2,9 @@
 
 **Status**: ✅ APPROVED  
 **Decision Date**: 2026-02-09  
-**Version**: 1.1  
+**Version**: 1.2  
 **Authority Level**: FOUNDATIONAL  
-**Applies To**: All CRD controllers (AA, WE, RO, SP, Notification)
+**Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, EM)
 
 ---
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-09 | AI Assistant | Initial registry: 11 implemented events, migration pattern |
 | 1.1 | 2026-02-05 | AI Assistant | Full coverage: P1-P4 gap analysis, 9 new constants, per-controller BRs (BR-*-095) |
+| 1.2 | 2026-02-12 | AI Assistant | Added EM controller: 5 events (3 P1, 1 P2), inline string compliance, BR-EM-095 |
 
 ---
 
@@ -37,6 +38,7 @@ A comprehensive triage of all 5 controllers revealed:
 | **Notification** | 2 | ~16 | ~12% |
 | **SignalProcessing** | 1 | ~14 | ~7% |
 | **AIAnalysis** | 1 | ~18 | ~6% |
+| **EffectivenessMonitor** | 5 | ~10 | ~50% |
 | **RemediationOrchestrator** | 0 | ~25+ | 0% |
 
 Gaps were classified into 4 priority tiers:
@@ -97,6 +99,7 @@ Each controller has a dedicated K8s Event Observability BR:
 | BR-SP-095 | SignalProcessing | K8s Event Observability (DD-EVENT-001) |
 | BR-NT-095 | Notification | K8s Event Observability (DD-EVENT-001) |
 | BR-ORCH-095 | RemediationOrchestrator | K8s Event Observability (DD-EVENT-001) |
+| BR-EM-095 | EffectivenessMonitor | K8s Event Observability (DD-EVENT-001) |
 
 Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the existing BR number for test IDs.
 
@@ -177,6 +180,17 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonNotificationPartiallySent` | `NotificationPartiallySent` | Normal | P1 | Some channels succeeded, others failed terminally | Planned (v1.1) |
 | `EventReasonNotificationRetrying` | `NotificationRetrying` | Normal | P3 | Retrying after transient delivery failure | Planned (v1.1) |
 | `EventReasonCircuitBreakerOpen` | `CircuitBreakerOpen` | Warning | P2 | Slack circuit breaker tripped, channel temporarily disabled | Planned (v1.1) |
+
+### EffectivenessMonitor Controller
+
+| Reason Constant | Reason String | Type | Priority | When Emitted | Status |
+|----------------|---------------|------|----------|-------------|--------|
+| `EventReasonAssessmentStarted` | `AssessmentStarted` | Normal | P1 | EA transitions Pending → Assessing | Implemented (v1.2) |
+| `EventReasonEffectivenessAssessed` | `EffectivenessAssessed` | Normal | P1 | Assessment completed with score >= threshold | Implemented (v1.2) |
+| `EventReasonRemediationIneffective` | `RemediationIneffective` | Warning | P1 | Assessment completed with score < threshold | Implemented (v1.2) |
+| `EventReasonAssessmentExpired` | `AssessmentExpired` | Warning | P1 | Validity window expired (ADR-EM-001) | Implemented (v1.2) |
+| `EventReasonComponentAssessed` | `ComponentAssessed` | Normal/Warning | P2 | Individual component (health/alert/metrics/hash) assessed; component name in message | Implemented (v1.2) |
+| `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned |
 
 ### Shared Events (used by multiple controllers)
 
@@ -270,6 +284,18 @@ const (
 )
 
 // ============================================================
+// Effectiveness Monitor Controller Events
+// ============================================================
+
+const (
+    EventReasonAssessmentStarted             = "AssessmentStarted"
+    EventReasonEffectivenessAssessed         = "EffectivenessAssessed"
+    EventReasonRemediationIneffective        = "RemediationIneffective"
+    EventReasonAssessmentExpired             = "AssessmentExpired"
+    EventReasonComponentAssessed             = "ComponentAssessed"
+)
+
+// ============================================================
 // Shared Events (used by multiple controllers)
 // ============================================================
 
@@ -325,6 +351,7 @@ Per-controller issues with TDD methodology (RED-GREEN-REFACTOR):
 | SP | TBD | 5 | BR-SP-095 | Current team |
 | NT | TBD | 6 | BR-NT-095 | Current team |
 | RO | TBD | 14 (+ FakeRecorder infra) | BR-ORCH-095 | Current team |
+| EM | N/A | 5 (all implemented v1.2) | BR-EM-095 | Current team |
 
 ### Test Strategy: Defense-in-Depth
 
@@ -403,3 +430,4 @@ Define unique constants for each intermediate transition (e.g., `EventReasonPend
 - `docs/testing/DD-EVENT-001/TP-EVENT-SP.md` -- SignalProcessing event test plan
 - `docs/testing/DD-EVENT-001/TP-EVENT-NT.md` -- Notification event test plan
 - `docs/testing/DD-EVENT-001/TP-EVENT-RO.md` -- RemediationOrchestrator event test plan
+- `docs/services/crd-controllers/07-effectivenessmonitor/EM_COMPREHENSIVE_TEST_PLAN.md` -- EffectivenessMonitor test plan (includes KE scenarios)

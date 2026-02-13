@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -51,7 +50,8 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 				"Expired EA should be completed by reconciler")
 		}, timeout, interval).Should(Succeed())
 
-		Expect(fetchedEA.Spec.Config.ValidityDeadline.Time.Before(time.Now())).To(BeTrue(),
+		Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
+		Expect(fetchedEA.Status.ValidityDeadline.Time.Before(time.Now())).To(BeTrue(),
 			"validity deadline should be in the past")
 		Expect(fetchedEA.Status.CompletedAt).NotTo(BeNil())
 		// Reason should reflect expiration
@@ -83,7 +83,8 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 		}, timeout, interval).Should(Succeed())
 
 		// Should have completed before the deadline
-		Expect(fetchedEA.Spec.Config.ValidityDeadline.Time.After(time.Now())).To(BeTrue(),
+		Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
+		Expect(fetchedEA.Status.ValidityDeadline.Time.After(time.Now())).To(BeTrue(),
 			"validity deadline should still be in the future (normal completion)")
 		Expect(fetchedEA.Status.CompletedAt).NotTo(BeNil())
 
@@ -99,33 +100,8 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 		ns := createTestNamespace("em-vw-005")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with very tight validity window (5 seconds)")
-		now := metav1.Now()
-		ea := &eav1.EffectivenessAssessment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "ea-vw-005",
-				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-vw-005",
-				},
-			},
-			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-vw-005",
-				TargetResource: eav1.TargetResource{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: ns,
-				},
-				Config: eav1.EAConfig{
-					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(5 * time.Second)}, // Tight window
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+		By("Creating an EA (validity window computed by EM controller)")
+		_ = createEffectivenessAssessment(ns, "ea-vw-005", "rr-vw-005")
 
 		By("Verifying the EA completes (either normally or via expiration)")
 		fetchedEA := &eav1.EffectivenessAssessment{}

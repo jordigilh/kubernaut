@@ -362,45 +362,87 @@ def unique_test_id(worker_id, request):
 # HELPER FUNCTIONS
 # ========================================
 
-def create_authenticated_datastorage_client(data_storage_url: str):
+def create_authenticated_datastorage_client(data_storage_url: str, api_type: str = "catalog"):
     """
     Create authenticated DataStorage API client with ServiceAccount token injection.
-    
+
     DD-AUTH-014: All DataStorage clients MUST use ServiceAccount token authentication.
+    DD-WORKFLOW-016: Supports both catalog and discovery API instances.
     This helper ensures consistent auth pattern across all test files.
-    
+
     Args:
         data_storage_url: DataStorage service URL (e.g., "http://127.0.0.1:18098")
-    
+        api_type: Which API to create - "catalog" (default) or "discovery"
+
     Returns:
         Tuple of (ApiClient, api_instance) ready for use
-        
+
     Example:
-        api_client, search_api = create_authenticated_datastorage_client(data_storage_url)
-        response = search_api.search_workflows(...)
+        api_client, catalog_api = create_authenticated_datastorage_client(data_storage_url)
+        response = catalog_api.create_workflow(...)
+
+        api_client, discovery_api = create_authenticated_datastorage_client(data_storage_url, api_type="discovery")
+        response = discovery_api.list_available_actions(...)
     """
     # Import inside function to avoid module-level import errors when DS client not available
     try:
         from datastorage import Configuration, ApiClient
-        from datastorage.api import WorkflowCatalogAPIApi  # Fixed typo: "apis" → "api" (singular)
+        from datastorage.api import WorkflowCatalogAPIApi, WorkflowDiscoveryAPIApi
     except ImportError as e:
         raise ImportError(f"DataStorage client not available. Run 'make generate-datastorage-client' first: {e}")
-    
+
     # Import pool manager for token injection
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from clients.datastorage_pool_manager import get_shared_datastorage_pool_manager
-    
+
     # Create client
     config = Configuration(host=data_storage_url)
     api_client = ApiClient(configuration=config)
-    
+
     # DD-AUTH-014: Inject ServiceAccount token via shared pool manager
     auth_pool = get_shared_datastorage_pool_manager()
     api_client.rest_client.pool_manager = auth_pool
-    
-    # Return client and API instance
-    search_api = WorkflowCatalogAPIApi(api_client)
-    return api_client, search_api
+
+    # Return client and appropriate API instance
+    if api_type == "discovery":
+        api_instance = WorkflowDiscoveryAPIApi(api_client)
+    else:
+        api_instance = WorkflowCatalogAPIApi(api_client)
+    return api_client, api_instance
+
+
+def create_authenticated_http_session():
+    """
+    Create an authenticated requests.Session for discovery tools.
+
+    DD-AUTH-014: Discovery tools use raw HTTP (requests.get), not the OpenAPI
+    generated client. They need a Session that injects the ServiceAccount token
+    on every request, matching the pattern in datastorage_auth_session.py.
+
+    The SA token is available at /var/run/secrets/kubernetes.io/serviceaccount/token
+    inside the test container (mounted by Go infrastructure).
+
+    Returns:
+        requests.Session with Authorization header injection, or None if
+        no token is available (local dev).
+    """
+    import os
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+    token = None
+    try:
+        with open(token_path, 'r') as f:
+            token = f.read().strip()
+    except FileNotFoundError:
+        print(f"⚠️ DD-AUTH-014: SA token not found at {token_path}; discovery tools will use unauthenticated requests")
+        return None
+
+    if not token:
+        return None
+
+    session = requests.Session()
+    session.headers.update({"Authorization": f"Bearer {token}"})
+    return session
 
 
 def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, retry_delay: float = 1.0) -> bool:

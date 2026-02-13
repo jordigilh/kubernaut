@@ -143,6 +143,64 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 	})
 
 	// ========================================
+	// UT-EM-AE-008: Build scheduled audit event (BR-EM-009.4)
+	// ========================================
+	Describe("BuildScheduledEvent (UT-EM-AE-008)", func() {
+
+		It("should build scheduled audit event with all derived timing fields", func() {
+			data := baseEventData()
+			creationTime := time.Now()
+			validityWindow := 30 * time.Minute
+			stabilizationWindow := 5 * time.Minute
+
+			validityDeadline := creationTime.Add(validityWindow)
+			prometheusCheckAfter := creationTime.Add(stabilizationWindow)
+			alertManagerCheckAfter := creationTime.Add(stabilizationWindow)
+
+			event := builder.BuildScheduledEvent(data,
+				validityDeadline, prometheusCheckAfter, alertManagerCheckAfter,
+				validityWindow, stabilizationWindow)
+
+			Expect(event.CorrelationID).To(Equal("rr-test-001"))
+			Expect(event.AssessmentName).To(Equal("ea-test-001"))
+			Expect(event.Namespace).To(Equal("default"))
+
+			// Verify derived timing fields
+			Expect(event.ValidityDeadline).To(BeTemporally("~", validityDeadline, time.Millisecond))
+			Expect(event.PrometheusCheckAfter).To(BeTemporally("~", prometheusCheckAfter, time.Millisecond))
+			Expect(event.AlertManagerCheckAfter).To(BeTemporally("~", alertManagerCheckAfter, time.Millisecond))
+
+			// Verify config observability fields
+			Expect(event.ValidityWindow).To(Equal(30 * time.Minute))
+			Expect(event.StabilizationWindow).To(Equal(5 * time.Minute))
+
+			// Invariant: ValidityDeadline > PrometheusCheckAfter
+			Expect(event.ValidityDeadline.After(event.PrometheusCheckAfter)).To(BeTrue(),
+				"ValidityDeadline must be after PrometheusCheckAfter")
+
+			// PrometheusCheckAfter == AlertManagerCheckAfter (same stabilization window)
+			Expect(event.PrometheusCheckAfter).To(Equal(event.AlertManagerCheckAfter),
+				"PrometheusCheckAfter and AlertManagerCheckAfter should be identical")
+		})
+
+		It("should correctly capture custom timing values", func() {
+			data := baseEventData()
+			creationTime := time.Now()
+			validityWindow := 1 * time.Hour
+			stabilizationWindow := 10 * time.Minute
+
+			event := builder.BuildScheduledEvent(data,
+				creationTime.Add(validityWindow),
+				creationTime.Add(stabilizationWindow),
+				creationTime.Add(stabilizationWindow),
+				validityWindow, stabilizationWindow)
+
+			Expect(event.ValidityWindow).To(Equal(1 * time.Hour))
+			Expect(event.StabilizationWindow).To(Equal(10 * time.Minute))
+		})
+	})
+
+	// ========================================
 	// UT-EM-AE-005: Build completed audit event
 	// ========================================
 	Describe("BuildCompletedEvent (UT-EM-AE-005)", func() {

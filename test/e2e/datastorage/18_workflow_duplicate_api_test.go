@@ -194,6 +194,7 @@ execution:
 
 	return &ogenclient.RemediationWorkflow{
 		WorkflowName:    workflowName,
+		ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
 		Version:         version,
 		Name:            name,
 		Description:     description,

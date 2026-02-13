@@ -279,6 +279,20 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
 
+	// DD-AUTH-014: Deploy data-storage-client ClusterRole and create RoleBinding for EM controller.
+	// DeployDataStorageTestServicesWithNodePort does NOT deploy the client ClusterRole,
+	// so we must deploy it explicitly before creating the RoleBinding.
+	// The EM controller's ServiceAccount needs this so that SAR checks pass when
+	// the audit manager writes events to DataStorage.
+	_, _ = fmt.Fprintln(writer, "  🔐 Deploying data-storage-client ClusterRole (DD-AUTH-014)...")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy data-storage-client ClusterRole: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating DataStorage client RoleBinding for EM controller (DD-AUTH-014)...")
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "effectivenessmonitor-controller", writer); err != nil {
+		return fmt.Errorf("failed to create EM DataStorage client RoleBinding: %w", err)
+	}
+
 	// Deploy EM controller
 	emImage := builtImages["EffectivenessMonitor"]
 	if err := DeployEMController(ctx, namespace, kubeconfigPath, emImage, writer); err != nil {
@@ -332,8 +346,11 @@ data:
     audit:
       dataStorageUrl: http://data-storage-service:8080
       timeout: 10s
-      bufferSize: 100
-      flushInterval: 5s
+      buffer:
+        bufferSize: 100
+        batchSize: 10
+        flushInterval: 1s
+        maxRetries: 3
     controller:
       leaderElection: false
     external:

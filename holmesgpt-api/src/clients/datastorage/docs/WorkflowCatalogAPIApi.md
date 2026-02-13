@@ -6,9 +6,8 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Create workflow
 [**disable_workflow**](WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
-[**get_workflow_by_id**](WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID
+[**get_workflow_by_id**](WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 [**list_workflows**](WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
-[**search_workflows**](WorkflowCatalogAPIApi.md#search_workflows) | **POST** /api/v1/workflows/search | Label-based workflow search
 [**update_workflow**](WorkflowCatalogAPIApi.md#update_workflow) | **PATCH** /api/v1/workflows/{workflow_id} | Update workflow mutable fields
 
 
@@ -162,11 +161,11 @@ No authorization required
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **get_workflow_by_id**
-> RemediationWorkflow get_workflow_by_id(workflow_id)
+> RemediationWorkflow get_workflow_by_id(workflow_id, severity=severity, component=component, environment=environment, priority=priority, custom_labels=custom_labels, detected_labels=detected_labels, remediation_id=remediation_id)
 
-Get workflow by UUID
+Get workflow by UUID (with optional security gate)
 
-Retrieve a specific workflow by its UUID.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) 
+Retrieve a specific workflow by its UUID. Step 3 of the three-step workflow discovery protocol when context filters are provided.  **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key) **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017  **Without context filters**: Returns workflow by ID (existing behavior). **With context filters**: Returns workflow only if it matches the signal context. Returns 404 if the workflow exists but does not match the context filters (security gate - prevents info leakage by not distinguishing \"not found\" from \"filtered out\").  Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present. 
 
 ### Example
 
@@ -191,10 +190,17 @@ with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
     workflow_id = 'workflow_id_example' # str | 
+    severity = 'severity_example' # str | Security gate: signal severity level (optional)
+    component = 'component_example' # str | Security gate: Kubernetes resource type (optional)
+    environment = 'environment_example' # str | Security gate: target environment (optional)
+    priority = 'priority_example' # str | Security gate: business priority level (optional)
+    custom_labels = 'custom_labels_example' # str | Security gate: JSON-encoded custom labels (optional)
+    detected_labels = 'detected_labels_example' # str | Security gate: JSON-encoded detected labels (optional)
+    remediation_id = 'remediation_id_example' # str | Remediation request ID for audit correlation (BR-AUDIT-021) (optional)
 
     try:
-        # Get workflow by UUID
-        api_response = api_instance.get_workflow_by_id(workflow_id)
+        # Get workflow by UUID (with optional security gate)
+        api_response = api_instance.get_workflow_by_id(workflow_id, severity=severity, component=component, environment=environment, priority=priority, custom_labels=custom_labels, detected_labels=detected_labels, remediation_id=remediation_id)
         print("The response of WorkflowCatalogAPIApi->get_workflow_by_id:\n")
         pprint(api_response)
     except Exception as e:
@@ -209,6 +215,13 @@ with datastorage.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **workflow_id** | **str**|  | 
+ **severity** | **str**| Security gate: signal severity level | [optional] 
+ **component** | **str**| Security gate: Kubernetes resource type | [optional] 
+ **environment** | **str**| Security gate: target environment | [optional] 
+ **priority** | **str**| Security gate: business priority level | [optional] 
+ **custom_labels** | **str**| Security gate: JSON-encoded custom labels | [optional] 
+ **detected_labels** | **str**| Security gate: JSON-encoded detected labels | [optional] 
+ **remediation_id** | **str**| Remediation request ID for audit correlation (BR-AUDIT-021) | [optional] 
 
 ### Return type
 
@@ -312,79 +325,6 @@ No authorization required
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
 **200** | Workflow list |  -  |
-**500** | Internal server error |  -  |
-
-[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
-
-# **search_workflows**
-> WorkflowSearchResponse search_workflows(workflow_search_request)
-
-Label-based workflow search
-
-Search workflows using label-based matching with wildcard support and weighted scoring.  **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)  **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search) **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)  **Behavior**: - Mandatory filters: signal_type, severity, component, environment, priority - Optional filters: custom_labels, detected_labels - Wildcard support: \"*\" matches any non-null value - Weighted scoring: Exact matches > Wildcard matches - Returns top_k results sorted by confidence score (0.0-1.0) 
-
-### Example
-
-
-```python
-import time
-import os
-import datastorage
-from datastorage.models.workflow_search_request import WorkflowSearchRequest
-from datastorage.models.workflow_search_response import WorkflowSearchResponse
-from datastorage.rest import ApiException
-from pprint import pprint
-
-# Defining the host is optional and defaults to http://localhost:8080
-# See configuration.py for a list of all supported configuration parameters.
-configuration = datastorage.Configuration(
-    host = "http://localhost:8080"
-)
-
-
-# Enter a context with an instance of the API client
-with datastorage.ApiClient(configuration) as api_client:
-    # Create an instance of the API class
-    api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
-    workflow_search_request = datastorage.WorkflowSearchRequest() # WorkflowSearchRequest | 
-
-    try:
-        # Label-based workflow search
-        api_response = api_instance.search_workflows(workflow_search_request)
-        print("The response of WorkflowCatalogAPIApi->search_workflows:\n")
-        pprint(api_response)
-    except Exception as e:
-        print("Exception when calling WorkflowCatalogAPIApi->search_workflows: %s\n" % e)
-```
-
-
-
-### Parameters
-
-
-Name | Type | Description  | Notes
-------------- | ------------- | ------------- | -------------
- **workflow_search_request** | [**WorkflowSearchRequest**](WorkflowSearchRequest.md)|  | 
-
-### Return type
-
-[**WorkflowSearchResponse**](WorkflowSearchResponse.md)
-
-### Authorization
-
-No authorization required
-
-### HTTP request headers
-
- - **Content-Type**: application/json
- - **Accept**: application/json, application/problem+json
-
-### HTTP response details
-
-| Status code | Description | Response headers |
-|-------------|-------------|------------------|
-**200** | Workflow search results |  -  |
-**400** | Validation error |  -  |
 **500** | Internal server error |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

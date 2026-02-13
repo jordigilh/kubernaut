@@ -50,10 +50,14 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 	// E2E-EM-AR-001: Resolved Alert
 	// ========================================================================
 	It("E2E-EM-AR-001: should produce alert score 1.0 when AlertManager alert is resolved", func() {
+		// The reconciler queries AlertManager using alertname=<correlationID> (see reconciler.go:assessAlert).
+		// We must inject the alert with Name matching the EA's correlation ID.
+		correlationID := uniqueName("corr-ar-resolved")
+
 		By("Injecting a resolved alert into the real AlertManager")
 		alerts := []infrastructure.TestAlert{
 			{
-				Name: "HighCPUUsage",
+				Name: correlationID, // Must match correlationID used by the reconciler
 				Labels: map[string]string{
 					"namespace": testNS,
 					"pod":       "target-pod",
@@ -75,7 +79,6 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		waitForPodReady(testNS, "target-pod")
 
 		name := uniqueName("ea-ar-resolved")
-		correlationID := uniqueName("corr-ar-resolved")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 			withPrometheusDisabled(), // Focus on alert resolution
@@ -97,10 +100,14 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 	// E2E-EM-AR-002: Active (Firing) Alert
 	// ========================================================================
 	It("E2E-EM-AR-002: should produce alert score 0.0 when AlertManager has active alerts", func() {
+		// The reconciler queries AlertManager using alertname=<correlationID>.
+		// We must inject the alert with Name matching the EA's correlation ID.
+		correlationID := uniqueName("corr-ar-firing")
+
 		By("Injecting a firing alert into the real AlertManager")
 		alerts := []infrastructure.TestAlert{
 			{
-				Name: "HighMemoryUsage",
+				Name: correlationID, // Must match correlationID used by the reconciler
 				Labels: map[string]string{
 					"namespace": testNS,
 					"pod":       "target-pod",
@@ -110,7 +117,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 					"summary": "High memory usage (test - still firing)",
 				},
 				Status:   "firing",
-				StartsAt: time.Now().Add(-5 * time.Minute),
+				StartsAt: time.Now(),
 				// No EndsAt = still firing
 			},
 		}
@@ -122,7 +129,6 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		waitForPodReady(testNS, "target-pod")
 
 		name := uniqueName("ea-ar-firing")
-		correlationID := uniqueName("corr-ar-firing")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
 			withPrometheusDisabled(), // Focus on alert resolution

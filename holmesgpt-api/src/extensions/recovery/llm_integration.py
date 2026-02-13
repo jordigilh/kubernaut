@@ -35,13 +35,17 @@ from holmes.core.models import InvestigateRequest, InvestigationResult
 from holmes.core.investigation import investigate_issues
 from src.audit import (
     get_audit_store,
-    create_llm_request_event,
-    create_llm_response_event,
-    create_tool_call_event,
+    create_validation_attempt_event,
 )
-from src.toolsets.workflow_catalog import SearchWorkflowCatalogTool
-from src.validation.workflow_response_validator import WorkflowResponseValidator
-from .constants import MinimalDAL
+from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
+from .constants import MinimalDAL, MAX_VALIDATION_ATTEMPTS
+from src.extensions.incident.llm_integration import create_data_storage_client
+from src.extensions.incident.prompt_builder import build_validation_error_feedback
+from src.extensions.investigation_helpers import (
+    audit_llm_request,
+    audit_llm_response_and_tools,
+    handle_validation_exhaustion,
+)
 from .prompt_builder import (
     _create_recovery_investigation_prompt,
     _create_investigation_prompt
@@ -99,7 +103,6 @@ def _get_holmes_config(
     from src.extensions.llm_config import (
         get_model_config_for_sdk,
         prepare_toolsets_config_for_sdk,
-        register_workflow_catalog_toolset
     )
 
     try:
@@ -133,20 +136,6 @@ def _get_holmes_config(
     try:
         config = Config(**config_data)
 
-        # BR-HAPI-250: Register workflow catalog toolset programmatically
-        # BR-AUDIT-001: Pass remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
-        # DD-HAPI-001: Pass custom_labels for auto-append to workflow search
-        # DD-WORKFLOW-001 v1.7: Pass detected_labels with source_resource and owner_chain (100% safe)
-        config = register_workflow_catalog_toolset(
-            config,
-            app_config,
-            remediation_id=remediation_id,
-            custom_labels=custom_labels,
-            detected_labels=detected_labels,
-            source_resource=source_resource,
-            owner_chain=owner_chain
-        )
-
         # Log labels count for debugging
         custom_labels_info = f", custom_labels={len(custom_labels)} subdomains" if custom_labels else ""
         # Count non-None fields from DetectedLabels model (excluding failedDetections meta field)
@@ -154,7 +143,7 @@ def _get_holmes_config(
         detected_labels_info = f", detected_labels={detected_labels_count} fields" if detected_labels else ""
         source_info = f", source={source_resource.get('kind')}/{source_resource.get('namespace', 'cluster')}" if source_resource else ""
         owner_info = f", owner_chain={len(owner_chain)} owners" if owner_chain else ""
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys())}{custom_labels_info}{detected_labels_info}{source_info}{owner_info}")
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys()) if hasattr(config, 'toolset_manager') else 'N/A'}{custom_labels_info}{detected_labels_info}{source_info}{owner_info}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -213,7 +202,6 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
 
     # BR-AUDIT-005: Initialize audit store BEFORE mock check
     # Per ADR-032 §1: Audit is MANDATORY for ALL LLM interactions
-    from src.audit import get_audit_store, create_llm_request_event, create_llm_response_event
     audit_store = get_audit_store()
     
     # BR-AUDIT-001: Extract remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
@@ -277,270 +265,228 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         owner_chain=owner_chain
     )
 
+    # DD-HAPI-017: Register three-step workflow discovery toolset
+    # (replaces single search_workflow_catalog tool from DD-WORKFLOW-002)
+    # NOTE: Registration is done here (not in _get_holmes_config) because
+    # context filters come from request_data which is only available in the caller.
+    from src.extensions.llm_config import register_workflow_discovery_toolset
+    config = register_workflow_discovery_toolset(
+        config,
+        app_config,
+        remediation_id=remediation_id,
+        custom_labels=custom_labels,
+        severity=request_data.get("severity", ""),
+        component=request_data.get("resource_kind", ""),
+        environment=request_data.get("environment", ""),
+        priority=request_data.get("priority", ""),
+    )
+
     # Use HolmesGPT SDK with enhanced error handling
-    # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via
-    # register_workflow_catalog_toolset() - the LLM calls the tool during investigation
-    # per DD-WORKFLOW-002 v2.4
+    # NOTE: Workflow discovery is handled by WorkflowDiscoveryToolset registered via
+    # register_workflow_discovery_toolset() - LLM calls three-step tools during investigation
+    # per DD-HAPI-017
     try:
-        # Create investigation prompt
+        # Build base investigation prompt (before validation loop)
         # DD-RECOVERY-003: Use recovery-specific prompt for recovery attempts
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
 
         is_recovery = request_data.get("is_recovery_attempt", False)
         if is_recovery and request_data.get("previous_execution"):
-            investigation_prompt = sanitize_for_llm(_create_recovery_investigation_prompt(request_data))
+            base_prompt = sanitize_for_llm(_create_recovery_investigation_prompt(request_data))
             logger.info({
                 "event": "using_recovery_prompt",
                 "incident_id": incident_id,
                 "recovery_attempt_number": request_data.get("recovery_attempt_number", 1)
             })
         else:
-            investigation_prompt = sanitize_for_llm(_create_investigation_prompt(request_data))
-
-        # Log the prompt being sent to LLM (sanitized version)
-        print("\n" + "="*80)
-        print("🔍 PROMPT TO LLM PROVIDER (via HolmesGPT SDK) [SANITIZED per BR-HAPI-211]")
-        print("="*80)
-        print(investigation_prompt)
-        print("="*80 + "\n")
-
-        # Create investigation request
-        investigation_request = InvestigateRequest(
-            source="kubernaut",
-            title=f"Recovery analysis for {failed_action.get('type')} failure",
-            description=investigation_prompt,
-            subject={
-                "type": "remediation_failure",
-                "incident_id": incident_id,
-                "failed_action": failed_action
-            },
-            context={
-                "incident_id": incident_id,
-                "issue_type": "remediation_failure"
-            },
-            source_instance_id="holmesgpt-api"
-        )
+            base_prompt = sanitize_for_llm(_create_investigation_prompt(request_data))
 
         # Create minimal DAL (no Robusta Platform database needed)
         dal = MinimalDAL(cluster_name=request_data.get("context", {}).get("cluster"))
 
-        # Debug: Log investigation details before SDK call
-        logger.debug({
-            "event": "calling_aiagent_sdk",
-            "incident_id": incident_id,
-            "prompt_length": len(investigation_prompt),
-            "toolsets_enabled": config.toolsets if config else None,
-            "prompt_preview": investigation_prompt[:300] + "..." if len(investigation_prompt) > 300 else investigation_prompt
-        })
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # LLM INTERACTION AUDIT (BR-AUDIT-005, ADR-038, DD-AUDIT-002)
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # AUDIT: LLM REQUEST (BR-AUDIT-005)
-        # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
         # Get remediation_id from request context (for audit correlation)
-        # Note: remediation_id already initialized at function start, but recovery uses context field
         remediation_id_from_context = request_data.get("context", {}).get("remediation_request_id", "")
         if remediation_id_from_context:
             remediation_id = remediation_id_from_context
 
-        # BR-AUDIT-005: audit_store already initialized at function start
-        # (Moved before mock check to support audit in mock mode - BR-HAPI-212 + BR-AUDIT-005)
+        # DD-HAPI-002 v1.2: Create Data Storage client for workflow validation
+        data_storage_client = create_data_storage_client(app_config)
 
-        if audit_store is None:
-            logger.error(
-                "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                extra={
-                    "incident_id": incident_id,
-                    "remediation_id": remediation_id,
-                    "adr": "ADR-032 §1",
-                }
+        # DD-HAPI-017: Create validator once before the loop (avoids re-creation per attempt)
+        validator = None
+        if data_storage_client:
+            validator = WorkflowResponseValidator(
+                data_storage_client,
+                severity=request_data.get("severity"),
+                component=request_data.get("resource_kind"),
+                environment=request_data.get("environment"),
+                priority=request_data.get("priority"),
             )
-            raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
 
-        # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-        audit_store.store_audit(create_llm_request_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            model=config.model if config else "unknown",
-            prompt=investigation_prompt,
-            toolsets_enabled=list(config.toolsets.keys()) if config and config.toolsets else [],
-            mcp_servers=list(config.mcp_servers.keys()) if config and hasattr(config, 'mcp_servers') and config.mcp_servers else []
-        ))
+        # ========================================
+        # LLM SELF-CORRECTION LOOP (DD-HAPI-002 v1.2, BR-HAPI-017-004)
+        # With full audit trail (BR-AUDIT-005)
+        # ========================================
+        validation_errors_history: List[List[str]] = []
+        last_schema_hint: Optional[str] = None
+        result = None
+        workflow_id = None
 
-        # Debug log (kept for backwards compatibility)
-        logger.info({
-            "event": "llm_request",
-            "incident_id": incident_id,
-            "model": config.model if config else "unknown",
-            "prompt_length": len(investigation_prompt),
-            "prompt_preview": investigation_prompt[:500] + "..." if len(investigation_prompt) > 500 else investigation_prompt,
-            "toolsets_enabled": config.toolsets if config else [],
-            "mcp_servers": list(config.mcp_servers.keys()) if config and hasattr(config, 'mcp_servers') and config.mcp_servers else [],
-        })
+        for attempt in range(MAX_VALIDATION_ATTEMPTS):
+            # Build prompt with error feedback for retries
+            if validation_errors_history:
+                investigation_prompt = base_prompt + build_validation_error_feedback(
+                    validation_errors_history[-1],
+                    attempt,
+                    schema_hint=last_schema_hint
+                )
+            else:
+                investigation_prompt = base_prompt
 
-        # Call HolmesGPT SDK
-        logger.info("Calling HolmesGPT SDK for recovery analysis")
-        investigation_result = investigate_issues(
-            investigate_request=investigation_request,
-            dal=dal,
-            config=config
-        )
+            # Log the prompt
+            print("\n" + "="*80)
+            print(f"🔍 RECOVERY ANALYSIS PROMPT TO LLM (Attempt {attempt + 1}/{MAX_VALIDATION_ATTEMPTS})")
+            print("="*80)
+            print(investigation_prompt)
+            print("="*80 + "\n")
 
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # DEBUG: SDK RESPONSE INSPECTION (Option A: Understand SDK format)
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        logger.info({
-            "event": "sdk_response_debug",
-            "incident_id": incident_id,
-            "result_type": type(investigation_result).__name__ if investigation_result else "None",
-            "has_result": investigation_result is not None,
-            "has_analysis": hasattr(investigation_result, 'analysis') if investigation_result else False,
-            "analysis_type": type(investigation_result.analysis).__name__ if investigation_result and hasattr(investigation_result, 'analysis') else "None",
-            "attributes": dir(investigation_result) if investigation_result else [],
-        })
-        
-        if investigation_result and hasattr(investigation_result, 'analysis'):
-            analysis_text = investigation_result.analysis
+            # Create investigation request
+            investigation_request = InvestigateRequest(
+                source="kubernaut",
+                title=f"Recovery analysis for {failed_action.get('type')} failure",
+                description=investigation_prompt,
+                subject={
+                    "type": "remediation_failure",
+                    "incident_id": incident_id,
+                    "failed_action": failed_action
+                },
+                context={
+                    "incident_id": incident_id,
+                    "issue_type": "remediation_failure",
+                    "attempt": attempt + 1
+                },
+                source_instance_id="holmesgpt-api"
+            )
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: LLM REQUEST (BR-AUDIT-005, ADR-032 §1)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            audit_llm_request(audit_store, incident_id, remediation_id, config, investigation_prompt)
+
+            # Call HolmesGPT SDK
             logger.info({
-                "event": "sdk_analysis_structure",
+                "event": "calling_aiagent_sdk",
                 "incident_id": incident_id,
-                "analysis_length": len(analysis_text) if analysis_text else 0,
-                "has_json_codeblock": "```json" in analysis_text if analysis_text else False,
-                "has_section_headers": "# selected_workflow" in analysis_text if analysis_text else False,
-                "first_200_chars": analysis_text[:200] if analysis_text else "",
-                "contains_selected_workflow": "selected_workflow" in analysis_text if analysis_text else False,
-                "contains_root_cause": "root_cause" in analysis_text if analysis_text else False,
+                "attempt": attempt + 1,
+                "max_attempts": MAX_VALIDATION_ATTEMPTS
             })
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # AUDIT: LLM RESPONSE (BR-AUDIT-005)
-        # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        has_analysis = bool(investigation_result and investigation_result.analysis)
-        analysis_length = len(investigation_result.analysis) if investigation_result and investigation_result.analysis else 0
-        analysis_preview = investigation_result.analysis[:500] + "..." if investigation_result and investigation_result.analysis and len(investigation_result.analysis) > 500 else (investigation_result.analysis if investigation_result and investigation_result.analysis else "")
-        tool_call_count = len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0
-
-        if audit_store is None:
-            logger.error(
-                "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                extra={
-                    "incident_id": incident_id,
-                    "remediation_id": remediation_id,
-                    "adr": "ADR-032 §1",
-                }
+            investigation_result = investigate_issues(
+                investigate_request=investigation_request,
+                dal=dal,
+                config=config
             )
-            raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
 
-        # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-        audit_store.store_audit(create_llm_response_event(
-            incident_id=incident_id,
-            remediation_id=remediation_id,
-            has_analysis=has_analysis,
-            analysis_length=analysis_length,
-            analysis_preview=analysis_preview,
-            tool_call_count=tool_call_count
-        ))
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: LLM RESPONSE + TOOL CALLS (BR-AUDIT-005, ADR-032 §1)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            audit_llm_response_and_tools(audit_store, incident_id, remediation_id, investigation_result)
 
-        # Debug log (kept for backwards compatibility)
-        logger.info({
-            "event": "llm_response",
-            "incident_id": incident_id,
-            "has_analysis": has_analysis,
-            "analysis_length": analysis_length,
-            "analysis_preview": analysis_preview,
-            "has_tool_calls": hasattr(investigation_result, 'tool_calls') and bool(investigation_result.tool_calls) if investigation_result else False,
-            "tool_call_count": tool_call_count,
-        })
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # AUDIT: TOOL CALLS (BR-AUDIT-005)
-        # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
-            for idx, tool_call in enumerate(investigation_result.tool_calls):
-                tool_name = getattr(tool_call, 'name', 'unknown')
-                tool_arguments = getattr(tool_call, 'arguments', {})
-                tool_result = getattr(tool_call, 'result', None)
-
-                if audit_store is None:
-                    logger.error(
-                        "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                        extra={
-                            "incident_id": incident_id,
-                            "remediation_id": remediation_id,
-                            "adr": "ADR-032 §1",
-                        }
-                    )
-                    raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
-
-                # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-                audit_store.store_audit(create_tool_call_event(
-                    incident_id=incident_id,
-                    remediation_id=remediation_id,
-                    tool_call_index=idx,
-                    tool_name=tool_name,
-                    tool_arguments=tool_arguments,
-                    tool_result=tool_result
-                ))
-
-                # Debug log (kept for backwards compatibility)
-                logger.info({
-                    "event": "llm_tool_call",
+            # Validate investigation result exists
+            if not investigation_result or not investigation_result.analysis:
+                logger.error({
+                    "event": "sdk_empty_response",
                     "incident_id": incident_id,
-                    "tool_call_index": idx,
-                    "tool_name": tool_name,
-                    "tool_arguments": tool_arguments,
-                    "tool_result": tool_result,
+                    "attempt": attempt + 1,
+                    "message": "SDK returned empty analysis"
+                })
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="LLM provider returned empty response"
+                )
+
+            # Parse result into recovery response
+            result = _parse_investigation_result(investigation_result, request_data)
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # WORKFLOW VALIDATION (DD-HAPI-002 v1.2, BR-HAPI-017-004)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            selected_workflow = result.get("selected_workflow")
+            if not selected_workflow or not selected_workflow.get("workflow_id"):
+                # No workflow selected — nothing to validate, exit loop
+                logger.info({
+                    "event": "no_workflow_to_validate",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                })
+                break
+
+            workflow_id = selected_workflow["workflow_id"]
+
+            # Validate using pre-created validator (DD-HAPI-017)
+            if validator:
+                validation_result = validator.validate(
+                    workflow_id=workflow_id,
+                    container_image=selected_workflow.get("container_image"),
+                    parameters=selected_workflow.get("parameters", {}),
+                )
+                is_valid = validation_result.is_valid
+                validation_errors = validation_result.errors if not is_valid else []
+            else:
+                # No DS client — skip validation
+                is_valid = True
+                validation_errors = []
+                validation_result = None
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: VALIDATION ATTEMPT (BR-AUDIT-005, DD-HAPI-002 v1.2)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            audit_store.store_audit(create_validation_attempt_event(
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                attempt=attempt + 1,
+                max_attempts=MAX_VALIDATION_ATTEMPTS,
+                is_valid=is_valid,
+                errors=validation_errors,
+                workflow_id=workflow_id
+            ))
+
+            if is_valid:
+                logger.info({
+                    "event": "workflow_validation_passed",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                    "workflow_id": workflow_id,
+                })
+                break
+            else:
+                # Validation failed — prepare for retry
+                validation_errors_history.append(validation_errors)
+                if validation_result and validation_result.schema_hint:
+                    last_schema_hint = validation_result.schema_hint
+                logger.warning({
+                    "event": "workflow_validation_retry",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                    "max_attempts": MAX_VALIDATION_ATTEMPTS,
+                    "errors": validation_errors,
+                    "message": "DD-HAPI-002 v1.2: Workflow validation failed, retrying with error feedback"
                 })
 
-        # Log the raw LLM response (for debugging)
-        print("\n" + "="*80)
-        print("🤖 RAW LLM RESPONSE (from HolmesGPT SDK)")
-        print("="*80)
-        if investigation_result:
-            if investigation_result.analysis:
-                print(f"Analysis (full):\n{investigation_result.analysis}")
-            else:
-                print("No analysis returned")
-            # Check if tool_calls attribute exists
-            if hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
-                print(f"\nTool Calls: {len(investigation_result.tool_calls)}")
-                for idx, tool_call in enumerate(investigation_result.tool_calls):
-                    print(f"  Tool {idx+1}: {getattr(tool_call, 'name', 'unknown')}")
-        else:
-            print("No result returned from SDK")
-        print("="*80 + "\n")
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-        # Validate investigation result
-        if not investigation_result or not investigation_result.analysis:
-            logger.error({
-                "event": "sdk_empty_response",
-                "incident_id": incident_id,
-                "message": "SDK returned empty analysis"
-            })
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="LLM provider returned empty response"
-            )
-
-        # Parse result into recovery response
-        result = _parse_investigation_result(investigation_result, request_data)
+        # After loop: Check if we exhausted all attempts
+        handle_validation_exhaustion(
+            result, validation_errors_history, MAX_VALIDATION_ATTEMPTS,
+            audit_store, incident_id, remediation_id, workflow_id
+        )
 
         logger.info({
             "event": "recovery_analysis_completed",
             "incident_id": incident_id,
             "strategy_count": len(result.get("strategies", [])),
             "confidence": result.get("analysis_confidence"),
-            "analysis_length": len(investigation_result.analysis) if investigation_result.analysis else 0
+            "validation_attempts": len(validation_errors_history) + 1 if result else 0,
         })
-        
+
         # Record metrics (BR-HAPI-011: Investigation metrics)
         if metrics:
             metrics.record_investigation_complete(start_time, "success")

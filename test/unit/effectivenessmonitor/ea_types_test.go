@@ -108,7 +108,6 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 					},
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-						ValidityDeadline:    now,
 						ScoringThreshold:    0.5,
 						PrometheusEnabled:   true,
 						AlertManagerEnabled: true,
@@ -181,7 +180,6 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-					ValidityDeadline:    metav1.Now(),
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,

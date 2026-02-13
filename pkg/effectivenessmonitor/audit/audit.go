@@ -23,6 +23,7 @@ limitations under the License.
 // - BR-EM-005: Component-level audit events
 //
 // Audit Event Types:
+//   - effectiveness.assessment.scheduled
 //   - effectiveness.health.assessed
 //   - effectiveness.hash.computed
 //   - effectiveness.alert.assessed
@@ -102,6 +103,22 @@ type CompletedEvent struct {
 	Message string
 }
 
+// ScheduledEvent contains the audit payload for the assessment timeline computation.
+// Emitted on first reconciliation when all derived timing fields are computed (BR-EM-009.4).
+type ScheduledEvent struct {
+	EventData
+	// ValidityDeadline is the computed absolute expiry time.
+	ValidityDeadline time.Time
+	// PrometheusCheckAfter is the computed earliest time for Prometheus checks.
+	PrometheusCheckAfter time.Time
+	// AlertManagerCheckAfter is the computed earliest time for AlertManager checks.
+	AlertManagerCheckAfter time.Time
+	// ValidityWindow is the duration from EM config used to compute ValidityDeadline.
+	ValidityWindow time.Duration
+	// StabilizationWindow is the duration from EA spec used to compute check-after times.
+	StabilizationWindow time.Duration
+}
+
 // Builder constructs audit events from assessment results.
 // This is unit-testable pure logic (no I/O).
 type Builder interface {
@@ -119,6 +136,9 @@ type Builder interface {
 
 	// BuildCompletedEvent creates an audit event for overall assessment completion.
 	BuildCompletedEvent(data EventData, components []types.ComponentResult, reason, message string) CompletedEvent
+
+	// BuildScheduledEvent creates an audit event for assessment timeline computation (BR-EM-009.4).
+	BuildScheduledEvent(data EventData, validityDeadline, prometheusCheckAfter, alertManagerCheckAfter time.Time, validityWindow, stabilizationWindow time.Duration) ScheduledEvent
 }
 
 // builder is the concrete implementation of Builder.
@@ -175,5 +195,17 @@ func (b *builder) BuildCompletedEvent(data EventData, components []types.Compone
 		Components: components,
 		Reason:     reason,
 		Message:    message,
+	}
+}
+
+// BuildScheduledEvent creates an audit event for assessment timeline computation (BR-EM-009.4).
+func (b *builder) BuildScheduledEvent(data EventData, validityDeadline, prometheusCheckAfter, alertManagerCheckAfter time.Time, validityWindow, stabilizationWindow time.Duration) ScheduledEvent {
+	return ScheduledEvent{
+		EventData:              data,
+		ValidityDeadline:       validityDeadline,
+		PrometheusCheckAfter:   prometheusCheckAfter,
+		AlertManagerCheckAfter: alertManagerCheckAfter,
+		ValidityWindow:         validityWindow,
+		StabilizationWindow:    stabilizationWindow,
 	}
 }

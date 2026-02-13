@@ -17,8 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
@@ -35,6 +37,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/config"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
+	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	//+kubebuilder:scaffold:imports
 )
@@ -168,21 +172,91 @@ func main() {
 	)
 
 	// ========================================
+	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003)
+	// ========================================
+	var promClient emclient.PrometheusQuerier
+	var amClient emclient.AlertManagerClient
+
+	if cfg.External.PrometheusEnabled {
+		promClient = emclient.NewPrometheusHTTPClient(
+			cfg.External.PrometheusURL,
+			cfg.External.ConnectionTimeout,
+		)
+		setupLog.Info("Prometheus HTTP client initialized",
+			"url", cfg.External.PrometheusURL,
+			"timeout", cfg.External.ConnectionTimeout,
+		)
+	} else {
+		setupLog.Info("Prometheus disabled in configuration, metric comparison will be skipped")
+	}
+
+	if cfg.External.AlertManagerEnabled {
+		amClient = emclient.NewAlertManagerHTTPClient(
+			cfg.External.AlertManagerURL,
+			cfg.External.ConnectionTimeout,
+		)
+		setupLog.Info("AlertManager HTTP client initialized",
+			"url", cfg.External.AlertManagerURL,
+			"timeout", cfg.External.ConnectionTimeout,
+		)
+	} else {
+		setupLog.Info("AlertManager disabled in configuration, alert resolution check will be skipped")
+	}
+
+	// ========================================
+	// FAIL-FAST READINESS CHECK (E2E-EM-FF-001)
+	// ========================================
+	// Verify connectivity to enabled external services at startup.
+	// If an enabled service is unreachable, the controller exits immediately
+	// rather than running in a degraded state with silent failures.
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), cfg.External.ConnectionTimeout+5*time.Second)
+	defer startupCancel()
+
+	if cfg.External.PrometheusEnabled && promClient != nil {
+		setupLog.Info("Fail-fast: verifying Prometheus connectivity...")
+		if err := promClient.Ready(startupCtx); err != nil {
+			setupLog.Error(err, "FATAL: Prometheus is enabled but unreachable at startup",
+				"url", cfg.External.PrometheusURL,
+			)
+			os.Exit(1)
+		}
+		setupLog.Info("Prometheus connectivity verified")
+	}
+
+	if cfg.External.AlertManagerEnabled && amClient != nil {
+		setupLog.Info("Fail-fast: verifying AlertManager connectivity...")
+		if err := amClient.Ready(startupCtx); err != nil {
+			setupLog.Error(err, "FATAL: AlertManager is enabled but unreachable at startup",
+				"url", cfg.External.AlertManagerURL,
+			)
+			os.Exit(1)
+		}
+		setupLog.Info("AlertManager connectivity verified")
+	}
+
+	// ========================================
+	// AUDIT MANAGER INITIALIZATION (DD-AUDIT-003, Pattern 2)
+	// ========================================
+	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("em-audit"))
+	setupLog.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
+
+	// ========================================
 	// CONTROLLER SETUP
 	// ========================================
-	// TODO: Prometheus and AlertManager clients will be created and injected in TDD GREEN phase
-	// For now, pass nil - the reconciler handles nil clients gracefully when disabled.
 	if err = controller.NewReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
 		emMetrics,
-		nil, // PrometheusQuerier - wired in TDD GREEN phase
-		nil, // AlertManagerClient - wired in TDD GREEN phase
-		controller.ReconcilerConfig{
-			PrometheusEnabled:   cfg.External.PrometheusEnabled,
-			AlertManagerEnabled: cfg.External.AlertManagerEnabled,
-		},
+		promClient,
+		amClient,
+		auditManager,
+		func() controller.ReconcilerConfig {
+			c := controller.DefaultReconcilerConfig()
+			c.PrometheusEnabled = cfg.External.PrometheusEnabled
+			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
+			return c
+		}(),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "EffectivenessMonitor")
 		os.Exit(1)

@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.workflow_search_audit_payload import WorkflowSearchAuditPayload
+from datastorage.models.workflow_discovery_audit_payload import WorkflowDiscoveryAuditPayload
 
-class TestWorkflowSearchAuditPayload(unittest.TestCase):
-    """WorkflowSearchAuditPayload unit test stubs"""
+class TestWorkflowDiscoveryAuditPayload(unittest.TestCase):
+    """WorkflowDiscoveryAuditPayload unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,17 +26,17 @@ class TestWorkflowSearchAuditPayload(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> WorkflowSearchAuditPayload:
-        """Test WorkflowSearchAuditPayload
+    def make_instance(self, include_optional) -> WorkflowDiscoveryAuditPayload:
+        """Test WorkflowDiscoveryAuditPayload
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `WorkflowSearchAuditPayload`
+        # uncomment below to create an instance of `WorkflowDiscoveryAuditPayload`
         """
-        model = WorkflowSearchAuditPayload()
+        model = WorkflowDiscoveryAuditPayload()
         if include_optional:
-            return WorkflowSearchAuditPayload(
-                event_type = 'workflow.catalog.search_completed',
+            return WorkflowDiscoveryAuditPayload(
+                event_type = 'workflow.catalog.actions_listed',
                 query = datastorage.models.query_metadata.QueryMetadata(
                     top_k = 5, 
                     min_score = 0.7, 
@@ -79,8 +79,8 @@ class TestWorkflowSearchAuditPayload(unittest.TestCase):
                     duration_ms = 150, )
             )
         else:
-            return WorkflowSearchAuditPayload(
-                event_type = 'workflow.catalog.search_completed',
+            return WorkflowDiscoveryAuditPayload(
+                event_type = 'workflow.catalog.actions_listed',
                 query = datastorage.models.query_metadata.QueryMetadata(
                     top_k = 5, 
                     min_score = 0.7, 
@@ -124,8 +124,8 @@ class TestWorkflowSearchAuditPayload(unittest.TestCase):
         )
         """
 
-    def testWorkflowSearchAuditPayload(self):
-        """Test WorkflowSearchAuditPayload"""
+    def testWorkflowDiscoveryAuditPayload(self):
+        """Test WorkflowDiscoveryAuditPayload"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

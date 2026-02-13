@@ -138,7 +138,6 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with both Prometheus and AlertManager disabled")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-cf-002", Namespace: ns,
@@ -151,7 +150,6 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   false, // DISABLED
 					AlertManagerEnabled: false, // DISABLED
@@ -187,7 +185,6 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with high scoring threshold (0.99)")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-cf-004", Namespace: ns,
@@ -200,7 +197,6 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.99, // Very high threshold
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,
@@ -248,7 +244,6 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 		mockProm.SetQueryResponse(infrastructure.NewPromEmptyVectorResponse())
 
 		By("Creating an EA with very tight validity window (3 seconds)")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-vw-003", Namespace: ns,
@@ -261,7 +256,6 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(3 * time.Second)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,
@@ -392,12 +386,12 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		requests := mockProm.GetRequestLog()
 		queryCount := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query" {
+			if req.Path == "/api/v1/query_range" {
 				queryCount++
 			}
 		}
 		Expect(queryCount).To(BeNumerically(">", 0),
-			"Prometheus should have been queried")
+			"Prometheus should have been queried via query_range")
 	})
 
 	// ========================================
@@ -440,7 +434,6 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with Prometheus disabled")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ff-005", Namespace: ns,
@@ -453,7 +446,6 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   false, // DISABLED
 					AlertManagerEnabled: true,
@@ -567,7 +559,6 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-rr-001", Namespace: ns,
@@ -580,7 +571,6 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: true,

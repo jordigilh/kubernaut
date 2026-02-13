@@ -635,6 +635,128 @@ func (s *AIAnalysisRegoEvaluationPayload) SetReason(val string) {
 	s.Reason = val
 }
 
+// Single action type with description and workflow count.
+// Ref: #/components/schemas/ActionTypeEntry
+type ActionTypeEntry struct {
+	// Action type identifier (e.g., ScaleReplicas, RestartPod).
+	ActionType string `json:"actionType"`
+	// Curated description with what, when_to_use, when_not_to_use, preconditions.
+	Description ActionTypeEntryDescription `json:"description"`
+	// Number of active workflows matching this action type and context filters.
+	WorkflowCount int `json:"workflowCount"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeEntry) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeEntry) GetDescription() ActionTypeEntryDescription {
+	return s.Description
+}
+
+// GetWorkflowCount returns the value of WorkflowCount.
+func (s *ActionTypeEntry) GetWorkflowCount() int {
+	return s.WorkflowCount
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeEntry) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeEntry) SetDescription(val ActionTypeEntryDescription) {
+	s.Description = val
+}
+
+// SetWorkflowCount sets the value of WorkflowCount.
+func (s *ActionTypeEntry) SetWorkflowCount(val int) {
+	s.WorkflowCount = val
+}
+
+// Curated description with what, when_to_use, when_not_to_use, preconditions.
+type ActionTypeEntryDescription struct {
+	// What this action type does.
+	What OptString `json:"what"`
+	// When to use this action type.
+	WhenToUse OptString `json:"when_to_use"`
+	// When NOT to use this action type.
+	WhenNotToUse OptString `json:"when_not_to_use"`
+	// Preconditions that must be met.
+	Preconditions OptString `json:"preconditions"`
+}
+
+// GetWhat returns the value of What.
+func (s *ActionTypeEntryDescription) GetWhat() OptString {
+	return s.What
+}
+
+// GetWhenToUse returns the value of WhenToUse.
+func (s *ActionTypeEntryDescription) GetWhenToUse() OptString {
+	return s.WhenToUse
+}
+
+// GetWhenNotToUse returns the value of WhenNotToUse.
+func (s *ActionTypeEntryDescription) GetWhenNotToUse() OptString {
+	return s.WhenNotToUse
+}
+
+// GetPreconditions returns the value of Preconditions.
+func (s *ActionTypeEntryDescription) GetPreconditions() OptString {
+	return s.Preconditions
+}
+
+// SetWhat sets the value of What.
+func (s *ActionTypeEntryDescription) SetWhat(val OptString) {
+	s.What = val
+}
+
+// SetWhenToUse sets the value of WhenToUse.
+func (s *ActionTypeEntryDescription) SetWhenToUse(val OptString) {
+	s.WhenToUse = val
+}
+
+// SetWhenNotToUse sets the value of WhenNotToUse.
+func (s *ActionTypeEntryDescription) SetWhenNotToUse(val OptString) {
+	s.WhenNotToUse = val
+}
+
+// SetPreconditions sets the value of Preconditions.
+func (s *ActionTypeEntryDescription) SetPreconditions(val OptString) {
+	s.Preconditions = val
+}
+
+// Response for Step 1: list available action types (DD-WORKFLOW-016).
+// Ref: #/components/schemas/ActionTypeListResponse
+type ActionTypeListResponse struct {
+	ActionTypes []ActionTypeEntry  `json:"actionTypes"`
+	Pagination  PaginationMetadata `json:"pagination"`
+}
+
+// GetActionTypes returns the value of ActionTypes.
+func (s *ActionTypeListResponse) GetActionTypes() []ActionTypeEntry {
+	return s.ActionTypes
+}
+
+// GetPagination returns the value of Pagination.
+func (s *ActionTypeListResponse) GetPagination() PaginationMetadata {
+	return s.Pagination
+}
+
+// SetActionTypes sets the value of ActionTypes.
+func (s *ActionTypeListResponse) SetActionTypes(val []ActionTypeEntry) {
+	s.ActionTypes = val
+}
+
+// SetPagination sets the value of Pagination.
+func (s *ActionTypeListResponse) SetPagination(val PaginationMetadata) {
+	s.Pagination = val
+}
+
+func (*ActionTypeListResponse) listAvailableActionsRes() {}
+
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
 type AsyncAcceptanceResponse struct {
@@ -687,7 +809,8 @@ type AuditEvent struct {
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 	// - orchestration: Remediation Orchestrator Service
-	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
+	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
 	EventCategory AuditEventEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -916,7 +1039,8 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 // - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 // - orchestration: Remediation Orchestrator Service
-// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
+// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
 type AuditEventEventCategory string
 
 const (
@@ -929,6 +1053,7 @@ const (
 	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
 	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
+	AuditEventEventCategoryEffectiveness     AuditEventEventCategory = "effectiveness"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -943,6 +1068,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryWorkflowexecution,
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
+		AuditEventEventCategoryEffectiveness,
 	}
 }
 
@@ -966,6 +1092,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventEventCategoryWebhook:
+		return []byte(s), nil
+	case AuditEventEventCategoryEffectiveness:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -1002,6 +1130,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventEventCategoryWebhook:
 		*s = AuditEventEventCategoryWebhook
 		return nil
+	case AuditEventEventCategoryEffectiveness:
+		*s = AuditEventEventCategoryEffectiveness
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -1023,7 +1154,7 @@ type AuditEventEventData struct {
 	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
 	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
 	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
-	WorkflowSearchAuditPayload             WorkflowSearchAuditPayload
+	WorkflowDiscoveryAuditPayload          WorkflowDiscoveryAuditPayload
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
@@ -1041,6 +1172,7 @@ type AuditEventEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -1080,7 +1212,10 @@ const (
 	WorkflowExecutionWebhookAuditPayloadAuditEventEventData                      AuditEventEventDataType = "workflowexecution.block.cleared"
 	RemediationApprovalAuditPayloadAuditEventEventData                           AuditEventEventDataType = "webhook.remediationapprovalrequest.decided"
 	RemediationApprovalDecisionPayloadAuditEventEventData                        AuditEventEventDataType = "RemediationApprovalDecisionPayload"
-	WorkflowSearchAuditPayloadAuditEventEventData                                AuditEventEventDataType = "workflow.catalog.search_completed"
+	AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData           AuditEventEventDataType = "workflow.catalog.actions_listed"
+	AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData      AuditEventEventDataType = "workflow.catalog.selection_validated"
+	AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData       AuditEventEventDataType = "workflow.catalog.workflow_retrieved"
+	AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData         AuditEventEventDataType = "workflow.catalog.workflows_listed"
 	WorkflowCatalogCreatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventEventData                          AuditEventEventDataType = "aianalysis.phase.transition"
@@ -1098,6 +1233,12 @@ const (
 	LLMToolCallPayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                     AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData             AuditEventEventDataType = "effectiveness.alert.assessed"
+	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData       AuditEventEventDataType = "effectiveness.assessment.completed"
+	AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData       AuditEventEventDataType = "effectiveness.assessment.scheduled"
+	AuditEventEventDataEffectivenessHashComputedAuditEventEventData              AuditEventEventDataType = "effectiveness.hash.computed"
+	AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData            AuditEventEventDataType = "effectiveness.health.assessed"
+	AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData           AuditEventEventDataType = "effectiveness.metrics.assessed"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -1175,9 +1316,14 @@ func (s AuditEventEventData) IsRemediationApprovalDecisionPayload() bool {
 	return s.Type == RemediationApprovalDecisionPayloadAuditEventEventData
 }
 
-// IsWorkflowSearchAuditPayload reports whether AuditEventEventData is WorkflowSearchAuditPayload.
-func (s AuditEventEventData) IsWorkflowSearchAuditPayload() bool {
-	return s.Type == WorkflowSearchAuditPayloadAuditEventEventData
+// IsWorkflowDiscoveryAuditPayload reports whether AuditEventEventData is WorkflowDiscoveryAuditPayload.
+func (s AuditEventEventData) IsWorkflowDiscoveryAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsWorkflowCatalogCreatedPayload reports whether AuditEventEventData is WorkflowCatalogCreatedPayload.
@@ -1263,6 +1409,16 @@ func (s AuditEventEventData) IsWorkflowValidationPayload() bool {
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
 func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventEventData
+}
+
+// IsEffectivenessAssessmentAuditPayload reports whether AuditEventEventData is EffectivenessAssessmentAuditPayload.
+func (s AuditEventEventData) IsEffectivenessAssessmentAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // SetGatewayAuditPayload sets AuditEventEventData to GatewayAuditPayload.
@@ -1639,24 +1795,49 @@ func NewRemediationApprovalDecisionPayloadAuditEventEventData(v RemediationAppro
 	return s
 }
 
-// SetWorkflowSearchAuditPayload sets AuditEventEventData to WorkflowSearchAuditPayload.
-func (s *AuditEventEventData) SetWorkflowSearchAuditPayload(v WorkflowSearchAuditPayload) {
-	s.Type = WorkflowSearchAuditPayloadAuditEventEventData
-	s.WorkflowSearchAuditPayload = v
+// SetWorkflowDiscoveryAuditPayload sets AuditEventEventData to WorkflowDiscoveryAuditPayload.
+// panics if `t` is not associated with WorkflowDiscoveryAuditPayload
+func (s *AuditEventEventData) SetWorkflowDiscoveryAuditPayload(t AuditEventEventDataType, v WorkflowDiscoveryAuditPayload) {
+	s.Type = t
+	s.WorkflowDiscoveryAuditPayload = v
+	if !s.IsWorkflowDiscoveryAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not WorkflowDiscoveryAuditPayload", t))
+	}
 }
 
-// GetWorkflowSearchAuditPayload returns WorkflowSearchAuditPayload and true boolean if AuditEventEventData is WorkflowSearchAuditPayload.
-func (s AuditEventEventData) GetWorkflowSearchAuditPayload() (v WorkflowSearchAuditPayload, ok bool) {
-	if !s.IsWorkflowSearchAuditPayload() {
+// GetWorkflowDiscoveryAuditPayload returns WorkflowDiscoveryAuditPayload and true boolean if AuditEventEventData is WorkflowDiscoveryAuditPayload.
+func (s AuditEventEventData) GetWorkflowDiscoveryAuditPayload() (v WorkflowDiscoveryAuditPayload, ok bool) {
+	if !s.IsWorkflowDiscoveryAuditPayload() {
 		return v, false
 	}
-	return s.WorkflowSearchAuditPayload, true
+	return s.WorkflowDiscoveryAuditPayload, true
 }
 
-// NewWorkflowSearchAuditPayloadAuditEventEventData returns new AuditEventEventData from WorkflowSearchAuditPayload.
-func NewWorkflowSearchAuditPayloadAuditEventEventData(v WorkflowSearchAuditPayload) AuditEventEventData {
+// NewAuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData returns new AuditEventEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData(v WorkflowDiscoveryAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetWorkflowSearchAuditPayload(v)
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData returns new AuditEventEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData(v WorkflowDiscoveryAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData returns new AuditEventEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData(v WorkflowDiscoveryAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData returns new AuditEventEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData(v WorkflowDiscoveryAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData, v)
 	return s
 }
 
@@ -2017,6 +2198,66 @@ func NewRemediationRequestWebhookAuditPayloadAuditEventEventData(v RemediationRe
 	return s
 }
 
+// SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
+// panics if `t` is not associated with EffectivenessAssessmentAuditPayload
+func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
+	s.Type = t
+	s.EffectivenessAssessmentAuditPayload = v
+	if !s.IsEffectivenessAssessmentAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not EffectivenessAssessmentAuditPayload", t))
+	}
+}
+
+// GetEffectivenessAssessmentAuditPayload returns EffectivenessAssessmentAuditPayload and true boolean if AuditEventEventData is EffectivenessAssessmentAuditPayload.
+func (s AuditEventEventData) GetEffectivenessAssessmentAuditPayload() (v EffectivenessAssessmentAuditPayload, ok bool) {
+	if !s.IsEffectivenessAssessmentAuditPayload() {
+		return v, false
+	}
+	return s.EffectivenessAssessmentAuditPayload, true
+}
+
+// NewAuditEventEventDataEffectivenessAlertAssessedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessAlertAssessedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataEffectivenessHashComputedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessHashComputedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessHashComputedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataEffectivenessHealthAssessedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessHealthAssessedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData returns new AuditEventEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData(v EffectivenessAssessmentAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData, v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -2086,7 +2327,8 @@ type AuditEventRequest struct {
 	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 	// - orchestration: Remediation Orchestrator Service
-	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
+	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -2292,7 +2534,8 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 // - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
 // - orchestration: Remediation Orchestrator Service
-// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
+// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
 type AuditEventRequestEventCategory string
 
 const (
@@ -2305,6 +2548,7 @@ const (
 	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
+	AuditEventRequestEventCategoryEffectiveness     AuditEventRequestEventCategory = "effectiveness"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -2319,6 +2563,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryWorkflowexecution,
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
+		AuditEventRequestEventCategoryEffectiveness,
 	}
 }
 
@@ -2342,6 +2587,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryOrchestration:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryWebhook:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryEffectiveness:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2378,6 +2625,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventRequestEventCategoryWebhook:
 		*s = AuditEventRequestEventCategoryWebhook
 		return nil
+	case AuditEventRequestEventCategoryEffectiveness:
+		*s = AuditEventRequestEventCategoryEffectiveness
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -2399,7 +2649,7 @@ type AuditEventRequestEventData struct {
 	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
 	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
 	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
-	WorkflowSearchAuditPayload             WorkflowSearchAuditPayload
+	WorkflowDiscoveryAuditPayload          WorkflowDiscoveryAuditPayload
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
@@ -2417,6 +2667,7 @@ type AuditEventRequestEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -2456,7 +2707,10 @@ const (
 	WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData                             AuditEventRequestEventDataType = "workflowexecution.block.cleared"
 	RemediationApprovalAuditPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "webhook.remediationapprovalrequest.decided"
 	RemediationApprovalDecisionPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "RemediationApprovalDecisionPayload"
-	WorkflowSearchAuditPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "workflow.catalog.search_completed"
+	AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData           AuditEventRequestEventDataType = "workflow.catalog.actions_listed"
+	AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData      AuditEventRequestEventDataType = "workflow.catalog.selection_validated"
+	AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData       AuditEventRequestEventDataType = "workflow.catalog.workflow_retrieved"
+	AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData         AuditEventRequestEventDataType = "workflow.catalog.workflows_listed"
 	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aianalysis.phase.transition"
@@ -2474,6 +2728,12 @@ const (
 	LLMToolCallPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData             AuditEventRequestEventDataType = "effectiveness.alert.assessed"
+	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData       AuditEventRequestEventDataType = "effectiveness.assessment.completed"
+	AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData       AuditEventRequestEventDataType = "effectiveness.assessment.scheduled"
+	AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData              AuditEventRequestEventDataType = "effectiveness.hash.computed"
+	AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData            AuditEventRequestEventDataType = "effectiveness.health.assessed"
+	AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.metrics.assessed"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -2551,9 +2811,14 @@ func (s AuditEventRequestEventData) IsRemediationApprovalDecisionPayload() bool 
 	return s.Type == RemediationApprovalDecisionPayloadAuditEventRequestEventData
 }
 
-// IsWorkflowSearchAuditPayload reports whether AuditEventRequestEventData is WorkflowSearchAuditPayload.
-func (s AuditEventRequestEventData) IsWorkflowSearchAuditPayload() bool {
-	return s.Type == WorkflowSearchAuditPayloadAuditEventRequestEventData
+// IsWorkflowDiscoveryAuditPayload reports whether AuditEventRequestEventData is WorkflowDiscoveryAuditPayload.
+func (s AuditEventRequestEventData) IsWorkflowDiscoveryAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsWorkflowCatalogCreatedPayload reports whether AuditEventRequestEventData is WorkflowCatalogCreatedPayload.
@@ -2639,6 +2904,16 @@ func (s AuditEventRequestEventData) IsWorkflowValidationPayload() bool {
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bool {
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
+}
+
+// IsEffectivenessAssessmentAuditPayload reports whether AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
+func (s AuditEventRequestEventData) IsEffectivenessAssessmentAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // SetGatewayAuditPayload sets AuditEventRequestEventData to GatewayAuditPayload.
@@ -3015,24 +3290,49 @@ func NewRemediationApprovalDecisionPayloadAuditEventRequestEventData(v Remediati
 	return s
 }
 
-// SetWorkflowSearchAuditPayload sets AuditEventRequestEventData to WorkflowSearchAuditPayload.
-func (s *AuditEventRequestEventData) SetWorkflowSearchAuditPayload(v WorkflowSearchAuditPayload) {
-	s.Type = WorkflowSearchAuditPayloadAuditEventRequestEventData
-	s.WorkflowSearchAuditPayload = v
+// SetWorkflowDiscoveryAuditPayload sets AuditEventRequestEventData to WorkflowDiscoveryAuditPayload.
+// panics if `t` is not associated with WorkflowDiscoveryAuditPayload
+func (s *AuditEventRequestEventData) SetWorkflowDiscoveryAuditPayload(t AuditEventRequestEventDataType, v WorkflowDiscoveryAuditPayload) {
+	s.Type = t
+	s.WorkflowDiscoveryAuditPayload = v
+	if !s.IsWorkflowDiscoveryAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not WorkflowDiscoveryAuditPayload", t))
+	}
 }
 
-// GetWorkflowSearchAuditPayload returns WorkflowSearchAuditPayload and true boolean if AuditEventRequestEventData is WorkflowSearchAuditPayload.
-func (s AuditEventRequestEventData) GetWorkflowSearchAuditPayload() (v WorkflowSearchAuditPayload, ok bool) {
-	if !s.IsWorkflowSearchAuditPayload() {
+// GetWorkflowDiscoveryAuditPayload returns WorkflowDiscoveryAuditPayload and true boolean if AuditEventRequestEventData is WorkflowDiscoveryAuditPayload.
+func (s AuditEventRequestEventData) GetWorkflowDiscoveryAuditPayload() (v WorkflowDiscoveryAuditPayload, ok bool) {
+	if !s.IsWorkflowDiscoveryAuditPayload() {
 		return v, false
 	}
-	return s.WorkflowSearchAuditPayload, true
+	return s.WorkflowDiscoveryAuditPayload, true
 }
 
-// NewWorkflowSearchAuditPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowSearchAuditPayload.
-func NewWorkflowSearchAuditPayloadAuditEventRequestEventData(v WorkflowSearchAuditPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(v WorkflowDiscoveryAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetWorkflowSearchAuditPayload(v)
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData(v WorkflowDiscoveryAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData(v WorkflowDiscoveryAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowDiscoveryAuditPayload.
+func NewAuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData(v WorkflowDiscoveryAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowDiscoveryAuditPayload(AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -3390,6 +3690,66 @@ func (s AuditEventRequestEventData) GetRemediationRequestWebhookAuditPayload() (
 func NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(v RemediationRequestWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationRequestWebhookAuditPayload(v)
+	return s
+}
+
+// SetEffectivenessAssessmentAuditPayload sets AuditEventRequestEventData to EffectivenessAssessmentAuditPayload.
+// panics if `t` is not associated with EffectivenessAssessmentAuditPayload
+func (s *AuditEventRequestEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventRequestEventDataType, v EffectivenessAssessmentAuditPayload) {
+	s.Type = t
+	s.EffectivenessAssessmentAuditPayload = v
+	if !s.IsEffectivenessAssessmentAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not EffectivenessAssessmentAuditPayload", t))
+	}
+}
+
+// GetEffectivenessAssessmentAuditPayload returns EffectivenessAssessmentAuditPayload and true boolean if AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
+func (s AuditEventRequestEventData) GetEffectivenessAssessmentAuditPayload() (v EffectivenessAssessmentAuditPayload, ok bool) {
+	if !s.IsEffectivenessAssessmentAuditPayload() {
+		return v, false
+	}
+	return s.EffectivenessAssessmentAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData returns new AuditEventRequestEventData from EffectivenessAssessmentAuditPayload.
+func NewAuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -4494,6 +4854,328 @@ func (s *DetectedLabelsServiceMesh) UnmarshalText(data []byte) error {
 	}
 }
 
+// Type-safe audit event payload for Effectiveness Monitor controller.
+// Covers component-level events (health, alert, metrics, hash),
+// the scheduling event (assessment.scheduled), and the lifecycle
+// completion event (assessment.completed).
+// Per ADR-EM-001: Each component assessment emits its own audit event.
+// Ref: #/components/schemas/EffectivenessAssessmentAuditPayload
+type EffectivenessAssessmentAuditPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType EffectivenessAssessmentAuditPayloadEventType `json:"event_type"`
+	// Correlation ID (EA spec.correlationID, matches parent RR name).
+	CorrelationID string `json:"correlation_id"`
+	// Kubernetes namespace of the EffectivenessAssessment.
+	Namespace string `json:"namespace"`
+	// Name of the EffectivenessAssessment CRD.
+	EaName OptString `json:"ea_name"`
+	// Assessment component that produced this event.
+	Component EffectivenessAssessmentAuditPayloadComponent `json:"component"`
+	// Whether the component was successfully assessed.
+	Assessed OptBool `json:"assessed"`
+	// Component score (0.0-1.0), null if not assessed.
+	Score OptNilFloat64 `json:"score"`
+	// Human-readable details about the assessment result.
+	Details OptString `json:"details"`
+	// Assessment completion reason (only for assessment.completed events).
+	Reason OptString `json:"reason"`
+	// Computed validity deadline (only for assessment.scheduled events).
+	// EA.creationTimestamp + validityWindow from EM config.
+	ValidityDeadline OptDateTime `json:"validity_deadline"`
+	// Computed earliest time for Prometheus check (only for assessment.scheduled events).
+	// EA.creationTimestamp + stabilizationWindow.
+	PrometheusCheckAfter OptDateTime `json:"prometheus_check_after"`
+	// Computed earliest time for AlertManager check (only for assessment.scheduled events).
+	// EA.creationTimestamp + stabilizationWindow.
+	AlertmanagerCheckAfter OptDateTime `json:"alertmanager_check_after"`
+	// Validity window duration from EM config (only for assessment.scheduled events).
+	// Included for operational observability.
+	ValidityWindow OptString `json:"validity_window"`
+	// Stabilization window duration from EA spec (only for assessment.scheduled events).
+	// Included for operational observability.
+	StabilizationWindow OptString `json:"stabilization_window"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *EffectivenessAssessmentAuditPayload) GetEventType() EffectivenessAssessmentAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetCorrelationID returns the value of CorrelationID.
+func (s *EffectivenessAssessmentAuditPayload) GetCorrelationID() string {
+	return s.CorrelationID
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *EffectivenessAssessmentAuditPayload) GetNamespace() string {
+	return s.Namespace
+}
+
+// GetEaName returns the value of EaName.
+func (s *EffectivenessAssessmentAuditPayload) GetEaName() OptString {
+	return s.EaName
+}
+
+// GetComponent returns the value of Component.
+func (s *EffectivenessAssessmentAuditPayload) GetComponent() EffectivenessAssessmentAuditPayloadComponent {
+	return s.Component
+}
+
+// GetAssessed returns the value of Assessed.
+func (s *EffectivenessAssessmentAuditPayload) GetAssessed() OptBool {
+	return s.Assessed
+}
+
+// GetScore returns the value of Score.
+func (s *EffectivenessAssessmentAuditPayload) GetScore() OptNilFloat64 {
+	return s.Score
+}
+
+// GetDetails returns the value of Details.
+func (s *EffectivenessAssessmentAuditPayload) GetDetails() OptString {
+	return s.Details
+}
+
+// GetReason returns the value of Reason.
+func (s *EffectivenessAssessmentAuditPayload) GetReason() OptString {
+	return s.Reason
+}
+
+// GetValidityDeadline returns the value of ValidityDeadline.
+func (s *EffectivenessAssessmentAuditPayload) GetValidityDeadline() OptDateTime {
+	return s.ValidityDeadline
+}
+
+// GetPrometheusCheckAfter returns the value of PrometheusCheckAfter.
+func (s *EffectivenessAssessmentAuditPayload) GetPrometheusCheckAfter() OptDateTime {
+	return s.PrometheusCheckAfter
+}
+
+// GetAlertmanagerCheckAfter returns the value of AlertmanagerCheckAfter.
+func (s *EffectivenessAssessmentAuditPayload) GetAlertmanagerCheckAfter() OptDateTime {
+	return s.AlertmanagerCheckAfter
+}
+
+// GetValidityWindow returns the value of ValidityWindow.
+func (s *EffectivenessAssessmentAuditPayload) GetValidityWindow() OptString {
+	return s.ValidityWindow
+}
+
+// GetStabilizationWindow returns the value of StabilizationWindow.
+func (s *EffectivenessAssessmentAuditPayload) GetStabilizationWindow() OptString {
+	return s.StabilizationWindow
+}
+
+// SetEventType sets the value of EventType.
+func (s *EffectivenessAssessmentAuditPayload) SetEventType(val EffectivenessAssessmentAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetCorrelationID sets the value of CorrelationID.
+func (s *EffectivenessAssessmentAuditPayload) SetCorrelationID(val string) {
+	s.CorrelationID = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *EffectivenessAssessmentAuditPayload) SetNamespace(val string) {
+	s.Namespace = val
+}
+
+// SetEaName sets the value of EaName.
+func (s *EffectivenessAssessmentAuditPayload) SetEaName(val OptString) {
+	s.EaName = val
+}
+
+// SetComponent sets the value of Component.
+func (s *EffectivenessAssessmentAuditPayload) SetComponent(val EffectivenessAssessmentAuditPayloadComponent) {
+	s.Component = val
+}
+
+// SetAssessed sets the value of Assessed.
+func (s *EffectivenessAssessmentAuditPayload) SetAssessed(val OptBool) {
+	s.Assessed = val
+}
+
+// SetScore sets the value of Score.
+func (s *EffectivenessAssessmentAuditPayload) SetScore(val OptNilFloat64) {
+	s.Score = val
+}
+
+// SetDetails sets the value of Details.
+func (s *EffectivenessAssessmentAuditPayload) SetDetails(val OptString) {
+	s.Details = val
+}
+
+// SetReason sets the value of Reason.
+func (s *EffectivenessAssessmentAuditPayload) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetValidityDeadline sets the value of ValidityDeadline.
+func (s *EffectivenessAssessmentAuditPayload) SetValidityDeadline(val OptDateTime) {
+	s.ValidityDeadline = val
+}
+
+// SetPrometheusCheckAfter sets the value of PrometheusCheckAfter.
+func (s *EffectivenessAssessmentAuditPayload) SetPrometheusCheckAfter(val OptDateTime) {
+	s.PrometheusCheckAfter = val
+}
+
+// SetAlertmanagerCheckAfter sets the value of AlertmanagerCheckAfter.
+func (s *EffectivenessAssessmentAuditPayload) SetAlertmanagerCheckAfter(val OptDateTime) {
+	s.AlertmanagerCheckAfter = val
+}
+
+// SetValidityWindow sets the value of ValidityWindow.
+func (s *EffectivenessAssessmentAuditPayload) SetValidityWindow(val OptString) {
+	s.ValidityWindow = val
+}
+
+// SetStabilizationWindow sets the value of StabilizationWindow.
+func (s *EffectivenessAssessmentAuditPayload) SetStabilizationWindow(val OptString) {
+	s.StabilizationWindow = val
+}
+
+// Assessment component that produced this event.
+type EffectivenessAssessmentAuditPayloadComponent string
+
+const (
+	EffectivenessAssessmentAuditPayloadComponentHealth    EffectivenessAssessmentAuditPayloadComponent = "health"
+	EffectivenessAssessmentAuditPayloadComponentAlert     EffectivenessAssessmentAuditPayloadComponent = "alert"
+	EffectivenessAssessmentAuditPayloadComponentMetrics   EffectivenessAssessmentAuditPayloadComponent = "metrics"
+	EffectivenessAssessmentAuditPayloadComponentHash      EffectivenessAssessmentAuditPayloadComponent = "hash"
+	EffectivenessAssessmentAuditPayloadComponentScheduled EffectivenessAssessmentAuditPayloadComponent = "scheduled"
+	EffectivenessAssessmentAuditPayloadComponentCompleted EffectivenessAssessmentAuditPayloadComponent = "completed"
+)
+
+// AllValues returns all EffectivenessAssessmentAuditPayloadComponent values.
+func (EffectivenessAssessmentAuditPayloadComponent) AllValues() []EffectivenessAssessmentAuditPayloadComponent {
+	return []EffectivenessAssessmentAuditPayloadComponent{
+		EffectivenessAssessmentAuditPayloadComponentHealth,
+		EffectivenessAssessmentAuditPayloadComponentAlert,
+		EffectivenessAssessmentAuditPayloadComponentMetrics,
+		EffectivenessAssessmentAuditPayloadComponentHash,
+		EffectivenessAssessmentAuditPayloadComponentScheduled,
+		EffectivenessAssessmentAuditPayloadComponentCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EffectivenessAssessmentAuditPayloadComponent) MarshalText() ([]byte, error) {
+	switch s {
+	case EffectivenessAssessmentAuditPayloadComponentHealth:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentAlert:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentMetrics:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentHash:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentScheduled:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadComponentCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadComponent) UnmarshalText(data []byte) error {
+	switch EffectivenessAssessmentAuditPayloadComponent(data) {
+	case EffectivenessAssessmentAuditPayloadComponentHealth:
+		*s = EffectivenessAssessmentAuditPayloadComponentHealth
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentAlert:
+		*s = EffectivenessAssessmentAuditPayloadComponentAlert
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentMetrics:
+		*s = EffectivenessAssessmentAuditPayloadComponentMetrics
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentHash:
+		*s = EffectivenessAssessmentAuditPayloadComponentHash
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentScheduled:
+		*s = EffectivenessAssessmentAuditPayloadComponentScheduled
+		return nil
+	case EffectivenessAssessmentAuditPayloadComponentCompleted:
+		*s = EffectivenessAssessmentAuditPayloadComponentCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type EffectivenessAssessmentAuditPayloadEventType string
+
+const (
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed      EffectivenessAssessmentAuditPayloadEventType = "effectiveness.health.assessed"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed        EffectivenessAssessmentAuditPayloadEventType = "effectiveness.hash.computed"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed       EffectivenessAssessmentAuditPayloadEventType = "effectiveness.alert.assessed"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed     EffectivenessAssessmentAuditPayloadEventType = "effectiveness.metrics.assessed"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled EffectivenessAssessmentAuditPayloadEventType = "effectiveness.assessment.scheduled"
+	EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted EffectivenessAssessmentAuditPayloadEventType = "effectiveness.assessment.completed"
+)
+
+// AllValues returns all EffectivenessAssessmentAuditPayloadEventType values.
+func (EffectivenessAssessmentAuditPayloadEventType) AllValues() []EffectivenessAssessmentAuditPayloadEventType {
+	return []EffectivenessAssessmentAuditPayloadEventType{
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled,
+		EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EffectivenessAssessmentAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled:
+		return []byte(s), nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch EffectivenessAssessmentAuditPayloadEventType(data) {
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled
+		return nil
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Standardized error information for audit events (BR-AUDIT-005 Gap.
 // Ref: #/components/schemas/ErrorDetails
 type ErrorDetails struct {
@@ -5068,6 +5750,116 @@ func (*GetWorkflowByIDInternalServerError) getWorkflowByIDRes() {}
 type GetWorkflowByIDNotFound RFC7807Problem
 
 func (*GetWorkflowByIDNotFound) getWorkflowByIDRes() {}
+
+type GetWorkflowByIDPriority string
+
+const (
+	GetWorkflowByIDPriorityP0 GetWorkflowByIDPriority = "P0"
+	GetWorkflowByIDPriorityP1 GetWorkflowByIDPriority = "P1"
+	GetWorkflowByIDPriorityP2 GetWorkflowByIDPriority = "P2"
+	GetWorkflowByIDPriorityP3 GetWorkflowByIDPriority = "P3"
+)
+
+// AllValues returns all GetWorkflowByIDPriority values.
+func (GetWorkflowByIDPriority) AllValues() []GetWorkflowByIDPriority {
+	return []GetWorkflowByIDPriority{
+		GetWorkflowByIDPriorityP0,
+		GetWorkflowByIDPriorityP1,
+		GetWorkflowByIDPriorityP2,
+		GetWorkflowByIDPriorityP3,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GetWorkflowByIDPriority) MarshalText() ([]byte, error) {
+	switch s {
+	case GetWorkflowByIDPriorityP0:
+		return []byte(s), nil
+	case GetWorkflowByIDPriorityP1:
+		return []byte(s), nil
+	case GetWorkflowByIDPriorityP2:
+		return []byte(s), nil
+	case GetWorkflowByIDPriorityP3:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GetWorkflowByIDPriority) UnmarshalText(data []byte) error {
+	switch GetWorkflowByIDPriority(data) {
+	case GetWorkflowByIDPriorityP0:
+		*s = GetWorkflowByIDPriorityP0
+		return nil
+	case GetWorkflowByIDPriorityP1:
+		*s = GetWorkflowByIDPriorityP1
+		return nil
+	case GetWorkflowByIDPriorityP2:
+		*s = GetWorkflowByIDPriorityP2
+		return nil
+	case GetWorkflowByIDPriorityP3:
+		*s = GetWorkflowByIDPriorityP3
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type GetWorkflowByIDSeverity string
+
+const (
+	GetWorkflowByIDSeverityCritical GetWorkflowByIDSeverity = "critical"
+	GetWorkflowByIDSeverityHigh     GetWorkflowByIDSeverity = "high"
+	GetWorkflowByIDSeverityMedium   GetWorkflowByIDSeverity = "medium"
+	GetWorkflowByIDSeverityLow      GetWorkflowByIDSeverity = "low"
+)
+
+// AllValues returns all GetWorkflowByIDSeverity values.
+func (GetWorkflowByIDSeverity) AllValues() []GetWorkflowByIDSeverity {
+	return []GetWorkflowByIDSeverity{
+		GetWorkflowByIDSeverityCritical,
+		GetWorkflowByIDSeverityHigh,
+		GetWorkflowByIDSeverityMedium,
+		GetWorkflowByIDSeverityLow,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GetWorkflowByIDSeverity) MarshalText() ([]byte, error) {
+	switch s {
+	case GetWorkflowByIDSeverityCritical:
+		return []byte(s), nil
+	case GetWorkflowByIDSeverityHigh:
+		return []byte(s), nil
+	case GetWorkflowByIDSeverityMedium:
+		return []byte(s), nil
+	case GetWorkflowByIDSeverityLow:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GetWorkflowByIDSeverity) UnmarshalText(data []byte) error {
+	switch GetWorkflowByIDSeverity(data) {
+	case GetWorkflowByIDSeverityCritical:
+		*s = GetWorkflowByIDSeverityCritical
+		return nil
+	case GetWorkflowByIDSeverityHigh:
+		*s = GetWorkflowByIDSeverityHigh
+		return nil
+	case GetWorkflowByIDSeverityMedium:
+		*s = GetWorkflowByIDSeverityMedium
+		return nil
+	case GetWorkflowByIDSeverityLow:
+		*s = GetWorkflowByIDSeverityLow
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 type HealthCheckOK struct {
 	Status OptHealthCheckOKStatus `json:"status"`
@@ -6021,6 +6813,124 @@ func (s *LLMToolCallPayloadToolArguments) init() LLMToolCallPayloadToolArguments
 	return m
 }
 
+type ListAvailableActionsBadRequest RFC7807Problem
+
+func (*ListAvailableActionsBadRequest) listAvailableActionsRes() {}
+
+type ListAvailableActionsInternalServerError RFC7807Problem
+
+func (*ListAvailableActionsInternalServerError) listAvailableActionsRes() {}
+
+type ListAvailableActionsPriority string
+
+const (
+	ListAvailableActionsPriorityP0 ListAvailableActionsPriority = "P0"
+	ListAvailableActionsPriorityP1 ListAvailableActionsPriority = "P1"
+	ListAvailableActionsPriorityP2 ListAvailableActionsPriority = "P2"
+	ListAvailableActionsPriorityP3 ListAvailableActionsPriority = "P3"
+)
+
+// AllValues returns all ListAvailableActionsPriority values.
+func (ListAvailableActionsPriority) AllValues() []ListAvailableActionsPriority {
+	return []ListAvailableActionsPriority{
+		ListAvailableActionsPriorityP0,
+		ListAvailableActionsPriorityP1,
+		ListAvailableActionsPriorityP2,
+		ListAvailableActionsPriorityP3,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListAvailableActionsPriority) MarshalText() ([]byte, error) {
+	switch s {
+	case ListAvailableActionsPriorityP0:
+		return []byte(s), nil
+	case ListAvailableActionsPriorityP1:
+		return []byte(s), nil
+	case ListAvailableActionsPriorityP2:
+		return []byte(s), nil
+	case ListAvailableActionsPriorityP3:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListAvailableActionsPriority) UnmarshalText(data []byte) error {
+	switch ListAvailableActionsPriority(data) {
+	case ListAvailableActionsPriorityP0:
+		*s = ListAvailableActionsPriorityP0
+		return nil
+	case ListAvailableActionsPriorityP1:
+		*s = ListAvailableActionsPriorityP1
+		return nil
+	case ListAvailableActionsPriorityP2:
+		*s = ListAvailableActionsPriorityP2
+		return nil
+	case ListAvailableActionsPriorityP3:
+		*s = ListAvailableActionsPriorityP3
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ListAvailableActionsSeverity string
+
+const (
+	ListAvailableActionsSeverityCritical ListAvailableActionsSeverity = "critical"
+	ListAvailableActionsSeverityHigh     ListAvailableActionsSeverity = "high"
+	ListAvailableActionsSeverityMedium   ListAvailableActionsSeverity = "medium"
+	ListAvailableActionsSeverityLow      ListAvailableActionsSeverity = "low"
+)
+
+// AllValues returns all ListAvailableActionsSeverity values.
+func (ListAvailableActionsSeverity) AllValues() []ListAvailableActionsSeverity {
+	return []ListAvailableActionsSeverity{
+		ListAvailableActionsSeverityCritical,
+		ListAvailableActionsSeverityHigh,
+		ListAvailableActionsSeverityMedium,
+		ListAvailableActionsSeverityLow,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListAvailableActionsSeverity) MarshalText() ([]byte, error) {
+	switch s {
+	case ListAvailableActionsSeverityCritical:
+		return []byte(s), nil
+	case ListAvailableActionsSeverityHigh:
+		return []byte(s), nil
+	case ListAvailableActionsSeverityMedium:
+		return []byte(s), nil
+	case ListAvailableActionsSeverityLow:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListAvailableActionsSeverity) UnmarshalText(data []byte) error {
+	switch ListAvailableActionsSeverity(data) {
+	case ListAvailableActionsSeverityCritical:
+		*s = ListAvailableActionsSeverityCritical
+		return nil
+	case ListAvailableActionsSeverityHigh:
+		*s = ListAvailableActionsSeverityHigh
+		return nil
+	case ListAvailableActionsSeverityMedium:
+		*s = ListAvailableActionsSeverityMedium
+		return nil
+	case ListAvailableActionsSeverityLow:
+		*s = ListAvailableActionsSeverityLow
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type ListLegalHoldsOK struct {
 	Holds []ListLegalHoldsOKHoldsItem `json:"holds"`
 	Total OptInt                      `json:"total"`
@@ -6102,6 +7012,124 @@ func (s *ListLegalHoldsOKHoldsItem) SetPlacedAt(val OptDateTime) {
 // SetReason sets the value of Reason.
 func (s *ListLegalHoldsOKHoldsItem) SetReason(val OptString) {
 	s.Reason = val
+}
+
+type ListWorkflowsByActionTypeBadRequest RFC7807Problem
+
+func (*ListWorkflowsByActionTypeBadRequest) listWorkflowsByActionTypeRes() {}
+
+type ListWorkflowsByActionTypeInternalServerError RFC7807Problem
+
+func (*ListWorkflowsByActionTypeInternalServerError) listWorkflowsByActionTypeRes() {}
+
+type ListWorkflowsByActionTypePriority string
+
+const (
+	ListWorkflowsByActionTypePriorityP0 ListWorkflowsByActionTypePriority = "P0"
+	ListWorkflowsByActionTypePriorityP1 ListWorkflowsByActionTypePriority = "P1"
+	ListWorkflowsByActionTypePriorityP2 ListWorkflowsByActionTypePriority = "P2"
+	ListWorkflowsByActionTypePriorityP3 ListWorkflowsByActionTypePriority = "P3"
+)
+
+// AllValues returns all ListWorkflowsByActionTypePriority values.
+func (ListWorkflowsByActionTypePriority) AllValues() []ListWorkflowsByActionTypePriority {
+	return []ListWorkflowsByActionTypePriority{
+		ListWorkflowsByActionTypePriorityP0,
+		ListWorkflowsByActionTypePriorityP1,
+		ListWorkflowsByActionTypePriorityP2,
+		ListWorkflowsByActionTypePriorityP3,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListWorkflowsByActionTypePriority) MarshalText() ([]byte, error) {
+	switch s {
+	case ListWorkflowsByActionTypePriorityP0:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypePriorityP1:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypePriorityP2:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypePriorityP3:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListWorkflowsByActionTypePriority) UnmarshalText(data []byte) error {
+	switch ListWorkflowsByActionTypePriority(data) {
+	case ListWorkflowsByActionTypePriorityP0:
+		*s = ListWorkflowsByActionTypePriorityP0
+		return nil
+	case ListWorkflowsByActionTypePriorityP1:
+		*s = ListWorkflowsByActionTypePriorityP1
+		return nil
+	case ListWorkflowsByActionTypePriorityP2:
+		*s = ListWorkflowsByActionTypePriorityP2
+		return nil
+	case ListWorkflowsByActionTypePriorityP3:
+		*s = ListWorkflowsByActionTypePriorityP3
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ListWorkflowsByActionTypeSeverity string
+
+const (
+	ListWorkflowsByActionTypeSeverityCritical ListWorkflowsByActionTypeSeverity = "critical"
+	ListWorkflowsByActionTypeSeverityHigh     ListWorkflowsByActionTypeSeverity = "high"
+	ListWorkflowsByActionTypeSeverityMedium   ListWorkflowsByActionTypeSeverity = "medium"
+	ListWorkflowsByActionTypeSeverityLow      ListWorkflowsByActionTypeSeverity = "low"
+)
+
+// AllValues returns all ListWorkflowsByActionTypeSeverity values.
+func (ListWorkflowsByActionTypeSeverity) AllValues() []ListWorkflowsByActionTypeSeverity {
+	return []ListWorkflowsByActionTypeSeverity{
+		ListWorkflowsByActionTypeSeverityCritical,
+		ListWorkflowsByActionTypeSeverityHigh,
+		ListWorkflowsByActionTypeSeverityMedium,
+		ListWorkflowsByActionTypeSeverityLow,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListWorkflowsByActionTypeSeverity) MarshalText() ([]byte, error) {
+	switch s {
+	case ListWorkflowsByActionTypeSeverityCritical:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypeSeverityHigh:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypeSeverityMedium:
+		return []byte(s), nil
+	case ListWorkflowsByActionTypeSeverityLow:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListWorkflowsByActionTypeSeverity) UnmarshalText(data []byte) error {
+	switch ListWorkflowsByActionTypeSeverity(data) {
+	case ListWorkflowsByActionTypeSeverityCritical:
+		*s = ListWorkflowsByActionTypeSeverityCritical
+		return nil
+	case ListWorkflowsByActionTypeSeverityHigh:
+		*s = ListWorkflowsByActionTypeSeverityHigh
+		return nil
+	case ListWorkflowsByActionTypeSeverityMedium:
+		*s = ListWorkflowsByActionTypeSeverityMedium
+		return nil
+	case ListWorkflowsByActionTypeSeverityLow:
+		*s = ListWorkflowsByActionTypeSeverityLow
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 type ListWorkflowsStatus string
@@ -8596,6 +9624,98 @@ func (o OptGatewayAuditPayloadSignalLabels) Or(d GatewayAuditPayloadSignalLabels
 	return d
 }
 
+// NewOptGetWorkflowByIDPriority returns new OptGetWorkflowByIDPriority with value set to v.
+func NewOptGetWorkflowByIDPriority(v GetWorkflowByIDPriority) OptGetWorkflowByIDPriority {
+	return OptGetWorkflowByIDPriority{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGetWorkflowByIDPriority is optional GetWorkflowByIDPriority.
+type OptGetWorkflowByIDPriority struct {
+	Value GetWorkflowByIDPriority
+	Set   bool
+}
+
+// IsSet returns true if OptGetWorkflowByIDPriority was set.
+func (o OptGetWorkflowByIDPriority) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGetWorkflowByIDPriority) Reset() {
+	var v GetWorkflowByIDPriority
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGetWorkflowByIDPriority) SetTo(v GetWorkflowByIDPriority) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGetWorkflowByIDPriority) Get() (v GetWorkflowByIDPriority, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGetWorkflowByIDPriority) Or(d GetWorkflowByIDPriority) GetWorkflowByIDPriority {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGetWorkflowByIDSeverity returns new OptGetWorkflowByIDSeverity with value set to v.
+func NewOptGetWorkflowByIDSeverity(v GetWorkflowByIDSeverity) OptGetWorkflowByIDSeverity {
+	return OptGetWorkflowByIDSeverity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGetWorkflowByIDSeverity is optional GetWorkflowByIDSeverity.
+type OptGetWorkflowByIDSeverity struct {
+	Value GetWorkflowByIDSeverity
+	Set   bool
+}
+
+// IsSet returns true if OptGetWorkflowByIDSeverity was set.
+func (o OptGetWorkflowByIDSeverity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGetWorkflowByIDSeverity) Reset() {
+	var v GetWorkflowByIDSeverity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGetWorkflowByIDSeverity) SetTo(v GetWorkflowByIDSeverity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGetWorkflowByIDSeverity) Get() (v GetWorkflowByIDSeverity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGetWorkflowByIDSeverity) Or(d GetWorkflowByIDSeverity) GetWorkflowByIDSeverity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptHealthCheckOKStatus returns new OptHealthCheckOKStatus with value set to v.
 func NewOptHealthCheckOKStatus(v HealthCheckOKStatus) OptHealthCheckOKStatus {
 	return OptHealthCheckOKStatus{
@@ -9113,6 +10233,69 @@ func (o OptNilDate) Get() (v time.Time, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilDate) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilFloat64 returns new OptNilFloat64 with value set to v.
+func NewOptNilFloat64(v float64) OptNilFloat64 {
+	return OptNilFloat64{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilFloat64 is optional nullable float64.
+type OptNilFloat64 struct {
+	Value float64
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilFloat64 was set.
+func (o OptNilFloat64) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilFloat64) Reset() {
+	var v float64
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilFloat64) SetTo(v float64) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilFloat64) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilFloat64) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v float64
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilFloat64) Get() (v float64, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilFloat64) Or(d float64) float64 {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -10780,6 +11963,52 @@ func (o OptWorkflowDisableRequest) Or(d WorkflowDisableRequest) WorkflowDisableR
 	return d
 }
 
+// NewOptWorkflowDiscoveryEntryExecutionEngine returns new OptWorkflowDiscoveryEntryExecutionEngine with value set to v.
+func NewOptWorkflowDiscoveryEntryExecutionEngine(v WorkflowDiscoveryEntryExecutionEngine) OptWorkflowDiscoveryEntryExecutionEngine {
+	return OptWorkflowDiscoveryEntryExecutionEngine{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkflowDiscoveryEntryExecutionEngine is optional WorkflowDiscoveryEntryExecutionEngine.
+type OptWorkflowDiscoveryEntryExecutionEngine struct {
+	Value WorkflowDiscoveryEntryExecutionEngine
+	Set   bool
+}
+
+// IsSet returns true if OptWorkflowDiscoveryEntryExecutionEngine was set.
+func (o OptWorkflowDiscoveryEntryExecutionEngine) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkflowDiscoveryEntryExecutionEngine) Reset() {
+	var v WorkflowDiscoveryEntryExecutionEngine
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkflowDiscoveryEntryExecutionEngine) SetTo(v WorkflowDiscoveryEntryExecutionEngine) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkflowDiscoveryEntryExecutionEngine) Get() (v WorkflowDiscoveryEntryExecutionEngine, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkflowDiscoveryEntryExecutionEngine) Or(d WorkflowDiscoveryEntryExecutionEngine) WorkflowDiscoveryEntryExecutionEngine {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptWorkflowExecutionAuditPayloadFailureReason returns new OptWorkflowExecutionAuditPayloadFailureReason with value set to v.
 func NewOptWorkflowExecutionAuditPayloadFailureReason(v WorkflowExecutionAuditPayloadFailureReason) OptWorkflowExecutionAuditPayloadFailureReason {
 	return OptWorkflowExecutionAuditPayloadFailureReason{
@@ -10918,52 +12147,6 @@ func (o OptWorkflowSearchFilters) Or(d WorkflowSearchFilters) WorkflowSearchFilt
 	return d
 }
 
-// NewOptWorkflowSearchResultParameters returns new OptWorkflowSearchResultParameters with value set to v.
-func NewOptWorkflowSearchResultParameters(v WorkflowSearchResultParameters) OptWorkflowSearchResultParameters {
-	return OptWorkflowSearchResultParameters{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkflowSearchResultParameters is optional WorkflowSearchResultParameters.
-type OptWorkflowSearchResultParameters struct {
-	Value WorkflowSearchResultParameters
-	Set   bool
-}
-
-// IsSet returns true if OptWorkflowSearchResultParameters was set.
-func (o OptWorkflowSearchResultParameters) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkflowSearchResultParameters) Reset() {
-	var v WorkflowSearchResultParameters
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkflowSearchResultParameters) SetTo(v WorkflowSearchResultParameters) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkflowSearchResultParameters) Get() (v WorkflowSearchResultParameters, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkflowSearchResultParameters) Or(d WorkflowSearchResultParameters) WorkflowSearchResultParameters {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptWorkflowUpdateRequestStatus returns new OptWorkflowUpdateRequestStatus with value set to v.
 func NewOptWorkflowUpdateRequestStatus(v WorkflowUpdateRequestStatus) OptWorkflowUpdateRequestStatus {
 	return OptWorkflowUpdateRequestStatus{
@@ -11008,6 +12191,59 @@ func (o OptWorkflowUpdateRequestStatus) Or(d WorkflowUpdateRequestStatus) Workfl
 		return v
 	}
 	return d
+}
+
+// Pagination metadata for discovery endpoints (DD-WORKFLOW-016).
+// Ref: #/components/schemas/PaginationMetadata
+type PaginationMetadata struct {
+	// Total number of results across all pages.
+	TotalCount int `json:"totalCount"`
+	// Current offset (0-based).
+	Offset int `json:"offset"`
+	// Page size.
+	Limit int `json:"limit"`
+	// True if more pages exist beyond current offset+limit.
+	HasMore bool `json:"hasMore"`
+}
+
+// GetTotalCount returns the value of TotalCount.
+func (s *PaginationMetadata) GetTotalCount() int {
+	return s.TotalCount
+}
+
+// GetOffset returns the value of Offset.
+func (s *PaginationMetadata) GetOffset() int {
+	return s.Offset
+}
+
+// GetLimit returns the value of Limit.
+func (s *PaginationMetadata) GetLimit() int {
+	return s.Limit
+}
+
+// GetHasMore returns the value of HasMore.
+func (s *PaginationMetadata) GetHasMore() bool {
+	return s.HasMore
+}
+
+// SetTotalCount sets the value of TotalCount.
+func (s *PaginationMetadata) SetTotalCount(val int) {
+	s.TotalCount = val
+}
+
+// SetOffset sets the value of Offset.
+func (s *PaginationMetadata) SetOffset(val int) {
+	s.Offset = val
+}
+
+// SetLimit sets the value of Limit.
+func (s *PaginationMetadata) SetLimit(val int) {
+	s.Limit = val
+}
+
+// SetHasMore sets the value of HasMore.
+func (s *PaginationMetadata) SetHasMore(val bool) {
+	s.HasMore = val
 }
 
 type PlaceLegalHoldBadRequest RFC7807Problem
@@ -12706,6 +13942,8 @@ type RemediationWorkflow struct {
 	WorkflowID OptUUID `json:"workflow_id"`
 	// Workflow name (identifier for versions).
 	WorkflowName string `json:"workflow_name"`
+	// Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.
+	ActionType string `json:"action_type"`
 	// Semantic version (e.g., v1.0.0).
 	Version string `json:"version"`
 	// Human-readable workflow title.
@@ -12777,6 +14015,11 @@ func (s *RemediationWorkflow) GetWorkflowID() OptUUID {
 // GetWorkflowName returns the value of WorkflowName.
 func (s *RemediationWorkflow) GetWorkflowName() string {
 	return s.WorkflowName
+}
+
+// GetActionType returns the value of ActionType.
+func (s *RemediationWorkflow) GetActionType() string {
+	return s.ActionType
 }
 
 // GetVersion returns the value of Version.
@@ -12957,6 +14200,11 @@ func (s *RemediationWorkflow) SetWorkflowID(val OptUUID) {
 // SetWorkflowName sets the value of WorkflowName.
 func (s *RemediationWorkflow) SetWorkflowName(val string) {
 	s.WorkflowName = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *RemediationWorkflow) SetActionType(val string) {
+	s.ActionType = val
 }
 
 // SetVersion sets the value of Version.
@@ -13275,14 +14523,6 @@ func (s *SearchExecutionMetadata) GetDurationMs() int64 {
 func (s *SearchExecutionMetadata) SetDurationMs(val int64) {
 	s.DurationMs = val
 }
-
-type SearchWorkflowsBadRequest RFC7807Problem
-
-func (*SearchWorkflowsBadRequest) searchWorkflowsRes() {}
-
-type SearchWorkflowsInternalServerError RFC7807Problem
-
-func (*SearchWorkflowsInternalServerError) searchWorkflowsRes() {}
 
 // Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition,
 // classification.decision, business.classified, enrichment.completed, error.occurred).
@@ -14682,6 +15922,311 @@ func (s *WorkflowDisableRequest) SetUpdatedBy(val OptString) {
 	s.UpdatedBy = val
 }
 
+// Audit event payload for three-step workflow discovery operations.
+// Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+// Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
+// Replaces WorkflowSearchAuditPayload (search endpoint removed).
+// Ref: #/components/schemas/WorkflowDiscoveryAuditPayload
+type WorkflowDiscoveryAuditPayload struct {
+	// Discriminator for event data union type (matches parent event_type).
+	EventType      WorkflowDiscoveryAuditPayloadEventType `json:"event_type"`
+	Query          QueryMetadata                          `json:"query"`
+	Results        ResultsMetadata                        `json:"results"`
+	SearchMetadata SearchExecutionMetadata                `json:"search_metadata"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *WorkflowDiscoveryAuditPayload) GetEventType() WorkflowDiscoveryAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetQuery returns the value of Query.
+func (s *WorkflowDiscoveryAuditPayload) GetQuery() QueryMetadata {
+	return s.Query
+}
+
+// GetResults returns the value of Results.
+func (s *WorkflowDiscoveryAuditPayload) GetResults() ResultsMetadata {
+	return s.Results
+}
+
+// GetSearchMetadata returns the value of SearchMetadata.
+func (s *WorkflowDiscoveryAuditPayload) GetSearchMetadata() SearchExecutionMetadata {
+	return s.SearchMetadata
+}
+
+// SetEventType sets the value of EventType.
+func (s *WorkflowDiscoveryAuditPayload) SetEventType(val WorkflowDiscoveryAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetQuery sets the value of Query.
+func (s *WorkflowDiscoveryAuditPayload) SetQuery(val QueryMetadata) {
+	s.Query = val
+}
+
+// SetResults sets the value of Results.
+func (s *WorkflowDiscoveryAuditPayload) SetResults(val ResultsMetadata) {
+	s.Results = val
+}
+
+// SetSearchMetadata sets the value of SearchMetadata.
+func (s *WorkflowDiscoveryAuditPayload) SetSearchMetadata(val SearchExecutionMetadata) {
+	s.SearchMetadata = val
+}
+
+// Discriminator for event data union type (matches parent event_type).
+type WorkflowDiscoveryAuditPayloadEventType string
+
+const (
+	WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed      WorkflowDiscoveryAuditPayloadEventType = "workflow.catalog.actions_listed"
+	WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed    WorkflowDiscoveryAuditPayloadEventType = "workflow.catalog.workflows_listed"
+	WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved  WorkflowDiscoveryAuditPayloadEventType = "workflow.catalog.workflow_retrieved"
+	WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated WorkflowDiscoveryAuditPayloadEventType = "workflow.catalog.selection_validated"
+)
+
+// AllValues returns all WorkflowDiscoveryAuditPayloadEventType values.
+func (WorkflowDiscoveryAuditPayloadEventType) AllValues() []WorkflowDiscoveryAuditPayloadEventType {
+	return []WorkflowDiscoveryAuditPayloadEventType{
+		WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
+		WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed,
+		WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved,
+		WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowDiscoveryAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed:
+		return []byte(s), nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed:
+		return []byte(s), nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved:
+		return []byte(s), nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowDiscoveryAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowDiscoveryAuditPayloadEventType(data) {
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed
+		return nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed
+		return nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved
+		return nil
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Workflow summary for discovery (Step 2) - no parameter schema, no scores.
+// Ref: #/components/schemas/WorkflowDiscoveryEntry
+type WorkflowDiscoveryEntry struct {
+	// UUID primary key.
+	WorkflowId uuid.UUID `json:"workflowId"`
+	// Human-readable workflow identifier (e.g., scale-conservative-v1).
+	WorkflowName string `json:"workflowName"`
+	// Display name.
+	Name string `json:"name"`
+	// Workflow description for LLM comparison.
+	Description string `json:"description"`
+	// Semantic version.
+	Version string `json:"version"`
+	// OCI image reference.
+	ContainerImage string `json:"containerImage"`
+	// Execution engine (tekton, job).
+	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
+	// Historical success rate (0.0-1.0).
+	ActualSuccessRate OptFloat32 `json:"actualSuccessRate"`
+	// Total times this workflow has been executed.
+	TotalExecutions OptInt `json:"totalExecutions"`
+}
+
+// GetWorkflowId returns the value of WorkflowId.
+func (s *WorkflowDiscoveryEntry) GetWorkflowId() uuid.UUID {
+	return s.WorkflowId
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *WorkflowDiscoveryEntry) GetWorkflowName() string {
+	return s.WorkflowName
+}
+
+// GetName returns the value of Name.
+func (s *WorkflowDiscoveryEntry) GetName() string {
+	return s.Name
+}
+
+// GetDescription returns the value of Description.
+func (s *WorkflowDiscoveryEntry) GetDescription() string {
+	return s.Description
+}
+
+// GetVersion returns the value of Version.
+func (s *WorkflowDiscoveryEntry) GetVersion() string {
+	return s.Version
+}
+
+// GetContainerImage returns the value of ContainerImage.
+func (s *WorkflowDiscoveryEntry) GetContainerImage() string {
+	return s.ContainerImage
+}
+
+// GetExecutionEngine returns the value of ExecutionEngine.
+func (s *WorkflowDiscoveryEntry) GetExecutionEngine() OptWorkflowDiscoveryEntryExecutionEngine {
+	return s.ExecutionEngine
+}
+
+// GetActualSuccessRate returns the value of ActualSuccessRate.
+func (s *WorkflowDiscoveryEntry) GetActualSuccessRate() OptFloat32 {
+	return s.ActualSuccessRate
+}
+
+// GetTotalExecutions returns the value of TotalExecutions.
+func (s *WorkflowDiscoveryEntry) GetTotalExecutions() OptInt {
+	return s.TotalExecutions
+}
+
+// SetWorkflowId sets the value of WorkflowId.
+func (s *WorkflowDiscoveryEntry) SetWorkflowId(val uuid.UUID) {
+	s.WorkflowId = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *WorkflowDiscoveryEntry) SetWorkflowName(val string) {
+	s.WorkflowName = val
+}
+
+// SetName sets the value of Name.
+func (s *WorkflowDiscoveryEntry) SetName(val string) {
+	s.Name = val
+}
+
+// SetDescription sets the value of Description.
+func (s *WorkflowDiscoveryEntry) SetDescription(val string) {
+	s.Description = val
+}
+
+// SetVersion sets the value of Version.
+func (s *WorkflowDiscoveryEntry) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetContainerImage sets the value of ContainerImage.
+func (s *WorkflowDiscoveryEntry) SetContainerImage(val string) {
+	s.ContainerImage = val
+}
+
+// SetExecutionEngine sets the value of ExecutionEngine.
+func (s *WorkflowDiscoveryEntry) SetExecutionEngine(val OptWorkflowDiscoveryEntryExecutionEngine) {
+	s.ExecutionEngine = val
+}
+
+// SetActualSuccessRate sets the value of ActualSuccessRate.
+func (s *WorkflowDiscoveryEntry) SetActualSuccessRate(val OptFloat32) {
+	s.ActualSuccessRate = val
+}
+
+// SetTotalExecutions sets the value of TotalExecutions.
+func (s *WorkflowDiscoveryEntry) SetTotalExecutions(val OptInt) {
+	s.TotalExecutions = val
+}
+
+// Execution engine (tekton, job).
+type WorkflowDiscoveryEntryExecutionEngine string
+
+const (
+	WorkflowDiscoveryEntryExecutionEngineTekton WorkflowDiscoveryEntryExecutionEngine = "tekton"
+	WorkflowDiscoveryEntryExecutionEngineJob    WorkflowDiscoveryEntryExecutionEngine = "job"
+)
+
+// AllValues returns all WorkflowDiscoveryEntryExecutionEngine values.
+func (WorkflowDiscoveryEntryExecutionEngine) AllValues() []WorkflowDiscoveryEntryExecutionEngine {
+	return []WorkflowDiscoveryEntryExecutionEngine{
+		WorkflowDiscoveryEntryExecutionEngineTekton,
+		WorkflowDiscoveryEntryExecutionEngineJob,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowDiscoveryEntryExecutionEngine) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowDiscoveryEntryExecutionEngineTekton:
+		return []byte(s), nil
+	case WorkflowDiscoveryEntryExecutionEngineJob:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowDiscoveryEntryExecutionEngine) UnmarshalText(data []byte) error {
+	switch WorkflowDiscoveryEntryExecutionEngine(data) {
+	case WorkflowDiscoveryEntryExecutionEngineTekton:
+		*s = WorkflowDiscoveryEntryExecutionEngineTekton
+		return nil
+	case WorkflowDiscoveryEntryExecutionEngineJob:
+		*s = WorkflowDiscoveryEntryExecutionEngineJob
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Response for Step 2: list workflows for an action type (DD-WORKFLOW-016).
+// Ref: #/components/schemas/WorkflowDiscoveryResponse
+type WorkflowDiscoveryResponse struct {
+	// The action type these workflows belong to.
+	ActionType string                   `json:"actionType"`
+	Workflows  []WorkflowDiscoveryEntry `json:"workflows"`
+	Pagination PaginationMetadata       `json:"pagination"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *WorkflowDiscoveryResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetWorkflows returns the value of Workflows.
+func (s *WorkflowDiscoveryResponse) GetWorkflows() []WorkflowDiscoveryEntry {
+	return s.Workflows
+}
+
+// GetPagination returns the value of Pagination.
+func (s *WorkflowDiscoveryResponse) GetPagination() PaginationMetadata {
+	return s.Pagination
+}
+
+// SetActionType sets the value of ActionType.
+func (s *WorkflowDiscoveryResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetWorkflows sets the value of Workflows.
+func (s *WorkflowDiscoveryResponse) SetWorkflows(val []WorkflowDiscoveryEntry) {
+	s.Workflows = val
+}
+
+// SetPagination sets the value of Pagination.
+func (s *WorkflowDiscoveryResponse) SetPagination(val PaginationMetadata) {
+	s.Pagination = val
+}
+
+func (*WorkflowDiscoveryResponse) listWorkflowsByActionTypeRes() {}
+
 // Type-safe audit event payload for WorkflowExecution (workflow.started, workflow.completed,
 // workflow.failed).
 // Ref: #/components/schemas/WorkflowExecutionAuditPayload
@@ -15416,91 +16961,6 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 	return m
 }
 
-// Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1).
-// Ref: #/components/schemas/WorkflowSearchAuditPayload
-type WorkflowSearchAuditPayload struct {
-	// Discriminator for event data union type.
-	EventType      WorkflowSearchAuditPayloadEventType `json:"event_type"`
-	Query          QueryMetadata                       `json:"query"`
-	Results        ResultsMetadata                     `json:"results"`
-	SearchMetadata SearchExecutionMetadata             `json:"search_metadata"`
-}
-
-// GetEventType returns the value of EventType.
-func (s *WorkflowSearchAuditPayload) GetEventType() WorkflowSearchAuditPayloadEventType {
-	return s.EventType
-}
-
-// GetQuery returns the value of Query.
-func (s *WorkflowSearchAuditPayload) GetQuery() QueryMetadata {
-	return s.Query
-}
-
-// GetResults returns the value of Results.
-func (s *WorkflowSearchAuditPayload) GetResults() ResultsMetadata {
-	return s.Results
-}
-
-// GetSearchMetadata returns the value of SearchMetadata.
-func (s *WorkflowSearchAuditPayload) GetSearchMetadata() SearchExecutionMetadata {
-	return s.SearchMetadata
-}
-
-// SetEventType sets the value of EventType.
-func (s *WorkflowSearchAuditPayload) SetEventType(val WorkflowSearchAuditPayloadEventType) {
-	s.EventType = val
-}
-
-// SetQuery sets the value of Query.
-func (s *WorkflowSearchAuditPayload) SetQuery(val QueryMetadata) {
-	s.Query = val
-}
-
-// SetResults sets the value of Results.
-func (s *WorkflowSearchAuditPayload) SetResults(val ResultsMetadata) {
-	s.Results = val
-}
-
-// SetSearchMetadata sets the value of SearchMetadata.
-func (s *WorkflowSearchAuditPayload) SetSearchMetadata(val SearchExecutionMetadata) {
-	s.SearchMetadata = val
-}
-
-// Discriminator for event data union type.
-type WorkflowSearchAuditPayloadEventType string
-
-const (
-	WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted WorkflowSearchAuditPayloadEventType = "workflow.catalog.search_completed"
-)
-
-// AllValues returns all WorkflowSearchAuditPayloadEventType values.
-func (WorkflowSearchAuditPayloadEventType) AllValues() []WorkflowSearchAuditPayloadEventType {
-	return []WorkflowSearchAuditPayloadEventType{
-		WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkflowSearchAuditPayloadEventType) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkflowSearchAuditPayloadEventType) UnmarshalText(data []byte) error {
-	switch WorkflowSearchAuditPayloadEventType(data) {
-	case WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted:
-		*s = WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
 	// Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.).
@@ -15764,292 +17224,6 @@ func (s *WorkflowSearchFiltersStatusItem) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// Ref: #/components/schemas/WorkflowSearchRequest
-type WorkflowSearchRequest struct {
-	// Optional remediation ID for audit correlation.
-	RemediationID OptString             `json:"remediation_id"`
-	Filters       WorkflowSearchFilters `json:"filters"`
-	// Maximum number of results to return.
-	TopK OptInt `json:"top_k"`
-	// Minimum normalized score threshold (0.0-1.0).
-	MinScore OptFloat32 `json:"min_score"`
-	// Include disabled workflows in results.
-	IncludeDisabled OptBool `json:"include_disabled"`
-}
-
-// GetRemediationID returns the value of RemediationID.
-func (s *WorkflowSearchRequest) GetRemediationID() OptString {
-	return s.RemediationID
-}
-
-// GetFilters returns the value of Filters.
-func (s *WorkflowSearchRequest) GetFilters() WorkflowSearchFilters {
-	return s.Filters
-}
-
-// GetTopK returns the value of TopK.
-func (s *WorkflowSearchRequest) GetTopK() OptInt {
-	return s.TopK
-}
-
-// GetMinScore returns the value of MinScore.
-func (s *WorkflowSearchRequest) GetMinScore() OptFloat32 {
-	return s.MinScore
-}
-
-// GetIncludeDisabled returns the value of IncludeDisabled.
-func (s *WorkflowSearchRequest) GetIncludeDisabled() OptBool {
-	return s.IncludeDisabled
-}
-
-// SetRemediationID sets the value of RemediationID.
-func (s *WorkflowSearchRequest) SetRemediationID(val OptString) {
-	s.RemediationID = val
-}
-
-// SetFilters sets the value of Filters.
-func (s *WorkflowSearchRequest) SetFilters(val WorkflowSearchFilters) {
-	s.Filters = val
-}
-
-// SetTopK sets the value of TopK.
-func (s *WorkflowSearchRequest) SetTopK(val OptInt) {
-	s.TopK = val
-}
-
-// SetMinScore sets the value of MinScore.
-func (s *WorkflowSearchRequest) SetMinScore(val OptFloat32) {
-	s.MinScore = val
-}
-
-// SetIncludeDisabled sets the value of IncludeDisabled.
-func (s *WorkflowSearchRequest) SetIncludeDisabled(val OptBool) {
-	s.IncludeDisabled = val
-}
-
-// Ref: #/components/schemas/WorkflowSearchResponse
-type WorkflowSearchResponse struct {
-	Workflows []WorkflowSearchResult `json:"workflows"`
-	// Total number of matching workflows.
-	TotalResults OptInt                   `json:"total_results"`
-	Filters      OptWorkflowSearchFilters `json:"filters"`
-}
-
-// GetWorkflows returns the value of Workflows.
-func (s *WorkflowSearchResponse) GetWorkflows() []WorkflowSearchResult {
-	return s.Workflows
-}
-
-// GetTotalResults returns the value of TotalResults.
-func (s *WorkflowSearchResponse) GetTotalResults() OptInt {
-	return s.TotalResults
-}
-
-// GetFilters returns the value of Filters.
-func (s *WorkflowSearchResponse) GetFilters() OptWorkflowSearchFilters {
-	return s.Filters
-}
-
-// SetWorkflows sets the value of Workflows.
-func (s *WorkflowSearchResponse) SetWorkflows(val []WorkflowSearchResult) {
-	s.Workflows = val
-}
-
-// SetTotalResults sets the value of TotalResults.
-func (s *WorkflowSearchResponse) SetTotalResults(val OptInt) {
-	s.TotalResults = val
-}
-
-// SetFilters sets the value of Filters.
-func (s *WorkflowSearchResponse) SetFilters(val OptWorkflowSearchFilters) {
-	s.Filters = val
-}
-
-func (*WorkflowSearchResponse) searchWorkflowsRes() {}
-
-// Flat response structure (DD-WORKFLOW-002 v3.0).
-// Ref: #/components/schemas/WorkflowSearchResult
-type WorkflowSearchResult struct {
-	// UUID primary key (DD-WORKFLOW-002 v3.0).
-	WorkflowID uuid.UUID `json:"workflow_id"`
-	// Human-readable workflow name.
-	Title string `json:"title"`
-	// Workflow description.
-	Description string `json:"description"`
-	// Signal type this workflow handles.
-	SignalType string `json:"signal_type"`
-	// OCI image reference.
-	ContainerImage OptString `json:"container_image"`
-	// OCI image digest.
-	ContainerDigest OptString `json:"container_digest"`
-	// Normalized label score (0.0-1.0).
-	Confidence float32 `json:"confidence"`
-	// Boost from matching DetectedLabels.
-	LabelBoost OptFloat32 `json:"label_boost"`
-	// Penalty from conflicting DetectedLabels.
-	LabelPenalty OptFloat32 `json:"label_penalty"`
-	// Final normalized score (same as confidence).
-	FinalScore float32 `json:"final_score"`
-	// Position in result set (1-based).
-	Rank           int               `json:"rank"`
-	CustomLabels   OptCustomLabels   `json:"custom_labels"`
-	DetectedLabels OptDetectedLabels `json:"detected_labels"`
-	// Workflow parameter schema (JSONB) - describes expected parameters.
-	Parameters OptWorkflowSearchResultParameters `json:"parameters"`
-}
-
-// GetWorkflowID returns the value of WorkflowID.
-func (s *WorkflowSearchResult) GetWorkflowID() uuid.UUID {
-	return s.WorkflowID
-}
-
-// GetTitle returns the value of Title.
-func (s *WorkflowSearchResult) GetTitle() string {
-	return s.Title
-}
-
-// GetDescription returns the value of Description.
-func (s *WorkflowSearchResult) GetDescription() string {
-	return s.Description
-}
-
-// GetSignalType returns the value of SignalType.
-func (s *WorkflowSearchResult) GetSignalType() string {
-	return s.SignalType
-}
-
-// GetContainerImage returns the value of ContainerImage.
-func (s *WorkflowSearchResult) GetContainerImage() OptString {
-	return s.ContainerImage
-}
-
-// GetContainerDigest returns the value of ContainerDigest.
-func (s *WorkflowSearchResult) GetContainerDigest() OptString {
-	return s.ContainerDigest
-}
-
-// GetConfidence returns the value of Confidence.
-func (s *WorkflowSearchResult) GetConfidence() float32 {
-	return s.Confidence
-}
-
-// GetLabelBoost returns the value of LabelBoost.
-func (s *WorkflowSearchResult) GetLabelBoost() OptFloat32 {
-	return s.LabelBoost
-}
-
-// GetLabelPenalty returns the value of LabelPenalty.
-func (s *WorkflowSearchResult) GetLabelPenalty() OptFloat32 {
-	return s.LabelPenalty
-}
-
-// GetFinalScore returns the value of FinalScore.
-func (s *WorkflowSearchResult) GetFinalScore() float32 {
-	return s.FinalScore
-}
-
-// GetRank returns the value of Rank.
-func (s *WorkflowSearchResult) GetRank() int {
-	return s.Rank
-}
-
-// GetCustomLabels returns the value of CustomLabels.
-func (s *WorkflowSearchResult) GetCustomLabels() OptCustomLabels {
-	return s.CustomLabels
-}
-
-// GetDetectedLabels returns the value of DetectedLabels.
-func (s *WorkflowSearchResult) GetDetectedLabels() OptDetectedLabels {
-	return s.DetectedLabels
-}
-
-// GetParameters returns the value of Parameters.
-func (s *WorkflowSearchResult) GetParameters() OptWorkflowSearchResultParameters {
-	return s.Parameters
-}
-
-// SetWorkflowID sets the value of WorkflowID.
-func (s *WorkflowSearchResult) SetWorkflowID(val uuid.UUID) {
-	s.WorkflowID = val
-}
-
-// SetTitle sets the value of Title.
-func (s *WorkflowSearchResult) SetTitle(val string) {
-	s.Title = val
-}
-
-// SetDescription sets the value of Description.
-func (s *WorkflowSearchResult) SetDescription(val string) {
-	s.Description = val
-}
-
-// SetSignalType sets the value of SignalType.
-func (s *WorkflowSearchResult) SetSignalType(val string) {
-	s.SignalType = val
-}
-
-// SetContainerImage sets the value of ContainerImage.
-func (s *WorkflowSearchResult) SetContainerImage(val OptString) {
-	s.ContainerImage = val
-}
-
-// SetContainerDigest sets the value of ContainerDigest.
-func (s *WorkflowSearchResult) SetContainerDigest(val OptString) {
-	s.ContainerDigest = val
-}
-
-// SetConfidence sets the value of Confidence.
-func (s *WorkflowSearchResult) SetConfidence(val float32) {
-	s.Confidence = val
-}
-
-// SetLabelBoost sets the value of LabelBoost.
-func (s *WorkflowSearchResult) SetLabelBoost(val OptFloat32) {
-	s.LabelBoost = val
-}
-
-// SetLabelPenalty sets the value of LabelPenalty.
-func (s *WorkflowSearchResult) SetLabelPenalty(val OptFloat32) {
-	s.LabelPenalty = val
-}
-
-// SetFinalScore sets the value of FinalScore.
-func (s *WorkflowSearchResult) SetFinalScore(val float32) {
-	s.FinalScore = val
-}
-
-// SetRank sets the value of Rank.
-func (s *WorkflowSearchResult) SetRank(val int) {
-	s.Rank = val
-}
-
-// SetCustomLabels sets the value of CustomLabels.
-func (s *WorkflowSearchResult) SetCustomLabels(val OptCustomLabels) {
-	s.CustomLabels = val
-}
-
-// SetDetectedLabels sets the value of DetectedLabels.
-func (s *WorkflowSearchResult) SetDetectedLabels(val OptDetectedLabels) {
-	s.DetectedLabels = val
-}
-
-// SetParameters sets the value of Parameters.
-func (s *WorkflowSearchResult) SetParameters(val OptWorkflowSearchResultParameters) {
-	s.Parameters = val
-}
-
-// Workflow parameter schema (JSONB) - describes expected parameters.
-type WorkflowSearchResultParameters map[string]jx.Raw
-
-func (s *WorkflowSearchResultParameters) init() WorkflowSearchResultParameters {
-	m := *s
-	if m == nil {
-		m = map[string]jx.Raw{}
-		*s = m
-	}
-	return m
 }
 
 // Update mutable workflow fields only (DD-WORKFLOW-012).

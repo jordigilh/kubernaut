@@ -228,7 +228,6 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with Prometheus disabled")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ae-006", Namespace: ns,
@@ -241,7 +240,6 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   false, // DISABLED
 					AlertManagerEnabled: true,
@@ -277,7 +275,6 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with AlertManager disabled")
-		now := metav1.Now()
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ae-007", Namespace: ns,
@@ -290,7 +287,6 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
 					ScoringThreshold:    0.5,
 					PrometheusEnabled:   true,
 					AlertManagerEnabled: false, // DISABLED

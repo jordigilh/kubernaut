@@ -102,13 +102,10 @@ type TargetResource struct {
 // EAConfig contains assessment configuration set by RO at creation time.
 type EAConfig struct {
 	// StabilizationWindow is the duration to wait after remediation before assessment.
+	// Set by the Remediation Orchestrator. The EM uses this to delay assessment
+	// until the system stabilizes post-remediation.
 	// +kubebuilder:validation:Required
 	StabilizationWindow metav1.Duration `json:"stabilizationWindow"`
-
-	// ValidityDeadline is the absolute time after which the assessment expires.
-	// Computed as: EA.creationTimestamp + validityWindow (from EM config).
-	// +kubebuilder:validation:Required
-	ValidityDeadline metav1.Time `json:"validityDeadline"`
 
 	// ScoringThreshold is the minimum score for a "healthy" assessment.
 	// Below this threshold, a Warning K8s event is emitted.
@@ -128,6 +125,32 @@ type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
 	// +kubebuilder:validation:Enum=Pending;Assessing;Completed;Failed
 	Phase string `json:"phase,omitempty"`
+
+	// ValidityDeadline is the absolute time after which the assessment expires.
+	// Computed by the EM controller on first reconciliation as:
+	//   EA.creationTimestamp + validityWindow (from EM config).
+	// This follows Kubernetes spec/status convention: the RO sets desired state
+	// (StabilizationWindow in spec), and the EM computes observed/derived state
+	// (ValidityDeadline in status). This prevents misconfiguration where
+	// StabilizationWindow > ValidityDeadline.
+	// +optional
+	ValidityDeadline *metav1.Time `json:"validityDeadline,omitempty"`
+
+	// PrometheusCheckAfter is the earliest time to query Prometheus for metrics.
+	// Computed by the EM controller on first reconciliation as:
+	//   EA.creationTimestamp + StabilizationWindow (from EA spec).
+	// Stored in status to avoid recomputation on every reconcile and for
+	// operator observability of the assessment timeline.
+	// +optional
+	PrometheusCheckAfter *metav1.Time `json:"prometheusCheckAfter,omitempty"`
+
+	// AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
+	// Computed by the EM controller on first reconciliation as:
+	//   EA.creationTimestamp + StabilizationWindow (from EA spec).
+	// Stored in status to avoid recomputation on every reconcile and for
+	// operator observability of the assessment timeline.
+	// +optional
+	AlertManagerCheckAfter *metav1.Time `json:"alertManagerCheckAfter,omitempty"`
 
 	// Components tracks the completion state of each assessment component.
 	Components EAComponents `json:"components,omitempty"`

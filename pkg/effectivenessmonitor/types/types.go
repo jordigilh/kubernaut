@@ -72,6 +72,24 @@ const (
 	AuditAlertAssessed AuditEventType = "effectiveness.alert.assessed"
 	// AuditMetricsAssessed is emitted when metric comparison completes.
 	AuditMetricsAssessed AuditEventType = "effectiveness.metrics.assessed"
+	// AuditAssessmentScheduled is emitted on first reconciliation with derived timing (BR-EM-009.4).
+	AuditAssessmentScheduled AuditEventType = "effectiveness.assessment.scheduled"
 	// AuditAssessmentCompleted is emitted when the full assessment finishes.
 	AuditAssessmentCompleted AuditEventType = "effectiveness.assessment.completed"
 )
+
+// AuditEventTypeForComponent returns the audit event type for a given component name.
+func AuditEventTypeForComponent(component string) AuditEventType {
+	switch component {
+	case string(ComponentHealth):
+		return AuditHealthAssessed
+	case string(ComponentAlert):
+		return AuditAlertAssessed
+	case string(ComponentMetrics):
+		return AuditMetricsAssessed
+	case string(ComponentHash):
+		return AuditHashComputed
+	default:
+		return AuditAssessmentCompleted
+	}
+}

@@ -1,10 +1,14 @@
 # BR-WORKFLOW-002: Workflow Versioning & Deprecation Lifecycle
 
+> **SUPERSEDED** by [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) (Workflow Lifecycle Component Interactions, February 2026).
+>
+> DD-WORKFLOW-017 defines the authoritative status lifecycle (active/disabled/deprecated) and transition rules. The `draft` status, `promote` endpoint, automated deprecation based on success rate thresholds, and version comparison API defined in this document are no longer valid. Deprecation is an operator decision based on their observability, not an automated system action. Refer to DD-WORKFLOW-017 Phase 4 for the current operational management design.
+
 **Business Requirement ID**: BR-WORKFLOW-002
 **Category**: Workflow Catalog Service
 **Priority**: P1
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: **SUPERSEDED** by DD-WORKFLOW-017
 **Date**: November 5, 2025
 
 ---

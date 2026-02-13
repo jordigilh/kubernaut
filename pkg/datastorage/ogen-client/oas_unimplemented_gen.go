@@ -131,7 +131,14 @@ func (UnimplementedHandler) GetMetrics(ctx context.Context) (r GetMetricsOK, _ e
 // GetWorkflowByID implements getWorkflowByID operation.
 //
 // Retrieve a specific workflow by its UUID.
-// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key).
+// Step 3 of the three-step workflow discovery protocol when context filters are provided.
+// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+// **Without context filters**: Returns workflow by ID (existing behavior).
+// **With context filters**: Returns workflow only if it matches the signal context.
+// Returns 404 if the workflow exists but does not match the context filters
+// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
 //
 // GET /api/v1/workflows/{workflow_id}
 func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (r GetWorkflowByIDRes, _ error) {
@@ -145,6 +152,25 @@ func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkf
 //
 // GET /health
 func (UnimplementedHandler) HealthCheck(ctx context.Context) (r HealthCheckRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListAvailableActions implements listAvailableActions operation.
+//
+// Step 1 of the three-step workflow discovery protocol.
+// Returns action types from the taxonomy that have active workflows matching
+// the provided signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **Behavior**:
+// - Queries action_type_taxonomy joined with remediation_workflow_catalog
+// - Filters by active workflows matching signal context (severity, component, environment, priority)
+// - Returns action types with descriptions and workflow counts
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions
+func (UnimplementedHandler) ListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (r ListAvailableActionsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -172,6 +198,27 @@ func (UnimplementedHandler) ListLegalHolds(ctx context.Context) (r *ListLegalHol
 //
 // GET /api/v1/workflows
 func (UnimplementedHandler) ListWorkflows(ctx context.Context, params ListWorkflowsParams) (r ListWorkflowsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListWorkflowsByActionType implements listWorkflowsByActionType operation.
+//
+// Step 2 of the three-step workflow discovery protocol.
+// Returns all active workflows matching the specified action type and
+// signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+// before selecting one. Do not select from an incomplete list.
+// **Behavior**:
+// - Filters by action_type + signal context (severity, component, environment, priority)
+// - Excludes disabled and deprecated workflows
+// - Returns workflow metadata including effectiveness data
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions/{action_type}
+func (UnimplementedHandler) ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (r ListWorkflowsByActionTypeRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -270,24 +317,6 @@ func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, p
 //
 // DELETE /api/v1/audit/legal-hold/{correlation_id}
 func (UnimplementedHandler) ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (r ReleaseLegalHoldRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// SearchWorkflows implements searchWorkflows operation.
-//
-// Search workflows using label-based matching with wildcard support and weighted scoring.
-// **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-// **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-// **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
-// **Behavior**:
-// - Mandatory filters: signal_type, severity, component, environment, priority
-// - Optional filters: custom_labels, detected_labels
-// - Wildcard support: "*" matches any non-null value
-// - Weighted scoring: Exact matches > Wildcard matches
-// - Returns top_k results sorted by confidence score (0.0-1.0).
-//
-// POST /api/v1/workflows/search
-func (UnimplementedHandler) SearchWorkflows(ctx context.Context, req *WorkflowSearchRequest) (r SearchWorkflowsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
