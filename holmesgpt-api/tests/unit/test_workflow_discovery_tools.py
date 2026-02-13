@@ -1,0 +1,498 @@
+"""
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+"""
+Unit Tests for Three-Step Workflow Discovery Tools
+
+Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+
+Test Plan: docs/testing/DD-HAPI-017/TEST_PLAN.md
+Test IDs: UT-HAPI-017-001-001 through UT-HAPI-017-001-009
+
+Strategy: TDD RED phase - tests written FIRST, implementation follows.
+Infrastructure: None (mocked HTTP responses)
+
+Three tools:
+  Step 1: ListAvailableActionsTool
+  Step 2: ListWorkflowsTool
+  Step 3: GetWorkflowTool
+"""
+
+import json
+from unittest.mock import Mock, patch, MagicMock
+import pytest
+
+from holmes.core.tools import StructuredToolResultStatus
+
+
+# ========================================
+# STEP 1: ListAvailableActionsTool Tests
+# ========================================
+
+class TestListAvailableActionsTool:
+    """
+    UT-HAPI-017-001-001 through 003: Unit tests for list_available_actions tool
+    """
+
+    def test_successful_action_listing_ut_001(self):
+        """
+        UT-HAPI-017-001-001: Successful listing of available action types
+
+        Verifies tool returns action types with descriptions and workflow counts.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://mock:8080",
+            remediation_id="rem-test-001",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        # Mock the HTTP GET call
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actionTypes": [
+                {
+                    "actionType": "ScaleReplicas",
+                    "description": {
+                        "what": "Horizontally scale a workload",
+                        "when_to_use": "OOMKilled events",
+                        "when_not_to_use": "Code bugs",
+                        "preconditions": "HPA not managing"
+                    },
+                    "workflowCount": 3
+                },
+                {
+                    "actionType": "RestartPod",
+                    "description": {
+                        "what": "Delete and recreate a pod",
+                        "when_to_use": "CrashLoopBackOff",
+                        "when_not_to_use": "Persistent bugs",
+                        "preconditions": "Pod managed by controller"
+                    },
+                    "workflowCount": 2
+                }
+            ],
+            "pagination": {
+                "totalCount": 2,
+                "offset": 0,
+                "limit": 10,
+                "hasMore": False
+            }
+        }
+
+        with patch('requests.get', return_value=mock_response):
+            result = tool.invoke(params={"offset": 0, "limit": 10})
+
+        assert result is not None
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+        assert "actionTypes" in data
+        assert len(data["actionTypes"]) == 2
+        assert data["actionTypes"][0]["actionType"] == "ScaleReplicas"
+        assert data["pagination"]["totalCount"] == 2
+
+    def test_pagination_support_ut_002(self):
+        """
+        UT-HAPI-017-001-002: Pagination parameters passed correctly
+
+        Verifies offset and limit are forwarded to DS.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actionTypes": [],
+            "pagination": {"totalCount": 5, "offset": 3, "limit": 2, "hasMore": True}
+        }
+
+        with patch('requests.get', return_value=mock_response) as mock_get:
+            result = tool.invoke(params={"offset": 3, "limit": 2})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        # Verify query params include offset and limit
+        call_args = mock_get.call_args
+        params = call_args[1].get("params", {})
+        assert params.get("offset") == 3
+        assert params.get("limit") == 2
+
+    def test_context_filters_propagated_ut_003(self):
+        """
+        UT-HAPI-017-001-003: Signal context filters propagated as query params
+
+        Verifies severity, component, environment, priority are sent to DS.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://mock:8080",
+            remediation_id="rem-test-003",
+            severity="high",
+            component="deployment",
+            environment="staging",
+            priority="P1",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actionTypes": [],
+            "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False}
+        }
+
+        with patch('requests.get', return_value=mock_response) as mock_get:
+            result = tool.invoke(params={})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        # Verify query params contain context filters
+        call_args = mock_get.call_args
+        params = call_args[1].get("params", {})
+        assert params.get("severity") == "high"
+        assert params.get("component") == "deployment"
+        assert params.get("environment") == "staging"
+        assert params.get("priority") == "P1"
+        assert params.get("remediation_id") == "rem-test-003"
+
+    def test_connection_error_ut_004(self):
+        """
+        UT-HAPI-017-001-004: Connection error handled gracefully
+
+        Verifies tool returns ERROR status on connection failure.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+        import requests
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://unreachable:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        with patch('requests.get', side_effect=requests.exceptions.ConnectionError("refused")):
+            result = tool.invoke(params={})
+
+        assert result.status == StructuredToolResultStatus.ERROR
+        assert "connect" in result.error.lower() or "refused" in result.error.lower()
+
+
+# ========================================
+# STEP 2: ListWorkflowsTool Tests
+# ========================================
+
+class TestListWorkflowsTool:
+    """
+    UT-HAPI-017-001-004 through 006: Unit tests for list_workflows tool
+    """
+
+    def test_successful_workflow_listing_ut_004(self):
+        """
+        UT-HAPI-017-001-004: Successful listing of workflows for action type
+
+        Verifies tool returns workflows with summary information.
+        """
+        from src.toolsets.workflow_discovery import ListWorkflowsTool
+
+        tool = ListWorkflowsTool(
+            data_storage_url="http://mock:8080",
+            remediation_id="rem-test-004",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actionType": "ScaleReplicas",
+            "workflows": [
+                {
+                    "workflowId": "wf-uuid-001",
+                    "workflowName": "scale-conservative",
+                    "name": "Conservative Scale",
+                    "description": "Scales replicas conservatively",
+                    "version": "v1.0.0",
+                    "containerImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+                    "executionEngine": "tekton",
+                    "actualSuccessRate": 0.95,
+                    "totalExecutions": 42
+                }
+            ],
+            "pagination": {
+                "totalCount": 1,
+                "offset": 0,
+                "limit": 10,
+                "hasMore": False
+            }
+        }
+
+        with patch('requests.get', return_value=mock_response):
+            result = tool.invoke(params={"action_type": "ScaleReplicas"})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+        assert data["actionType"] == "ScaleReplicas"
+        assert len(data["workflows"]) == 1
+        assert data["workflows"][0]["workflowId"] == "wf-uuid-001"
+        assert data["workflows"][0]["actualSuccessRate"] == 0.95
+
+    def test_missing_action_type_ut_005(self):
+        """
+        UT-HAPI-017-001-005: Missing action_type parameter returns error
+
+        Verifies tool validates required action_type parameter.
+        """
+        from src.toolsets.workflow_discovery import ListWorkflowsTool
+
+        tool = ListWorkflowsTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        result = tool.invoke(params={})
+
+        assert result.status == StructuredToolResultStatus.ERROR
+        assert "action_type" in result.error.lower()
+
+    def test_pagination_all_pages_ut_006(self):
+        """
+        UT-HAPI-017-001-006: Tool supports pagination parameters
+
+        Verifies offset and limit can be provided for multi-page retrieval.
+        DD-WORKFLOW-016: LLM MUST review ALL pages.
+        """
+        from src.toolsets.workflow_discovery import ListWorkflowsTool
+
+        tool = ListWorkflowsTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actionType": "ScaleReplicas",
+            "workflows": [{"workflowId": "wf-1", "workflowName": "wf-1"}],
+            "pagination": {"totalCount": 15, "offset": 10, "limit": 10, "hasMore": True}
+        }
+
+        with patch('requests.get', return_value=mock_response) as mock_get:
+            result = tool.invoke(params={"action_type": "ScaleReplicas", "offset": 10, "limit": 10})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+        assert data["pagination"]["hasMore"] is True
+        assert data["pagination"]["totalCount"] == 15
+
+
+# ========================================
+# STEP 3: GetWorkflowTool Tests
+# ========================================
+
+class TestGetWorkflowTool:
+    """
+    UT-HAPI-017-001-007 through 009: Unit tests for get_workflow tool
+    """
+
+    def test_successful_workflow_retrieval_ut_007(self):
+        """
+        UT-HAPI-017-001-007: Successful workflow retrieval by ID
+
+        Verifies tool returns full workflow with parameter schema.
+        """
+        from src.toolsets.workflow_discovery import GetWorkflowTool
+
+        tool = GetWorkflowTool(
+            data_storage_url="http://mock:8080",
+            remediation_id="rem-test-007",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "workflow_id": "wf-uuid-001",
+            "workflow_name": "scale-conservative",
+            "name": "Conservative Scale",
+            "description": "Scales replicas conservatively",
+            "version": "v1.0.0",
+            "container_image": "quay.io/kubernaut-ai/scale:v1.0.0",
+            "action_type": "ScaleReplicas",
+            "parameters": {
+                "schema": {
+                    "parameters": [
+                        {"name": "REPLICAS", "type": "integer", "required": True},
+                        {"name": "NAMESPACE", "type": "string", "required": True}
+                    ]
+                }
+            }
+        }
+
+        with patch('requests.get', return_value=mock_response):
+            result = tool.invoke(params={"workflow_id": "wf-uuid-001"})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+        assert data["workflow_id"] == "wf-uuid-001"
+        assert "parameters" in data
+
+    def test_missing_workflow_id_ut_008(self):
+        """
+        UT-HAPI-017-001-008: Missing workflow_id parameter returns error
+
+        Verifies tool validates required workflow_id parameter.
+        """
+        from src.toolsets.workflow_discovery import GetWorkflowTool
+
+        tool = GetWorkflowTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        result = tool.invoke(params={})
+
+        assert result.status == StructuredToolResultStatus.ERROR
+        assert "workflow_id" in result.error.lower()
+
+    def test_workflow_not_found_security_gate_ut_009(self):
+        """
+        UT-HAPI-017-001-009: 404 response (security gate) handled correctly
+
+        DD-WORKFLOW-016: When context filters don't match, DS returns 404.
+        Tool should return ERROR with appropriate message.
+        """
+        from src.toolsets.workflow_discovery import GetWorkflowTool
+        import requests
+
+        tool = GetWorkflowTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=mock_response
+        )
+        mock_response.json.return_value = {
+            "type": "https://kubernaut.ai/problems/workflow-not-found",
+            "title": "Workflow Not Found",
+            "status": 404,
+            "detail": "Workflow not found or does not match the provided signal context."
+        }
+
+        with patch('requests.get', return_value=mock_response):
+            result = tool.invoke(params={"workflow_id": "wf-nonexistent"})
+
+        assert result.status == StructuredToolResultStatus.ERROR
+        assert "not found" in result.error.lower() or "404" in result.error
+
+
+# ========================================
+# TOOLSET REGISTRATION Tests
+# ========================================
+
+class TestWorkflowDiscoveryToolset:
+    """
+    UT-HAPI-017-003-001: Toolset registers all three discovery tools
+    """
+
+    def test_toolset_contains_three_tools(self):
+        """
+        Verifies WorkflowDiscoveryToolset has exactly 3 tools.
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+
+        toolset = WorkflowDiscoveryToolset(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        assert len(toolset.tools) == 3
+        tool_names = [t.name for t in toolset.tools]
+        assert "list_available_actions" in tool_names
+        assert "list_workflows" in tool_names
+        assert "get_workflow" in tool_names
+
+    def test_toolset_enabled_by_default(self):
+        """
+        Verifies toolset is enabled by default.
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+
+        toolset = WorkflowDiscoveryToolset(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        assert toolset.enabled is True
+
+    def test_toolset_propagates_context(self):
+        """
+        Verifies toolset passes context (remediation_id, filters) to all tools.
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+
+        toolset = WorkflowDiscoveryToolset(
+            remediation_id="rem-ctx-test",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        for tool in toolset.tools:
+            assert tool._remediation_id == "rem-ctx-test"
+            assert tool._severity == "critical"
+            assert tool._component == "pod"
+            assert tool._environment == "production"
+            assert tool._priority == "P0"
