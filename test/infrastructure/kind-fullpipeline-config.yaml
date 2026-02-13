@@ -5,10 +5,12 @@
 # to test the complete remediation lifecycle:
 #   Gateway → RO → SP → AA → HAPI → WE → Notification
 #
-# Port Allocation (from DD-TEST-001):
+# Port Allocation (from DD-TEST-001 v2.8):
 #   Gateway API:      hostPort 30080, NodePort 30080
 #   Data Storage API: hostPort 30081, NodePort 30081
 #   Mock LLM:         ClusterIP only (internal access by HAPI)
+#   Prometheus:        hostPort 9190,  NodePort 30190 (EM metric comparison)
+#   AlertManager:      hostPort 9193,  NodePort 30193 (EM alert resolution)
 #
 # Kubeconfig Convention (per TESTING_GUIDELINES.md):
 #   Pattern: ~/.kube/{service}-e2e-config
@@ -27,6 +29,8 @@
 #   - Notification Controller: ~64MB
 #   - HAPI + Mock LLM: ~512MB
 #   - Event Exporter: ~64MB
+#   - Prometheus: ~128MB
+#   - AlertManager: ~64MB
 #   - Memory Eater Pod: ~256MB (target workload)
 #   - Buffer: ~1.5GB
 #
@@ -50,6 +54,14 @@ nodes:
   # DataStorage (for workflow catalog seeding and audit queries)
   - containerPort: 30081  # DataStorage NodePort
     hostPort: 30081       # DD-TEST-001: DataStorage API
+    protocol: TCP
+  # Prometheus (for EM metric comparison - remote write receiver)
+  - containerPort: 30190  # Prometheus NodePort
+    hostPort: 9190        # DD-TEST-001 v2.8: Prometheus
+    protocol: TCP
+  # AlertManager (for EM alert resolution queries)
+  - containerPort: 30193  # AlertManager NodePort
+    hostPort: 9193        # DD-TEST-001 v2.8: AlertManager
     protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure

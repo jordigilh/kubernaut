@@ -168,6 +168,7 @@ jobs:
           - aianalysis
           - authwebhook
           - datastorage
+          - effectivenessmonitor
           - gateway
           - notification
           - remediationorchestrator
@@ -411,6 +412,9 @@ jobs:
           - service: workflowexecution
             dockerfile: docker/workflowexecution-controller.Dockerfile
             image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
+          - service: effectivenessmonitor
+            dockerfile: docker/effectivenessmonitor-controller.Dockerfile
+            image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
           # Python Services (1)
           - service: holmesgpt-api
             dockerfile: holmesgpt-api/Dockerfile.e2e
@@ -519,7 +523,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -545,6 +549,9 @@ jobs:
           - service: datastorage
             service_name: "Data Storage"
             timeout: 10
+          - service: effectivenessmonitor
+            service_name: "Effectiveness Monitor"
+            timeout: 15
           - service: holmesgpt-api
             service_name: "HolmesGPT API"
             timeout: 10
@@ -695,7 +702,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api, fullpipeline]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -721,6 +728,9 @@ jobs:
           - service: datastorage
             service_name: "Data Storage"
             timeout: 35
+          - service: effectivenessmonitor
+            service_name: "Effectiveness Monitor"
+            timeout: 40
           - service: holmesgpt-api
             service_name: "HolmesGPT API"
             timeout: 35
