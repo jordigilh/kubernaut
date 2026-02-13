@@ -143,16 +143,16 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-API-001: Use typed OpenAPI struct
 			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
 			workflowID := fmt.Sprintf("%s-v1-0-0", workflowName)
-			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			workflowContent := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "v1.0.0"
-  description: Increases memory limits conservatively for OOMKilled pods
+  description:
+    what: Increases memory limits conservatively for OOMKilled pods
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: medium
   component: deployment
   environment: production
   priority: P0
@@ -216,16 +216,16 @@ execution:
 			// DD-API-001: Use typed OpenAPI struct
 			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
 			workflowID := fmt.Sprintf("%s-v1-1-0", workflowName)
-			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			workflowContent := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "v1.1.0"
-  description: Improved version with better memory calculation
+  description:
+    what: Improved version with better memory calculation
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: medium
   component: deployment
   environment: production
   priority: P0
@@ -299,16 +299,16 @@ execution:
 			// DD-API-001: Use typed OpenAPI struct
 			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
 			workflowID := fmt.Sprintf("%s-v2-0-0", workflowName)
-			workflowContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			workflowContent := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "v2.0.0"
-  description: Major version with horizontal scaling support
+  description:
+    what: Major version with horizontal scaling support
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: medium
   component: deployment
   environment: production
   priority: P0

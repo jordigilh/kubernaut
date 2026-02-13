@@ -123,7 +123,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
 					Name:            "Test Workflow",
-					Description:     "Integration test workflow",
+					Description:     models.StructuredDescription{What: "Integration test workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -192,7 +192,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			var persistedLabels map[string]interface{}
 			err = json.Unmarshal(dbLabels, &persistedLabels)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(persistedLabels).To(HaveKeyWithValue("signal_type", "prometheus"))
+			Expect(persistedLabels).To(HaveKeyWithValue("signalType", "prometheus"))
 			Expect(persistedLabels).To(HaveKeyWithValue("severity", "critical"))
 			// Verify environment is an array
 			Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
@@ -221,7 +221,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
 					Name:            "Original Workflow",
-					Description:     "First workflow",
+					Description:     models.StructuredDescription{What: "First workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -240,7 +240,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName, // Same name
 					Version:         "v1.0.0",     // Same version
 					Name:            "Duplicate Workflow",
-					Description:     "Duplicate workflow",
+					Description:     models.StructuredDescription{What: "Duplicate workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -285,7 +285,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
 				Name:            "Test Workflow Get",
-				Description:     "Test workflow for Get method",
+				Description:     models.StructuredDescription{What: "Test workflow for Get method", WhenToUse: "Testing"},
 				Content:         content,
 				ContentHash:     contentHash,
 				Labels:          labels,
@@ -385,7 +385,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    wf.name,
 					Version:         wf.version,
 					Name:            wf.name,
-					Description:     "Test workflow",
+					Description:     models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -523,7 +523,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
 				Name:            "Workflow to Update",
-				Description:     "Test workflow for status update",
+				Description:     models.StructuredDescription{What: "Test workflow for status update", WhenToUse: "Testing"},
 				Content:         content,
 				ContentHash:     contentHash,
 				Labels:          labels,

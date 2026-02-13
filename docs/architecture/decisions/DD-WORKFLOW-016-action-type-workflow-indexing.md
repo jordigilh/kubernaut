@@ -6,9 +6,18 @@
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
 **Affects**: Data Storage Service, HolmesGPT API, Workflow Catalog, Signal Processing
 **Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Predictive Signal Mode Classification)
-**Version**: 1.0
+**Version**: 1.1
 
 ---
+
+## Changelog
+
+### Version 1.1 (2026-02-13)
+- **BR-WORKFLOW-004**: JSONB labels keys unified to camelCase (`signal_type` -> `signalType`)
+- **BR-WORKFLOW-004**: `riskTolerance` deprecated (never stored in DB, removed from workflow-schema.yaml)
+- **BR-WORKFLOW-004**: `actionType` is now a top-level field in workflow-schema.yaml (not inside labels)
+- SQL queries updated: `labels->>'signal_type'` -> `labels->>'signalType'` (migration 026)
+- See `docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md` for authoritative format specification
 
 ## Changelog
 

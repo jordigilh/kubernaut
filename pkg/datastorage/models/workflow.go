@@ -56,8 +56,10 @@ type RemediationWorkflow struct {
 	// ========================================
 	// METADATA
 	// ========================================
-	Name        string  `json:"name" db:"name" validate:"required,max=255"`
-	Description string  `json:"description" db:"description" validate:"required"`
+	Name string `json:"name" db:"name" validate:"required,max=255"`
+	// Description is a structured JSONB description (BR-WORKFLOW-004, migration 026)
+	// Format: {"what": "...", "whenToUse": "...", "whenNotToUse": "...", "preconditions": "..."}
+	Description StructuredDescription `json:"description" db:"description" validate:"required"`
 	Owner       *string `json:"owner,omitempty" db:"owner" validate:"omitempty,max=255"`
 	Maintainer  *string `json:"maintainer,omitempty" db:"maintainer" validate:"omitempty,max=255,email"`
 
@@ -91,7 +93,7 @@ type RemediationWorkflow struct {
 	// V1.0: Replaced json.RawMessage with structured types for compile-time validation
 
 	// Labels contains the 5 mandatory workflow labels
-	// Required: YES (signal_type, severity, component, environment, priority)
+	// Required: YES (signalType, severity, component, environment, priority)
 	// Authority: DD-WORKFLOW-001 v1.4
 	Labels MandatoryLabels `json:"labels" db:"labels" validate:"required"`
 
@@ -175,7 +177,7 @@ type WorkflowSearchRequest struct {
 	RemediationID string `json:"remediation_id,omitempty"`
 
 	// Filters for label-based matching (REQUIRED)
-	// Must include at minimum: signal_type, severity, component, environment, priority
+	// Must include at minimum: signalType, severity, component, environment, priority
 	// Authority: DD-CONTEXT-005 (Filter Before LLM pattern)
 	Filters *WorkflowSearchFilters `json:"filters" validate:"required"`
 
@@ -334,8 +336,8 @@ type WorkflowSearchResult struct {
 	// Title is the human-readable workflow name (DD-WORKFLOW-002 v3.0: renamed from "name")
 	Title string `json:"title"`
 
-	// Description is the workflow description
-	Description string `json:"description"`
+	// Description is the structured workflow description (BR-WORKFLOW-004)
+	Description StructuredDescription `json:"description"`
 
 	// SignalType is the signal type this workflow handles (DD-WORKFLOW-002 v3.0: singular, not array)
 	SignalType string `json:"signal_type"`
@@ -434,7 +436,7 @@ func (w *RemediationWorkflow) IsArchived() bool {
 
 // V1.0: Removed GetLabelsMap() and SetLabelsFromMap() methods
 // Rationale: With structured types, direct field access is preferred
-// Migration: Use w.Labels.SignalType instead of map["signal_type"]
+// Migration: Use w.Labels.SignalType instead of map["signalType"]
 // Authority: Zero unstructured data mandate for V1.0
 
 // ========================================
@@ -467,7 +469,7 @@ type WorkflowUpdateRequest struct {
 	DisabledReason *string `json:"disabled_reason,omitempty"` // Why the workflow was disabled
 
 	// Immutable fields - included for validation (will be rejected if provided)
-	Description *string          `json:"description,omitempty"` // IMMUTABLE - rejected if provided
+	Description *StructuredDescription `json:"description,omitempty"` // IMMUTABLE - rejected if provided
 	Content     *string          `json:"content,omitempty"`     // IMMUTABLE - rejected if provided
 	Labels      *json.RawMessage `json:"labels,omitempty"`      // IMMUTABLE - rejected if provided
 }

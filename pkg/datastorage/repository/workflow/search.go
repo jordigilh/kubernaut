@@ -59,11 +59,11 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	// Authority: DD-WORKFLOW-001 v1.6 (5 mandatory labels)
 	// These filters provide the base score of 5.0 (one point per exact match)
 
-	// Mandatory Filter 1: signal_type (exact match)
+	// Mandatory Filter 1: signalType (exact match)
 	if request.Filters.SignalType == "" {
-		return nil, fmt.Errorf("filters.signal_type is required")
+		return nil, fmt.Errorf("filters.signalType is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signal_type' = $%d", argIndex))
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signalType' = $%d", argIndex))
 	args = append(args, request.Filters.SignalType)
 	argIndex++
 

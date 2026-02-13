@@ -21,12 +21,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/stream"
+	"github.com/google/go-containerregistry/pkg/v1/static"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 // ========================================
@@ -61,7 +61,10 @@ func (m *MockImagePuller) Pull(_ context.Context, ref string) (v1.Image, string,
 			return nil, "", fmt.Errorf("build mock layer: %w", err)
 		}
 
-		layer := stream.NewLayer(io.NopCloser(bytes.NewReader(layerContent)))
+		// Use static.NewLayer to create a materialized layer (not streaming).
+		// stream.NewLayer's digest isn't available until consumed, which fails
+		// when the extractor calls img.Digest() before reading layers.
+		layer := static.NewLayer(layerContent, types.DockerLayer)
 		img, err = mutate.AppendLayers(img, layer)
 		if err != nil {
 			return nil, "", fmt.Errorf("append mock layer: %w", err)

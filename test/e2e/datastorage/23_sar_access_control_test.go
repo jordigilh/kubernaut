@@ -313,16 +313,16 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			logger.Info("🧪 Test 4: Workflow catalog operations capture X-Auth-Request-User header")
 
 			// ADR-043 compliant workflow-schema.yaml content (required by HandleCreateWorkflow)
-			workflowSchemaContent := `apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: sar-test-workflow
+			workflowSchemaContent := `metadata:
+  workflowId: sar-test-workflow
   version: "1.0.0"
-  description: E2E test workflow for SAR validation
+  description:
+    what: E2E test workflow for SAR validation
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: prometheus-alert
+  signalType: prometheus-alert
   severity: high
-  risk_tolerance: medium
   component: pod
   environment: test
   priority: p2
@@ -420,16 +420,16 @@ execution:
 
 			// ADR-043 compliant workflow-schema.yaml content (required by HandleCreateWorkflow)
 			// This workflow is never created (403 expected), but content must be valid for request to reach SAR check
-			workflowSchemaContent := `apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: sar-test-unauthorized-workflow
+			workflowSchemaContent := `metadata:
+  workflowId: sar-test-unauthorized-workflow
   version: "1.0.0"
-  description: Should fail - no permissions
+  description:
+    what: Should fail - no permissions
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: prometheus-alert
+  signalType: prometheus-alert
   severity: low
-  risk_tolerance: high
   component: pod
   environment: test
   priority: p3

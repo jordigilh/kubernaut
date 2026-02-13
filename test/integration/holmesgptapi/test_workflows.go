@@ -23,6 +23,7 @@ import (
 
 // HAPIWorkflowFixture defines test workflow data for HAPI integration tests
 // Pattern: Matches holmesgpt-api/tests/fixtures/workflow_fixtures.py structure
+// BR-WORKFLOW-004: riskTolerance removed (deprecated, never stored in DB)
 type HAPIWorkflowFixture struct {
 	WorkflowName    string
 	Version         string
@@ -34,27 +35,26 @@ type HAPIWorkflowFixture struct {
 	Component       string
 	Environment     string
 	Priority        string
-	RiskTolerance   string
 	ContainerImage  string
 	ContainerDigest string
 	ContentHash     string
 }
 
-// ToYAMLContent generates workflow YAML content (matches Python fixture)
+// ToYAMLContent generates workflow YAML content per BR-WORKFLOW-004 format
 func (wf *HAPIWorkflowFixture) ToYAMLContent() string {
-	return fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+	return fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "%s"
-  description: %s
+  description:
+    what: %s
+    whenToUse: Test workflow for %s
+actionType: %s
 labels:
-  signal_type: %s
+  signalType: %s
   severity: %s
   component: %s
   environment: %s
   priority: %s
-  risk_tolerance: %s
 parameters:
   - name: NAMESPACE
     type: string
@@ -66,8 +66,9 @@ parameters:
     description: Target resource name
 execution:
   engine: tekton
-  bundle: %s`, wf.WorkflowName, wf.Version, wf.Description, wf.SignalType,
-		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.RiskTolerance, wf.ContainerImage)
+  bundle: %s`, wf.WorkflowName, wf.Version, wf.Description, wf.ActionType,
+		wf.ActionType, wf.SignalType,
+		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.ContainerImage)
 }
 
 // GetHAPITestWorkflows returns test workflows for HAPI integration tests
@@ -85,7 +86,6 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P0",
-			RiskTolerance:   "low",
 			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001",
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
 		},
@@ -100,7 +100,6 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "deployment",
 			Environment:     "staging",
 			Priority:        "P1",
-			RiskTolerance:   "medium",
 			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002",
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000002",
 		},
@@ -115,7 +114,6 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			RiskTolerance:   "low",
 			ContainerImage:  "ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003",
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000003",
 		},
@@ -130,7 +128,6 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "node",
 			Environment:     "production",
 			Priority:        "P0",
-			RiskTolerance:   "low",
 			ContainerImage:  "ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004",
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000004",
 		},
@@ -145,7 +142,6 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			RiskTolerance:   "medium",
 			ContainerImage:  "ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005",
 			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000005",
 		},

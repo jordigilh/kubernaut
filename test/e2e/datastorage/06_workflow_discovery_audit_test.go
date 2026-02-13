@@ -57,16 +57,16 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		testID := uuid.New().String()[:8]
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
 		workflowName := fmt.Sprintf("audit-discovery-e2e-%s", testID)
-		content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+		content := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "1.0.0"
-  description: Audit event test workflow
+  description:
+    what: Audit event test workflow
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: low
   component: pod
   environment: production
   priority: p0
