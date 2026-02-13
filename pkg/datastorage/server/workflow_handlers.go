@@ -208,15 +208,15 @@ func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWork
 	if workflow.Name == "" {
 		return fmt.Errorf("name is required")
 	}
-	if workflow.Description == "" {
-		return fmt.Errorf("description is required")
+	if workflow.Description.What == "" {
+		return fmt.Errorf("description.what is required")
 	}
 	if workflow.Content == "" {
 		return fmt.Errorf("content is required")
 	}
 	// V1.0: MandatoryLabels is a struct (not pointer), validate required fields
 	if workflow.Labels.SignalType == "" || workflow.Labels.Severity == "" || workflow.Labels.Component == "" {
-		return fmt.Errorf("labels are required (signal_type, severity, component, environment, priority)")
+		return fmt.Errorf("labels are required (signalType, severity, component, environment, priority)")
 	}
 	return nil
 }

@@ -40,10 +40,11 @@ type ActionTypeTaxonomy struct {
 
 // ActionTypeDescription represents the JSONB description structure for an action type
 // Stored in action_type_taxonomy.description column
+// BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data)
 type ActionTypeDescription struct {
-	What         string `json:"what"`
-	WhenToUse    string `json:"when_to_use"`
-	WhenNotToUse string `json:"when_not_to_use,omitempty"`
+	What          string `json:"what"`
+	WhenToUse     string `json:"whenToUse"`
+	WhenNotToUse  string `json:"whenNotToUse,omitempty"`
 	Preconditions string `json:"preconditions,omitempty"`
 }
 
@@ -61,7 +62,7 @@ type WorkflowDiscoveryEntry struct {
 	WorkflowID      string   `json:"workflowId"`
 	WorkflowName    string   `json:"workflowName"`
 	Name            string   `json:"name"`
-	Description     string   `json:"description"`
+	Description     StructuredDescription `json:"description"`
 	Version         string   `json:"version"`
 	ContainerImage  string   `json:"containerImage,omitempty"`
 	ExecutionEngine string   `json:"executionEngine,omitempty"`

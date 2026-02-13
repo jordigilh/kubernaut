@@ -250,7 +250,7 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 
 		// Label filters (JSONB queries)
 		if filters.SignalType != "" {
-			builder.Where("labels->>'signal_type' = ?", filters.SignalType)
+			builder.Where("labels->>'signalType' = ?", filters.SignalType)
 		}
 		if filters.Severity != "" {
 			builder.Where("labels->>'severity' = ?", filters.Severity)

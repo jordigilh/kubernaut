@@ -114,7 +114,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-gitops", testID),
 					Version:      "v1.0",
 					Name:         "GitOps Workflow",
-					Description:  "Workflow managed by GitOps",
+					Description:  models.StructuredDescription{What: "Workflow managed by GitOps", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -137,7 +137,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-manual", testID),
 					Version:      "v1.0",
 					Name:         "Manual Workflow",
-					Description:  "Workflow without GitOps",
+					Description:  models.StructuredDescription{What: "Workflow without GitOps", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -245,7 +245,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-pdb", testID),
 					Version:      "v1.0",
 					Name:         "PDB-Protected Workflow",
-					Description:  "Workflow with PodDisruptionBudget protection",
+					Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
@@ -270,7 +270,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-nopdb", testID),
 					Version:      "v1.0",
 					Name:         "No PDB Workflow",
-					Description:  "Workflow without PDB protection",
+					Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
@@ -372,7 +372,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-manual-penalty", testID),
 					Version:      "v1.0",
 					Name:         "Manual Workflow (GitOps Required)",
-					Description:  "Manual workflow when GitOps is required",
+					Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "DatabaseConnectionLeak",
 						Severity:    "critical",
@@ -468,7 +468,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-custom2", testID),
 					Version:      "v1.0",
 					Name:         "Workflow with 2 Custom Labels",
-					Description:  "Testing custom label scoring",
+					Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -491,7 +491,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-custom1", testID),
 					Version:      "v1.0",
 					Name:         "Workflow with 1 Custom Label",
-					Description:  "Testing custom label scoring",
+					Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -592,7 +592,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-istio", testID),
 					Version:      "v1.0",
 					Name:         "Istio Service Mesh Workflow",
-					Description:  "Workflow for Istio service mesh",
+					Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
@@ -617,7 +617,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-nomesh", testID),
 					Version:      "v1.0",
 					Name:         "No Service Mesh Workflow",
-					Description:  "Workflow without service mesh",
+					Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
@@ -713,7 +713,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					WorkflowName: fmt.Sprintf("wf-scoring-%s-istio-exact", testID),
 					Version:      "v1.0",
 					Name:         "Istio Service Mesh Workflow",
-					Description:  "Workflow for Istio service mesh",
+					Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",

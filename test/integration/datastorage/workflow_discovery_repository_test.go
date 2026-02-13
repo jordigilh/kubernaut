@@ -99,7 +99,10 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", func() {
 			WorkflowName:    fmt.Sprintf("wf-disc-%s-%s", testID, name),
 			Version:         version,
 			Name:            name,
-			Description:     fmt.Sprintf("Test workflow %s for discovery", name),
+			Description: models.StructuredDescription{
+				What:      fmt.Sprintf("Test workflow %s for discovery", name),
+				WhenToUse: "Testing",
+			},
 			Content:         content,
 			ContentHash:     hash,
 			Labels:          labels,

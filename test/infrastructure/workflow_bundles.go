@@ -117,20 +117,21 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 	// ADR-043: Generate valid workflow-schema.yaml content
 	// DataStorage's HandleCreateWorkflow will parse and validate this (BR-HAPI-191)
 	schema := models.WorkflowSchema{
-		APIVersion: "kubernaut.io/v1alpha1",
-		Kind:       "WorkflowSchema",
+		ActionType: "RestartPod",
 		Metadata: models.WorkflowSchemaMetadata{
-			WorkflowID:  workflowName,
-			Version:     version,
-			Description: description,
+			WorkflowID: workflowName,
+			Version:    version,
+			Description: models.WorkflowDescription{
+				What:      description,
+				WhenToUse: "Test workflow for bundle registration",
+			},
 		},
 		Labels: models.WorkflowSchemaLabels{
-			SignalType:    "test-signal",
-			Severity:      "low",
-			RiskTolerance: "high",
-			Environment:   "test",
-			Component:     "deployment",
-			Priority:      "p3",
+			SignalType:  "test-signal",
+			Severity:    "low",
+			Environment: "test",
+			Component:   "deployment",
+			Priority:    "p3",
 		},
 		Execution: &models.WorkflowExecution{
 			Engine: "tekton",

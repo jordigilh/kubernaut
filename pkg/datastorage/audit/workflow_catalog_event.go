@@ -109,8 +109,8 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 		Name:            workflow.Name,
 	}
 	// Set optional fields using .SetTo()
-	if workflow.Description != "" {
-		payload.Description.SetTo(workflow.Description)
+	if workflow.Description.What != "" {
+		payload.Description.SetTo(workflow.Description.What)
 	}
 	if len(labelsMap) > 0 {
 		// Convert map[string]interface{} to map[string]jx.Raw

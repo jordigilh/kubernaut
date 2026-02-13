@@ -155,16 +155,16 @@ func createTestWorkflowRequest(workflowName, version string) *ogenclient.Remedia
 	name := "Test Duplicate Workflow"
 	description := "Test workflow for duplicate detection"
 	// ADR-043: Full WorkflowSchema format required (rejects minimal/incomplete schemas)
-	content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+	content := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "%s"
-  description: %s
+  description:
+    what: %s
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: medium
-  risk_tolerance: medium
   component: pod
   environment: test
   priority: p2

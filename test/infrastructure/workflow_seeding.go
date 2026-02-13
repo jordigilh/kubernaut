@@ -252,16 +252,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 // from a TestWorkflow definition. This content is what DataStorage's HandleCreateWorkflow
 // will parse to extract and store parameter schemas (BR-HAPI-191).
 func buildWorkflowSchemaContent(wf TestWorkflow, version string) (string, error) {
-	// Map severity to risk_tolerance (sensible defaults for test workflows)
-	riskTolerance := "medium"
-	switch wf.Severity {
-	case "critical":
-		riskTolerance = "low"
-	case "high":
-		riskTolerance = "low"
-	case "low":
-		riskTolerance = "high"
-	}
+	// BR-WORKFLOW-004: riskTolerance removed (deprecated, never stored in DB)
 
 	// Build execution engine config
 	executionEngine := wf.ExecutionEngine
@@ -284,20 +275,21 @@ func buildWorkflowSchemaContent(wf TestWorkflow, version string) (string, error)
 	}
 
 	schema := models.WorkflowSchema{
-		APIVersion: "kubernaut.io/v1alpha1",
-		Kind:       "WorkflowSchema",
+		ActionType: wf.ActionType,
 		Metadata: models.WorkflowSchemaMetadata{
-			WorkflowID:  wf.WorkflowID,
-			Version:     version,
-			Description: wf.Description,
+			WorkflowID: wf.WorkflowID,
+			Version:    version,
+			Description: models.WorkflowDescription{
+				What:      wf.Description,
+				WhenToUse: "Test workflow for " + wf.ActionType,
+			},
 		},
 		Labels: models.WorkflowSchemaLabels{
-			SignalType:    wf.SignalType,
-			Severity:      wf.Severity,
-			RiskTolerance: riskTolerance,
-			Environment:   wf.Environment,
-			Component:     wf.Component,
-			Priority:      strings.ToLower(wf.Priority),
+			SignalType:  wf.SignalType,
+			Severity:    wf.Severity,
+			Environment: wf.Environment,
+			Component:   wf.Component,
+			Priority:    strings.ToLower(wf.Priority),
 		},
 		Execution: &models.WorkflowExecution{
 			Engine: executionEngine,

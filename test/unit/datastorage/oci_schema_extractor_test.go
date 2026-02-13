@@ -31,27 +31,32 @@ import (
 // OCI SCHEMA EXTRACTOR TESTS (DD-WORKFLOW-017)
 // ========================================
 // Authority: DD-WORKFLOW-017 (OCI-based Workflow Registration)
+// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
 // Business Requirement: BR-WORKFLOW-001 (Workflow Registry Management)
 // ========================================
 //
 // Tests cover:
-// - C2: ActionType in WorkflowSchemaLabels + ExtractLabels
+// - C2: ActionType at top-level + ExtractLabels camelCase keys
 // - C3: OCI schema extraction (pull image, extract /workflow-schema.yaml)
+//
+// BR-WORKFLOW-004 format: plain config file, camelCase fields, no apiVersion/kind,
+// structured description, no riskTolerance
 //
 // ========================================
 
-// validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml for testing
-const validWorkflowSchemaYAML = `apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: oomkill-scale-down
+// validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml per BR-WORKFLOW-004
+const validWorkflowSchemaYAML = `metadata:
+  workflowId: oomkill-scale-down
   version: "1.0.0"
-  description: OOMKill recovery workflow
+  description:
+    what: Restarts a pod that was OOMKilled to restore service
+    whenToUse: OOMKilled events where the pod is managed by a controller
+    whenNotToUse: When the crash is caused by a persistent code bug
+    preconditions: Pod is managed by a Deployment or StatefulSet
+actionType: RestartPod
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: low
-  action_type: restart_pod
   environment: production
   component: pod
   priority: p1
@@ -71,23 +76,23 @@ parameters:
 
 var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
-	Context("C2: ActionType in WorkflowSchemaLabels", func() {
+	Context("C2: ActionType and Labels (BR-WORKFLOW-004)", func() {
 		var parser *schema.Parser
 
 		BeforeEach(func() {
 			parser = schema.NewParser()
 		})
 
-		It("UT-DS-017-001: should parse action_type from workflow-schema.yaml", func() {
-			// BR-WORKFLOW-001: action_type is a mandatory field for workflow indexing
+		It("UT-DS-017-001: should parse actionType from top-level field", func() {
+			// BR-WORKFLOW-004: actionType is a required top-level field
 			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedSchema.Labels.ActionType).To(Equal("restart_pod"),
-				"action_type should be parsed from labels section")
+			Expect(parsedSchema.ActionType).To(Equal("RestartPod"),
+				"actionType should be parsed from top-level field")
 		})
 
-		It("UT-DS-017-002: should include action_type in ExtractLabels output", func() {
-			// DD-WORKFLOW-016: action_type must be extractable for DB indexing
+		It("UT-DS-017-002: should extract labels with camelCase keys", func() {
+			// BR-WORKFLOW-004: JSONB labels use camelCase keys
 			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -96,7 +101,37 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 			var labels map[string]string
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
-			Expect(labels).To(HaveKeyWithValue("action_type", "restart_pod"))
+			Expect(labels).To(HaveKeyWithValue("signalType", "OOMKilled"))
+			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
+			Expect(labels).To(HaveKeyWithValue("environment", "production"))
+			Expect(labels).To(HaveKeyWithValue("component", "pod"))
+			Expect(labels).To(HaveKeyWithValue("priority", "p1"))
+		})
+
+		It("UT-DS-017-008: should parse structured description", func() {
+			// BR-WORKFLOW-004: description is structured (what, whenToUse, whenNotToUse, preconditions)
+			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			Expect(err).ToNot(HaveOccurred())
+
+			desc := parsedSchema.Metadata.Description
+			Expect(desc.What).To(ContainSubstring("Restarts a pod"))
+			Expect(desc.WhenToUse).To(ContainSubstring("OOMKilled events"))
+			Expect(desc.WhenNotToUse).To(ContainSubstring("persistent code bug"))
+			Expect(desc.Preconditions).To(ContainSubstring("Deployment or StatefulSet"))
+		})
+
+		It("UT-DS-017-009: should extract structured description as JSON", func() {
+			// BR-WORKFLOW-004: description stored as JSONB in DB
+			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			Expect(err).ToNot(HaveOccurred())
+
+			descJSON, err := parser.ExtractDescription(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var desc map[string]string
+			Expect(json.Unmarshal(descJSON, &desc)).To(Succeed())
+			Expect(desc).To(HaveKey("what"))
+			Expect(desc).To(HaveKey("whenToUse"))
 		})
 	})
 
@@ -112,15 +147,13 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(result).ToNot(BeNil())
 			Expect(result.Schema).ToNot(BeNil())
 			Expect(result.Schema.Metadata.WorkflowID).To(Equal("oomkill-scale-down"))
-			Expect(result.Schema.Labels.ActionType).To(Equal("restart_pod"))
+			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
 			Expect(result.Digest).ToNot(BeEmpty())
-			Expect(result.RawContent).To(ContainSubstring("apiVersion"))
+			Expect(result.RawContent).To(ContainSubstring("actionType"))
 		})
 	})
 
-	// ⭐ TABLE-DRIVEN: Error cases share the same assert structure
-	// BEHAVIOR: Extractor returns descriptive errors for various failure modes
-	// CORRECTNESS: Error messages identify the root cause (pull, missing file, parse, validate)
+	// Table-driven error cases: extractor returns descriptive errors for failure modes
 	Context("C3: OCI Schema Extraction — Error Cases", func() {
 		DescribeTable("should return descriptive error",
 			func(puller oci.ImagePuller, imageRef string, expectedErrSubstring string) {
@@ -149,15 +182,19 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 				"YAML",
 			),
 
-			Entry("UT-DS-017-007: schema missing mandatory labels (severity, risk_tolerance)",
-				oci.NewMockImagePuller(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: incomplete
+			Entry("UT-DS-017-007: schema missing required fields (actionType, labels)",
+				oci.NewMockImagePuller(`metadata:
+  workflowId: incomplete
   version: "1.0.0"
-  description: Missing labels
+  description:
+    what: Incomplete workflow
+    whenToUse: Testing validation
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
+  severity: critical
+  environment: production
+  component: pod
+  priority: p1
 parameters:
   - name: PARAM
     type: string
@@ -165,7 +202,7 @@ parameters:
     description: A param
 `),
 				"quay.io/test/incomplete:v1.0.0",
-				"severity",
+				"actionType",
 			),
 		)
 	})

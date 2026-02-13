@@ -65,16 +65,16 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// Create a workflow for discovery tests
 			testID := uuid.New().String()[:8]
 			workflowName := fmt.Sprintf("discovery-e2e-%s", testID)
-			content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			content := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "1.0.0"
-  description: E2E discovery test workflow
+  description:
+    what: E2E discovery test workflow
+    whenToUse: Test workflow
+actionType: ScaleReplicas
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: low
   component: pod
   environment: production
   priority: p0
@@ -214,16 +214,16 @@ execution:
 
 			// Create ACTIVE workflow
 			activeName := fmt.Sprintf("discovery-active-%s", testID)
-			activeContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			activeContent := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "1.0.0"
-  description: Active workflow for exclusion test
+  description:
+    what: Active workflow for exclusion test
+    whenToUse: Test workflow
+actionType: RollbackDeployment
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: high
-  risk_tolerance: medium
   component: deployment
   environment: staging
   priority: p1
@@ -265,16 +265,16 @@ execution:
 
 			// Create DISABLED workflow (same action type)
 			disabledName := fmt.Sprintf("discovery-disabled-%s", testID)
-			disabledContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			disabledContent := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "1.0.0"
-  description: Disabled workflow for exclusion test
+  description:
+    what: Disabled workflow for exclusion test
+    whenToUse: Test workflow
+actionType: RollbackDeployment
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: high
-  risk_tolerance: medium
   component: deployment
   environment: staging
   priority: p1
@@ -353,16 +353,16 @@ execution:
 
 			testID := uuid.New().String()[:8]
 			workflowName := fmt.Sprintf("security-gate-e2e-%s", testID)
-			content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+			content := fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "1.0.0"
-  description: Security gate test workflow
+  description:
+    what: Security gate test workflow
+    whenToUse: Test workflow
+actionType: AdjustResources
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: low
   component: pod
   environment: production
   priority: p0
