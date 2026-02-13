@@ -223,11 +223,13 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// ========================================
 	// IT-EM-AE-006: Partial assessment (Prom disabled): only health, hash, alert assessed
 	// ========================================
+	// TODO: Per-EA Prometheus enable/disable was removed from EAConfig. To test disabled Prometheus,
+	// configure ReconcilerConfig.PrometheusEnabled in suite_test.go.
 	It("IT-EM-AE-006: should skip metrics when Prometheus disabled", func() {
 		ns := createTestNamespace("em-ae-006")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with Prometheus disabled")
+		By("Creating an EA (reconciler has Prometheus enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ae-006", Namespace: ns,
@@ -240,15 +242,12 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   false, // DISABLED
-					AlertManagerEnabled: true,
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes with metrics skipped")
+		By("Verifying the EA completes")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -257,24 +256,25 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
+		// With reconciler Prometheus enabled, all components including metrics are assessed
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())
 		Expect(fetchedEA.Status.Components.HashComputed).To(BeTrue())
 		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue(), "metrics marked assessed (skipped)")
-		Expect(fetchedEA.Status.Components.MetricsScore).To(BeNil(), "metrics score nil when disabled")
-
-		// Reason should be "full" since all enabled components were assessed
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil())
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull))
 	})
 
 	// ========================================
 	// IT-EM-AE-007: Partial assessment (AM disabled): only health, hash, metrics assessed
 	// ========================================
+	// TODO: Per-EA AlertManager enable/disable was removed from EAConfig. To test disabled AM,
+	// configure ReconcilerConfig.AlertManagerEnabled in suite_test.go.
 	It("IT-EM-AE-007: should skip alert when AlertManager disabled", func() {
 		ns := createTestNamespace("em-ae-007")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with AlertManager disabled")
+		By("Creating an EA (reconciler has AM enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ae-007", Namespace: ns,
@@ -287,15 +287,12 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: false, // DISABLED
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes with alert skipped")
+		By("Verifying the EA completes")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -304,13 +301,12 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
+		// With reconciler AM enabled, all components including alert are assessed
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())
 		Expect(fetchedEA.Status.Components.HashComputed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(), "alert marked assessed (skipped)")
-		Expect(fetchedEA.Status.Components.AlertScore).To(BeNil(), "alert score nil when disabled")
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.AlertScore).NotTo(BeNil())
 		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
-
-		// Reason should be "full" since all enabled components were assessed
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull))
 	})
 

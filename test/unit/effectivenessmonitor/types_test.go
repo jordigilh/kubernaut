@@ -122,7 +122,6 @@ var _ = Describe("Core Types (BR-EM-001 through BR-EM-008)", func() {
 
 			Expect(cfg.StabilizationWindow).To(Equal(5 * time.Minute))
 			Expect(cfg.ValidityWindow).To(Equal(30 * time.Minute))
-			Expect(cfg.ScoringThreshold).To(Equal(0.5))
 			Expect(cfg.PrometheusEnabled).To(BeTrue())
 			Expect(cfg.AlertManagerEnabled).To(BeTrue())
 		})

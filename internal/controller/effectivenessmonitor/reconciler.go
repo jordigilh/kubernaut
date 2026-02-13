@@ -306,7 +306,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable
 	if !ea.Status.Components.AlertAssessed {
-		if ea.Spec.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
+		if r.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
 			result := r.assessAlert(ctx, ea)
 			ea.Status.Components.AlertAssessed = result.Assessed
 			ea.Status.Components.AlertScore = result.Score
@@ -321,7 +321,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Metrics check (BR-EM-003) - skip if disabled or client unavailable
 	if !ea.Status.Components.MetricsAssessed {
-		if ea.Spec.Config.PrometheusEnabled && r.PrometheusClient != nil {
+		if r.Config.PrometheusEnabled && r.PrometheusClient != nil {
 			result := r.assessMetrics(ctx, ea)
 			ea.Status.Components.MetricsAssessed = result.Assessed
 			ea.Status.Components.MetricsScore = result.Score
@@ -626,8 +626,8 @@ func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment)
 	components := &ea.Status.Components
 
 	allAssessed := components.HealthAssessed && components.HashComputed &&
-		(components.AlertAssessed || !ea.Spec.Config.AlertManagerEnabled) &&
-		(components.MetricsAssessed || !ea.Spec.Config.PrometheusEnabled)
+		(components.AlertAssessed || !r.Config.AlertManagerEnabled) &&
+		(components.MetricsAssessed || !r.Config.PrometheusEnabled)
 
 	anyAssessed := components.HealthAssessed || components.HashComputed ||
 		components.AlertAssessed || components.MetricsAssessed
@@ -659,30 +659,23 @@ func (r *Reconciler) allComponentsDone(ea *eav1.EffectivenessAssessment) bool {
 	if !ea.Status.Components.HashComputed {
 		return false
 	}
-	if ea.Spec.Config.AlertManagerEnabled && !ea.Status.Components.AlertAssessed {
+	if r.Config.AlertManagerEnabled && !ea.Status.Components.AlertAssessed {
 		return false
 	}
-	if ea.Spec.Config.PrometheusEnabled && !ea.Status.Components.MetricsAssessed {
+	if r.Config.PrometheusEnabled && !ea.Status.Components.MetricsAssessed {
 		return false
 	}
 	return true
 }
 
-// emitCompletionEvent emits a K8s event based on the assessment outcome.
+// emitCompletionEvent emits a K8s event when the assessment completes.
+// The EM emits raw component scores via audit events to DataStorage.
+// The overall effectiveness determination is computed by DataStorage on demand,
+// not by the EM (separation of concerns).
 func (r *Reconciler) emitCompletionEvent(ea *eav1.EffectivenessAssessment, reason string) {
-	// Calculate average score for threshold check
-	avgScore := r.calculateAverageScore(ea)
-
-	if avgScore != nil && *avgScore < ea.Spec.Config.ScoringThreshold {
-		r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonRemediationIneffective,
-			fmt.Sprintf("Assessment score %.2f below threshold %.2f (reason: %s)",
-				*avgScore, ea.Spec.Config.ScoringThreshold, reason))
-		r.Metrics.RecordK8sEvent("Warning", events.EventReasonRemediationIneffective)
-	} else {
-		r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonEffectivenessAssessed,
-			fmt.Sprintf("Assessment completed: %s (correlation: %s)", reason, ea.Spec.CorrelationID))
-		r.Metrics.RecordK8sEvent("Normal", events.EventReasonEffectivenessAssessed)
-	}
+	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonEffectivenessAssessed,
+		fmt.Sprintf("Assessment completed: %s (correlation: %s)", reason, ea.Spec.CorrelationID))
+	r.Metrics.RecordK8sEvent("Normal", events.EventReasonEffectivenessAssessed)
 }
 
 // emitComponentEvent emits a K8s event and an audit event for an individual component assessment.
@@ -712,32 +705,6 @@ func (r *Reconciler) emitComponentEvent(ctx context.Context, ea *eav1.Effectiven
 		}
 		r.Metrics.RecordAuditEvent(string(emtypes.AuditEventTypeForComponent(component)), resultStatus(result))
 	}
-}
-
-// calculateAverageScore computes the average of non-nil component scores.
-func (r *Reconciler) calculateAverageScore(ea *eav1.EffectivenessAssessment) *float64 {
-	var total float64
-	count := 0
-
-	scores := []*float64{
-		ea.Status.Components.HealthScore,
-		ea.Status.Components.AlertScore,
-		ea.Status.Components.MetricsScore,
-	}
-
-	for _, s := range scores {
-		if s != nil {
-			total += *s
-			count++
-		}
-	}
-
-	if count == 0 {
-		return nil
-	}
-
-	avg := total / float64(count)
-	return &avg
 }
 
 // emitPendingTransitionEvents emits K8s events, audit events, and metrics for the

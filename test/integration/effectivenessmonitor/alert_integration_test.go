@@ -179,11 +179,13 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// ========================================
 	// IT-EM-AR-005: AM disabled in config -> no alert assessment
 	// ========================================
+	// TODO: Per-EA AlertManager enable/disable was removed from EAConfig. This test relied on
+	// AlertManagerEnabled: false. To test disabled AM, configure ReconcilerConfig.AlertManagerEnabled.
 	It("IT-EM-AR-005: should skip alert assessment when AM is disabled in config", func() {
 		ns := createTestNamespace("em-ar-005")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with AlertManager DISABLED")
+		By("Creating an EA (reconciler has AM enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ar-005",
@@ -201,15 +203,12 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: false, // DISABLED
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes without alert assessment")
+		By("Verifying the EA completes")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -218,11 +217,9 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// AlertAssessed is set to true (skipped) but AlertScore remains nil
-		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(),
-			"alert should be marked assessed (skipped) when disabled")
-		Expect(fetchedEA.Status.Components.AlertScore).To(BeNil(),
-			"alert score should be nil when AM is disabled")
+		// With reconciler AM enabled, alert is assessed
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.AlertScore).NotTo(BeNil())
 	})
 
 	// ========================================

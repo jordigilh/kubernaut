@@ -248,19 +248,13 @@ const (
 	EventReasonAssessmentStarted = "AssessmentStarted"
 
 	// EventReasonEffectivenessAssessed is emitted when the Effectiveness Monitor
-	// completes a post-remediation assessment with score at or above threshold.
+	// completes a post-remediation assessment. The EM emits raw component scores
+	// via audit events; the overall effectiveness determination is computed by
+	// DataStorage on demand (separation of concerns).
+	// Type: Normal
 	// Priority: P1
 	// DD-017 v2.0: Level 1 Automated Assessment
 	EventReasonEffectivenessAssessed = "EffectivenessAssessed"
-
-	// EventReasonRemediationIneffective is emitted when the Effectiveness Monitor
-	// determines that a remediation's effectiveness score is below the configured
-	// threshold (default 0.5). Indicates the remediation did not sufficiently
-	// improve the situation and operators should investigate.
-	// Type: Warning
-	// Priority: P1
-	// DD-017 v2.0: Level 1 Automated Assessment
-	EventReasonRemediationIneffective = "RemediationIneffective"
 
 	// EventReasonAssessmentExpired is emitted when the validity window expires
 	// before the assessment can collect sufficient data. The EA is completed

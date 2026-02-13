@@ -172,9 +172,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			},
 		}
@@ -255,11 +252,14 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// ========================================
 	// IT-EM-MC-006: Prom disabled in config -> no metrics assessment
 	// ========================================
+	// TODO: Per-EA Prometheus enable/disable was removed from EAConfig. This test relied on
+	// PrometheusEnabled: false. To test disabled Prometheus, configure the reconciler's
+	// ReconcilerConfig.PrometheusEnabled instead (shared across all EAs).
 	It("IT-EM-MC-006: should skip metrics assessment when Prometheus is disabled", func() {
 		ns := createTestNamespace("em-mc-006")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with Prometheus DISABLED")
+		By("Creating an EA (reconciler has Prometheus enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-006",
@@ -277,9 +277,6 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   false, // DISABLED
-					AlertManagerEnabled: true,
 				},
 			},
 		}

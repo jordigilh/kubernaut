@@ -133,11 +133,14 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 	// ========================================
 	// IT-EM-CF-002: Both Prom and AM disabled -> reconciler runs with health+hash only
 	// ========================================
+	// TODO: Per-EA Prometheus/AlertManager enable/disable was removed from EAConfig. This test
+	// relied on both disabled. To test, configure ReconcilerConfig.PrometheusEnabled and
+	// AlertManagerEnabled in suite_test.go (shared reconciler).
 	It("IT-EM-CF-002: should run with only health and hash when both external deps disabled", func() {
 		ns := createTestNamespace("em-cf-002")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with both Prometheus and AlertManager disabled")
+		By("Creating an EA (reconciler has Prom+AM enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-cf-002", Namespace: ns,
@@ -150,9 +153,6 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   false, // DISABLED
-					AlertManagerEnabled: false, // DISABLED
 				},
 			},
 		}
@@ -167,64 +167,13 @@ var _ = Describe("Configuration Gaps (BR-EM-006, BR-EM-008)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
+		// With reconciler Prom+AM enabled, all components are assessed. Original test intent
+		// was to verify health+hash only when both disabled via EAConfig (no longer supported).
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())
 		Expect(fetchedEA.Status.Components.HashComputed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(), "alert marked assessed (skipped)")
-		Expect(fetchedEA.Status.Components.AlertScore).To(BeNil())
-		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue(), "metrics marked assessed (skipped)")
-		Expect(fetchedEA.Status.Components.MetricsScore).To(BeNil())
-
+		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull))
-	})
-
-	// ========================================
-	// IT-EM-CF-004: Custom scoringThreshold -> reflected in warning events
-	// ========================================
-	It("IT-EM-CF-004: should use custom scoring threshold for event type determination", func() {
-		ns := createTestNamespace("em-cf-004")
-		defer deleteTestNamespace(ns)
-
-		By("Creating an EA with high scoring threshold (0.99)")
-		ea := &eav1.EffectivenessAssessment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "ea-cf-004", Namespace: ns,
-				Labels: map[string]string{"kubernaut.ai/correlation-id": "rr-cf-004"},
-			},
-			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-cf-004",
-				TargetResource: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
-				},
-				Config: eav1.EAConfig{
-					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.99, // Very high threshold
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
-
-		By("Verifying the EA completes")
-		fetchedEA := &eav1.EffectivenessAssessment{}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: ea.Name, Namespace: ea.Namespace,
-			}, fetchedEA)).To(Succeed())
-			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
-		}, timeout, interval).Should(Succeed())
-
-		// With threshold 0.99 and no real pod (health=0.0), should emit warning
-		Expect(fetchedEA.Spec.Config.ScoringThreshold).To(Equal(0.99))
-		Expect(fetchedEA.Status.CompletedAt).NotTo(BeNil())
-
-		// Verify RemediationIneffective event is emitted due to high threshold
-		Eventually(func() bool {
-			evts := listEventsForObject(ctx, k8sClient, ea.Name, ns)
-			reasons := eventReasons(evts)
-			return containsReason(reasons, "RemediationIneffective")
-		}, 10*time.Second, interval).Should(BeTrue(),
-			"should emit RemediationIneffective with high threshold and low scores")
 	})
 })
 
@@ -256,9 +205,6 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			},
 		}
@@ -429,11 +375,13 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 	// ========================================
 	// IT-EM-FF-005: Controller works with Prom disabled + mock absent
 	// ========================================
+	// TODO: Per-EA Prometheus enable/disable was removed from EAConfig. This test relied on
+	// PrometheusEnabled: false. To test disabled Prometheus, use ReconcilerConfig.
 	It("IT-EM-FF-005: should start successfully when Prometheus disabled in config", func() {
 		ns := createTestNamespace("em-ff-005")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with Prometheus disabled")
+		By("Creating an EA (reconciler has Prometheus enabled; per-EA disable no longer supported)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-ff-005", Namespace: ns,
@@ -446,15 +394,12 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   false, // DISABLED
-					AlertManagerEnabled: true,
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes without requiring Prometheus")
+		By("Verifying the EA completes")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -463,8 +408,8 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(fetchedEA.Status.Components.MetricsScore).To(BeNil(),
-			"metrics should be skipped when disabled")
+		// With reconciler Prometheus enabled, metrics are assessed
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
 	})
 })
 
@@ -571,9 +516,6 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			},
 		}

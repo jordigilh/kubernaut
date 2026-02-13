@@ -495,9 +495,6 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 			},
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: 1 * time.Second}, // Very short for tests
-				ScoringThreshold:    0.5,
-				PrometheusEnabled:   true,
-				AlertManagerEnabled: true,
 			},
 		},
 	}
@@ -556,9 +553,6 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 			},
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-				ScoringThreshold:    0.5,
-				PrometheusEnabled:   true,
-				AlertManagerEnabled: true,
 			},
 		},
 	}

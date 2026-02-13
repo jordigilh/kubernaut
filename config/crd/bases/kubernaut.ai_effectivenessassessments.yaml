@@ -61,21 +61,6 @@ spec:
               config:
                 description: Config contains the assessment configuration parameters.
                 properties:
-                  alertManagerEnabled:
-                    description: AlertManagerEnabled indicates whether alert resolution
-                      should be checked.
-                    type: boolean
-                  prometheusEnabled:
-                    description: PrometheusEnabled indicates whether metric comparison
-                      should be performed.
-                    type: boolean
-                  scoringThreshold:
-                    description: |-
-                      ScoringThreshold is the minimum score for a "healthy" assessment.
-                      Below this threshold, a Warning K8s event is emitted.
-                    maximum: 1
-                    minimum: 0
-                    type: number
                   stabilizationWindow:
                     description: |-
                       StabilizationWindow is the duration to wait after remediation before assessment.
@@ -83,9 +68,6 @@ spec:
                       until the system stabilizes post-remediation.
                     type: string
                 required:
-                - alertManagerEnabled
-                - prometheusEnabled
-                - scoringThreshold
                 - stabilizationWindow
                 type: object
               correlationID:
