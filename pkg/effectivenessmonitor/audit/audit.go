@@ -1,0 +1,179 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package audit provides audit event construction for the Effectiveness Monitor.
+// Each assessment component emits a typed audit event to DataStorage via the
+// buffered audit store (pkg/audit). Events follow DD-AUDIT-CORRELATION-002.
+//
+// Business Requirements:
+// - BR-AUDIT-006: SOC 2 CC7.2 audit trail completeness
+// - BR-EM-005: Component-level audit events
+//
+// Audit Event Types:
+//   - effectiveness.health.assessed
+//   - effectiveness.hash.computed
+//   - effectiveness.alert.assessed
+//   - effectiveness.metrics.assessed
+//   - effectiveness.assessment.completed
+package audit
+
+import (
+	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/types"
+)
+
+// EventData contains the common fields for all EM audit events.
+// Per DD-AUDIT-CORRELATION-002: correlation_id links events to the RR.
+type EventData struct {
+	// CorrelationID is the name of the parent RemediationRequest.
+	CorrelationID string
+	// AssessmentName is the name of the EffectivenessAssessment CRD.
+	AssessmentName string
+	// Namespace is the namespace of the EA.
+	Namespace string
+	// Timestamp is when the event occurred.
+	Timestamp time.Time
+}
+
+// HealthEvent contains the audit payload for a health assessment.
+type HealthEvent struct {
+	EventData
+	// Score is the health check score (0.0-1.0).
+	Score *float64
+	// TotalReplicas is the total number of desired replicas.
+	TotalReplicas int32
+	// ReadyReplicas is the number of ready replicas.
+	ReadyReplicas int32
+	// RestartsSinceRemediation is the restart count since remediation.
+	RestartsSinceRemediation int32
+}
+
+// HashEvent contains the audit payload for a hash computation.
+type HashEvent struct {
+	EventData
+	// PostRemediationSpecHash is the computed hash of the target spec.
+	PostRemediationSpecHash string
+}
+
+// AlertEvent contains the audit payload for an alert resolution check.
+type AlertEvent struct {
+	EventData
+	// Score is the alert resolution score (0.0 or 1.0).
+	Score *float64
+	// AlertName is the name of the checked alert.
+	AlertName string
+	// AlertResolved indicates whether the alert has resolved.
+	AlertResolved bool
+}
+
+// MetricsEvent contains the audit payload for a metric comparison.
+type MetricsEvent struct {
+	EventData
+	// Score is the metric comparison score (0.0-1.0).
+	Score *float64
+	// QueriesExecuted is the number of PromQL queries run.
+	QueriesExecuted int
+	// Details provides human-readable summary of metric comparison.
+	Details string
+}
+
+// CompletedEvent contains the audit payload for the overall assessment completion.
+type CompletedEvent struct {
+	EventData
+	// Components contains results for each assessed component.
+	Components []types.ComponentResult
+	// Reason is the assessment outcome reason (full, partial, expired, etc.).
+	Reason string
+	// Message is the human-readable summary.
+	Message string
+}
+
+// Builder constructs audit events from assessment results.
+// This is unit-testable pure logic (no I/O).
+type Builder interface {
+	// BuildHealthEvent creates an audit event for health assessment.
+	BuildHealthEvent(data EventData, score *float64, totalReplicas, readyReplicas, restarts int32) HealthEvent
+
+	// BuildHashEvent creates an audit event for hash computation.
+	BuildHashEvent(data EventData, hash string) HashEvent
+
+	// BuildAlertEvent creates an audit event for alert resolution.
+	BuildAlertEvent(data EventData, score *float64, alertName string, resolved bool) AlertEvent
+
+	// BuildMetricsEvent creates an audit event for metric comparison.
+	BuildMetricsEvent(data EventData, score *float64, queriesExecuted int, details string) MetricsEvent
+
+	// BuildCompletedEvent creates an audit event for overall assessment completion.
+	BuildCompletedEvent(data EventData, components []types.ComponentResult, reason, message string) CompletedEvent
+}
+
+// builder is the concrete implementation of Builder.
+type builder struct{}
+
+// NewBuilder creates a new audit event builder.
+func NewBuilder() Builder {
+	return &builder{}
+}
+
+// BuildHealthEvent creates an audit event for health assessment.
+func (b *builder) BuildHealthEvent(data EventData, score *float64, totalReplicas, readyReplicas, restarts int32) HealthEvent {
+	return HealthEvent{
+		EventData:               data,
+		Score:                   score,
+		TotalReplicas:           totalReplicas,
+		ReadyReplicas:           readyReplicas,
+		RestartsSinceRemediation: restarts,
+	}
+}
+
+// BuildHashEvent creates an audit event for hash computation.
+func (b *builder) BuildHashEvent(data EventData, hash string) HashEvent {
+	return HashEvent{
+		EventData:               data,
+		PostRemediationSpecHash: hash,
+	}
+}
+
+// BuildAlertEvent creates an audit event for alert resolution.
+func (b *builder) BuildAlertEvent(data EventData, score *float64, alertName string, resolved bool) AlertEvent {
+	return AlertEvent{
+		EventData:     data,
+		Score:         score,
+		AlertName:     alertName,
+		AlertResolved: resolved,
+	}
+}
+
+// BuildMetricsEvent creates an audit event for metric comparison.
+func (b *builder) BuildMetricsEvent(data EventData, score *float64, queriesExecuted int, details string) MetricsEvent {
+	return MetricsEvent{
+		EventData:       data,
+		Score:           score,
+		QueriesExecuted: queriesExecuted,
+		Details:         details,
+	}
+}
+
+// BuildCompletedEvent creates an audit event for overall assessment completion.
+func (b *builder) BuildCompletedEvent(data EventData, components []types.ComponentResult, reason, message string) CompletedEvent {
+	return CompletedEvent{
+		EventData:  data,
+		Components: components,
+		Reason:     reason,
+		Message:    message,
+	}
+}
