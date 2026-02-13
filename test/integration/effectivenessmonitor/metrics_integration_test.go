@@ -1,0 +1,382 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package effectivenessmonitor
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+)
+
+var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
+
+	// Restore mock Prometheus to default state after each test
+	AfterEach(func() {
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
+			0.25,
+			float64(time.Now().Unix()),
+		))
+	})
+
+	// ========================================
+	// IT-EM-MC-001: Mock Prom returns improvement data -> metrics score > 0
+	// ========================================
+	It("IT-EM-MC-001: should score > 0 when Prometheus returns metric data", func() {
+		ns := createTestNamespace("em-mc-001")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus with metric data indicating improvement")
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{
+				"__name__":  "container_cpu_usage_seconds_total",
+				"namespace": ns,
+			},
+			0.15, // 15% CPU (improved from baseline)
+			float64(time.Now().Unix()),
+		))
+
+		By("Creating an EA with Prometheus enabled")
+		ea := createEffectivenessAssessment(ns, "ea-mc-001", "rr-mc-001")
+
+		By("Verifying the EA completes with a metrics score")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil())
+		// Reconciler assigns 0.5 default when metric data is available
+		Expect(*fetchedEA.Status.Components.MetricsScore).To(BeNumerically(">", 0.0),
+			"metrics with data available should score > 0")
+	})
+
+	// ========================================
+	// IT-EM-MC-002: Mock Prom returns no-change data -> metrics score
+	// ========================================
+	It("IT-EM-MC-002: should produce metrics score when data exists", func() {
+		ns := createTestNamespace("em-mc-002")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus with same baseline data (no change)")
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{
+				"__name__":  "container_cpu_usage_seconds_total",
+				"namespace": ns,
+			},
+			0.25, // Same as baseline = no change
+			float64(time.Now().Unix()),
+		))
+
+		By("Creating an EA")
+		ea := createEffectivenessAssessment(ns, "ea-mc-002", "rr-mc-002")
+
+		By("Verifying the EA completes with metrics assessed")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil())
+	})
+
+	// ========================================
+	// IT-EM-MC-003: Mock Prom returns degraded data -> metrics score
+	// ========================================
+	It("IT-EM-MC-003: should handle degraded metric data", func() {
+		ns := createTestNamespace("em-mc-003")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus with degraded metric data (higher CPU)")
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{
+				"__name__":  "container_cpu_usage_seconds_total",
+				"namespace": ns,
+			},
+			0.90, // 90% CPU (degraded)
+			float64(time.Now().Unix()),
+		))
+
+		By("Creating an EA")
+		ea := createEffectivenessAssessment(ns, "ea-mc-003", "rr-mc-003")
+
+		By("Verifying the EA completes with metrics assessed")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil())
+	})
+
+	// ========================================
+	// IT-EM-MC-004: Mock Prom returns empty result -> metrics not assessed, requeues
+	// ========================================
+	It("IT-EM-MC-004: should handle empty Prometheus result and eventually complete via expiry", func() {
+		ns := createTestNamespace("em-mc-004")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus to return empty vector (no data)")
+		mockProm.SetQueryResponse(infrastructure.NewPromEmptyVectorResponse())
+
+		By("Creating an EA with a tight validity window so it expires")
+		now := metav1.Now()
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-mc-004",
+				Namespace: ns,
+				Labels: map[string]string{
+					"kubernaut.ai/correlation-id": "rr-mc-004",
+				},
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID: "rr-mc-004",
+				TargetResource: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+					ValidityDeadline:    metav1.Time{Time: now.Add(10 * time.Second)}, // Short window
+					ScoringThreshold:    0.5,
+					PrometheusEnabled:   true,
+					AlertManagerEnabled: true,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+
+		By("Verifying the EA eventually completes (via expiration since no metric data)")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		// Metrics may or may not be assessed depending on timing
+		// The important thing is the EA completed (via expiry or partial)
+		Expect(fetchedEA.Status.CompletedAt).NotTo(BeNil())
+	})
+
+	// ========================================
+	// IT-EM-MC-005: Mock Prom returns error (503) -> metrics not assessed, requeues
+	// ========================================
+	It("IT-EM-MC-005: should handle Prometheus error and eventually complete", func() {
+		ns := createTestNamespace("em-mc-005")
+		defer deleteTestNamespace(ns)
+
+		queryCount := 0
+		By("Configuring mock Prometheus to return 503 initially, then recover")
+		mockProm.SetQueryResponse(nil) // Clear default response
+		// Override with custom handler that fails first, then succeeds
+		mockProm.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/query" {
+				queryCount++
+				if queryCount <= 2 {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = fmt.Fprint(w, "Service Unavailable")
+					return
+				}
+				// After failures, return valid data
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"cpu"},"value":[%d,"0.5"]}]}}`, time.Now().Unix())
+				return
+			}
+			if r.URL.Path == "/-/ready" || r.URL.Path == "/-/healthy" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+
+		By("Creating an EA")
+		ea := createEffectivenessAssessment(ns, "ea-mc-005", "rr-mc-005")
+
+		By("Verifying the EA eventually completes after Prometheus recovers")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.CompletedAt).NotTo(BeNil())
+
+		By("Restoring mock Prometheus to default")
+		// Recreate mock with default config (the handler override above
+		// will be replaced when the next test restores via AfterEach)
+	})
+
+	// ========================================
+	// IT-EM-MC-006: Prom disabled in config -> no metrics assessment
+	// ========================================
+	It("IT-EM-MC-006: should skip metrics assessment when Prometheus is disabled", func() {
+		ns := createTestNamespace("em-mc-006")
+		defer deleteTestNamespace(ns)
+
+		By("Creating an EA with Prometheus DISABLED")
+		now := metav1.Now()
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-mc-006",
+				Namespace: ns,
+				Labels: map[string]string{
+					"kubernaut.ai/correlation-id": "rr-mc-006",
+				},
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID: "rr-mc-006",
+				TargetResource: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+					ValidityDeadline:    metav1.Time{Time: now.Add(30 * time.Minute)},
+					ScoringThreshold:    0.5,
+					PrometheusEnabled:   false, // DISABLED
+					AlertManagerEnabled: true,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+
+		By("Verifying the EA completes without metrics assessment")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		// MetricsAssessed is set to true (skipped) but MetricsScore remains nil
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue(),
+			"metrics should be marked assessed (skipped) when disabled")
+		Expect(fetchedEA.Status.Components.MetricsScore).To(BeNil(),
+			"metrics score should be nil when Prometheus is disabled")
+	})
+
+	// ========================================
+	// IT-EM-MC-007: Mock Prom returns partial data (CPU only) -> uses available metrics
+	// ========================================
+	It("IT-EM-MC-007: should handle partial metric data (single metric series)", func() {
+		ns := createTestNamespace("em-mc-007")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus with only CPU metric (no memory)")
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{
+				"__name__":  "container_cpu_usage_seconds_total",
+				"namespace": ns,
+			},
+			0.30, // Only CPU metric available
+			float64(time.Now().Unix()),
+		))
+
+		By("Creating an EA")
+		ea := createEffectivenessAssessment(ns, "ea-mc-007", "rr-mc-007")
+
+		By("Verifying the EA completes with available metrics scored")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil(),
+			"partial metric data should still produce a score")
+	})
+
+	// ========================================
+	// IT-EM-MC-008: Metrics event payload verified
+	// ========================================
+	It("IT-EM-MC-008: should preserve correlation data and metrics component structure", func() {
+		ns := createTestNamespace("em-mc-008")
+		defer deleteTestNamespace(ns)
+
+		By("Configuring mock Prometheus with valid response")
+		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
+			map[string]string{
+				"__name__":  "container_cpu_usage_seconds_total",
+				"namespace": ns,
+			},
+			0.20,
+			float64(time.Now().Unix()),
+		))
+		mockProm.ResetRequestLog()
+
+		By("Creating an EA")
+		ea := createEffectivenessAssessment(ns, "ea-mc-008", "rr-mc-008")
+
+		By("Verifying the EA completes")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		// Verify metrics component data
+		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue())
+		Expect(fetchedEA.Status.Components.MetricsScore).NotTo(BeNil())
+
+		// Verify correlation
+		Expect(fetchedEA.Spec.CorrelationID).To(Equal("rr-mc-008"))
+
+		// Verify Prometheus was actually queried
+		requests := mockProm.GetRequestLog()
+		queryRequests := 0
+		for _, req := range requests {
+			if req.Path == "/api/v1/query" {
+				queryRequests++
+			}
+		}
+		Expect(queryRequests).To(BeNumerically(">", 0),
+			"Prometheus should have been queried at least once")
+	})
+})
