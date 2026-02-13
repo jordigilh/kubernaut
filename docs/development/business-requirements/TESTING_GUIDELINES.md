@@ -1,7 +1,7 @@
 # Testing Guidelines: Business Requirements vs Unit Tests
 
-**Version**: 2.5.2
-**Last Updated**: 2026-01-20
+**Version**: 2.7.0
+**Last Updated**: 2026-02-09
 **Status**: Active
 
 This document provides clear guidance on **when** and **how** to use each type of test in the kubernaut system.
@@ -9,6 +9,20 @@ This document provides clear guidance on **when** and **how** to use each type o
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.7.0 (2026-02-09)
+- **CRITICAL**: Replaced cumulative code coverage model (70%/50%/50%) with **per-tier testable code coverage model (>=80% per tier)**
+- **RATIONALE**: TDD mandate -- every business requirement must have corresponding tests. If a feature has no test, it risks not being implemented. Coverage is measured against the tier-specific code subset, not all code.
+- **ADDED**: Per-Tier Testable Code Coverage section explaining unit-testable vs integration-testable code partitioning
+- **ADDED**: Authoritative reference to `scripts/coverage/coverage_report.py` as the coverage measurement tool
+- **UPDATED**: Quality targets in coverage report script to >=80% per tier
+- **POLICY**: All current and future services MUST follow >=80% per-tier coverage. See Code Partitioning section for how to define unit-testable vs integration-testable boundaries for new services.
+
+### Version 2.6.0 (2026-02-09)
+- **ADDED**: Prometheus/AlertManager Mocking Policy for Effectiveness Monitor (EM) service
+- **RATIONALE**: Lessons learned from Mock LLM vs. real LLM contract mismatches -- Tier 2 uses httptest mocks, Tier 3 (E2E) uses real Prometheus/AlertManager in Kind cluster
+- **ADDED**: `EM` (Effectiveness Monitor) to service abbreviation table in test naming convention
+- **REFERENCE**: [ADR-EM-001](../../architecture/decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) for EM integration architecture
 
 ### Version 2.5.2 (2026-01-20)
 - **CLARIFIED**: Integration test infrastructure uses **programmatic Go** (NOT podman-compose) for container orchestration
@@ -67,11 +81,81 @@ This document provides clear guidance on **when** and **how** to use each type o
 
 ## 🎯 **Defense-in-Depth Testing Strategy**
 
-### Coverage Targets: BR Coverage vs Code Coverage
+### Coverage Targets: Per-Tier Testable Code Coverage
 
-Kubernaut uses **defense-in-depth** with overlapping BR coverage and cumulative code coverage:
+Kubernaut uses **defense-in-depth** with **>=80% code coverage per tier**, measured against the **tier-specific testable code subset**. This is a TDD mandate: every business requirement must have corresponding tests. If a feature has no test, it risks not being implemented.
+
+#### Why >=80% Per Tier?
+
+**TDD drives implementation from tests.** In Kubernaut's RED -> GREEN -> REFACTOR cycle:
+1. **RED**: Write a failing test that defines a business requirement
+2. **GREEN**: Implement the minimal code to pass the test
+3. **REFACTOR**: Improve the code without changing behavior
+
+If a business requirement has no test (RED phase skipped), the implementation may never happen or may not match the requirement. High per-tier coverage ensures every requirement is validated at the appropriate level of abstraction.
+
+**Risk of low coverage**: A feature without a test is a feature that may not exist in production. This is especially critical for:
+- Scoring algorithms (EM health scoring, alert resolution)
+- Error handling paths (DS unavailable, Prometheus timeout)
+- Configuration parsing (invalid configs, default values)
+- Phase transitions (reconciler state machine)
+
+#### Per-Tier Code Coverage Model (AUTHORITATIVE)
+
+Each tier measures coverage against a **specific subset of the service's code**, not all code. The code is partitioned into **unit-testable** (pure logic) and **integration-testable** (I/O-dependent) subsets.
+
+| Tier | Code Subset | Coverage Target | What It Validates |
+|------|-------------|-----------------|-------------------|
+| **Unit** | Unit-testable only | **>=80%** | Algorithm correctness, scoring, config parsing, validation, edge cases |
+| **Integration** | Integration-testable only | **>=80%** | Reconciler lifecycle, K8s API operations, HTTP client paths, audit emission |
+| **E2E** | Full service | **>=80%** | Full stack: main.go, reconciliation, business logic, metrics, audit |
+| **All Tiers** | Full service (merged) | **>=80%** | Line-by-line dedup across all tiers (any tier covering a line counts) |
+
+**Measurement Tool**: `scripts/coverage/coverage_report.py` (run via `make coverage-report`)
+
+**Key Insight**: With >=80% per-tier coverage, bugs must slip through multiple defense layers -- each validating >=80% of its code subset -- to reach production.
+
+#### Code Partitioning: Unit-Testable vs Integration-Testable
+
+Each service's code is partitioned in `scripts/coverage/coverage_report.py` (`GO_SERVICE_CONFIG`):
+
+**Unit-testable code** (pure logic, no I/O):
+- Config parsing, validation, defaults
+- Business logic algorithms (scoring, routing, classification)
+- Type definitions and builders
+- Validators and formatters
+- Error types and constructors
+
+**Integration-testable code** (I/O-dependent):
+- HTTP handlers and servers
+- Database adapters and repository implementations
+- Kubernetes API clients (controllers, status updaters)
+- External service clients (Prometheus, AlertManager, DataStorage)
+- Reconciler main loop and requeue logic
+
+**Adding a new service**: When creating a new service, you MUST:
+1. Add the service to `GO_SERVICE_CONFIG` in `scripts/coverage/coverage_report.py`
+2. Define `pkg_pattern` and `controller_pattern` (if CRD controller)
+3. Define `unit_exclude` (regex matching I/O code paths to exclude from unit coverage)
+4. Define `int_include` (regex matching I/O code paths to include in integration coverage)
+5. Add the corresponding `{SERVICE}_UNIT_PATTERN` to the `Makefile`
+6. Verify coverage with `make coverage-report` after implementing tests
+
+**Example**: Remediation Orchestrator partitioning:
+```python
+"remediationorchestrator": {
+    "pkg_pattern": "/pkg/remediationorchestrator/",
+    "controller_pattern": "/internal/controller/remediationorchestrator/",
+    "unit_exclude": r"/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/",
+    "int_include": r"/(creator|handler/(aianalysis|signalprocessing|workflowexecution)|aggregator|status)/",
+}
+```
+- Unit tests measure coverage of: config/, helpers/, metrics/, phase/, routing/, timeout/, types/
+- Integration tests measure coverage of: creator/, handler/*, aggregator/, status/, internal/controller/
 
 #### Business Requirement (BR) Coverage - OVERLAPPING
+
+In addition to code coverage, BRs are tested at multiple tiers for defense-in-depth:
 
 | Tier | BR Coverage Target | Purpose |
 |------|-------------------|---------|
@@ -86,22 +170,11 @@ Kubernaut uses **defense-in-depth** with overlapping BR coverage and cumulative 
 - 📋 Documented in test tier definitions but not part of v1.0 defense-in-depth strategy
 - 🔮 Future consideration when dedicated performance infrastructure becomes available
 
-#### Code Coverage - CUMULATIVE (~100% combined)
+#### Example: Retry Logic (BR-NOT-052)
 
-| Tier | Code Coverage Target | What It Validates |
-|------|---------------------|-------------------|
-| **Unit** | **70%+** | Algorithm correctness, edge cases, error handling |
-| **Integration** | **50%** | Cross-component flows, CRD operations, real K8s API |
-| **E2E** | **50%** | Full stack: main.go, reconciliation, business logic, metrics, audit |
-
-**Empirical Validation**: DataStorage and SignalProcessing services demonstrate E2E tests achieve **50%+ code coverage** due to full stack execution.
-
-**Key Insight**: With 70%/50%/50% code coverage targets, **50%+ of codebase is tested in ALL 3 tiers** - ensuring bugs must slip through multiple defense layers to reach production.
-
-**Example**: Retry logic (BR-NOT-052)
-- **Unit (70%)**: Algorithm correctness (30s → 480s exponential backoff) - tests `pkg/notification/retry/policy.go`
-- **Integration (50%)**: Real K8s reconciliation loop - tests same code with envtest
-- **E2E (50%)**: Deployed controller in Kind - tests same code in production-like environment
+- **Unit (>=80% of unit-testable)**: Algorithm correctness (30s → 480s exponential backoff) - tests `pkg/notification/retry/policy.go`
+- **Integration (>=80% of integration-testable)**: Real K8s reconciliation loop - tests same code with envtest
+- **E2E (>=80% of full service)**: Deployed controller in Kind - tests same code in production-like environment
 
 If the exponential backoff calculation has a bug, it must slip through **ALL 3 defense layers** to reach production!
 
@@ -492,6 +565,48 @@ def test_audit_events(mock_data_storage, mock_llm):
 ```
 
 **If Data Storage is unavailable, E2E tests should FAIL, not skip.**
+
+### 4a. **Prometheus/AlertManager Mocking Policy (Contract Validation)**
+
+**Applies to**: Effectiveness Monitor (EM) service tests only.
+
+The EM service depends on Prometheus (PromQL queries for metric comparison) and AlertManager (alert resolution queries). Unlike LLM mocking (which is driven by cost), the Prometheus/AlertManager mocking policy is driven by **contract validation lessons learned**.
+
+**Lesson Learned**: During Mock LLM integration, canned mock responses did not match the actual LLM API behavior, causing surprises when integrating with the real service. To avoid repeating this with Prometheus/AlertManager, **E2E tests MUST use real instances** to validate the actual API contract (PromQL query syntax, response formats, protobuf/snappy encoding).
+
+| Test Type | DataStorage (Audit) | Prometheus | AlertManager |
+|-----------|---------------------|------------|--------------|
+| **Unit Tests** | Mock (interface) | Mock (interface) | Mock (interface) |
+| **Integration Tests** | **REAL** (DS bootstrap) | Mock (`httptest.NewServer`) | Mock (`httptest.NewServer`) |
+| **E2E Tests** | **REAL** (Kind cluster) | **REAL** (Kind cluster) | **REAL** (Kind cluster) |
+
+**Rationale for Tier 2 mocks (approved exception)**:
+- `httptest.NewServer` returns canned Prometheus/AlertManager API responses
+- Each of up to 12 concurrent Ginkgo processes gets its own in-process mock (ephemeral OS ports, no collision)
+- Tests reconciler lifecycle, audit event emission, CRD status transitions with controlled inputs
+- Real API contract validation is deferred to Tier 3 (E2E)
+
+**Rationale for Tier 3 real instances**:
+- Real Prometheus deployed in Kind with `--web.enable-remote-write-receiver` for test data injection
+- Real AlertManager deployed in Kind; alerts injected via POST to `/api/v2/alerts`
+- Validates real PromQL query execution, real API response format, real protobuf/snappy encoding
+- Catches contract mismatches that canned mocks cannot detect
+
+**E2E Data Injection Pattern**:
+```go
+// Inject pre-remediation metrics via Prometheus remote write API
+InjectMetrics(promURL, []Metric{
+    {Name: "container_cpu_usage_seconds_total", Labels: targetLabels,
+     Value: 0.95, Timestamp: preRemediationTime},
+})
+
+// Inject alerts via AlertManager API
+InjectAlerts(amURL, []Alert{
+    {Name: "HighCPUUsage", Labels: targetLabels, Status: "resolved"},
+})
+```
+
+**This exception does NOT apply to other services.** Only EM interacts with Prometheus/AlertManager.
 
 ### 5. **Metrics Testing Strategy by Tier**
 
@@ -1510,6 +1625,24 @@ export REDIS_PORT=6379
 environment:
   - LLM_PROVIDER=mock
   - MOCK_LLM_ENABLED=true
+```
+
+#### Prometheus/AlertManager Mocking in EM Integration Tests
+
+**Prometheus and AlertManager are mocked in EM integration tests (Tier 2)** using `httptest.NewServer` with canned API responses. Real instances are used in E2E tests (Tier 3) to validate the actual API contract.
+
+- **Integration (Tier 2)**: `httptest.NewServer` -- ephemeral ports per Ginkgo process, no port allocation needed
+- **E2E (Tier 3)**: Real Prometheus + AlertManager deployed in Kind cluster with NodePort access
+- **Data injection**: Remote write API for Prometheus, POST `/api/v2/alerts` for AlertManager
+- **Reference**: Section 4a "Prometheus/AlertManager Mocking Policy" above for full rationale
+
+```go
+// Integration test: httptest mock for Prometheus
+mockProm := NewMockPrometheus(MockPrometheusConfig{
+    QueryResponse: cannedPromQLResponse,
+})
+defer mockProm.Close()
+// EM uses mockProm.URL as its Prometheus endpoint
 ```
 
 ---

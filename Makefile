@@ -64,6 +64,7 @@ NOTIFICATION_UNIT_PATTERN = pkg/notification/config/|pkg/notification/formatting
 REMEDIATIONORCHESTRATOR_UNIT_PATTERN = pkg/remediationorchestrator/audit/|pkg/remediationorchestrator/config/|pkg/remediationorchestrator/helpers/|pkg/remediationorchestrator/metrics/|pkg/remediationorchestrator/phase/|pkg/remediationorchestrator/routing/|pkg/remediationorchestrator/timeout/|pkg/remediationorchestrator/types|pkg/remediationorchestrator/handler/skip/|pkg/remediationorchestrator/interfaces
 SIGNALPROCESSING_UNIT_PATTERN = pkg/signalprocessing/classifier/|pkg/signalprocessing/config/|pkg/signalprocessing/detection/|pkg/signalprocessing/metrics/|pkg/signalprocessing/ownerchain/|pkg/signalprocessing/phase/|pkg/signalprocessing/rego/|pkg/signalprocessing/conditions
 WORKFLOWEXECUTION_UNIT_PATTERN = pkg/workflowexecution/config/|pkg/workflowexecution/metrics/|pkg/workflowexecution/phase/|pkg/workflowexecution/conditions
+EFFECTIVENESSMONITOR_UNIT_PATTERN = pkg/effectivenessmonitor/config/|pkg/effectivenessmonitor/health/|pkg/effectivenessmonitor/alert/|pkg/effectivenessmonitor/metrics/|pkg/effectivenessmonitor/hash/|pkg/effectivenessmonitor/audit/|pkg/effectivenessmonitor/phase/|pkg/effectivenessmonitor/validity/|pkg/effectivenessmonitor/types
 
 ##@ General
 

@@ -1,6 +1,6 @@
 # DD-017: Effectiveness Monitor Service — V1.0 Level 1 + V1.1 Level 2
 
-**Status**: ✅ APPROVED (v2.1 — Design Refinements)
+**Status**: ✅ APPROVED (v2.2 — EA CRD Pattern)
 **Last Reviewed**: 2026-02-09
 **Confidence**: 95%
 
@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
 | 2.1 | 2026-02-09 | Architecture Team | Design refinements from gap analysis: (1) Correlation ID is RR.Name, not UID. (2) EM reads exclusively from audit traces, never from RR CRD. (3) RO must query API server directly for target resource spec (not cache). (4) No graceful degradation for Prometheus/AlertManager — fail-fast via config toggles. (5) Superseded BR-EFFECTIVENESS-001/002/003 and archived stale docs. (6) DD-EFFECTIVENESS-002 DB-backed idempotency superseded — EM uses audit-event dedup via DS. |
 | 2.0 | 2026-02-05 | Architecture Team | Partial reinstatement: Level 1 (automated assessment) moves to V1.0. Level 2 (AI-powered analysis) remains V1.1. Dual spec hash design, audit-trace storage, cooldown alignment, RR immutability via CEL. Supersedes v1.0 full deferral. |
 | 1.0 | 2025-12-01 | Architecture Team | Initial DD-017: Full Effectiveness Monitor deferred to V1.1 due to end-of-2025 timeline constraint |
@@ -109,22 +110,23 @@ The EM queries Prometheus for key metrics:
 
 The EM queries AlertManager to determine whether the triggering alert resolved after remediation. If AlertManager is unavailable, this check is skipped and marked as `unknown` in the assessment.
 
-#### 5. Effectiveness Scoring
+#### 5. Effectiveness Scoring (V1.0)
 
-A formula-based score from 0.0 (completely ineffective) to 1.0 (fully effective):
+A formula-based score from 0.0 (completely ineffective) to 1.0 (fully effective). V1.0 uses three components; side-effect detection is deferred to post-V1.0.
 
 ```
 score = weighted_average(
-    health_check_pass_rate   * 0.3,   // target resource healthy?
-    signal_resolved          * 0.3,   // did the triggering alert clear?
-    metric_improvement_ratio * 0.2,   // did metrics improve?
-    no_side_effects          * 0.2    // no new alerts or degradation?
+    health_check_pass_rate   * 0.40,   // target resource healthy?
+    signal_resolved          * 0.35,   // did the triggering alert clear?
+    metric_improvement_ratio * 0.25    // did metrics improve? (no change = 0.0)
 )
 ```
 
-#### 6. Side-Effect Detection
+> See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 6 for detailed sub-scoring, weight redistribution tables, and health check sub-component weights.
 
-The EM checks for new alerts or conditions that appeared on the target resource (or co-located resources) after remediation that were not present before. These indicate the remediation may have caused unintended consequences.
+#### 6. Side-Effect Detection (Deferred to post-V1.0)
+
+> **v2.2 Decision**: Side-effect detection is deferred to post-V1.0. The complexity of determining causality (a remediation could impact workloads in other namespaces or at the node level) and the dependency on multiple AlertManager scrape cycles makes this unsuitable for the V1.0 formula-based approach. To be revisited in ~1 month.
 
 #### 7. K8s Event Emission
 
@@ -135,18 +137,30 @@ recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationIneffec
     fmt.Sprintf("Remediation effectiveness %.1f/1.0 — signal unresolved, consider alternative approach", score))
 ```
 
+### EM Trigger: RO-Created EffectivenessAssessment CRD
+
+> **v2.2 Clarification**: DD-EFFECTIVENESS-003 (Watch RemediationRequest) is **superseded**. The EM no longer watches RR CRDs directly. Instead, the **RO creates an `EffectivenessAssessment` CRD** when the RR reaches a terminal phase (Completed, Failed, TimedOut), following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
+>
+> This provides: restart recovery via EA CRD `status.components`, `kubectl` observability, assessment deadline enforcement, and consistent lifecycle ownership by the RO.
+>
+> See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 9.4 for the full EA CRD definition and Section 3 for the lifecycle sequence diagram.
+
 ### Stabilization Window & Cooldown Alignment
 
-The EM waits a stabilization window (hardcoded at 5 minutes) after workflow completion before running its assessment. This gives the system time to reflect the change (e.g., new pods starting, traffic rebalancing).
+The EM waits a stabilization window (configurable, default 5 minutes) after EA CRD creation before running its assessment. This gives the system time to reflect the change (e.g., new pods starting, traffic rebalancing).
 
-**Critical invariant**: The EM stabilization window MUST be <= the RO's `RecentlyRemediatedCooldown` (currently 5 min, hardcoded in `reconciler.go` L168). This guarantees:
+**Critical invariant**: The EM stabilization window MUST be <= the RO's `RecentlyRemediatedCooldown` (currently both 5 min). This guarantees health and alert data are available within the cooldown window:
 
 ```
-T+0:    Workflow completes → EM starts stabilization timer
-T+0-5m: RO cooldown active → new RRs for same target BLOCKED
-T+~5m:  EM finishes assessment → audit event emitted to DataStorage
-T+5m:   Cooldown expires → if signal fires again, new RR allowed through
-T+5m+:  HAPI queries DS → effectiveness data IS AVAILABLE
+T+0:      Workflow completes → RO creates EA CRD + NotificationRequest (parallel)
+T+0:      RO sets RR Condition: EffectivenessAssessed=False
+T+0-5m:   RO cooldown active → new RRs for same target BLOCKED
+T+5m:     EM stabilization elapsed → health, alert, hash assessed immediately
+T+5m-10m: EM waits for Prometheus metrics (if scrape pending, up to maxWaitForMetrics)
+T+≤10m:   EM finalizes → audit event emitted, EA phase=Completed
+T+≤10m:   RO detects EA completion → updates RR Condition: EffectivenessAssessed=True
+T+5m:     Cooldown expires → if signal fires again, new RR allowed through
+T+5m+:    HAPI queries DS → health/alert effectiveness data IS AVAILABLE
 ```
 
 These two values are coupled. If either changes, the other must be reviewed. This constraint must be documented in operational runbooks.
@@ -208,12 +222,14 @@ The existing `migrations/v1.1/006_effectiveness_assessment.sql` (`action_assessm
 
 > **v2.1 Clarification**: DD-EFFECTIVENESS-002's DB-backed idempotency design (direct PostgreSQL tables for `effectiveness_results` and `action_assessments`) is superseded. The EM does not have its own database connection. Idempotency is achieved through audit event deduplication in DataStorage (DS checks for existing `effectiveness.assessment.completed` event for the given RR.Name before accepting a new one).
 
-### EM Data Source: Audit Traces Only
+### EM Data Source: Audit Traces Only (via EA CRD Trigger)
 
-> **v2.1 Clarification**: The EM MUST NOT read from the RemediationRequest CRD directly. The RR is transient — it may be deleted, tampered, or have its status modified after the EM assessment window. The EM reads all required data (correlation ID, signal metadata, workflow details, completion timestamps) from the **audit trace** stored in DataStorage.
+> **v2.1 Clarification**: The EM MUST NOT read remediation context from the RemediationRequest CRD directly. The RR is transient — it may be deleted, tampered, or have its status modified after the EM assessment window. The EM reads all required data (correlation ID, signal metadata, workflow details, completion timestamps) from the **audit trace** stored in DataStorage.
+>
+> **v2.2 Clarification**: The EM is *triggered* by the `EffectivenessAssessment` CRD (created by RO), not by watching the RR. The EA CRD `spec.correlationID` provides the correlation ID for the DS audit trail query. If the RR is deleted while the EA is still in progress, the EA is garbage-collected via ownerReference, but any audit events already emitted to DS survive.
 >
 > This guarantees:
-> - EM can assess remediations even if the RR CRD is deleted before assessment
+> - EM can assess remediations even if the RR CRD is deleted before assessment (EA GC is acceptable; partial audit data in DS survives)
 > - EM is immune to RR status tampering
 > - EM can handle all RR terminal states (Completed, Failed, TimedOut) uniformly
 > - The assessment is based on the immutable audit record, not mutable K8s state
@@ -363,5 +379,6 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ---
 
-**Status**: ✅ APPROVED (v2.1) — Level 1 in V1.0, Level 2 in V1.1
+**Status**: ✅ APPROVED (v2.2) — Level 1 in V1.0 (EA CRD pattern), Level 2 in V1.1
+**Authoritative Integration Architecture**: [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md)
 **Next Review**: V1.1 planning (estimated Q2 2026)
