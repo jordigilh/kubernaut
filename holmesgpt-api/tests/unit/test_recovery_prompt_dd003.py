@@ -383,9 +383,8 @@ class TestMCPFilterInstructions:
 
         instructions = _build_mcp_filter_instructions(detected_labels)
 
-        # Business outcome: JSON template present
-        assert "search_workflow_catalog" in instructions
-        assert "filters" in instructions
+        # Business outcome: Workflow discovery context present (DD-HAPI-017: three-step protocol)
+        assert "Workflow Discovery Context" in instructions or "workflow discovery" in instructions.lower()
         assert "gitops_managed" in instructions.lower()
 
     def test_mcp_instructions_empty_for_no_labels(self):

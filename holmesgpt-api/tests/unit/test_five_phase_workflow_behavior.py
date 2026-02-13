@@ -50,12 +50,13 @@ class TestFivePhaseWorkflowBehavior:
         assert "Follow this sequence in order" in prompt, "Missing explicit sequence instruction"
         assert "Do NOT search for workflows before investigating" in prompt,             "Missing explicit prohibition of premature workflow search"
         
-        # BEHAVIOR VALIDATION: Investigation section must appear before workflow search section
+        # BEHAVIOR VALIDATION: Investigation section must appear before workflow discovery section
         investigation_idx = prompt.find("Phase 1: Investigate")
-        workflow_search_idx = prompt.find("Phase 4: Search for Workflow")
+        workflow_discovery_idx = prompt.find("Phase 4: Discover and Select Workflow")
         assert investigation_idx > 0, "Missing Phase 1: Investigate section"
-        assert workflow_search_idx > 0, "Missing Phase 4: Search for Workflow section"
-        assert investigation_idx < workflow_search_idx,             "Investigation phase must appear BEFORE workflow search phase"
+        assert workflow_discovery_idx > 0, "Missing Phase 4: Discover and Select Workflow section"
+        assert investigation_idx < workflow_discovery_idx, \
+            "Investigation phase must appear BEFORE workflow discovery phase"
     
     def test_workflow_clarifies_input_signal_is_starting_point(self):
         """
@@ -150,11 +151,11 @@ class TestFivePhaseWorkflowBehavior:
         
         prompt = _create_investigation_prompt(request_data)
         
-        # BEHAVIOR VALIDATION: All 5 phases must be present
+        # BEHAVIOR VALIDATION: All 5 phases must be present (DD-HAPI-017: Phase 4 is now three-step discovery)
         assert "Phase 1: Investigate the Incident" in prompt, "Missing Phase 1"
         assert "Phase 2: Determine Root Cause" in prompt, "Missing Phase 2"
         assert "Phase 3: Identify Signal Type" in prompt, "Missing Phase 3"
-        assert "Phase 4: Search for Workflow" in prompt, "Missing Phase 4"
+        assert "Phase 4: Discover and Select Workflow" in prompt, "Missing Phase 4"
         assert "Phase 5: Return Summary" in prompt, "Missing Phase 5"
         
         # BEHAVIOR VALIDATION: Phases must appear in correct order
@@ -184,9 +185,11 @@ class TestFivePhaseWorkflowBehavior:
         
         prompt = _create_investigation_prompt(request_data)
         
-        # BEHAVIOR VALIDATION: Must provide MCP failure handling instructions
-        assert '"selected_workflow": null' in prompt,             "Missing instruction to return null workflow on MCP failure"
-        assert "MCP search" in prompt and "fail" in prompt.lower(),             "Missing MCP failure scenario"
+        # BEHAVIOR VALIDATION: Must provide workflow discovery failure handling instructions (DD-HAPI-017)
+        assert '"selected_workflow": null' in prompt, \
+            "Missing instruction to return null workflow on discovery failure"
+        assert "discovery" in prompt.lower() and "fail" in prompt.lower(), \
+            "Missing workflow discovery failure scenario"
     
     def test_workflow_specifies_rca_signal_type_in_mcp_search(self):
         """
@@ -206,9 +209,11 @@ class TestFivePhaseWorkflowBehavior:
         
         prompt = _create_investigation_prompt(request_data)
         
-        # BEHAVIOR VALIDATION: MCP search must use RCA signal_type
-        assert "YOUR_RCA_SIGNAL_TYPE" in prompt or "RCA signal_type" in prompt,             "Missing instruction to use RCA signal_type in MCP search"
-        assert "YOUR_RCA_SEVERITY" in prompt or "RCA severity" in prompt,             "Missing instruction to use RCA severity in MCP search"
+        # BEHAVIOR VALIDATION: Workflow discovery must be based on RCA findings (DD-HAPI-017)
+        assert "RCA" in prompt or "rca" in prompt.lower() or "root cause" in prompt.lower(), \
+            "Missing instruction to use RCA findings for workflow discovery"
+        assert "list_available_actions" in prompt or "list_workflows" in prompt, \
+            "Missing three-step discovery tool references"
     
     def test_workflow_requires_investigation_tools_usage(self):
         """

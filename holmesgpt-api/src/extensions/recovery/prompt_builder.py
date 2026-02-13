@@ -209,9 +209,9 @@ def _build_cluster_context_section(detected_labels: DetectedLabels) -> str:
 
 def _build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     """
-    Build MCP workflow search filter instructions based on DetectedLabels.
+    Build workflow discovery filter instructions based on DetectedLabels.
 
-    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1, DD-HAPI-017
 
     DD-WORKFLOW-001 v2.1: Honor failedDetections
     - Fields in failedDetections are EXCLUDED from filter instructions
@@ -265,22 +265,93 @@ def _build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     filters = {k: v for k, v in filters.items() if v}
 
     return f"""
-### MCP Workflow Search Instructions
+### Workflow Discovery Context (DetectedLabels)
 
-When calling the `search_workflow_catalog` MCP tool, include detected labels as filters:
+The following detected labels describe the target cluster environment.
+These are automatically included in your workflow discovery tool calls as context filters.
+You do NOT need to pass them manually — they are injected by the system.
 
+Detected label filters:
 ```json
-{{
-  "query": "<signal_type> <severity>",
-  "filters": {json.dumps(filters, indent=4)}
-}}
+{json.dumps(filters, indent=4)}
 ```
 
-The Data Storage service will use these filters to return only workflows that are compatible
+The Data Storage service uses these labels to return only workflows compatible
 with the detected cluster environment.
 
 **IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
 """
+
+
+def _build_business_context_section(
+    environment: str, priority: str, business_category: str, risk_tolerance: str
+) -> str:
+    """
+    Build the auto-injected business context section for LLM prompts.
+
+    Shared by incident and recovery prompt builders to ensure consistency.
+    These fields are automatically injected into workflow discovery tool calls.
+
+    Design Decision: DD-HAPI-017
+    """
+    return f"""## Business Context (AUTO-INJECTED INTO WORKFLOW DISCOVERY)
+
+**IMPORTANT**: These fields are automatically injected into all workflow discovery tool calls. They are for context only — you do NOT need to pass them.
+
+- Environment: {environment}
+- Priority: {priority}
+- Business Category: {business_category}
+- Risk Tolerance: {risk_tolerance}
+
+**Note**: These business context fields are automatically included as signal context filters
+in all workflow discovery tool calls. You do NOT need to pass them manually."""
+
+
+def _build_three_step_protocol_instructions(
+    rca_context: str = "your RCA findings",
+    exclude_workflow_id: str = None,
+) -> str:
+    """
+    Build the three-step workflow discovery protocol instructions.
+
+    Shared by incident and recovery prompt builders to avoid duplication.
+    Parameterized for recovery-specific constraints (workflow exclusion).
+
+    Design Decision: DD-HAPI-017, DD-WORKFLOW-016
+
+    Args:
+        rca_context: What the LLM should match against in Step 1.
+        exclude_workflow_id: If set, adds constraint to avoid re-selecting this workflow.
+    """
+    step2_constraint = ""
+    closing = ""
+
+    if exclude_workflow_id:
+        step2_constraint = (
+            f" **Do NOT select the previously failed workflow\n"
+            f"(`{exclude_workflow_id}`).**"
+        )
+        closing = "\n\n**Constraint**: Do NOT select the previously failed workflow."
+    else:
+        closing = (
+            "\n\n**This step is REQUIRED** - you cannot skip workflow discovery. "
+            "If the tools are available, you must invoke them."
+        )
+
+    return f"""**Step 1**: Call `list_available_actions` to discover available remediation action types.
+Review all returned action types and their descriptions. Choose the action type that
+best matches {rca_context}.
+
+**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
+**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to
+review ALL workflows. Compare success rates, execution history, and descriptions
+across ALL workflows before selecting.{step2_constraint}
+
+**Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to
+retrieve its full parameter schema. If you get "not found", go back to Step 2
+and choose a different workflow.{closing}"""
+
+
 def _create_recovery_investigation_prompt(request_data: Dict[str, Any]) -> str:
     """
     Create investigation prompt for recovery analysis.
@@ -427,9 +498,10 @@ You must understand what was attempted and why it failed before recommending alt
    - Search for workflows that handle this specific failure mode
    - Consider less aggressive remediation if original was too aggressive
 
-5. **SEARCH** for alternative workflows using:
-   - Query: `"<CURRENT_SIGNAL_TYPE> <CURRENT_SEVERITY> recovery"`
-   - Include the failure reason in your search rationale
+5. **DISCOVER** alternative workflows using the three-step protocol:
+   - Call `list_available_actions` to see what action types are available
+   - Call `list_workflows` to browse workflows for the best action type
+   - Call `get_workflow` to retrieve the full parameter schema
 
 ---
 
@@ -440,7 +512,7 @@ You must understand what was attempted and why it failed before recommending alt
         prompt += f"""## Cluster Environment Characteristics (AUTO-DETECTED)
 
 The following characteristics were automatically detected for the target resource.
-**YOU MUST include these as filters in your MCP workflow search request.**
+**These are automatically included as context filters in your workflow discovery tool calls.**
 
 {_build_cluster_context_section(detected_labels)}
 
@@ -449,6 +521,13 @@ The following characteristics were automatically detected for the target resourc
 ---
 
 """
+
+    # Pre-compute three-step protocol instructions for recovery (DD-HAPI-017)
+    _failed_workflow_id = selected_workflow.get('workflow_id', 'Unknown')
+    three_step_recovery = _build_three_step_protocol_instructions(
+        rca_context="your updated RCA findings for the CURRENT state (not the original signal)",
+        exclude_workflow_id=_failed_workflow_id,
+    )
 
     # Add current signal context
     prompt += f"""
@@ -460,12 +539,7 @@ The following characteristics were automatically detected for the target resourc
 - Resource: {namespace}/{resource_kind}/{resource_name}
 - Error: {error_message}
 
-## Business Context (FOR MCP WORKFLOW SEARCH)
-
-- Environment: {environment}
-- Priority: {priority}
-- Business Category: {business_category}
-- Risk Tolerance: {risk_tolerance}
+{_build_business_context_section(environment, priority, business_category, risk_tolerance)}
 
 ## Your Investigation Workflow (Recovery Mode)
 
@@ -479,16 +553,16 @@ The following characteristics were automatically detected for the target resourc
 - Determine if the signal type has CHANGED after the failed workflow
 - If changed, use the NEW signal type for workflow search
 
-### Phase 3: Search for Alternative Workflow (MANDATORY)
-**YOU MUST** call MCP `search_workflow_catalog` tool with:
-- **Query**: `"<CURRENT_SIGNAL_TYPE> <CURRENT_SEVERITY> recovery"`
-- **Constraint**: Do NOT select the previously failed workflow
+### Phase 3: Discover and Select Alternative Workflow (MANDATORY - Three-Step Protocol)
+**YOU MUST** follow this three-step workflow discovery protocol:
+
+{three_step_recovery}
 
 ### Phase 4: Return Recovery Recommendation
 
 **CRITICAL**: Use section header format (NOT a single JSON block) to ensure all fields are preserved.
 
-**If MCP search succeeds**:
+**If workflow discovery succeeds**:
 
 # recovery_analysis
 {{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation of why previous attempt failed", "state_changed": true, "current_signal_type": "Current signal type"}}, "current_rca": {{"summary": "Updated RCA", "severity": "current severity", "signal_type": "current signal type", "contributing_factors": ["factor1"]}}}}
@@ -502,7 +576,7 @@ The following characteristics were automatically detected for the target resourc
 # can_recover
 True
 
-**If MCP search fails or no workflows found**:
+**If workflow discovery fails or no workflows found**:
 
 # recovery_analysis
 {{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation"}}, "current_rca": {{"summary": "Root cause", "severity": "high", "contributing_factors": ["factor1"]}}}}
@@ -672,17 +746,7 @@ same ongoing issue.
 - Signal Source: {signal_source}
 - Signal Labels: {signal_labels if signal_labels else 'N/A'}
 
-## Business Context (FOR WORKFLOW SEARCH - NOT FOR RCA)
-These fields are used by MCP workflow search tools to match workflows.
-You do NOT need to consider these in your RCA analysis.
-
-- Environment: {environment}
-- Priority: {priority}
-- Business Category: {business_category}
-- Risk Tolerance: {risk_tolerance}
-
-**Note**: When you call MCP workflow search tools (e.g., `search_workflow_catalog`), you must
-pass these business context fields as parameters.
+{_build_business_context_section(environment, priority, business_category, risk_tolerance)}
 
 ## Required Analysis
 
@@ -738,17 +802,15 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 **Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
 
-### Phase 4: Search for Workflow (MANDATORY)
-**YOU MUST** call MCP `search_workflow_catalog` tool with:
-- **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
-- **Label Filters**: Business context values
+### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
+**YOU MUST** follow this three-step workflow discovery protocol:
 
-**This step is REQUIRED** - you cannot skip workflow search. If the tool is available, you must invoke it.
+{_build_three_step_protocol_instructions()}
 
 ### Phase 5: Return Summary + JSON Payload
 Provide natural language summary + structured JSON with workflow and parameters.
 
-**If MCP search succeeds**:
+**If workflow discovery succeeds**:
 ```json
 {{
   "root_cause_analysis": {{
@@ -757,7 +819,7 @@ Provide natural language summary + structured JSON with workflow and parameters.
     "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": {{
-    "workflow_id": "workflow-id-from-mcp-search",
+    "workflow_id": "workflow-id-from-discovery",
     "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
@@ -768,7 +830,7 @@ Provide natural language summary + structured JSON with workflow and parameters.
 }}
 ```
 
-**If MCP search fails or returns no workflows**:
+**If workflow discovery fails or returns no workflows**:
 ```json
 {{
   "root_cause_analysis": {{
@@ -777,7 +839,7 @@ Provide natural language summary + structured JSON with workflow and parameters.
     "contributing_factors": ["factor1", "factor2"]
   }},
   "selected_workflow": null,
-  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
+  "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
 }}
 ```
 
@@ -829,42 +891,30 @@ After your investigation, assess the severity of the root cause using these leve
 - Novel condition with no precedent in the system
 - Example: Pod in CrashLoopBackOff but container logs are empty and no events provide context
 
-## MCP Workflow Search Guidance
+## Workflow Discovery Guidance (Three-Step Protocol)
 
-When searching for remediation workflows, use this taxonomy:
+You have three workflow discovery tools available. Use them in order:
 
-**Query Format**: `<signal_type> <severity> [optional_keywords]`
-- Example: `"OOMKilled critical"` or `"CrashLoopBackOff high"`
-- Use canonical Kubernetes event reasons for signal_type (from your RCA assessment)
-- Use your RCA severity assessment (may differ from input signal)
+1. **`list_available_actions`** — Discover what remediation action types are available.
+   Each action type includes guidance on when to use it and when not to.
 
-**Canonical Signal Types** (examples - use any canonical Kubernetes event reason):
-- `OOMKilled`: Container exceeded memory limit and was killed
-- `CrashLoopBackOff`: Container repeatedly crashing
-- `ImagePullBackOff`: Cannot pull container image
-- `Evicted`: Pod evicted due to resource pressure
-- `NodeNotReady`: Node is not ready
-- `PodPending`: Pod stuck in pending state
-- `FailedScheduling`: Scheduler cannot place pod
-- `BackoffLimitExceeded`: Job exceeded retry limit
-- `DeadlineExceeded`: Job exceeded active deadline
-- `FailedMount`: Volume mount failed
+2. **`list_workflows`** with `action_type` — List specific workflows for your chosen action.
+   Review ALL pages (if `hasMore=true`, call again with increased `offset`).
+   Compare workflows by success rate and execution history.
 
-**Note**: These are common examples. Use any canonical Kubernetes event reason that matches your RCA findings.
+3. **`get_workflow`** with `workflow_id` — Get the full workflow with parameter schema.
+   If "not found", the workflow doesn't match your signal context — choose another.
+
+**Signal context filters** (severity, component, environment, priority) are automatically
+included in all discovery calls. You do NOT need to provide them manually.
+
+**Canonical Signal Types** (for reference during RCA):
+- `OOMKilled`, `CrashLoopBackOff`, `ImagePullBackOff`, `Evicted`
+- `NodeNotReady`, `PodPending`, `FailedScheduling`
+- `BackoffLimitExceeded`, `DeadlineExceeded`, `FailedMount`
+
+Use any canonical Kubernetes event reason that matches your RCA findings.
 For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event
-
-**Label Parameters** (for MCP workflow search):
-1. **signal_type** (Technical - from your RCA assessment)
-2. **severity** (Technical - from your RCA assessment)
-3. **environment** (Business - pass-through: `{environment}`)
-4. **priority** (Business - pass-through: `{priority}`)
-5. **risk_tolerance** (Business - pass-through: `{risk_tolerance}`)
-6. **business_category** (Business - pass-through: `{business_category}`)
-
-**Search Optimization**:
-- Exact label matching increases confidence score
-- Workflow descriptions should start with `"<signal_type> <severity>:"`
-- Use all 6 label parameters for filtering
 
 ## Expected Response Format
 
@@ -885,7 +935,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-discovery", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "parameters": {{"PARAM_NAME": "value"}}}}
 
 **IMPORTANT**:
 - **DO NOT** use a single ```json block - use section headers as shown above

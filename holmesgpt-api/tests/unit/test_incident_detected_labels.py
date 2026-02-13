@@ -134,9 +134,9 @@ class TestIncidentPromptDetectedLabels:
 
         prompt = _create_incident_investigation_prompt(request_data)
 
-        # Business outcome: MCP filter instructions present
-        assert "search_workflow_catalog" in prompt
-        assert "filters" in prompt
+        # Business outcome: Workflow discovery context present (DD-HAPI-017: three-step protocol)
+        assert "Workflow Discovery Context" in prompt or "workflow discovery" in prompt.lower()
+        assert "filters" in prompt.lower() or "detected" in prompt.lower()
 
     def test_incident_prompt_handles_empty_enrichment_results(self):
         """
@@ -277,6 +277,6 @@ class TestIncidentMCPFilterInstructions:
 
         instructions = _build_mcp_filter_instructions(detected_labels)
 
-        # Should still include instructions but with false values
-        assert "search_workflow_catalog" in instructions
+        # Should still include workflow discovery context with false values (DD-HAPI-017)
+        assert "Workflow Discovery Context" in instructions or "workflow discovery" in instructions.lower()
 
