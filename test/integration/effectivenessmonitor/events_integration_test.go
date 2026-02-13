@@ -100,7 +100,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 		Eventually(func() bool {
 			evts := listEventsForObject(ctx, k8sClient, ea.Name, ns)
 			reasons := eventReasons(evts)
-			// Should see at least AssessmentStarted and EffectivenessAssessed/RemediationIneffective
+			// Should see at least AssessmentStarted and EffectivenessAssessed
 			return containsReason(reasons, "AssessmentStarted")
 		}, 10*time.Second, interval).Should(BeTrue(),
 			"should emit AssessmentStarted event")
@@ -138,7 +138,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 		By("Ensuring mock AM returns resolved (score 1.0)")
 		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})
 
-		By("Creating an EA with low scoring threshold so score >= threshold")
+		By("Creating an EA")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-002",
@@ -156,9 +156,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.1, // Low threshold
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			},
 		}
@@ -183,9 +180,10 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 	})
 
 	// ========================================
-	// IT-EM-KE-003: RemediationIneffective event when score below threshold
+	// IT-EM-KE-003: EM always emits Normal EffectivenessAssessed on completion
 	// ========================================
-	It("IT-EM-KE-003: should emit RemediationIneffective when score below threshold", func() {
+	// EM no longer emits Warning RemediationIneffective; it always emits Normal EffectivenessAssessed.
+	It("IT-EM-KE-003: should emit EffectivenessAssessed event on completion (never RemediationIneffective)", func() {
 		ns := createTestNamespace("em-ke-003")
 		defer deleteTestNamespace(ns)
 
@@ -199,7 +197,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			}),
 		})
 
-		By("Creating an EA with high scoring threshold")
+		By("Creating an EA")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-003",
@@ -217,9 +215,6 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-					ScoringThreshold:    0.9, // High threshold - scores will be below this
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			},
 		}
@@ -234,13 +229,13 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		By("Verifying RemediationIneffective event emitted")
+		By("Verifying EffectivenessAssessed event emitted (EM always emits Normal, never Warning RemediationIneffective)")
 		Eventually(func() bool {
 			evts := listEventsForObject(ctx, k8sClient, ea.Name, ns)
 			reasons := eventReasons(evts)
-			return containsReason(reasons, "RemediationIneffective")
+			return containsReason(reasons, "EffectivenessAssessed")
 		}, 10*time.Second, interval).Should(BeTrue(),
-			"should emit RemediationIneffective event when score < threshold")
+			"should emit EffectivenessAssessed event on completion")
 
 		By("Restoring mock AM to default")
 		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})

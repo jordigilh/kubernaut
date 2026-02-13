@@ -22,7 +22,6 @@ limitations under the License.
 // Business Requirements:
 // - BR-EM-006: Configurable stabilization window (default: 5m)
 // - BR-EM-007: Configurable validity window (default: 30m)
-// - BR-EM-008: Configurable scoring threshold (default: 0.5)
 package config
 
 import (
@@ -45,12 +44,6 @@ type AssessmentConfig struct {
 	// Reference: BR-EM-007
 	ValidityWindow time.Duration
 
-	// ScoringThreshold is the minimum score (0.0-1.0) for a "healthy" assessment.
-	// Below this threshold, a Warning K8s event is emitted.
-	// Default: 0.5. Range: [0.0, 1.0].
-	// Reference: BR-EM-008
-	ScoringThreshold float64
-
 	// PrometheusEnabled indicates whether metric comparison is enabled.
 	// When false, the metrics component is skipped in assessments.
 	PrometheusEnabled bool
@@ -65,7 +58,6 @@ func DefaultAssessmentConfig() AssessmentConfig {
 	return AssessmentConfig{
 		StabilizationWindow: 5 * time.Minute,
 		ValidityWindow:      30 * time.Minute,
-		ScoringThreshold:    0.5,
 		PrometheusEnabled:   true,
 		AlertManagerEnabled: true,
 	}
@@ -94,11 +86,6 @@ func (c *AssessmentConfig) Validate() error {
 	if c.StabilizationWindow >= c.ValidityWindow {
 		return fmt.Errorf("stabilizationWindow (%v) must be shorter than validityWindow (%v)",
 			c.StabilizationWindow, c.ValidityWindow)
-	}
-
-	// Scoring threshold validation
-	if c.ScoringThreshold < 0.0 || c.ScoringThreshold > 1.0 {
-		return fmt.Errorf("scoringThreshold must be between 0.0 and 1.0, got %v", c.ScoringThreshold)
 	}
 
 	return nil

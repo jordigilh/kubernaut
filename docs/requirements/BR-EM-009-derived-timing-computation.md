@@ -12,6 +12,8 @@
 
 The Effectiveness Monitor (EM) must compute and persist all timing-derived assessment fields on first reconciliation. This prevents redundant recomputation on every reconcile loop, provides operator observability into the assessment timeline, and enforces the invariant that `StabilizationWindow < ValidityDeadline`.
 
+**EA Spec Simplification**: The EA CRD `spec.config` (EAConfig) contains only `StabilizationWindow` (set by the RO). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` are EM operational config only — they are not in the EA spec.
+
 Previously, `ValidityDeadline` was set by the RO in the EA spec. This created a risk where the RO could misconfigure the deadline such that `StabilizationWindow > ValidityDeadline`, causing the EA to expire before assessment could begin.
 
 ## Requirements
@@ -40,7 +42,7 @@ Where `config.ValidityWindow` comes from the EM's `ReconcilerConfig` (default: 3
 PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow
 ```
 
-Where `StabilizationWindow` comes from `EA.Spec.Config.StabilizationWindow` (set by the RO).
+Where `StabilizationWindow` comes from `EA.Spec.Config.StabilizationWindow`. The EA spec `EAConfig` contains only `StabilizationWindow` (set by the RO); `PrometheusEnabled` and `AlertManagerEnabled` are EM operational config only, not in the EA spec.
 
 **Acceptance Criteria:**
 - PrometheusCheckAfter is stored in `EA.Status.PrometheusCheckAfter`

@@ -108,9 +108,6 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 					},
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-						ScoringThreshold:    0.5,
-						PrometheusEnabled:   true,
-						AlertManagerEnabled: true,
 					},
 				},
 				Status: eav1.EffectivenessAssessmentStatus{
@@ -180,16 +177,12 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-					ScoringThreshold:    0.5,
-					PrometheusEnabled:   true,
-					AlertManagerEnabled: true,
 				},
 			}
 
 			Expect(spec.CorrelationID).To(Equal("rr-test-001"))
 			Expect(spec.TargetResource.Kind).To(Equal("Deployment"))
 			Expect(spec.Config.StabilizationWindow.Duration).To(Equal(5 * time.Minute))
-			Expect(spec.Config.ScoringThreshold).To(Equal(0.5))
 		})
 	})
 

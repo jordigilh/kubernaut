@@ -342,7 +342,6 @@ data:
     assessment:
       stabilizationWindow: 30s
       validityWindow: 5m
-      scoringThreshold: 0.5
     audit:
       dataStorageUrl: http://data-storage-service:8080
       timeout: 10s

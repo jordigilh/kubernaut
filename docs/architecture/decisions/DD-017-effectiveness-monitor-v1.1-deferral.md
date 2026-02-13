@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.4 | 2026-02-13 | Architecture Team | EA spec simplification: EAConfig only has StabilizationWindow; ScoringThreshold, PrometheusEnabled, AlertManagerEnabled removed from EA spec (EM operational config only). EM always emits Normal EffectivenessAssessed; RemediationIneffective removed. DS computes weighted score on demand from component audit events. |
 | 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
 | 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
 | 2.1 | 2026-02-09 | Architecture Team | Design refinements from gap analysis: (1) Correlation ID is RR.Name, not UID. (2) EM reads exclusively from audit traces, never from RR CRD. (3) RO must query API server directly for target resource spec (not cache). (4) No graceful degradation for Prometheus/AlertManager — fail-fast via config toggles. (5) Superseded BR-EFFECTIVENESS-001/002/003 and archived stale docs. (6) DD-EFFECTIVENESS-002 DB-backed idempotency superseded — EM uses audit-event dedup via DS. |
@@ -131,12 +132,7 @@ score = weighted_average(
 
 #### 7. K8s Event Emission
 
-When effectiveness is below a threshold (configurable, default 0.5), the EM emits:
-
-```go
-recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationIneffective,
-    fmt.Sprintf("Remediation effectiveness %.1f/1.0 — signal unresolved, consider alternative approach", score))
-```
+The EM always emits a Normal `EffectivenessAssessed` K8s event on assessment completion. There is no threshold-based Warning event; the EM does not compute or compare average scores. DataStorage computes the weighted effectiveness score on demand from component audit events.
 
 ### EM Trigger: RO-Created EffectivenessAssessment CRD
 
@@ -147,6 +143,8 @@ recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationIneffec
 > See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 9.4 for the full EA CRD definition and Section 3 for the lifecycle sequence diagram.
 >
 > **v2.3 Clarification**: EA CRD `validityDeadline` is in **status** (not spec), computed by the EM on first reconciliation. Status also includes `prometheusCheckAfter` and `alertManagerCheckAfter` for derived timing. The EM emits an `effectiveness.assessment.scheduled` audit event when scheduling the assessment, capturing these derived timestamps for audit trail correlation.
+>
+> **EA Spec Simplification**: The EA CRD `spec.config` (EAConfig) now contains only `StabilizationWindow` (set by the RO). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` have been removed from the EA spec — they are EM operational config only.
 
 ### Stabilization Window & Cooldown Alignment
 

@@ -51,10 +51,6 @@ type EMAssessmentConfig struct {
 	// ValidityWindow is the maximum duration for assessment completion.
 	// Default: 30m. Range: [5m, 24h].
 	ValidityWindow time.Duration `yaml:"validityWindow"`
-
-	// ScoringThreshold is the minimum score for a "healthy" assessment.
-	// Default: 0.5. Range: [0.0, 1.0].
-	ScoringThreshold float64 `yaml:"scoringThreshold"`
 }
 
 // EMExternalConfig defines external service connection parameters.
@@ -82,7 +78,6 @@ func DefaultEMConfig() *EMConfig {
 		Assessment: EMAssessmentConfig{
 			StabilizationWindow: 5 * time.Minute,
 			ValidityWindow:      30 * time.Minute,
-			ScoringThreshold:    0.5,
 		},
 		Audit: AuditConfig{
 			DataStorageURL: "http://data-storage-service:8080",
@@ -154,9 +149,6 @@ func (c *EMConfig) Validate() error {
 	if c.Assessment.StabilizationWindow >= c.Assessment.ValidityWindow {
 		return fmt.Errorf("assessment.stabilizationWindow (%v) must be shorter than validityWindow (%v)",
 			c.Assessment.StabilizationWindow, c.Assessment.ValidityWindow)
-	}
-	if c.Assessment.ScoringThreshold < 0.0 || c.Assessment.ScoringThreshold > 1.0 {
-		return fmt.Errorf("assessment.scoringThreshold must be between 0.0 and 1.0, got %v", c.Assessment.ScoringThreshold)
 	}
 
 	// Validate audit config (reuse common patterns)

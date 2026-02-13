@@ -20,6 +20,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.4 | 2026-02-13 | Architecture Team | EA spec simplified: EAConfig now only contains `stabilizationWindow`. Removed `scoringThreshold`, `prometheusEnabled`, `alertManagerEnabled` from EA spec. EM reads `prometheusEnabled` and `alertManagerEnabled` from its own config (EMConfig.External). ScoringThreshold removed entirely — EM no longer computes average score or compares against threshold. EM always emits Normal `EffectivenessAssessed` event on completion; `RemediationIneffective` K8s event removed. DS computes weighted effectiveness score on demand. |
 | 1.3 | 2026-02-12 | Architecture Team | ValidityDeadline moved from EA spec to status (EM computes on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event emitted on first reconciliation capturing all derived timing. Follows K8s spec/status convention: RO sets desired state (StabilizationWindow in spec), EM computes derived state (timing fields in status). |
 | 1.2 | 2026-02-09 | Architecture Team | EM emits individual component audit events (health, alert, metrics, hash); DS computes weighted score on demand. Assessment validity window (30m default) prevents stale data collection. Replaces single `effectiveness.assessment.completed` data event with component events + lifecycle marker. |
 | 1.1 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD (follows AA/WFE/NR pattern). EM watches EA CRDs instead of RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation with assessment deadline. Side-effect detection deferred to post-V1.0. Scoring formula updated (3 components: health 0.40, signal 0.35, metrics 0.25). DD-EFFECTIVENESS-003 RR-watch superseded by EA CRD trigger. |
@@ -54,7 +55,7 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 ### Design Principles
 
 1. **Audit-trace-only data source**: EM reads all remediation context from DataStorage audit events, never from the RemediationRequest CRD directly (DD-017 v2.1). The RR is transient and may be deleted or tampered.
-2. **RO-managed lifecycle**: The Remediation Orchestrator creates the `EffectivenessAssessment` CRD — the same pattern used for AIAnalysis, WorkflowExecution, and NotificationRequest. The RO is the single lifecycle owner for all remediation sub-resources. As with the other CRDs, the spec is **immutable after creation** via CEL validation (`self == oldSelf`), enforced by the Kubernetes API server. This prevents tampering — any attempt to modify the EA spec after creation is rejected by the API server, guaranteeing the EM always operates on the original spec set by the RO.
+2. **RO-managed lifecycle**: The Remediation Orchestrator creates the `EffectivenessAssessment` CRD — the same pattern used for AIAnalysis, WorkflowExecution, and NotificationRequest. The RO is the single lifecycle owner for all remediation sub-resources. The EA spec contains only `stabilizationWindow` (the desired wait time before assessment); the RO sets this when creating the EA. As with the other CRDs, the spec is **immutable after creation** via CEL validation (`self == oldSelf`), enforced by the Kubernetes API server. This prevents tampering — any attempt to modify the EA spec after creation is rejected by the API server, guaranteeing the EM always operates on the original spec set by the RO.
 3. **Deterministic outcomes**: No graceful degradation for Prometheus or AlertManager. If configured as enabled but unreachable, EM fails to start (DD-017 v2.1).
 4. **Idempotent assessment**: The EA CRD spec is immutable (CEL: `self == oldSelf`), and the EA status tracks assessment progress. Duplicate EM reconciles check `status.phase` and `status.components` before proceeding. DS deduplicates component audit events by correlation ID + event type.
 5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events.
@@ -106,7 +107,7 @@ flowchart LR
     Scorer -->|effectiveness score| Assessor
     Assessor -->|update status| EA
     Assessor -->|emit assessment audit| DS
-    Assessor -->|K8s Warning if score below threshold| EA
+    Assessor -->|K8s Event(Normal, EffectivenessAssessed)| EA
 ```
 
 The EM has six external integration points:
@@ -118,7 +119,7 @@ The EM has six external integration points:
 | Kubernetes API | Read | K8s API | Health checks on target resource, post-remediation spec hash |
 | Prometheus | Read | PromQL HTTP | Pre/post metric comparison |
 | AlertManager | Read | HTTP REST | Alert resolution check |
-| EffectivenessAssessment CRD | Write (event) | K8s Event API | Warning event when score below threshold |
+| EffectivenessAssessment CRD | Write (event) | K8s Event API | Normal event on completion (EffectivenessAssessed) |
 
 > **v1.1 Note**: DD-EFFECTIVENESS-003 (Watch RemediationRequest, not WorkflowExecution) is superseded. The EM no longer watches RR CRDs. Instead, the **RO creates an EffectivenessAssessment CRD** when the RR reaches a terminal phase, following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
 
@@ -219,11 +220,7 @@ sequenceDiagram
     EM->>EA: Update status: phase=Completed, reason=full|partial
     EM->>DS: audit: effectiveness.assessment.completed (lifecycle marker, no score)
     Note over DS: DS computes weighted score on demand from component events
-    alt DS-computed score below threshold
-        EM->>K8s: Event(Warning, RemediationIneffective) on EA
-    else score above threshold
-        EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
-    end
+    EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
 
     Note over RO: Phase 8 — RO detects EA completion
     RO-->>EA: Watch detects EA phase=Completed
@@ -335,12 +332,8 @@ sequenceDiagram
     Ctrl->>DS: POST audit: effectiveness.assessment.completed (lifecycle marker)
     Note over Ctrl: DS computes weighted score on demand from component events
 
-    Note over Ctrl,K8s: Step 8 — K8s Event (EM queries DS for score to determine threshold)
-    alt DS-computed score below threshold
-        Ctrl->>K8s: Event(Warning, RemediationIneffective) on EA
-    else score above threshold
-        Ctrl->>K8s: Event(Normal, EffectivenessAssessed) on EA
-    end
+    Note over Ctrl,K8s: Step 8 — K8s Event
+    Ctrl->>K8s: Event(Normal, EffectivenessAssessed) on EA
 ```
 
 ---
@@ -451,11 +444,7 @@ flowchart TD
     reason=full|partial|metrics_timed_out"]
     UpdateEAComplete --> EmitLifecycle["Emit effectiveness.assessment.completed
     (lifecycle marker, no score)"]
-    EmitLifecycle --> QueryScore["Query DS for computed score
-    (DS aggregates component events)"]
-    QueryScore --> CheckThreshold{Score below threshold?}
-    CheckThreshold -->|Yes| EmitWarning[K8s Warning: RemediationIneffective]
-    CheckThreshold -->|No| EmitNormal[K8s Normal: EffectivenessAssessed]
+    EmitLifecycle --> EmitEvent[K8s Event: Normal, EffectivenessAssessed]
 ```
 
 ### Scoring Formula (V1.0) — Computed by DS On Demand
@@ -815,9 +804,6 @@ spec:
     namespace: prod
   config:
     stabilizationWindow: 5m
-    scoringThreshold: 0.5
-    prometheusEnabled: true
-    alertManagerEnabled: true
 status:
   phase: Assessing   # Pending → Assessing → Completed → Failed
   validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + validityWindow
@@ -889,23 +875,23 @@ datastorage:
   timeout: 5s                            # HTTP request timeout
 
 prometheus:
-  enabled: true                          # Enable/disable metric comparison
+  enabled: true                          # EM operational config: enable/disable metric comparison (not per-EA)
   url: "http://prometheus:9090"          # Required when enabled
   timeout: 10s                           # PromQL query timeout
   preWindowDuration: 30m                 # Metric window before the triggering signal
   scrapeInterval: 60s                    # Expected Prometheus scrape interval (for requeue timing)
 
 alertmanager:
-  enabled: true                          # Enable/disable alert resolution check
+  enabled: true                          # EM operational config: enable/disable alert resolution check (not per-EA)
   url: "http://alertmanager:9093"        # Required when enabled
   timeout: 5s                            # HTTP request timeout
 
 assessment:
-  stabilizationWindow: 5m               # Wait time after EA creation before assessment starts
   validityWindow: 30m                   # Hard upper bound: assessment data is only meaningful within this window
-  scoringThreshold: 0.5                  # Score below which Warning event is emitted (DS computes score, EM queries it)
   maxConcurrentAssessments: 10           # controller-runtime MaxConcurrentReconciles
 ```
+
+> **Note**: `prometheus.enabled` and `alertmanager.enabled` are EM operational config — the EM decides which assessment components to run based on its own config, not per-EA. The RO only sets `stabilizationWindow` in the EA spec when creating the EA. The `stabilizationWindow` used for each EA comes from the EA spec (set by RO); the EM's `validityWindow` is used to compute `validityDeadline` in EA status.
 
 The `validityWindow` is used by the EM to compute `validityDeadline` in the EA status on first reconciliation:
 ```
@@ -1063,5 +1049,5 @@ Before approving this ADR for TDD implementation:
 
 ---
 
-**Status**: PROPOSED (v1.2) -- Pending architecture review before TDD implementation
+**Status**: PROPOSED (v1.4) -- Pending architecture review before TDD implementation
 **Next**: Upon approval, proceed with TDD implementation per [Issue #82](https://github.com/jordigilh/kubernaut/issues/82)

@@ -54,7 +54,7 @@ The Effectiveness Monitor uses a **hybrid approach** combining automated checks 
 - **Scope**:
   - Health checks (pod running, OOM errors, latency metrics)
   - Metric comparisons (pre/post execution)
-  - Basic effectiveness scoring (formula-based)
+  - Component audit events (health, alert, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
   - Anomaly detection (metric changes > thresholds)
 - **Cost**: Negligible (computational only)
 - **Latency**: <100ms
@@ -175,8 +175,8 @@ WorkflowExecution CRD (completed) → Effectiveness Monitor (8080)
 
 Level 1 automated assessment provides immediate value from the first remediation:
 - Dual spec hash capture, health checks via K8s API, pre/post metric comparison via Prometheus
-- Alert resolution check via AlertManager, formula-based effectiveness scoring (0.0-1.0)
-- Side-effect detection, K8s event `EventReasonRemediationIneffective` when ineffective
+- Alert resolution check via AlertManager; EM emits component audit events; DataStorage computes weighted effectiveness score on demand
+- Side-effect detection; EM always emits Normal `EffectivenessAssessed` K8s event on completion
 - **No data dependency**: Works from Day 1 without historical accumulation
 
 ### **Level 2 (V1.1): 8+ Weeks Post V1.0**

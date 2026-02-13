@@ -100,24 +100,18 @@ type TargetResource struct {
 }
 
 // EAConfig contains assessment configuration set by RO at creation time.
+// Only StabilizationWindow is set by the RO — it controls how long the EM
+// waits after remediation before starting assessment checks.
+// All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
+// ValidityWindow) are EM-internal configuration read from EMConfig.
+// The EM emits individual component audit events to DataStorage; the overall
+// effectiveness score is computed by DataStorage on demand, not by the EM.
 type EAConfig struct {
 	// StabilizationWindow is the duration to wait after remediation before assessment.
 	// Set by the Remediation Orchestrator. The EM uses this to delay assessment
 	// until the system stabilizes post-remediation.
 	// +kubebuilder:validation:Required
 	StabilizationWindow metav1.Duration `json:"stabilizationWindow"`
-
-	// ScoringThreshold is the minimum score for a "healthy" assessment.
-	// Below this threshold, a Warning K8s event is emitted.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1
-	ScoringThreshold float64 `json:"scoringThreshold"`
-
-	// PrometheusEnabled indicates whether metric comparison should be performed.
-	PrometheusEnabled bool `json:"prometheusEnabled"`
-
-	// AlertManagerEnabled indicates whether alert resolution should be checked.
-	AlertManagerEnabled bool `json:"alertManagerEnabled"`
 }
 
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.

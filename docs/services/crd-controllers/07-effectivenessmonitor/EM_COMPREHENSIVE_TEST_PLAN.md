@@ -99,9 +99,9 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | Derived timing computation | 9.4, Principle 7 (v1.3) | EM computes ValidityDeadline, PrometheusCheckAfter, AlertManagerCheckAfter in status on first reconciliation |
 | Assessment scheduled audit | 9.2.0 (v1.3) | `effectiveness.assessment.scheduled` event emitted on first reconciliation with derived timing |
 | Audit event emission | 9.2 | 4 component events + 1 scheduling event + 1 lifecycle marker to DataStorage |
-| K8s Event emission | DD-EVENT-001 | EventRecorder events for phase transitions and scoring |
+| K8s Event emission | DD-EVENT-001 | EventRecorder events for phase transitions; EM always emits Normal EffectivenessAssessed on completion |
 | Fail-fast startup | Error Handling | FATAL if enabled dependency unreachable at startup |
-| Configuration | 9.5 | validityWindow, scrapeInterval, thresholds, enable/disable toggles |
+| Configuration | 9.5 | validityWindow, scrapeInterval, enable/disable toggles (PrometheusEnabled, AlertManagerEnabled are EM operational config only) |
 | Restart recovery | Error Handling | Resume from `status.components` after EM pod restart |
 | Graceful shutdown | DD-007 | Audit flush, in-flight EA completion, shutdown within timeout |
 | DS scoring (read path) | Scoring Formula | DS computes weighted score on demand from component events |
@@ -273,13 +273,11 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 
 | ID | Scenario | Unit | Integration | E2E | Notes |
 |----|----------|------|-------------|-----|-------|
-| UT-EM-KE-001 | EffectivenessAssessed event emitted on completion | X | | | Normal reason |
-| UT-EM-KE-002 | RemediationIneffective event emitted when score below threshold | X | | | Warning reason |
-| UT-EM-KE-003 | Event emitted for each phase transition | X | | | |
+| UT-EM-KE-001 | EffectivenessAssessed event emitted on completion (always Normal) | X | | | No threshold comparison |
+| UT-EM-KE-002 | Event emitted for each phase transition | X | | | |
 | IT-EM-KE-001 | K8s events recorded via FakeRecorder during reconcile | | X | | record.FakeRecorder |
-| IT-EM-KE-002 | EffectivenessAssessed event emitted on successful completion | | X | | Verify event reason + message |
-| IT-EM-KE-003 | RemediationIneffective event emitted when score below threshold | | X | | Requires mock scores < threshold |
-| IT-EM-KE-004 | No K8s events emitted when EA already Completed (idempotency) | | X | | No duplicate events |
+| IT-EM-KE-002 | EffectivenessAssessed event emitted on successful completion | | X | | Verify event reason + message (always Normal) |
+| IT-EM-KE-003 | No K8s events emitted when EA already Completed (idempotency) | | X | | No duplicate events |
 
 ### Configuration (CF)
 
@@ -292,12 +290,10 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | UT-EM-CF-005 | scrapeInterval default = 60s | X | | | |
 | UT-EM-CF-006 | prometheus.enabled = false -> metrics assessment skipped | X | | | |
 | UT-EM-CF-007 | alertmanager.enabled = false -> alert assessment skipped | X | | | |
-| UT-EM-CF-008 | scoringThreshold parsed correctly | X | | | |
-| UT-EM-CF-009 | maxConcurrentAssessments sets MaxConcurrentReconciles | X | | | |
+| UT-EM-CF-008 | maxConcurrentAssessments sets MaxConcurrentReconciles | X | | | |
 | IT-EM-CF-001 | Controller starts with valid config -> reconciler operational | | X | | Full wired-up config |
 | IT-EM-CF-002 | Prom disabled + AM disabled -> reconciler runs without external deps | | X | | Health + hash only |
 | IT-EM-CF-003 | Custom validityWindow (e.g., 5m) -> EA deadline computed correctly | | X | | Verify status.spec.config |
-| IT-EM-CF-004 | Custom scoringThreshold -> warning events use configured threshold | | X | | |
 
 ### Fail-Fast Startup (FF)
 
@@ -370,13 +366,13 @@ Code under test: `config/`, `health/`, `alert/`, `metrics/`, `hash/`, `validity/
 | Spec Hash (SH) | 4 | hash/ (deterministic hashing) |
 | Validity Window (VW) | 5 | validity/ (deadline computation, expiry logic) |
 | Audit Events (AE) | 7 | audit/ (payload construction, not emission) |
-| K8s Events (KE) | 3 | phase/ (event reason mapping) |
-| Configuration (CF) | 9 | config/ (parsing, validation, defaults) |
+| K8s Events (KE) | 2 | phase/ (event reason mapping) |
+| Configuration (CF) | 8 | config/ (parsing, validation, defaults) |
 | Fail-Fast (FF) | 6 | config/ (startup check logic) |
 | Operational Metrics (OM) | 3 | metrics/ (metric registration, naming) |
 | Restart Recovery (RR) | 3 | phase/ (resume decision logic) |
 | Graceful Shutdown (GS) | 4 | cmd/ (shutdown sequence, audit flush/close) |
-| **Total** | **75** | |
+| **Total** | **73** | |
 
 ### Integration Tests (Tier 2) -- Target: >=80% of integration-testable code
 
@@ -391,13 +387,13 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | Spec Hash (SH) | 3 | client/ (DS audit query for pre-hash), status/ (hash write) |
 | Validity Window (VW) | 5 | reconciler/ (deadline check, partial completion, expiry) |
 | Audit Events (AE) | 8 | client/ (DS HTTP writes: events, errors, retries) |
-| K8s Events (KE) | 4 | reconciler/ (EventRecorder integration) |
-| Configuration (CF) | 4 | internal/controller/ (manager setup with config) |
+| K8s Events (KE) | 3 | reconciler/ (EventRecorder integration) |
+| Configuration (CF) | 3 | internal/controller/ (manager setup with config) |
 | Fail-Fast (FF) | 5 | internal/controller/ (startup health checks to Prom/AM/DS) |
 | Operational Metrics (OM) | 3 | reconciler/ (controller-runtime metrics wiring) |
 | Restart Recovery (RR) | 3 | reconciler/ (re-list EAs, status.components check, skip logic) |
 | Graceful Shutdown (GS) | 3 | cmd/ + internal/controller/ (shutdown ordering, audit flush to DS) |
-| **Total** | **67** | |
+| **Total** | **65** | |
 
 ### E2E Tests (Tier 3)
 
@@ -414,7 +410,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | Graceful Shutdown (GS) | 1 | SIGTERM within timeout |
 | **Total** | **11** | |
 
-### Grand Total: 153 test scenarios
+### Grand Total: 149 test scenarios
 
 ---
 
@@ -491,7 +487,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 |--------|-------------|-------|--------------|
 | **AR** (Alert Resolution) | 5 | 6 | UT-EM-AR-001, -002, -003, -004, -005 |
 | **AE** (Audit Events) | 5 | 7 | UT-EM-AE-001, -002, -003, -004, -005 |
-| **CF** (Configuration) | 8 | 8 | UT-EM-CF-001, -002, -003, -004, -006, -007, -008, -009 |
+| **CF** (Configuration) | 8 | 8 | UT-EM-CF-001, -002, -003, -004, -005, -006, -007, -008 |
 | **OM** (Operational Metrics) | 3 | 3 | UT-EM-OM-001, -002, -003 |
 | **SH** (Spec Hash) | 5 | 5 | UT-EM-SH-001, -002, -003, -004, -005 |
 | **HC** (Health Check) | 6 | 10 | UT-EM-HC-001, -002, -003, -004, -005, -006 |
@@ -595,8 +591,8 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (
 
 | Metric | Target | Measured Against |
 |--------|--------|------------------|
-| Unit test count | 75 scenarios | |
-| Integration test count | 67 scenarios | |
+| Unit test count | 73 scenarios | |
+| Integration test count | 65 scenarios | |
 | E2E test count | 11 scenarios | |
 | Unit-testable coverage | **>=80%** | Pure logic: config/, health/, alert/, metrics/, hash/, validity/, audit/, phase/, types/ |
 | Integration-testable coverage | **>=80%** | I/O code: client/, status/, reconciler/, internal/controller/ |
@@ -632,6 +628,7 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1.1 | 2026-02-13 | AI Assistant | Removed ScoringThreshold: UT-EM-CF-008, IT-EM-CF-004; removed RemediationIneffective: UT-EM-KE-002, IT-EM-KE-003; EM always emits Normal EffectivenessAssessed; DS computes score on demand; grand total 149 scenarios |
 | 1.1.0 | 2026-02-12 | AI Assistant | Added Derived Timing (DT) domain: 6 UT + 9 IT + 2 E2E = 17 scenarios (ADR-EM-001 v1.3); updated AE domain with UT-EM-AE-008 (scheduled event payload); updated IT-EM-AE-001 and E2E-EM-AE-001 counts from 5 to 6 events; ValidityDeadline moved from spec to status |
 | 1.0.5 | 2026-02-13 | AI Assistant | Added Scenario Implementation Status Audit section; updated Phase 2-4 statuses (infra, CI, Makefile completed; 11/67 IT scenarios implemented); corrected E2E count to 11 |
 | 1.0.4 | 2026-02-13 | AI Assistant | Added Graceful Shutdown (GS) domain: 4 UT + 3 IT + 1 E2E = 8 scenarios (DD-007, ADR-032); grand total now 153 scenarios; aligned with AIAnalysis/SignalProcessing/Gateway GS patterns |

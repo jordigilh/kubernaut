@@ -165,7 +165,6 @@ func main() {
 		"probeAddr", probeAddr,
 		"stabilizationWindow", cfg.Assessment.StabilizationWindow,
 		"validityWindow", cfg.Assessment.ValidityWindow,
-		"scoringThreshold", cfg.Assessment.ScoringThreshold,
 		"prometheusEnabled", cfg.External.PrometheusEnabled,
 		"alertManagerEnabled", cfg.External.AlertManagerEnabled,
 		"dataStorageURL", cfg.Audit.DataStorageURL,

@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED  
 **Decision Date**: 2026-02-09  
-**Version**: 1.2  
+**Version**: 1.3  
 **Authority Level**: FOUNDATIONAL  
 **Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, EM)
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-09 | AI Assistant | Initial registry: 11 implemented events, migration pattern |
 | 1.1 | 2026-02-05 | AI Assistant | Full coverage: P1-P4 gap analysis, 9 new constants, per-controller BRs (BR-*-095) |
+| 1.3 | 2026-02-13 | AI Assistant | Removed EventReasonRemediationIneffective; EffectivenessAssessed always Normal (no threshold); DS computes score on demand |
 | 1.2 | 2026-02-12 | AI Assistant | Added EM controller: 5 events (3 P1, 1 P2), inline string compliance, BR-EM-095 |
 
 ---
@@ -186,8 +187,7 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | Reason Constant | Reason String | Type | Priority | When Emitted | Status |
 |----------------|---------------|------|----------|-------------|--------|
 | `EventReasonAssessmentStarted` | `AssessmentStarted` | Normal | P1 | EA transitions Pending → Assessing | Implemented (v1.2) |
-| `EventReasonEffectivenessAssessed` | `EffectivenessAssessed` | Normal | P1 | Assessment completed with score >= threshold | Implemented (v1.2) |
-| `EventReasonRemediationIneffective` | `RemediationIneffective` | Warning | P1 | Assessment completed with score < threshold | Implemented (v1.2) |
+| `EventReasonEffectivenessAssessed` | `EffectivenessAssessed` | Normal | P1 | Assessment completed; always Normal (no threshold comparison; DS computes score on demand) | Implemented (v1.2) |
 | `EventReasonAssessmentExpired` | `AssessmentExpired` | Warning | P1 | Validity window expired (ADR-EM-001) | Implemented (v1.2) |
 | `EventReasonComponentAssessed` | `ComponentAssessed` | Normal/Warning | P2 | Individual component (health/alert/metrics/hash) assessed; component name in message | Implemented (v1.2) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned |
@@ -290,7 +290,6 @@ const (
 const (
     EventReasonAssessmentStarted             = "AssessmentStarted"
     EventReasonEffectivenessAssessed         = "EffectivenessAssessed"
-    EventReasonRemediationIneffective        = "RemediationIneffective"
     EventReasonAssessmentExpired             = "AssessmentExpired"
     EventReasonComponentAssessed             = "ComponentAssessed"
 )
