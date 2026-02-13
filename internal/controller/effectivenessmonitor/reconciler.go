@@ -304,120 +304,70 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		r.emitComponentEvent(ctx, ea, "hash", result.Component)
 	}
 
-	// Alert check (BR-EM-002) - skip if disabled
-	if !ea.Status.Components.AlertAssessed && ea.Spec.Config.AlertManagerEnabled {
-		if r.AlertManagerClient != nil {
+	// Alert check (BR-EM-002) - skip if disabled or client unavailable
+	if !ea.Status.Components.AlertAssessed {
+		if ea.Spec.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
 			result := r.assessAlert(ctx, ea)
 			ea.Status.Components.AlertAssessed = result.Assessed
 			ea.Status.Components.AlertScore = result.Score
-			componentsChanged = true
 			r.Metrics.RecordComponentAssessment("alert", resultStatus(result), time.Since(startTime).Seconds(), result.Score)
 			r.emitComponentEvent(ctx, ea, "alert", result)
 		} else {
-			// Client not available, mark as assessed with nil score
 			ea.Status.Components.AlertAssessed = true
-			componentsChanged = true
 			r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)
 		}
-	} else if !ea.Status.Components.AlertAssessed && !ea.Spec.Config.AlertManagerEnabled {
-		// AlertManager disabled in config, skip
-		ea.Status.Components.AlertAssessed = true
 		componentsChanged = true
-		r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)
 	}
 
-	// Metrics check (BR-EM-003) - skip if disabled
-	if !ea.Status.Components.MetricsAssessed && ea.Spec.Config.PrometheusEnabled {
-		if r.PrometheusClient != nil {
+	// Metrics check (BR-EM-003) - skip if disabled or client unavailable
+	if !ea.Status.Components.MetricsAssessed {
+		if ea.Spec.Config.PrometheusEnabled && r.PrometheusClient != nil {
 			result := r.assessMetrics(ctx, ea)
 			ea.Status.Components.MetricsAssessed = result.Assessed
 			ea.Status.Components.MetricsScore = result.Score
-			componentsChanged = true
 			r.Metrics.RecordComponentAssessment("metrics", resultStatus(result), time.Since(startTime).Seconds(), result.Score)
 			r.emitComponentEvent(ctx, ea, "metrics", result)
 		} else {
 			ea.Status.Components.MetricsAssessed = true
-			componentsChanged = true
 			r.Metrics.RecordComponentAssessment("metrics", "skipped", time.Since(startTime).Seconds(), nil)
 		}
-	} else if !ea.Status.Components.MetricsAssessed && !ea.Spec.Config.PrometheusEnabled {
-		ea.Status.Components.MetricsAssessed = true
 		componentsChanged = true
-		r.Metrics.RecordComponentAssessment("metrics", "skipped", time.Since(startTime).Seconds(), nil)
 	}
 
-	// Step 8: Check if all components are done and prepare completion fields
-	//
-	// If all components are assessed in this reconcile, we set the completion fields
-	// (phase=Completed, CompletedAt, AssessmentReason) IN MEMORY alongside the component
-	// results and phase transition. This ensures a SINGLE Status().Update() call per
-	// reconcile, avoiding optimistic concurrency conflicts from multiple status writes.
+	// Step 8: Check if all components are done and prepare completion fields in-memory.
 	completing := false
 	if r.allComponentsDone(ea) {
 		completing = true
-		now := metav1.Now()
 		reason := r.determineAssessmentReason(ea)
-		ea.Status.Phase = eav1.PhaseCompleted
-		ea.Status.CompletedAt = &now
-		ea.Status.AssessmentReason = reason
-		ea.Status.Message = fmt.Sprintf("Assessment completed: %s", reason)
+		r.setCompletionFields(ea, reason)
 		logger.Info("All components done, preparing completion",
-			"phase", ea.Status.Phase,
-			"reason", reason,
-			"componentsChanged", componentsChanged,
+			"reason", reason, "componentsChanged", componentsChanged,
 			"pendingTransition", pendingTransition,
 		)
 	}
 
-	// Step 9: Single atomic status update (phase transition + timing + components + completion)
+	// Step 9: Single atomic status update (phase transition + timing + components + completion).
+	// All fields were updated in-memory above; this is the only Status().Update() per reconcile.
 	if componentsChanged || pendingTransition || completing {
-		logger.Info("Writing status update",
-			"phase", ea.Status.Phase,
-			"completing", completing,
-			"pendingTransition", pendingTransition,
-			"componentsChanged", componentsChanged,
-			"resourceVersion", ea.ResourceVersion,
-		)
 		if err := r.Status().Update(ctx, ea); err != nil {
 			logger.Error(err, "Failed to update EA status",
-				"phase", ea.Status.Phase,
-				"completing", completing,
+				"phase", ea.Status.Phase, "completing", completing,
 				"resourceVersion", ea.ResourceVersion,
 			)
 			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 			return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 		}
-		logger.Info("Status update succeeded",
-			"phase", ea.Status.Phase,
-			"resourceVersion", ea.ResourceVersion,
-			"completing", completing,
-		)
 
-		// Emit events and metrics for the Pending -> Assessing transition
+		// Post-update event emission (after successful persist)
 		if pendingTransition {
-			r.Metrics.RecordPhaseTransition(eav1.PhasePending, eav1.PhaseAssessing)
-
-			// Emit assessment_scheduled audit event (BR-EM-009.4)
-			r.emitAssessmentScheduledAuditEvent(ctx, ea)
-
-			r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonAssessmentStarted,
-				fmt.Sprintf("Assessment started for correlation %s", ea.Spec.CorrelationID))
-			r.Metrics.RecordK8sEvent("Normal", events.EventReasonAssessmentStarted)
+			r.emitPendingTransitionEvents(ctx, ea)
 		}
-
-		// Emit events and metrics for completion
 		if completing {
-			r.Metrics.RecordPhaseTransition(eav1.PhaseAssessing, eav1.PhaseCompleted)
-			r.Metrics.RecordAssessmentCompleted(ea.Status.AssessmentReason)
-
-			r.emitCompletionEvent(ea, ea.Status.AssessmentReason)
-			r.emitCompletedAuditEvent(ctx, ea, ea.Status.AssessmentReason)
-
+			r.emitCompletionMetricsAndEvents(ctx, ea, ea.Status.AssessmentReason)
 			logger.Info("Assessment completed",
 				"reason", ea.Status.AssessmentReason,
 				"correlationID", ea.Spec.CorrelationID,
 			)
-
 			r.Metrics.RecordReconcile("success", time.Since(startTime).Seconds())
 			return ctrl.Result{}, nil
 		}
@@ -790,38 +740,43 @@ func (r *Reconciler) calculateAverageScore(ea *eav1.EffectivenessAssessment) *fl
 	return &avg
 }
 
-// emitAssessmentScheduledAuditEvent emits the assessment.scheduled audit event to DataStorage.
-// This event captures all derived timing computed on first reconciliation (BR-EM-009.4).
-func (r *Reconciler) emitAssessmentScheduledAuditEvent(ctx context.Context, ea *eav1.EffectivenessAssessment) {
-	if r.AuditManager == nil {
-		log.FromContext(ctx).V(1).Info("AuditManager not configured, skipping scheduled audit event",
-			"eventType", string(emtypes.AuditAssessmentScheduled))
-		return
-	}
+// emitPendingTransitionEvents emits K8s events, audit events, and metrics for the
+// Pending -> Assessing phase transition. Called after the status update succeeds.
+func (r *Reconciler) emitPendingTransitionEvents(ctx context.Context, ea *eav1.EffectivenessAssessment) {
+	r.Metrics.RecordPhaseTransition(eav1.PhasePending, eav1.PhaseAssessing)
 
-	if err := r.AuditManager.RecordAssessmentScheduled(ctx, ea, r.Config.ValidityWindow); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to emit assessment scheduled audit event")
-		r.Metrics.RecordAuditEvent(string(emtypes.AuditAssessmentScheduled), "error")
-		return
-	}
-	r.Metrics.RecordAuditEvent(string(emtypes.AuditAssessmentScheduled), "success")
+	// Emit assessment_scheduled audit event (BR-EM-009.4)
+	r.emitAuditEvent(ctx, emtypes.AuditAssessmentScheduled, func() error {
+		return r.AuditManager.RecordAssessmentScheduled(ctx, ea, r.Config.ValidityWindow)
+	})
+
+	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonAssessmentStarted,
+		fmt.Sprintf("Assessment started for correlation %s", ea.Spec.CorrelationID))
+	r.Metrics.RecordK8sEvent("Normal", events.EventReasonAssessmentStarted)
 }
 
 // emitCompletedAuditEvent emits the assessment.completed audit event to DataStorage.
-// Uses the audit.Manager (Pattern 2) to build and store the typed event.
 func (r *Reconciler) emitCompletedAuditEvent(ctx context.Context, ea *eav1.EffectivenessAssessment, reason string) {
+	r.emitAuditEvent(ctx, emtypes.AuditAssessmentCompleted, func() error {
+		return r.AuditManager.RecordAssessmentCompleted(ctx, ea, reason)
+	})
+}
+
+// emitAuditEvent is a helper that handles the nil-check, error logging, and metrics
+// recording common to all audit event emissions. The recordFn performs the actual audit call.
+func (r *Reconciler) emitAuditEvent(ctx context.Context, eventType emtypes.AuditEventType, recordFn func() error) {
 	if r.AuditManager == nil {
 		log.FromContext(ctx).V(1).Info("AuditManager not configured, skipping audit event",
-			"eventType", string(emtypes.AuditAssessmentCompleted))
+			"eventType", string(eventType))
 		return
 	}
 
-	if err := r.AuditManager.RecordAssessmentCompleted(ctx, ea, reason); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to emit completed audit event")
-		r.Metrics.RecordAuditEvent(string(emtypes.AuditAssessmentCompleted), "error")
+	if err := recordFn(); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to emit audit event", "eventType", string(eventType))
+		r.Metrics.RecordAuditEvent(string(eventType), "error")
 		return
 	}
-	r.Metrics.RecordAuditEvent(string(emtypes.AuditAssessmentCompleted), "success")
+	r.Metrics.RecordAuditEvent(string(eventType), "success")
 }
 
 // resultStatus returns a metric label for a component result.

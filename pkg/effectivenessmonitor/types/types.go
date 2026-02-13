@@ -49,16 +49,6 @@ type ComponentResult struct {
 	Error error
 }
 
-// AssessmentOutcome aggregates results from all components.
-type AssessmentOutcome struct {
-	// Components contains results for each assessment component.
-	Components []ComponentResult
-	// Reason describes the overall assessment outcome.
-	Reason string
-	// Message provides human-readable summary.
-	Message string
-}
-
 // AuditEventType identifies the type of audit event emitted by EM.
 // Per DD-AUDIT-CORRELATION-002: Each component emits its own audit event.
 type AuditEventType string
