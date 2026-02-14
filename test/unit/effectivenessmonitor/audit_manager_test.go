@@ -229,6 +229,37 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 			Expect(ar.ActiveCount.Value).To(Equal(int32(2)))
 		})
 
+		// ========================================
+		// UT-EM-AM-012: resolution_time_seconds populated when alert resolved (FINDING 2)
+		// ADR-EM-001 Section 9.2.3: resolution_time_seconds = time from remediation to alert resolution
+		// ========================================
+		It("UT-EM-AM-012: should set resolution_time_seconds when alert resolved and value provided", func() {
+			score := 1.0
+			result := types.ComponentResult{
+				Component: types.ComponentAlert,
+				Assessed:  true,
+				Score:     &score,
+				Details:   "alert resolved",
+			}
+
+			resTime := 180.5 // 3 minutes to resolve
+			alertData := audit.AlertAssessedData{
+				AlertResolved:         true,
+				ActiveCount:           0,
+				ResolutionTimeSeconds: &resTime,
+			}
+
+			err := mgr.RecordAlertAssessed(ctx, ea, result, alertData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload := extractPayload(spy.lastEvent)
+			ar := payload.AlertResolution.Value
+			Expect(ar.AlertResolved.Value).To(BeTrue())
+			Expect(ar.ResolutionTimeSeconds.Set).To(BeTrue(),
+				"resolution_time_seconds should be set when alert is resolved")
+			Expect(ar.ResolutionTimeSeconds.Value).To(BeNumerically("~", 180.5, 0.1))
+		})
+
 		It("UT-EM-AM-006: should not set health_checks or metric_deltas for alert events", func() {
 			score := 1.0
 			result := types.ComponentResult{
@@ -437,6 +468,194 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 			Expect(md.ErrorRateBefore.Set).To(BeFalse())
 			Expect(md.ErrorRateAfter.Set).To(BeFalse())
 		})
+	})
+})
+
+// ============================================================================
+// ASSESSMENT COMPLETED AUDIT PAYLOAD TESTS (ADR-EM-001, Batch 3)
+// Verifies all 5 audit payload gaps are populated in RecordAssessmentCompleted.
+// ============================================================================
+var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Batch 3)", func() {
+
+	var (
+		spy *spyAuditStore
+		mgr *audit.Manager
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		spy = &spyAuditStore{}
+		mgr = audit.NewManager(spy, logr.Discard())
+		ctx = context.Background()
+	})
+
+	// ========================================
+	// UT-EM-AC-001: All 5 audit payload fields populated when data is available
+	// ========================================
+	It("UT-EM-AC-001: should populate alert_name, components_assessed, completed_at, resolution_time_seconds", func() {
+		rrCreatedAt := metav1.NewTime(metav1.Now().Add(-30 * 60 * 1e9)) // 30 min ago
+		completedAt := metav1.Now()
+
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-ac-001",
+				Namespace: "production",
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-payment-restart",
+				SignalName:              "PaymentHighCPU",
+				RemediationRequestPhase: "Completed",
+				TargetResource: eav1.TargetResource{
+					Kind: "Deployment", Name: "payment-api", Namespace: "production",
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{},
+				},
+				RemediationCreatedAt: &rrCreatedAt,
+			},
+			Status: eav1.EffectivenessAssessmentStatus{
+				Phase:            eav1.PhaseCompleted,
+				AssessmentReason: eav1.AssessmentReasonFull,
+				CompletedAt:      &completedAt,
+				Components: eav1.EAComponents{
+					HealthAssessed:  true,
+					HashComputed:    true,
+					AlertAssessed:   true,
+					MetricsAssessed: true,
+				},
+			},
+		}
+
+		err := mgr.RecordAssessmentCompleted(ctx, ea, eav1.AssessmentReasonFull)
+		Expect(err).ToNot(HaveOccurred())
+
+		payload := extractPayload(spy.lastEvent)
+
+		// 1. alert_name (OBS-1: uses SignalName, not CorrelationID)
+		Expect(payload.AlertName.Set).To(BeTrue(), "alert_name should be set")
+		Expect(payload.AlertName.Value).To(Equal("PaymentHighCPU"))
+
+		// 2. components_assessed
+		Expect(payload.ComponentsAssessed).To(ConsistOf("health", "hash", "alert", "metrics"))
+
+		// 3. completed_at
+		Expect(payload.CompletedAt.Set).To(BeTrue(), "completed_at should be set")
+
+		// 4. assessment_duration_seconds (OBS-2: renamed from resolution_time_seconds)
+		Expect(payload.AssessmentDurationSeconds.Set).To(BeTrue(), "assessment_duration_seconds should be set")
+		Expect(payload.AssessmentDurationSeconds.Value).To(BeNumerically(">", 0),
+			"assessment_duration_seconds should be positive")
+	})
+
+	// ========================================
+	// UT-EM-AC-002: Partial components_assessed when only some assessed
+	// ========================================
+	It("UT-EM-AC-002: should only include assessed components in components_assessed", func() {
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-ac-002",
+				Namespace: "staging",
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-partial",
+				RemediationRequestPhase: "Completed",
+				TargetResource: eav1.TargetResource{
+					Kind: "Deployment", Name: "api", Namespace: "staging",
+				},
+				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},
+			},
+			Status: eav1.EffectivenessAssessmentStatus{
+				Phase:            eav1.PhaseCompleted,
+				AssessmentReason: eav1.AssessmentReasonPartial,
+				Components: eav1.EAComponents{
+					HealthAssessed:  true,
+					HashComputed:    true,
+					AlertAssessed:   false, // Not assessed
+					MetricsAssessed: false, // Not assessed
+				},
+			},
+		}
+
+		err := mgr.RecordAssessmentCompleted(ctx, ea, eav1.AssessmentReasonPartial)
+		Expect(err).ToNot(HaveOccurred())
+
+		payload := extractPayload(spy.lastEvent)
+		Expect(payload.ComponentsAssessed).To(ConsistOf("health", "hash"))
+	})
+
+	// ========================================
+	// UT-EM-AC-004: alert_name uses SignalName (not CorrelationID) when set (OBS-1)
+	// ========================================
+	It("UT-EM-AC-004: should use SignalName for alert_name when available", func() {
+		completedAt := metav1.Now()
+
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-ac-004",
+				Namespace: "production",
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-payment-restart",
+				SignalName:              "HighCPUAlert",
+				RemediationRequestPhase: "Completed",
+				TargetResource: eav1.TargetResource{
+					Kind: "Deployment", Name: "payment-api", Namespace: "production",
+				},
+				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},
+			},
+			Status: eav1.EffectivenessAssessmentStatus{
+				Phase:            eav1.PhaseCompleted,
+				AssessmentReason: eav1.AssessmentReasonFull,
+				CompletedAt:      &completedAt,
+				Components: eav1.EAComponents{
+					HealthAssessed: true,
+					HashComputed:   true,
+				},
+			},
+		}
+
+		err := mgr.RecordAssessmentCompleted(ctx, ea, eav1.AssessmentReasonFull)
+		Expect(err).ToNot(HaveOccurred())
+
+		payload := extractPayload(spy.lastEvent)
+
+		// OBS-1: alert_name should be the actual alert name, not the correlationID
+		Expect(payload.AlertName.Set).To(BeTrue(), "alert_name should be set")
+		Expect(payload.AlertName.Value).To(Equal("HighCPUAlert"),
+			"alert_name should use SignalName, not CorrelationID")
+	})
+
+	// ========================================
+	// UT-EM-AC-003: resolution_time_seconds nil when remediationCreatedAt missing
+	// ========================================
+	It("UT-EM-AC-003: should not set resolution_time_seconds when remediationCreatedAt is nil", func() {
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-ac-003",
+				Namespace: "default",
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-no-created-at",
+				RemediationRequestPhase: "Completed",
+				TargetResource: eav1.TargetResource{
+					Kind: "Deployment", Name: "app", Namespace: "default",
+				},
+				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},
+				// RemediationCreatedAt intentionally nil
+			},
+			Status: eav1.EffectivenessAssessmentStatus{
+				Phase:            eav1.PhaseCompleted,
+				AssessmentReason: eav1.AssessmentReasonExpired,
+				Components:       eav1.EAComponents{},
+			},
+		}
+
+		err := mgr.RecordAssessmentCompleted(ctx, ea, eav1.AssessmentReasonExpired)
+		Expect(err).ToNot(HaveOccurred())
+
+		payload := extractPayload(spy.lastEvent)
+		Expect(payload.AssessmentDurationSeconds.Set).To(BeFalse(),
+			"assessment_duration_seconds should not be set when remediationCreatedAt is nil")
 	})
 })
 
