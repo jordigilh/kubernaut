@@ -17,13 +17,11 @@ limitations under the License.
 """
 Custom Toolsets for HolmesGPT SDK
 
-Business Requirements: BR-HAPI-250 (Workflow Catalog Search)
+Business Requirements: BR-HAPI-017-001 (Three-Step Workflow Discovery)
 """
 
-from .workflow_catalog import WorkflowCatalogToolset, SearchWorkflowCatalogTool
+from .workflow_discovery import WorkflowDiscoveryToolset
 
 __all__ = [
-    "WorkflowCatalogToolset",
-    "SearchWorkflowCatalogTool",
+    "WorkflowDiscoveryToolset",
 ]
-

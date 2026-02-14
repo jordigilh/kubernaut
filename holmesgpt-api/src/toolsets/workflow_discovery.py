@@ -55,7 +55,6 @@ import requests
 from typing import Dict, Any, List, Optional
 
 from src.models.incident_models import DetectedLabels
-from src.toolsets.workflow_catalog import strip_failed_detections
 
 from holmes.core.tools import (
     Tool,
@@ -67,6 +66,198 @@ from holmes.core.tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ========================================
+# SHARED UTILITIES (moved from workflow_catalog.py — Gap 5, DD-WORKFLOW-016)
+# ========================================
+
+# Cluster-scoped resources (no namespace)
+CLUSTER_SCOPED_KINDS = {"Node", "PersistentVolume", "ClusterRole", "ClusterRoleBinding", "Namespace", "StorageClass"}
+
+
+def strip_failed_detections(detected_labels: DetectedLabels) -> DetectedLabels:
+    """
+    Strip fields where detection failed from DetectedLabels.
+
+    Business Requirement: BR-HAPI-194 - Honor failedDetections in workflow filtering
+    Design Decision: DD-WORKFLOW-001 v2.1 - DetectedLabels failedDetections field
+
+    Key Distinction (per SignalProcessing team):
+    | Scenario    | pdbProtected | failedDetections     | Meaning                    |
+    |-------------|--------------|----------------------|----------------------------|
+    | PDB exists  | true         | []                   | Has PDB - use for filter   |
+    | No PDB      | false        | []                   | No PDB - use for filter    |
+    | RBAC denied | false        | ["pdbProtected"]     | Unknown - skip filter      |
+
+    "Resource doesn't exist" != detection failure - it's a successful detection with result false.
+
+    Args:
+        detected_labels: DetectedLabels Pydantic model potentially containing failedDetections
+
+    Returns:
+        New DetectedLabels model with:
+        - failedDetections cleared (empty list)
+        - Fields listed in failedDetections set to None
+        - All other fields preserved
+    """
+    if not detected_labels:
+        return DetectedLabels()
+
+    # Handle both dict and Pydantic model
+    if isinstance(detected_labels, dict):
+        failed_fields = set(detected_labels.get("failed_detections", []))
+        clean_dict = {k: v for k, v in detected_labels.items() if v is not None}
+    else:
+        # Get list of failed detection field names
+        failed_fields = set(detected_labels.failedDetections)
+        # Convert to dict, exclude failed fields, rebuild DetectedLabels
+        clean_dict = detected_labels.model_dump(exclude_none=True)
+
+    # Remove failedDetections meta field
+    clean_dict.pop("failedDetections", None)
+
+    # Remove fields where detection failed
+    for field in failed_fields:
+        if field in clean_dict:
+            logger.debug(f"Stripping failed detection: {field} (detection failed)")
+            clean_dict.pop(field, None)
+
+    if failed_fields:
+        logger.info(
+            f"DD-WORKFLOW-001 v2.1: Stripped {len(failed_fields)} failed detections: {sorted(failed_fields)}"
+        )
+
+    # Return new DetectedLabels with cleaned data
+    return DetectedLabels(**clean_dict)
+
+
+def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
+    """
+    Check if two resource references match (kind + namespace + name).
+
+    Args:
+        r1: First resource {kind, namespace, name}
+        r2: Second resource {kind, namespace, name}
+
+    Returns:
+        True if all fields match
+    """
+    return (
+        r1.get("kind", "") == r2.get("kind", "")
+        and r1.get("namespace", "") == r2.get("namespace", "")
+        and r1.get("name", "") == r2.get("name", "")
+    )
+
+
+def should_include_detected_labels(
+    source_resource: Optional[Dict[str, str]],
+    rca_resource: Optional[Dict[str, Any]],
+    owner_chain: Optional[List[Dict[str, str]]] = None,
+) -> bool:
+    """
+    100% SAFE: Include DetectedLabels ONLY when relationship is PROVEN.
+
+    Design Decision: DD-WORKFLOW-001 v1.7
+
+    DetectedLabels describe the original signal's resource characteristics.
+    Including wrong labels for a different resource can cause:
+    - Query failures (no workflows match)
+    - Wrong workflows returned
+
+    SAFETY PRINCIPLE: Default to EXCLUDE. Only include when we can PROVE
+    the RCA resource is related to the source resource.
+
+    Validation order:
+    1. Required data check (source_resource, rca_resource, rca_resource.kind)
+    2. Exact match (same resource)
+    3. Owner chain match (K8s ownerReferences from SignalProcessing)
+    4. Same namespace + kind (fallback when owner_chain provided but empty)
+    5. Default: EXCLUDE (safe - prevents query failures)
+
+    Args:
+        source_resource: Original signal's resource {namespace, kind, name}
+        rca_resource: LLM's RCA resource {signal_type, namespace, kind, name}
+        owner_chain: K8s ownership chain from SignalProcessing enrichment
+                    [{kind, namespace, name}, ...] - ordered from direct parent to root
+                    Example for Pod: [ReplicaSet, Deployment]
+
+    Returns:
+        True ONLY if relationship is PROVEN, False otherwise (safe default)
+
+    Examples:
+        - Pod(prod/api-xyz) -> Pod(prod/api-xyz): True (exact match)
+        - Pod(prod/api-xyz) -> Deployment(prod/api) with owner_chain: True (proven)
+        - Pod(prod/api-xyz) -> Node(worker-3): False (different scope)
+        - Pod(prod/api-xyz) -> Deployment(prod/api) no owner_chain: False (can't prove)
+    """
+    # GATE 1: Required data must be present
+    if not source_resource:
+        logger.debug("DetectedLabels EXCLUDED - source_resource missing")
+        return False
+
+    if not rca_resource:
+        logger.debug("DetectedLabels EXCLUDED - rca_resource not provided by LLM")
+        return False
+
+    if not rca_resource.get("kind"):
+        logger.debug("DetectedLabels EXCLUDED - rca_resource.kind missing")
+        return False
+
+    source_kind = source_resource.get("kind", "")
+    rca_kind = rca_resource.get("kind", "")
+    source_ns = source_resource.get("namespace", "")
+    rca_ns = rca_resource.get("namespace", "")
+
+    # GATE 2: Exact match (same resource)
+    if _resources_match(source_resource, rca_resource):
+        logger.info(
+            f"DetectedLabels INCLUDED - exact resource match: "
+            f"{source_kind}/{source_ns}/{source_resource.get('name')}"
+        )
+        return True
+
+    # GATE 3: Owner chain match (PROVEN relationship via K8s ownerReferences)
+    if owner_chain:
+        for owner in owner_chain:
+            if _resources_match(owner, rca_resource):
+                logger.info(
+                    f"DetectedLabels INCLUDED - owner chain match: "
+                    f"{source_kind} -> {owner.get('kind')}/{owner.get('name')} (proven)"
+                )
+                return True
+
+    # GATE 4: Same namespace + same kind (conservative fallback)
+    # Only if owner_chain was explicitly provided (even if empty)
+    # This handles sibling resources in same workload context
+    if owner_chain is not None:
+        # Check scope compatibility first
+        source_is_cluster = source_kind in CLUSTER_SCOPED_KINDS
+        rca_is_cluster = rca_kind in CLUSTER_SCOPED_KINDS
+
+        if source_is_cluster and rca_is_cluster:
+            # Both cluster-scoped - same kind is sufficient
+            if source_kind == rca_kind:
+                logger.info(
+                    f"DetectedLabels INCLUDED - same cluster-scoped kind: {source_kind}"
+                )
+                return True
+        elif not source_is_cluster and not rca_is_cluster:
+            # Both namespaced - check namespace + kind
+            if source_ns == rca_ns and source_kind == rca_kind:
+                logger.info(
+                    f"DetectedLabels INCLUDED - same namespace/kind: "
+                    f"{source_kind}/{source_ns}"
+                )
+                return True
+
+    # DEFAULT: Cannot prove relationship -> EXCLUDE (100% safe)
+    logger.info(
+        f"DetectedLabels EXCLUDED - no proven relationship: "
+        f"source={source_kind}/{source_ns or 'cluster'}, "
+        f"rca={rca_kind}/{rca_ns or 'cluster'}, "
+        f"owner_chain={'provided' if owner_chain is not None else 'not provided'}"
+    )
+    return False
 
 
 # ========================================
