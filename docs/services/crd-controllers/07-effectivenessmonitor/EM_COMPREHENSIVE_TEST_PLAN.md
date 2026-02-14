@@ -347,6 +347,28 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-GS-003 | Controller manager stop -> audit flush -> audit close (ordered) | | X | | Verify ordering via log timestamps |
 | E2E-EM-GS-001 | SIGTERM handled within shutdown timeout (<=30s) | | | X | Real pod lifecycle |
 
+### Spec Drift Guard (SD) — DD-EM-002 v1.1
+
+| ID | Scenario | Unit | Integration | E2E | Notes |
+|----|----------|------|-------------|-----|-------|
+| UT-EM-COND-001 | AssessmentComplete and SpecIntegrity condition types defined | X | | | Constants exist |
+| UT-EM-COND-002 | All AssessmentComplete reason constants defined | X | | | Full, Partial, Expired, SpecDrift, MetricsTimedOut, NoExecution |
+| UT-EM-COND-003 | SpecIntegrity reason constants defined (SpecUnchanged, SpecDrifted) | X | | | |
+| UT-EM-COND-004 | SetCondition adds a new condition to EA | X | | | |
+| UT-EM-COND-005 | SetCondition updates an existing condition | X | | | |
+| UT-EM-COND-006 | GetCondition retrieves an existing condition by type | X | | | |
+| UT-EM-COND-007 | GetCondition returns nil for missing condition | X | | | |
+| UT-EM-COND-008 | IsConditionTrue returns true for True condition | X | | | |
+| UT-EM-COND-009 | IsConditionTrue returns false for False/missing condition | X | | | |
+| UT-EM-COND-010 | Multiple conditions on same EA managed independently | X | | | |
+| UT-EM-COND-011 | AssessmentReasonSpecDrift constant exists in EA types | X | | | |
+| UT-DS-EFF-013 | DS short-circuits to score 0.0 when reason=spec_drift | X | | | DD-EM-002 v1.1 |
+| UT-DS-EFF-014 | DS short-circuits even when component scores are high | X | | | Hard override |
+| UT-DS-EFF-015 | Non-drift reasons still scored normally | X | | | No false positives |
+| IT-EM-SD-001 | Target spec changes after hash computation -> EA completes with spec_drift | | X | | Status patch + watch trigger |
+| IT-EM-SD-002 | Target spec unchanged -> EA completes normally (no drift) | | X | | Negative test |
+| IT-EM-SD-003 | Target resource missing -> hash from empty spec, no drift | | X | | Graceful degradation |
+
 ---
 
 ## Coverage Projection
@@ -628,6 +650,7 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2.0 | 2026-02-14 | AI Assistant | Added Spec Drift Guard (SD) domain: 11 UT (conditions) + 3 UT (DS scoring) + 3 IT = 17 scenarios (DD-EM-002 v1.1, DD-CRD-002-EA); covers conditions infrastructure, DS score=0.0 short-circuit, reconciler drift detection |
 | 1.1.1 | 2026-02-13 | AI Assistant | Removed ScoringThreshold: UT-EM-CF-008, IT-EM-CF-004; removed RemediationIneffective: UT-EM-KE-002, IT-EM-KE-003; EM always emits Normal EffectivenessAssessed; DS computes score on demand; grand total 149 scenarios |
 | 1.1.0 | 2026-02-12 | AI Assistant | Added Derived Timing (DT) domain: 6 UT + 9 IT + 2 E2E = 17 scenarios (ADR-EM-001 v1.3); updated AE domain with UT-EM-AE-008 (scheduled event payload); updated IT-EM-AE-001 and E2E-EM-AE-001 counts from 5 to 6 events; ValidityDeadline moved from spec to status |
 | 1.0.5 | 2026-02-13 | AI Assistant | Added Scenario Implementation Status Audit section; updated Phase 2-4 statuses (infra, CI, Makefile completed; 11/67 IT scenarios implemented); corrected E2E count to 11 |
