@@ -376,6 +376,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		componentsChanged = true
 		r.Metrics.RecordComponentAssessment("hash", resultStatus(result.Component), time.Since(startTime).Seconds(), nil)
 		r.emitHashEvent(ctx, ea, result)
+
+		// Set initial SpecIntegrity=True baseline (DD-CRD-002).
+		// The spec drift guard (Step 6.5) only runs when HashComputed=true, which
+		// is set above. On single-pass completions the guard never executes, so we
+		// set the baseline condition here. Subsequent reconciles update it via Step 6.5
+		// if the target spec changes.
+		if result.Component.Assessed {
+			conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
+				metav1.ConditionTrue, conditions.ReasonSpecUnchanged,
+				"Post-remediation spec hash computed; baseline established")
+		}
 	}
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable

@@ -260,6 +260,7 @@ func main() {
 		dsQuerier,
 		func() controller.ReconcilerConfig {
 			c := controller.DefaultReconcilerConfig()
+			c.ValidityWindow = cfg.Assessment.ValidityWindow
 			c.PrometheusEnabled = cfg.External.PrometheusEnabled
 			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
 			return c
