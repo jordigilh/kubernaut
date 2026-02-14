@@ -476,6 +476,7 @@ def register_workflow_discovery_toolset(
     app_config: Optional[Dict[str, Any]] = None,
     remediation_id: Optional[str] = None,
     custom_labels: Optional[Dict[str, List[str]]] = None,
+    detected_labels: Optional[DetectedLabels] = None,
     severity: str = "",
     component: str = "",
     environment: str = "",
@@ -504,6 +505,7 @@ def register_workflow_discovery_toolset(
         app_config: Optional application configuration (for logging context)
         remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
         custom_labels: Custom labels for auto-append (DD-HAPI-001)
+        detected_labels: Auto-detected infrastructure labels (DD-HAPI-017, DD-WORKFLOW-001 v2.1)
         severity: Signal severity (critical/high/medium/low)
         component: K8s resource kind (pod/deployment/node/etc.)
         environment: Namespace-derived environment (production/staging/development)
@@ -523,6 +525,7 @@ def register_workflow_discovery_toolset(
         environment=environment,
         priority=priority,
         custom_labels=custom_labels,
+        detected_labels=detected_labels,
     )
 
     # Initialize toolset manager if needed

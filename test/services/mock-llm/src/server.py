@@ -957,11 +957,11 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         """
         # Map by workflow_name (matches Go/Python fixture action_type assignments)
         action_type_map = {
-            "oomkill-increase-memory-v1": "AdjustResources",
+            "oomkill-increase-memory-v1": "IncreaseMemoryLimits",
             "memory-optimize-v1": "ScaleReplicas",
-            "crashloop-config-fix-v1": "ReconfigureService",
+            "crashloop-config-fix-v1": "RestartDeployment",
             "node-drain-reboot-v1": "RestartPod",
-            "image-pull-backoff-fix-credentials": "ReconfigureService",
+            "image-pull-backoff-fix-credentials": "RollbackDeployment",
             "generic-restart-v1": "RestartPod",
             "test-signal-handler-v1": "RestartPod",
         }

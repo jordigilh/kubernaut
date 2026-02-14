@@ -153,7 +153,7 @@ TEST_WORKFLOWS = [
         version="1.0.0",
         display_name="OOMKill Remediation - Increase Memory Limits",
         description="Increases memory limits for pods experiencing OOMKilled events",
-        action_type="AdjustResources",  # DD-WORKFLOW-016: Modify resource requests/limits
+        action_type="IncreaseMemoryLimits",  # DD-WORKFLOW-016 V1.0: Increase memory limits
         signal_type="OOMKilled",
         severity="critical",
         component="pod",
@@ -181,7 +181,7 @@ TEST_WORKFLOWS = [
         version="1.0.0",
         display_name="CrashLoopBackOff - Fix Configuration",
         description="Identifies and fixes configuration issues causing CrashLoopBackOff",
-        action_type="ReconfigureService",  # DD-WORKFLOW-016: Update ConfigMap/Secret values
+        action_type="RestartDeployment",  # DD-WORKFLOW-016 V1.0: Rolling restart for config fix
         signal_type="CrashLoopBackOff",
         severity="high",
         component="pod",
@@ -209,7 +209,7 @@ TEST_WORKFLOWS = [
         version="1.0.0",
         display_name="ImagePullBackOff - Fix Registry Credentials",
         description="Fixes ImagePullBackOff errors by updating registry credentials",
-        action_type="ReconfigureService",  # DD-WORKFLOW-016: Update credentials = configuration
+        action_type="RollbackDeployment",  # DD-WORKFLOW-016 V1.0: Revert to previous revision
         signal_type="ImagePullBackOff",
         severity="high",
         component="pod",
@@ -372,22 +372,32 @@ def get_crashloop_workflows() -> List[WorkflowFixture]:
 
 
 # ========================================
-# DD-WORKFLOW-016: Action Type Taxonomy Constants
+# DD-WORKFLOW-016 V1.0: Action Type Taxonomy Constants
 # ========================================
 # These must match the values seeded by migration 025_action_type_taxonomy.sql
 
 ACTION_TYPE_SCALE_REPLICAS = "ScaleReplicas"
 ACTION_TYPE_RESTART_POD = "RestartPod"
+ACTION_TYPE_INCREASE_CPU_LIMITS = "IncreaseCPULimits"
+ACTION_TYPE_INCREASE_MEMORY_LIMITS = "IncreaseMemoryLimits"
 ACTION_TYPE_ROLLBACK_DEPLOYMENT = "RollbackDeployment"
-ACTION_TYPE_ADJUST_RESOURCES = "AdjustResources"
-ACTION_TYPE_RECONFIGURE_SERVICE = "ReconfigureService"
+ACTION_TYPE_DRAIN_NODE = "DrainNode"
+ACTION_TYPE_CORDON_NODE = "CordonNode"
+ACTION_TYPE_RESTART_DEPLOYMENT = "RestartDeployment"
+ACTION_TYPE_CLEANUP_NODE = "CleanupNode"
+ACTION_TYPE_DELETE_POD = "DeletePod"
 
 ALL_ACTION_TYPES = [
     ACTION_TYPE_SCALE_REPLICAS,
     ACTION_TYPE_RESTART_POD,
+    ACTION_TYPE_INCREASE_CPU_LIMITS,
+    ACTION_TYPE_INCREASE_MEMORY_LIMITS,
     ACTION_TYPE_ROLLBACK_DEPLOYMENT,
-    ACTION_TYPE_ADJUST_RESOURCES,
-    ACTION_TYPE_RECONFIGURE_SERVICE,
+    ACTION_TYPE_DRAIN_NODE,
+    ACTION_TYPE_CORDON_NODE,
+    ACTION_TYPE_RESTART_DEPLOYMENT,
+    ACTION_TYPE_CLEANUP_NODE,
+    ACTION_TYPE_DELETE_POD,
 ]
 
 
@@ -455,7 +465,7 @@ def _generate_pagination_workflows() -> List[WorkflowFixture]:
     """
     Generate 25+ workflow fixtures for pagination testing.
 
-    DD-WORKFLOW-016: Distributes workflows across all 5 action types
+    DD-WORKFLOW-016 V1.0: Distributes workflows across DD action types
     to enable pagination testing on both list_available_actions and
     list_workflows_by_action_type endpoints.
 
@@ -463,8 +473,8 @@ def _generate_pagination_workflows() -> List[WorkflowFixture]:
       - ScaleReplicas: 6 workflows
       - RestartPod: 5 workflows
       - RollbackDeployment: 5 workflows
-      - AdjustResources: 5 workflows
-      - ReconfigureService: 5 workflows
+      - IncreaseMemoryLimits: 5 workflows
+      - RestartDeployment: 5 workflows
       Total: 26 workflows (plus 5 from TEST_WORKFLOWS = 31)
     """
     pagination_fixtures = []
@@ -474,8 +484,8 @@ def _generate_pagination_workflows() -> List[WorkflowFixture]:
         (ACTION_TYPE_SCALE_REPLICAS, "scale", "OOMKilled", "deployment", "high", "production", "P1", 6),
         (ACTION_TYPE_RESTART_POD, "restart", "CrashLoopBackOff", "pod", "high", "production", "P1", 5),
         (ACTION_TYPE_ROLLBACK_DEPLOYMENT, "rollback", "DeploymentFailed", "deployment", "critical", "production", "P0", 5),
-        (ACTION_TYPE_ADJUST_RESOURCES, "adjust", "OOMKilled", "pod", "critical", "staging", "P0", 5),
-        (ACTION_TYPE_RECONFIGURE_SERVICE, "reconfig", "CrashLoopBackOff", "pod", "high", "staging", "P1", 5),
+        (ACTION_TYPE_INCREASE_MEMORY_LIMITS, "memory", "OOMKilled", "pod", "critical", "staging", "P0", 5),
+        (ACTION_TYPE_RESTART_DEPLOYMENT, "restart-deploy", "CrashLoopBackOff", "pod", "high", "staging", "P1", 5),
     ]
 
     for action_type, prefix, signal_type, component, severity, env, priority, count in definitions:

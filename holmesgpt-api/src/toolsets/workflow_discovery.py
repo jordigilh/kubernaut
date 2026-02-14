@@ -35,6 +35,8 @@ Signal Context Filters (propagated as query params on all three steps):
   - environment: Namespace-derived (production/staging/development)
   - priority: Severity-mapped (P0/P1/P2/P3)
   - remediation_id: Audit correlation ID
+  - custom_labels: Custom labels (DD-HAPI-001)
+  - detected_labels: Infrastructure characteristics (DD-HAPI-017, DD-WORKFLOW-001 v2.1)
 
 Audit Trail:
   - DS generates audit events per DD-WORKFLOW-014 v3.0
@@ -51,6 +53,9 @@ import json
 import os
 import requests
 from typing import Dict, Any, List, Optional
+
+from src.models.incident_models import DetectedLabels
+from src.toolsets.workflow_catalog import strip_failed_detections
 
 from holmes.core.tools import (
     Tool,
@@ -94,6 +99,7 @@ class _DiscoveryToolBase(Tool):
         environment: str = "",
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
     ):
         super().__init__(
@@ -129,6 +135,7 @@ class _DiscoveryToolBase(Tool):
         object.__setattr__(self, "_environment", environment)
         object.__setattr__(self, "_priority", priority)
         object.__setattr__(self, "_custom_labels", custom_labels or {})
+        object.__setattr__(self, "_detected_labels", detected_labels)
 
     def _build_context_params(self) -> Dict[str, Any]:
         """
@@ -136,6 +143,8 @@ class _DiscoveryToolBase(Tool):
 
         These are appended to every discovery GET request.
         BR-HAPI-017-005: remediation_id propagated for audit correlation.
+        DD-HAPI-017: detected_labels propagated when present (DD-WORKFLOW-001 v2.1:
+        strip_failed_detections applied before sending).
         """
         params: Dict[str, Any] = {}
         if self._severity:
@@ -150,6 +159,11 @@ class _DiscoveryToolBase(Tool):
             params["remediation_id"] = self._remediation_id
         if self._custom_labels:
             params["custom_labels"] = json.dumps(self._custom_labels)
+        if self._detected_labels:
+            clean_labels = strip_failed_detections(self._detected_labels)
+            clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
+            if clean_dict:
+                params["detected_labels"] = json.dumps(clean_dict)
         return params
 
     def _do_get(self, url: str, extra_params: Optional[Dict] = None) -> Dict:
@@ -219,6 +233,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
         environment: str = "",
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
     ):
         super().__init__(
@@ -255,6 +270,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
             environment=environment,
             priority=priority,
             custom_labels=custom_labels,
+            detected_labels=detected_labels,
             http_session=http_session,
         )
 
@@ -329,6 +345,7 @@ class ListWorkflowsTool(_DiscoveryToolBase):
         environment: str = "",
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
     ):
         super().__init__(
@@ -373,6 +390,7 @@ class ListWorkflowsTool(_DiscoveryToolBase):
             environment=environment,
             priority=priority,
             custom_labels=custom_labels,
+            detected_labels=detected_labels,
             http_session=http_session,
         )
 
@@ -458,6 +476,7 @@ class GetWorkflowTool(_DiscoveryToolBase):
         environment: str = "",
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
     ):
         super().__init__(
@@ -490,6 +509,7 @@ class GetWorkflowTool(_DiscoveryToolBase):
             environment=environment,
             priority=priority,
             custom_labels=custom_labels,
+            detected_labels=detected_labels,
             http_session=http_session,
         )
 
@@ -578,6 +598,7 @@ class WorkflowDiscoveryToolset(Toolset):
         environment: str = "",
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[DetectedLabels] = None,
     ):
         """
         Initialize the three-step discovery toolset.
@@ -590,6 +611,7 @@ class WorkflowDiscoveryToolset(Toolset):
             environment: Namespace-derived environment (production/staging/etc.)
             priority: Severity-mapped priority (P0/P1/P2/P3)
             custom_labels: Custom labels for filtering (DD-HAPI-001)
+            detected_labels: Auto-detected infrastructure labels (DD-HAPI-017, DD-WORKFLOW-001 v2.1)
         """
         # Shared constructor kwargs for all three tools
         shared_kwargs = dict(
@@ -599,6 +621,7 @@ class WorkflowDiscoveryToolset(Toolset):
             environment=environment,
             priority=priority,
             custom_labels=custom_labels,
+            detected_labels=detected_labels,
         )
 
         super().__init__(

@@ -52,7 +52,6 @@ from tests.fixtures.workflow_fixtures import (
     bootstrap_workflows,
     bootstrap_action_type_taxonomy,
     ACTION_TYPE_SCALE_REPLICAS,
-    ACTION_TYPE_ADJUST_RESOURCES,
     get_workflows_by_action_type,
 )
 

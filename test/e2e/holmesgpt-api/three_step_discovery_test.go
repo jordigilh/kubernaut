@@ -64,8 +64,8 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ========================================
 			// OOMKilled signal triggers the "oomkilled" Mock LLM scenario.
 			// Mock LLM three-step flow:
-			//   Step 1: list_available_actions → DS returns action types including "AdjustResources"
-			//   Step 2: list_workflows(action_type="AdjustResources") → DS returns workflows
+			//   Step 1: list_available_actions → DS returns action types including "IncreaseMemoryLimits"
+			//   Step 2: list_workflows(action_type="IncreaseMemoryLimits") → DS returns workflows
 			//   Step 3: get_workflow(workflow_id=<oomkill-increase-memory-v1 UUID>) → DS returns full detail
 			//   Step 4: Final analysis with selected_workflow
 			req := &hapiclient.IncidentRequest{
@@ -124,7 +124,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			// ARRANGE
 			// ========================================
 			// CrashLoopBackOff triggers the "crashloop" Mock LLM scenario.
-			// Three-step: list_available_actions → list_workflows(ReconfigureService) → get_workflow
+			// Three-step: list_available_actions → list_workflows(RestartDeployment) → get_workflow
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-discovery-017-001b",
 				RemediationID:     "test-rem-017-001b",
