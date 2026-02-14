@@ -503,7 +503,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 
 ## Implementation Roadmap
 
-### Scenario Implementation Status Audit (2026-02-14)
+### Scenario Implementation Status Audit (2026-02-13)
 
 #### Unit Tests (UT-EM-*): Implemented Scenarios
 
@@ -518,51 +518,41 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | **MC** (Metric Comparison) | 7 | 8 | UT-EM-MC-001, -002, -003, -004, -005, -007, -008 |
 | **PH** (Phase) | 5 | — | UT-EM-PH-001, -002, -003, -004, -005 |
 | **VW** (Validity Window) | 3 | 5 | UT-EM-VW-001, -002, -003 |
-| **COND** (Conditions) | 11 | 11 | UT-EM-COND-001 through -011 |
-| **DS** (DS Scoring) | 3 | 3 | UT-DS-EFF-013, -014, -015 |
-| **EA Types** | ✅ | — | EA type constants and helpers |
-| **Total** | **~61** | **~75** | |
+| **RC** (Reconciler) | 0 | 7 | — |
+| **KE** (K8s Events) | 0 | 4 | — |
+| **FF** (Fail-Fast) | 0 | 4 | — |
+| **RR** (Restart Recovery) | 0 | 4 | — |
+| **GS** (Graceful Shutdown) | 0 | 4 | — |
+| **Total** | **47** | **~75** | |
 
 #### Integration Tests (IT-EM-*): Implemented Scenarios
 
 | Domain | Implemented | Total | Scenario IDs |
 |--------|-------------|-------|--------------|
-| **RC** (Reconciler) | 9 | 9 | IT-EM-RC-001, -002, -003, -004, -005, -006, -007, -008, -009 |
-| **CF** (Configuration) | 3 | 3 | IT-EM-CF-001, -002, -003 |
-| **VW** (Validity Window) | 5 | 5 | IT-EM-VW-001, -002, -003, -004, -005 |
-| **HC** (Health Check) | 6 | 6 | IT-EM-HC-001, -002, -003, -004, -005, -006 |
-| **AR** (Alert Resolution) | 6 | 6 | IT-EM-AR-001, -002, -003, -004, -005, -006 |
-| **MC** (Metric Comparison) | 8 | 8 | IT-EM-MC-001, -002, -003, -004, -005, -006, -007, -008 |
-| **SH** (Spec Hash) | 3 | 3 | IT-EM-SH-001, -002, -003 |
-| **AE** (Audit Events) | 8 | 8 | IT-EM-AE-001, -002, -003, -004, -005, -006, -007, -008 |
-| **KE** (K8s Events) | 4 | 4 | IT-EM-KE-001, -002, -003, -004 |
-| **FF** (Fail-Fast) | 5 | 5 | IT-EM-FF-001, -002, -003, -004, -005 |
-| **OM** (Operational Metrics) | 3 | 3 | IT-EM-OM-001, -002, -003 |
-| **RR** (Restart Recovery) | 3 | 3 | IT-EM-RR-001, -002, -003 |
-| **GS** (Graceful Shutdown) | 3 | 3 | IT-EM-GS-001, -002, -003 |
-| **DT** (Derived Timing) | 8 | 9 | IT-EM-DT-001, -002, -003, -004, -008, -009, -010 + extras |
-| **SD** (Spec Drift) | 3 | 3 | IT-EM-SD-001, -002, -003 |
-| **Total** | **76** | **~78** | |
+| **RC** (Reconciler) | 6 | 9 | IT-EM-RC-001, -002, -003, -005, -006, -007 |
+| **CF** (Configuration) | 2 | 4 | IT-EM-CF-001, -003 |
+| **VW** (Validity Window) | 3 | 5 | IT-EM-VW-001, -002, -005 |
+| **HC** (Health Check) | 0 | 6 | — |
+| **AR** (Alert Resolution) | 0 | 6 | — |
+| **MC** (Metric Comparison) | 0 | 8 | — |
+| **SH** (Spec Hash) | 0 | 3 | — |
+| **AE** (Audit Events) | 0 | 8 | — |
+| **KE** (K8s Events) | 0 | 4 | — |
+| **FF** (Fail-Fast) | 0 | 5 | — |
+| **OM** (Operational Metrics) | 0 | 3 | — |
+| **RR** (Restart Recovery) | 0 | 3 | — |
+| **GS** (Graceful Shutdown) | 0 | 3 | — |
+| **Total** | **11** | **67** | |
 
-Remaining IT gaps (low-ROI, deferred — see Group B analysis in PR discussion):
-IT-EM-DT-005 (scheduled event emitted), IT-EM-DT-006 (payload fields), IT-EM-DT-007 (window durations) — redundant with UT audit payload tests.
+Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (8); all SH (3); IT-EM-VW-003, -004; all AE (8); all KE (4); IT-EM-CF-002, -004; all FF (5); all OM (3); all RR (3); all GS (3) = **56 remaining**.
 
 #### E2E Tests (E2E-EM-*): Implemented Scenarios
 
-| Domain | Implemented | Total | Scenario IDs |
-|--------|-------------|-------|--------------|
-| **RC** (Reconciler) | 1 | 1 | E2E-EM-RC-001 |
-| **HC** (Health Check) | 1 | 1 | E2E-EM-HC-001 |
-| **AR** (Alert Resolution) | 2 | 2 | E2E-EM-AR-001, -002 |
-| **MC** (Metric Comparison) | 2 | 2 | E2E-EM-MC-001, -002 |
-| **SH** (Spec Hash) | 1 | 1 | E2E-EM-SH-001 |
-| **VW** (Validity Window) | 1 | 1 | E2E-EM-VW-001 |
-| **AE** (Audit Events) | 1 | 1 | E2E-EM-AE-001 |
-| **FF** (Fail-Fast) | 1 | 1 | E2E-EM-FF-001 |
-| **GS** (Graceful Shutdown) | 1 | 1 | E2E-EM-GS-001 |
-| **SD** (Spec Drift) | 2 | 2 | E2E-EM-SD-001, -002 |
-| **DT** (Derived Timing) | 2 | 2 | E2E-EM-DT-001, -002 |
-| **Total** | **15** | **15** | **100%** |
+| Domain | Implemented | Total |
+|--------|-------------|-------|
+| All | 0 | 11 |
+
+`test/e2e/effectivenessmonitor/` directory does not yet exist.
 
 ---
 
@@ -662,7 +652,6 @@ IT-EM-DT-005 (scheduled event emitted), IT-EM-DT-006 (payload fields), IT-EM-DT-
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.3.0 | 2026-02-14 | AI Assistant | Full implementation status audit refresh: 76 IT (was 11), 15 E2E (was 0); added 5 config-disable INT scenarios (IT-EM-CF-002, AR-005, AE-006, AE-007, FF-005) covering nil-client safety; deferred 3 low-ROI DT audit payload IT scenarios |
 | 1.2.0 | 2026-02-14 | AI Assistant | Added Spec Drift Guard (SD) domain: 11 UT (conditions) + 3 UT (DS scoring) + 3 IT = 17 scenarios (DD-EM-002 v1.1, DD-CRD-002-EA); covers conditions infrastructure, DS score=0.0 short-circuit, reconciler drift detection |
 | 1.1.1 | 2026-02-13 | AI Assistant | Removed ScoringThreshold: UT-EM-CF-008, IT-EM-CF-004; removed RemediationIneffective: UT-EM-KE-002, IT-EM-KE-003; EM always emits Normal EffectivenessAssessed; DS computes score on demand; grand total 149 scenarios |
 | 1.1.0 | 2026-02-12 | AI Assistant | Added Derived Timing (DT) domain: 6 UT + 9 IT + 2 E2E = 17 scenarios (ADR-EM-001 v1.3); updated AE domain with UT-EM-AE-008 (scheduled event payload); updated IT-EM-AE-001 and E2E-EM-AE-001 counts from 5 to 6 events; ValidityDeadline moved from spec to status |
