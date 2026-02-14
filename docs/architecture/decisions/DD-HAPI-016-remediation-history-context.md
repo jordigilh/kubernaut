@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 95%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: two-tier query, three-way hash comparison, full remediation chain, DS business logic endpoint, prompt reasoning framework |
+| 1.1 | 2026-02-14 | Architecture Team | Updated DS internal logic to reflect EM's component-level audit event architecture (per ADR-EM-001 v1.3). DS now uses a two-step query (RO events by target_resource, then EM component events by correlation_id) and reuses exported scoring functions from effectiveness_handler.go. Health/metric/alert data sourced from typed ogen sub-objects (health_checks, metric_deltas, alert_resolution) on EM component events. signalResolved read from alert_resolution.alert_resolved. Coordinated via issue #82. |
 
 ---
 
@@ -190,7 +191,8 @@ GET /api/v1/remediation-history/context
                     "readinessPass": true,
                     "restartDelta": 0,
                     "crashLoops": false,
-                    "oomKilled": false
+                    "oomKilled": false,
+                    "pendingCount": 0
                 },
                 "metricDeltas": {
                     "cpuBefore": 0.95,
@@ -222,7 +224,8 @@ GET /api/v1/remediation-history/context
                     "readinessPass": true,
                     "restartDelta": 0,
                     "crashLoops": false,
-                    "oomKilled": false
+                    "oomKilled": false,
+                    "pendingCount": 0
                 },
                 "metricDeltas": {
                     "cpuBefore": 0.92,
@@ -282,14 +285,20 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1**: Find all audit events (`remediation.workflow_created` + `effectiveness.assessment.completed`) for the target resource within the 24h window.
-2. **Correlate**: Join RO and EM audit events by `remediation_request_uid` to build complete remediation records.
-3. **Query Tier 2**: If no `preRemediationSpecHash` match is found in Tier 1, search audit events beyond 24h (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash`. If a match is found, return the full chain from that historical window.
-4. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`.
-5. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
-6. **Order chronologically**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` ascending.
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type`, `outcome`, `signal_type`, `signal_fingerprint`.
+2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
+   - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
+   - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)
+   - `effectiveness.metrics.assessed` — metrics score + typed `metric_deltas` sub-object (`cpu_before/after`, `memory_before/after`, `latency_p95_before/after_ms`, `error_rate_before/after`)
+   - `effectiveness.hash.computed` — `pre_remediation_spec_hash`, `post_remediation_spec_hash`, `hash_match` (boolean)
+   - `effectiveness.assessment.completed` — lifecycle marker with `reason` ("full", "partial", "expired")
+3. **Correlate**: Join RO and EM events by `correlation_id` (the RemediationRequest name). For each RO event, compute the weighted effectiveness score using `ComputeWeightedScore()` from `effectiveness_handler.go` (DD-017 v2.1 formula). Read `signalResolved` from `alert_resolution.alert_resolved`. Read `healthChecks` and `metricDeltas` from the typed ogen sub-objects on the corresponding EM component events.
+4. **Query Tier 2**: If `regressionDetected` (any entry's `preRemediationSpecHash` matches `currentSpecHash`), search audit events beyond Tier 1 (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash` using expression index `idx_audit_events_pre_remediation_spec_hash`. Return the full chain from that historical window in summary form.
+5. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`. The `preRemediationSpecHash` match signals configuration regression.
+6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
+7. **Order chronologically**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` ascending.
 
-DS may maintain internal indexes on `pre_remediation_spec_hash`, `post_remediation_spec_hash`, and `target_resource` within the audit table for query performance.
+DS maintains expression indexes on `pre_remediation_spec_hash`, `target_resource` within the audit table for query performance (migration 027).
 
 ---
 
