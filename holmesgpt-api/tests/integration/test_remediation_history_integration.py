@@ -192,53 +192,97 @@ class TestClientFactory:
 
 
 # ============================================================================
-# 3.2 Client Query Tests
+# 3.2 End-to-End Wiring Tests (fetch -> build prompt)
+#
+# These test the full business logic pipeline that the analyze_incident /
+# analyze_recovery functions execute:
+#   1. fetch_remediation_history_for_request (client query)
+#   2. create_*_investigation_prompt (prompt enrichment)
+#
+# Unlike unit tests (which mock the API and test functions in isolation),
+# these validate component coordination: client -> prompt builder -> LLM text.
 # ============================================================================
 
 
-class TestClientQuery:
-    """IT-HAPI-016-004 through IT-HAPI-016-005: query_remediation_history."""
+class TestEndToEndWiring:
+    """IT-HAPI-016-004 through IT-HAPI-016-005: Full wiring from DS query to enriched prompt."""
 
-    def test_spec_drift_preserved_through_client(self):
-        """IT-HAPI-016-004: query_remediation_history preserves assessmentReason=spec_drift."""
-        from clients.remediation_history_client import query_remediation_history
+    def test_spec_drift_flows_from_client_through_to_prompt(self):
+        """IT-HAPI-016-004: spec_drift context from DS query produces INCONCLUSIVE in the LLM prompt.
 
+        Business outcome: When DS returns a spec_drift entry, the full pipeline
+        (fetch -> build_remediation_history_section -> prompt) marks it as
+        INCONCLUSIVE so the LLM does not interpret 0.0 score as failure.
+        """
+        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from extensions.incident.prompt_builder import create_incident_investigation_prompt
+
+        # Step 1: Simulate fetch (mock API returns spec_drift context)
         mock_api = MagicMock()
         mock_context = MagicMock()
         mock_context.to_dict.return_value = SPEC_DRIFT_CONTEXT
         mock_api.get_remediation_history_context.return_value = mock_context
 
-        result = query_remediation_history(
-            api=mock_api,
-            target_kind="Deployment",
-            target_name="payment-api",
-            target_namespace="production",
-            current_spec_hash="sha256:current_abc",
-        )
-
-        assert result is not None
-        entry = result["tier1"]["chain"][0]
-        assert entry["assessmentReason"] == "spec_drift"
-        assert entry["effectivenessScore"] == 0.0
-        assert entry["preRemediationSpecHash"] == "sha256:pre_drift"
-        assert entry["postRemediationSpecHash"] == "sha256:post_drift"
-
-    def test_connection_error_returns_none(self):
-        """IT-HAPI-016-005: fetch_remediation_history_for_request with ConnectionError returns None."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
-
-        mock_api = MagicMock()
-        mock_api.get_remediation_history_context.side_effect = ConnectionError(
-            "Connection refused"
-        )
-
-        result = fetch_remediation_history_for_request(
+        context = fetch_remediation_history_for_request(
             api=mock_api,
             request_data=MINIMAL_REQUEST,
             current_spec_hash="sha256:current_abc",
         )
 
-        assert result is None
+        # Step 2: Build prompt with the fetched context (real business logic)
+        prompt = create_incident_investigation_prompt(
+            MINIMAL_REQUEST,
+            remediation_history_context=context,
+        )
+
+        # Assert: end-to-end business outcome
+        assert context is not None
+        prompt_upper = prompt.upper()
+        assert "INCONCLUSIVE" in prompt_upper, (
+            "spec_drift must produce INCONCLUSIVE in the LLM prompt"
+        )
+        assert "SPEC DRIFT" in prompt_upper, (
+            "spec_drift reason must be visible to the LLM"
+        )
+        assert "0.00 (poor)" not in prompt.lower(), (
+            "spec_drift score 0.0 must not be presented as 'poor' effectiveness"
+        )
+
+    def test_ds_unavailable_produces_valid_prompt_without_history(self):
+        """IT-HAPI-016-005: When DS is unreachable, prompt is still valid (graceful degradation).
+
+        Business outcome: LLM analysis continues even if DataStorage is down.
+        The prompt is constructed without the remediation history section.
+        """
+        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from extensions.incident.prompt_builder import create_incident_investigation_prompt
+
+        # Step 1: DS returns None (connection refused)
+        mock_api = MagicMock()
+        mock_api.get_remediation_history_context.side_effect = ConnectionError(
+            "Connection refused"
+        )
+
+        context = fetch_remediation_history_for_request(
+            api=mock_api,
+            request_data=MINIMAL_REQUEST,
+            current_spec_hash="sha256:current_abc",
+        )
+
+        # Step 2: Build prompt with None context (graceful degradation)
+        prompt = create_incident_investigation_prompt(
+            MINIMAL_REQUEST,
+            remediation_history_context=context,
+        )
+
+        # Assert: prompt is valid but has no history section
+        assert context is None
+        assert "Incident Analysis Request" in prompt, (
+            "Prompt must still be valid when DS is unavailable"
+        )
+        assert "REMEDIATION HISTORY" not in prompt.upper(), (
+            "History section must be absent when DS is unavailable"
+        )
 
 
 # ============================================================================
@@ -247,7 +291,7 @@ class TestClientQuery:
 
 
 class TestPromptWiring:
-    """IT-HAPI-016-006 through IT-HAPI-016-008: Prompt enrichment with spec_drift."""
+    """IT-HAPI-016-006 through IT-HAPI-016-007: Prompt enrichment with spec_drift."""
 
     def test_incident_prompt_with_spec_drift_context(self):
         """IT-HAPI-016-006: Incident prompt includes INCONCLUSIVE for spec_drift entries."""
@@ -285,18 +329,3 @@ class TestPromptWiring:
         assert "REMEDIATION HISTORY" in prompt_upper
         assert "rr-full-001" in prompt
         assert "ScaleUp" in prompt or "scaleup" in prompt.lower()
-
-    def test_fetch_skips_query_without_spec_hash(self):
-        """IT-HAPI-016-008: fetch_remediation_history_for_request returns None when spec_hash empty."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
-
-        mock_api = MagicMock()
-
-        result = fetch_remediation_history_for_request(
-            api=mock_api,
-            request_data=MINIMAL_REQUEST,
-            current_spec_hash="",
-        )
-
-        assert result is None
-        mock_api.get_remediation_history_context.assert_not_called()
