@@ -122,9 +122,10 @@ type WorkflowSchemaLabels struct {
 	// Values: "critical", "high", "medium", "low"
 	Severity string `yaml:"severity" json:"severity" validate:"required,oneof=critical high medium low"`
 
-	// Environment is the target environment (REQUIRED)
-	// Examples: "production", "staging", "*" (wildcard for all)
-	Environment string `yaml:"environment" json:"environment" validate:"required"`
+	// Environment is the target environment(s) (REQUIRED)
+	// DD-WORKFLOW-016: Stored as JSONB array in remediation_workflow_catalog
+	// Examples: ["production"], ["staging", "production"], ["*"] (wildcard for all)
+	Environment []string `yaml:"environment" json:"environment" validate:"required,min=1"`
 
 	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
 	// Examples: "pod", "deployment", "node", "service"
@@ -195,8 +196,8 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	if l.Severity == "" {
 		return NewSchemaValidationError("labels.severity", "severity is required")
 	}
-	if l.Environment == "" {
-		return NewSchemaValidationError("labels.environment", "environment is required")
+	if len(l.Environment) == 0 {
+		return NewSchemaValidationError("labels.environment", "environment is required (at least one value)")
 	}
 	if l.Component == "" {
 		return NewSchemaValidationError("labels.component", "component is required")

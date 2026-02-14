@@ -45,8 +45,8 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 	// Build the context filter WHERE clause for the workflow join
 	whereClause, args := buildContextFilterSQL(filters)
 
-	// Always filter for active workflows only
-	activeFilter := "w.status = 'active'"
+	// Always filter for active workflows only (GAP-WF-3: DD-WORKFLOW-016 - latest version only)
+	activeFilter := "w.status = 'active' AND w.is_latest_version = true"
 	if whereClause != "" {
 		whereClause = activeFilter + " AND " + whereClause
 	} else {
@@ -125,8 +125,8 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 	// Build context filter WHERE clause
 	whereClause, args := buildContextFilterSQL(filters)
 
-	// Always filter for active status and specific action_type
-	baseFilter := fmt.Sprintf("action_type = $%d AND status = 'active'", len(args)+1)
+	// Always filter for active status, latest version, and specific action_type (GAP-WF-3: DD-WORKFLOW-016)
+	baseFilter := fmt.Sprintf("action_type = $%d AND status = 'active' AND is_latest_version = true", len(args)+1)
 	args = append(args, actionType)
 
 	if whereClause != "" {

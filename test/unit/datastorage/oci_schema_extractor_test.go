@@ -57,7 +57,7 @@ actionType: RestartPod
 labels:
   signalType: OOMKilled
   severity: critical
-  environment: production
+  environment: [production]
   component: pod
   priority: p1
 execution:
@@ -93,19 +93,51 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 		It("UT-DS-017-002: should extract labels with camelCase keys", func() {
 			// BR-WORKFLOW-004: JSONB labels use camelCase keys
+			// DD-WORKFLOW-016: environment is []string (JSONB array)
 			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
 			Expect(err).ToNot(HaveOccurred())
 
-			var labels map[string]string
+			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
 			Expect(labels).To(HaveKeyWithValue("signalType", "OOMKilled"))
 			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
-			Expect(labels).To(HaveKeyWithValue("environment", "production"))
+			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
 			Expect(labels).To(HaveKeyWithValue("priority", "p1"))
+		})
+
+		It("UT-DS-017-002b: should parse environment as []string (array format)", func() {
+			// DD-WORKFLOW-016: Environment is strictly []string
+			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.Labels.Environment).To(Equal([]string{"production"}))
+
+			// Multi-value array format
+			arrayYAML := `metadata:
+  workflowId: multi-env-test
+  version: "1.0.0"
+  description:
+    what: Test
+    whenToUse: Test
+actionType: RestartPod
+labels:
+  signalType: OOMKilled
+  severity: critical
+  environment: [staging, production]
+  component: pod
+  priority: p1
+parameters:
+  - name: PARAM
+    type: string
+    required: true
+    description: A param
+`
+			parsedArray, err := parser.ParseAndValidate(arrayYAML)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedArray.Labels.Environment).To(Equal([]string{"staging", "production"}))
 		})
 
 		It("UT-DS-017-008: should parse structured description", func() {
@@ -192,7 +224,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 labels:
   signalType: OOMKilled
   severity: critical
-  environment: production
+  environment: [production]
   component: pod
   priority: p1
 parameters:

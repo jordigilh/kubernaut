@@ -162,13 +162,14 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	}
 
 	// Build labels map from mandatory label fields (camelCase keys)
-	labels := map[string]string{
+	// DD-WORKFLOW-016: environment is []string for JSONB array storage
+	labels := map[string]interface{}{
 		"signalType": schema.Labels.SignalType,
 		"severity":   schema.Labels.Severity,
 	}
 
 	// Add required labels
-	if schema.Labels.Environment != "" {
+	if len(schema.Labels.Environment) > 0 {
 		labels["environment"] = schema.Labels.Environment
 	}
 	if schema.Labels.Component != "" {
