@@ -123,7 +123,7 @@ data:
   effectivenessmonitor.yaml: |
     assessment:
       stabilizationWindow: 30s
-      validityWindow: 5m
+      validityWindow: 90s
       scoringThreshold: 0.5
     audit:
       dataStorageUrl: http://data-storage-service.kubernaut-system:8080

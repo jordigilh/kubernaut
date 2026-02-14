@@ -49,7 +49,10 @@ type EMAssessmentConfig struct {
 	StabilizationWindow time.Duration `yaml:"stabilizationWindow"`
 
 	// ValidityWindow is the maximum duration for assessment completion.
-	// Default: 30m. Range: [5m, 24h].
+	// Default: 30m. Range: [30s, 24h].
+	// The minimum is 30s to support CI/E2E environments; production deployments
+	// should use 30m+. The invariant StabilizationWindow < ValidityWindow is
+	// enforced by Validate().
 	ValidityWindow time.Duration `yaml:"validityWindow"`
 }
 
@@ -140,8 +143,8 @@ func (c *EMConfig) Validate() error {
 	if c.Assessment.StabilizationWindow > 1*time.Hour {
 		return fmt.Errorf("assessment.stabilizationWindow must not exceed 1h, got %v", c.Assessment.StabilizationWindow)
 	}
-	if c.Assessment.ValidityWindow < 5*time.Minute {
-		return fmt.Errorf("assessment.validityWindow must be at least 5m, got %v", c.Assessment.ValidityWindow)
+	if c.Assessment.ValidityWindow < 30*time.Second {
+		return fmt.Errorf("assessment.validityWindow must be at least 30s, got %v", c.Assessment.ValidityWindow)
 	}
 	if c.Assessment.ValidityWindow > 24*time.Hour {
 		return fmt.Errorf("assessment.validityWindow must not exceed 24h, got %v", c.Assessment.ValidityWindow)
