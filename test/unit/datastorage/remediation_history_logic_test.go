@@ -17,8 +17,8 @@ limitations under the License.
 // Package datastorage contains unit tests for the DataStorage service.
 //
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Pure correlation logic tests -- ComputeHashMatch,
-// CorrelateTier1Chain, BuildTier2Summaries, DetectRegression.
+// DD-HAPI-016 v1.2: Pure correlation logic tests -- ComputeHashMatch,
+// CorrelateTier1Chain, BuildTier2Summaries, DetectRegression, DetectRegressionFromTier2.
 package datastorage
 
 import (
@@ -520,6 +520,60 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 				Expect(s.AssessmentReason.Set).To(BeTrue())
 				Expect(string(s.AssessmentReason.Value)).To(Equal("full"))
 			})
+		})
+	})
+
+	// ========================================
+	// DetectRegressionFromTier2 -- checks Tier 2 summaries for preRemediation hashMatch
+	// GAP-DS-1: Tier 2 must always run; regression can be detected from Tier 2 alone.
+	// ========================================
+	Describe("DetectRegressionFromTier2", func() {
+
+		It("UT-RH-LOGIC-022: should return true when any summary has preRemediation hashMatch (BR-HAPI-016)", func() {
+			summaries := []api.RemediationHistorySummary{
+				{
+					RemediationUID: "rr-t2-001",
+					HashMatch: api.OptRemediationHistorySummaryHashMatch{
+						Value: api.RemediationHistorySummaryHashMatchNone,
+						Set:   true,
+					},
+				},
+				{
+					RemediationUID: "rr-t2-002",
+					HashMatch: api.OptRemediationHistorySummaryHashMatch{
+						Value: api.RemediationHistorySummaryHashMatchPreRemediation,
+						Set:   true,
+					},
+				},
+			}
+
+			Expect(server.DetectRegressionFromTier2(summaries)).To(BeTrue())
+		})
+
+		It("UT-RH-LOGIC-023: should return false when no summary has preRemediation hashMatch (BR-HAPI-016)", func() {
+			summaries := []api.RemediationHistorySummary{
+				{
+					RemediationUID: "rr-t2-001",
+					HashMatch: api.OptRemediationHistorySummaryHashMatch{
+						Value: api.RemediationHistorySummaryHashMatchPostRemediation,
+						Set:   true,
+					},
+				},
+				{
+					RemediationUID: "rr-t2-002",
+					HashMatch: api.OptRemediationHistorySummaryHashMatch{
+						Value: api.RemediationHistorySummaryHashMatchNone,
+						Set:   true,
+					},
+				},
+			}
+
+			Expect(server.DetectRegressionFromTier2(summaries)).To(BeFalse())
+		})
+
+		It("UT-RH-LOGIC-024: should return false for empty and nil summaries (BR-HAPI-016)", func() {
+			Expect(server.DetectRegressionFromTier2(nil)).To(BeFalse())
+			Expect(server.DetectRegressionFromTier2([]api.RemediationHistorySummary{})).To(BeFalse())
 		})
 	})
 
