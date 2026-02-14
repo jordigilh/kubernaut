@@ -88,6 +88,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 pre_remediation_spec_hash = 'sha256:a1b2c3d4...',
                 target_resource = 'payment/deployment/payment-api',
                 workflow_version = 'v1.2.0',
+                workflow_type = 'ScaleReplicas',
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 external_severity = 'Sev2',
@@ -246,6 +247,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             ], ), 
                     selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
                         workflow_id = '', 
+                        action_type = 'ScaleReplicas', 
                         container_image = '', 
                         confidence = 0.0, 
                         parameters = { }, ), 
@@ -455,6 +457,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                             ], ), 
                     selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
                         workflow_id = '', 
+                        action_type = 'ScaleReplicas', 
                         container_image = '', 
                         confidence = 0.0, 
                         parameters = { }, ), 

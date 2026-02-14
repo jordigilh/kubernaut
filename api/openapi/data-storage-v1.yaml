@@ -594,7 +594,7 @@ paths:
         Convenience endpoint to disable a workflow (soft delete).
         Sets status to 'disabled' with timestamp and reason.
 
-        **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete)
+        **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4
       operationId: disableWorkflow
       parameters:
         - name: workflow_id
@@ -604,11 +604,11 @@ paths:
             type: string
             format: uuid
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WorkflowDisableRequest'
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
       responses:
         '200':
           description: Workflow disabled
@@ -616,6 +616,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Workflow not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/{workflow_id}/enable:
+    patch:
+      tags:
+        - Workflow Catalog API
+      summary: Enable workflow
+      description: |
+        Re-enable a previously disabled or deprecated workflow.
+        Sets status to 'active' with timestamp and reason.
+
+        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
+      operationId: enableWorkflow
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
+      responses:
+        '200':
+          description: Workflow enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Workflow not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/{workflow_id}/deprecate:
+    patch:
+      tags:
+        - Workflow Catalog API
+      summary: Deprecate workflow
+      description: |
+        Mark a workflow as deprecated. Deprecated workflows are excluded from
+        discovery results but remain in the catalog for audit history.
+
+        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
+      operationId: deprecateWorkflow
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
+      responses:
+        '200':
+          description: Workflow deprecated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '404':
           description: Workflow not found
           content:
@@ -2941,9 +3035,23 @@ components:
           type: string
           description: "Why the workflow was disabled"
 
+    WorkflowLifecycleRequest:
+      type: object
+      description: "Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4."
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: "Why the lifecycle operation is being performed (mandatory)"
+        updated_by:
+          type: string
+          description: "Who is performing the operation"
+
     WorkflowDisableRequest:
       type: object
-      description: "Convenience request to disable a workflow"
+      description: "Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)"
       properties:
         reason:
           type: string
@@ -3349,6 +3457,13 @@ components:
           type: string
           description: Version of the selected workflow
           example: "1.0.0"
+        workflow_type:
+          type: string
+          description: |
+            Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+            Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
+            Used by DS remediation history to populate workflowType on entries and summaries.
+          example: "ScaleReplicas"
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -4616,10 +4731,16 @@ components:
           additionalProperties: false
         selected_workflow:
           type: object
-          description: Selected workflow with workflow_id, containerImage, confidence, parameters (optional)
+          description: Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
           properties:
             workflow_id:
               type: string
+            action_type:
+              type: string
+              description: |
+                Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+                Propagated from HAPI three-step discovery protocol.
+              example: "ScaleReplicas"
             container_image:
               type: string
             confidence:

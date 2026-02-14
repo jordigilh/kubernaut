@@ -158,7 +158,9 @@ Class | Method | HTTP request | Description
 *MetricsApi* | [**get_metrics**](docs/MetricsApi.md#get_metrics) | **GET** /metrics | Prometheus metrics
 *RemediationHistoryAPIApi* | [**get_remediation_history_context**](docs/RemediationHistoryAPIApi.md#get_remediation_history_context) | **GET** /api/v1/remediation-history/context | Get remediation history context for a target resource
 *WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
+*WorkflowCatalogAPIApi* | [**deprecate_workflow**](docs/WorkflowCatalogAPIApi.md#deprecate_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/deprecate | Deprecate workflow
 *WorkflowCatalogAPIApi* | [**disable_workflow**](docs/WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
+*WorkflowCatalogAPIApi* | [**enable_workflow**](docs/WorkflowCatalogAPIApi.md#enable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/enable | Enable workflow
 *WorkflowCatalogAPIApi* | [**get_workflow_by_id**](docs/WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 *WorkflowCatalogAPIApi* | [**list_workflows**](docs/WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
 *WorkflowCatalogAPIApi* | [**update_workflow**](docs/WorkflowCatalogAPIApi.md#update_workflow) | **PATCH** /api/v1/workflows/{workflow_id} | Update workflow mutable fields
@@ -259,6 +261,7 @@ Class | Method | HTTP request | Description
  - [WorkflowDiscoveryResponse](docs/WorkflowDiscoveryResponse.md)
  - [WorkflowExecutionAuditPayload](docs/WorkflowExecutionAuditPayload.md)
  - [WorkflowExecutionWebhookAuditPayload](docs/WorkflowExecutionWebhookAuditPayload.md)
+ - [WorkflowLifecycleRequest](docs/WorkflowLifecycleRequest.md)
  - [WorkflowListResponse](docs/WorkflowListResponse.md)
  - [WorkflowResultAudit](docs/WorkflowResultAudit.md)
  - [WorkflowSearchFilters](docs/WorkflowSearchFilters.md)

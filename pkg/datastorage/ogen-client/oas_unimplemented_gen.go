@@ -69,14 +69,36 @@ func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkf
 	return r, ht.ErrNotImplemented
 }
 
+// DeprecateWorkflow implements deprecateWorkflow operation.
+//
+// Mark a workflow as deprecated. Deprecated workflows are excluded from
+// discovery results but remain in the catalog for audit history.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/deprecate
+func (UnimplementedHandler) DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (r DeprecateWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DisableWorkflow implements disableWorkflow operation.
 //
 // Convenience endpoint to disable a workflow (soft delete).
 // Sets status to 'disabled' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 //
 // PATCH /api/v1/workflows/{workflow_id}/disable
-func (UnimplementedHandler) DisableWorkflow(ctx context.Context, req OptWorkflowDisableRequest, params DisableWorkflowParams) (r DisableWorkflowRes, _ error) {
+func (UnimplementedHandler) DisableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DisableWorkflowParams) (r DisableWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// EnableWorkflow implements enableWorkflow operation.
+//
+// Re-enable a previously disabled or deprecated workflow.
+// Sets status to 'active' with timestamp and reason.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/enable
+func (UnimplementedHandler) EnableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params EnableWorkflowParams) (r EnableWorkflowRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

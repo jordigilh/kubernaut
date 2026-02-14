@@ -109,6 +109,7 @@ datastorage/models/workflow_discovery_entry.py
 datastorage/models/workflow_discovery_response.py
 datastorage/models/workflow_execution_audit_payload.py
 datastorage/models/workflow_execution_webhook_audit_payload.py
+datastorage/models/workflow_lifecycle_request.py
 datastorage/models/workflow_list_response.py
 datastorage/models/workflow_result_audit.py
 datastorage/models/workflow_search_filters.py
@@ -217,6 +218,7 @@ docs/WorkflowDiscoveryEntry.md
 docs/WorkflowDiscoveryResponse.md
 docs/WorkflowExecutionAuditPayload.md
 docs/WorkflowExecutionWebhookAuditPayload.md
+docs/WorkflowLifecycleRequest.md
 docs/WorkflowListResponse.md
 docs/WorkflowResultAudit.md
 docs/WorkflowSearchFilters.md
@@ -330,6 +332,7 @@ test/test_workflow_discovery_entry.py
 test/test_workflow_discovery_response.py
 test/test_workflow_execution_audit_payload.py
 test/test_workflow_execution_webhook_audit_payload.py
+test/test_workflow_lifecycle_request.py
 test/test_workflow_list_response.py
 test/test_workflow_result_audit.py
 test/test_workflow_search_filters.py

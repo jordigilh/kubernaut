@@ -45,6 +45,7 @@ Name | Type | Description | Notes
 **pre_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
 **target_resource** | **str** | Target resource being remediated | 
 **workflow_version** | **str** | Workflow version | 
+**workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
