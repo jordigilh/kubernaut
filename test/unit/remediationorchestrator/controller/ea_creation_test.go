@@ -25,10 +25,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -42,6 +44,11 @@ import (
 // ============================================================================
 // EA CREATION UNIT TESTS (BR-EM-001, ADR-EM-001)
 // Business Requirement: RO creates EffectivenessAssessment CRD on terminal phases
+//
+// All tests drive the reconciler through the public Reconcile() method.
+// - Completed transition: RR in Executing + completed WorkflowExecution
+// - Failed transition: RR in Executing + failed WorkflowExecution
+// - Timeout transition: RR in non-terminal phase with expired StartTime
 // ============================================================================
 var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
@@ -56,18 +63,22 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-001: transitionToCompleted creates EA with correct spec
+	// UT-RO-EA-001: Reconcile with completed WE creates EA with correct spec
 	// ========================================
-	It("UT-RO-EA-001: should create EA when RR transitions to Completed", func() {
+	It("UT-RO-EA-001: should create EA when RR transitions to Completed via Reconcile", func() {
 		rrName := "rr-ea-001"
 		namespace := "test-ns"
+		weName := "we-" + rrName
 
-		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseExecuting)
-		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+		// RR in Executing phase with WorkflowExecutionRef
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+
+		// Completed WorkflowExecution owned by RR
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr).
+			WithObjects(rr, we).
 			WithStatusSubresource(rr).
 			Build()
 
@@ -76,15 +87,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil, // audit store (nil for unit tests per DD-AUDIT-003)
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
-		_, err := reconciler.TransitionToCompletedForTest(ctx, rr, "WorkflowSucceeded")
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred())
 
 		// Verify EA was created
@@ -111,18 +122,21 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-002: transitionToFailed creates EA with correct spec
+	// UT-RO-EA-002: Reconcile with failed WE creates EA with Failed phase
 	// ========================================
-	It("UT-RO-EA-002: should create EA when RR transitions to Failed", func() {
+	It("UT-RO-EA-002: should create EA when RR transitions to Failed via Reconcile", func() {
 		rrName := "rr-ea-002"
 		namespace := "test-ns"
+		weName := "we-" + rrName
 
-		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseExecuting)
-		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+
+		// Failed WorkflowExecution
+		we := newWorkflowExecutionFailed(weName, namespace, rrName, "workflow script failed")
 
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr).
+			WithObjects(rr, we).
 			WithStatusSubresource(rr).
 			Build()
 
@@ -131,15 +145,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil,
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
-		_, err := reconciler.TransitionToFailedForTest(ctx, rr, "Executing", nil)
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred())
 
 		// Verify EA was created with Failed phase in spec
@@ -153,13 +167,13 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-003: handleGlobalTimeout creates EA with correct spec
+	// UT-RO-EA-003: Reconcile with expired global timeout creates EA
 	// ========================================
-	It("UT-RO-EA-003: should create EA when RR times out", func() {
+	It("UT-RO-EA-003: should create EA when RR times out via Reconcile", func() {
 		rrName := "rr-ea-003"
 		namespace := "test-ns"
 
-		// Create an RR that's past its timeout
+		// Create an RR that's past its timeout (start time 2 hours ago)
 		rr := newRemediationRequestWithTimeout(rrName, namespace, remediationv1.PhaseExecuting, -2*time.Hour)
 
 		k8sClient := fake.NewClientBuilder().
@@ -173,15 +187,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil,
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
-		_, err := reconciler.HandleGlobalTimeoutForTest(ctx, rr)
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred())
 
 		// Verify EA was created with TimedOut phase in spec
@@ -200,9 +214,10 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	It("UT-RO-EA-004: should not error when EA already exists (idempotent)", func() {
 		rrName := "rr-ea-004"
 		namespace := "test-ns"
+		weName := "we-" + rrName
 
-		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseExecuting)
-		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
 		// Pre-create the EA
 		existingEA := &eav1.EffectivenessAssessment{
@@ -224,7 +239,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr, existingEA).
+			WithObjects(rr, we, existingEA).
 			WithStatusSubresource(rr).
 			Build()
 
@@ -233,16 +248,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil,
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
 		// Should not error
-		_, err := reconciler.TransitionToCompletedForTest(ctx, rr, "WorkflowSucceeded")
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -252,14 +267,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	It("UT-RO-EA-005: should complete transition even if EA creation fails", func() {
 		rrName := "rr-ea-005"
 		namespace := "test-ns"
+		weName := "we-" + rrName
 
-		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseExecuting)
-		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
 		// Use interceptor to make Create fail for EA objects
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr).
+			WithObjects(rr, we).
 			WithStatusSubresource(rr).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
@@ -276,16 +292,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil,
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
 		// Transition should still succeed despite EA creation failure
-		_, err := reconciler.TransitionToCompletedForTest(ctx, rr, "WorkflowSucceeded")
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred(), "Phase transition must succeed even if EA creation fails")
 
 		// Verify RR transitioned to Completed
@@ -301,14 +317,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	It("UT-RO-EA-006: should propagate config-driven stabilization window to EA spec", func() {
 		rrName := "rr-ea-006"
 		namespace := "test-ns"
+		weName := "we-" + rrName
 		customWindow := 2 * time.Minute
 
-		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseExecuting)
-		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
 		k8sClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(rr).
+			WithObjects(rr, we).
 			WithStatusSubresource(rr).
 			Build()
 
@@ -317,15 +334,15 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, customWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
-			nil,
-			recorder,
-			roMetrics,
+			nil, recorder, roMetrics,
 			controller.TimeoutConfig{},
 			&MockRoutingEngine{},
 			eaCreator,
 		)
 
-		_, err := reconciler.TransitionToCompletedForTest(ctx, rr, "WorkflowSucceeded")
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
 		Expect(err).ToNot(HaveOccurred())
 
 		ea := &eav1.EffectivenessAssessment{}
@@ -336,5 +353,102 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(customWindow),
 			"EA should have custom stabilization window from config")
+	})
+
+	// ========================================
+	// UT-RO-EA-007: EA ref persisted on RR status after EA creation (Batch 3)
+	// ========================================
+	It("UT-RO-EA-007: should persist EffectivenessAssessmentRef on RR status after EA creation", func() {
+		rrName := "rr-ea-007"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, 30*time.Second)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Refetch RR from the fake store to verify persistence
+		fetchedRR := &remediationv1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
+
+		// ADR-EM-001, Batch 3: EffectivenessAssessmentRef should be set and persisted
+		Expect(fetchedRR.Status.EffectivenessAssessmentRef).ToNot(BeNil(),
+			"EffectivenessAssessmentRef should be set after EA creation")
+		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Name).To(Equal("ea-"+rrName),
+			"EffectivenessAssessmentRef should reference the created EA")
+		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Kind).To(Equal("EffectivenessAssessment"))
+		Expect(fetchedRR.Status.EffectivenessAssessmentRef.Namespace).To(Equal(namespace))
+	})
+
+	// ========================================
+	// UT-RO-EA-008: Initial EffectivenessAssessed=False on EA creation (GAP-2)
+	// ADR-EM-001 Section 9.4.15: When EA is first created, the RR must have
+	// EffectivenessAssessed=False / Reason: AssessmentInProgress so operators
+	// can distinguish "no EA yet" from "EA in progress."
+	// ========================================
+	It("UT-RO-EA-008: should set EffectivenessAssessed=False/AssessmentInProgress on EA creation", func() {
+		rrName := "rr-ea-008"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Refetch RR to verify persisted condition
+		fetchedRR := &remediationv1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
+
+		// ADR-EM-001 Section 9.4.15: Initial condition on EA creation
+		cond := meta.FindStatusCondition(fetchedRR.Status.Conditions, "EffectivenessAssessed")
+		Expect(cond).ToNot(BeNil(), "EffectivenessAssessed condition should be set on EA creation")
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse),
+			"Initial EffectivenessAssessed should be False (assessment in progress)")
+		Expect(cond.Reason).To(Equal("AssessmentInProgress"),
+			"Reason should indicate assessment is in progress")
+		Expect(cond.Message).To(ContainSubstring("ea-"+rrName),
+			"Message should reference the EA name")
 	})
 })
