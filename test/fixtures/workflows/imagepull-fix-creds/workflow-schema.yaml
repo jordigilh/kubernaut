@@ -1,0 +1,37 @@
+# ImagePull Fix Credentials Workflow Schema (BR-WORKFLOW-004)
+# Used by: HolmesGPT-API E2E
+metadata:
+  workflowId: image-pull-backoff-fix-credentials
+  version: "1.0.0"
+  description:
+    what: "Rolls back a deployment to fix ImagePullBackOff caused by credential issues"
+    whenToUse: "When pods are in ImagePullBackOff due to invalid or expired registry credentials"
+    whenNotToUse: "When the image genuinely does not exist in the registry"
+    preconditions: "Deployment has a previous working revision"
+
+actionType: RollbackDeployment
+
+labels:
+  signalType: ImagePullBackOff
+  severity: high
+  environment: [production, staging]
+  component: deployment
+  priority: p1
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to roll back"
+  - name: REVISION
+    type: integer
+    required: false
+    description: "Target revision to roll back to (0 = previous)"
+    default: 0

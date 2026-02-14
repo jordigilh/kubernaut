@@ -1,0 +1,39 @@
+# OOMKill Increase Memory Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Used by: FullPipeline E2E (execution.engine: job)
+metadata:
+  workflowId: oomkill-increase-memory-v1
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for pods experiencing OOMKill events"
+    whenToUse: "When pods are OOMKilled due to insufficient memory limits"
+    whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+
+actionType: IncreaseMemoryLimits
+
+labels:
+  signalType: OOMKilled
+  severity: critical
+  environment: [production, staging, test]
+  component: deployment
+  priority: p1
+
+execution:
+  engine: job
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected deployment"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to update memory limits"
+  - name: MEMORY_INCREASE_PERCENT
+    type: integer
+    required: false
+    description: "Percentage to increase memory limits by"
+    default: 25
+    minimum: 10
+    maximum: 100

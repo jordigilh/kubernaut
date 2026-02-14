@@ -1,0 +1,31 @@
+# Generic Restart Workflow Schema (BR-WORKFLOW-004)
+# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+metadata:
+  workflowId: generic-restart-v1
+  version: "1.0.0"
+  description:
+    what: "Restarts a pod as a generic recovery action"
+    whenToUse: "When a pod needs a restart and no specific remediation applies"
+    whenNotToUse: "When root cause is known and a targeted fix exists"
+    preconditions: "Pod is managed by a controller"
+
+actionType: RestartPod
+
+labels:
+  severity: medium
+  environment: [production, staging, test]
+  component: pod
+  priority: p2
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: POD_NAME
+    type: string
+    required: true
+    description: "Name of the pod to restart"

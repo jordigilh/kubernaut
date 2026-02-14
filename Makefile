@@ -365,6 +365,47 @@ docker-push-%: docker-build-% ## Push service container image
 	@echo "🐳 Pushing Docker image for $*..."
 	@$(CONTAINER_TOOL) push $(IMG)
 
+##@ Test Workflow Image Targets
+
+# Registry for test workflow OCI images (DD-WORKFLOW-017, ADR-043)
+# Override for CI: WORKFLOW_REGISTRY=ghcr.io/jordigilh/kubernaut/test-workflows
+WORKFLOW_REGISTRY ?= quay.io/kubernaut-cicd/test-workflows
+WORKFLOW_VERSION ?= v1.0.0
+WORKFLOW_FIXTURES_DIR := test/fixtures/workflows
+
+.PHONY: build-test-workflows
+build-test-workflows: ## Build all test workflow OCI images (local, current arch)
+	@echo "📦 Building test workflow OCI images..."
+	@echo "  Registry: $(WORKFLOW_REGISTRY)"
+	@echo "  Version:  $(WORKFLOW_VERSION)"
+	@echo ""
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
+		echo "  Building $$name -> $$ref"; \
+		$(CONTAINER_TOOL) build -t "$$ref" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile "$$dir" || exit 1; \
+	done
+	@echo ""
+	@echo "✅ All test workflow images built"
+
+.PHONY: push-test-workflows
+push-test-workflows: build-test-workflows ## Build and push test workflow images to registry
+	@echo "📦 Pushing test workflow OCI images..."
+	@echo "  Registry: $(WORKFLOW_REGISTRY)"
+	@echo "  Version:  $(WORKFLOW_VERSION)"
+	@echo ""
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
+		echo "  Pushing $$name -> $$ref"; \
+		$(CONTAINER_TOOL) push "$$ref" || exit 1; \
+		echo "  ✅ Pushed $$ref"; \
+	done
+	@echo ""
+	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY)"
+
 ##@ Cleanup Pattern Targets
 
 .PHONY: clean-%-integration

@@ -1,0 +1,39 @@
+# Memory Optimize Workflow Schema (BR-WORKFLOW-004)
+# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+metadata:
+  workflowId: memory-optimize-v1
+  version: "1.0.0"
+  description:
+    what: "Scales replicas to optimize memory usage across pods"
+    whenToUse: "When pods are OOMKilled and scaling can distribute memory pressure"
+    whenNotToUse: "When the application has a memory leak"
+    preconditions: "Deployment supports horizontal scaling"
+
+actionType: ScaleReplicas
+
+labels:
+  signalType: OOMKilled
+  severity: high
+  environment: [production, staging, test]
+  component: deployment
+  priority: p1
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to scale"
+  - name: REPLICA_COUNT
+    type: integer
+    required: false
+    description: "Target number of replicas"
+    default: 3
+    minimum: 1
+    maximum: 10
