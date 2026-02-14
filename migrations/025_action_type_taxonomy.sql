@@ -50,8 +50,11 @@ ALTER TABLE remediation_workflow_catalog
     FOREIGN KEY (action_type)
     REFERENCES action_type_taxonomy(action_type);
 
--- 6. Add index for action_type lookups
-CREATE INDEX IF NOT EXISTS idx_workflow_action_type ON remediation_workflow_catalog(action_type);
+-- 6. Add composite index for discovery queries (ListActions, ListWorkflowsByActionType)
+-- GAP-2: Replaces single-column idx_workflow_action_type with composite
+-- covering the three-column filter pattern: action_type + status + is_latest_version
+CREATE INDEX IF NOT EXISTS idx_workflow_action_type_status_version
+    ON remediation_workflow_catalog(action_type, status, is_latest_version);
 
 -- 7. Add trigger for updated_at on taxonomy table
 DROP TRIGGER IF EXISTS trigger_action_type_taxonomy_updated_at ON action_type_taxonomy;
@@ -66,7 +69,7 @@ CREATE TRIGGER trigger_action_type_taxonomy_updated_at
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS trigger_action_type_taxonomy_updated_at ON action_type_taxonomy;
 ALTER TABLE remediation_workflow_catalog DROP CONSTRAINT IF EXISTS fk_workflow_action_type;
-DROP INDEX IF EXISTS idx_workflow_action_type;
+DROP INDEX IF EXISTS idx_workflow_action_type_status_version;
 ALTER TABLE remediation_workflow_catalog DROP COLUMN IF EXISTS action_type;
 DROP TABLE IF EXISTS action_type_taxonomy;
 -- +goose StatementEnd
