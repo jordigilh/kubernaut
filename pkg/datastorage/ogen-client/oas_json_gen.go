@@ -3811,9 +3811,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.ResolutionTimeSeconds.Set {
-					e.FieldStart("resolution_time_seconds")
-					s.ResolutionTimeSeconds.Encode(e)
+				if s.AssessmentDurationSeconds.Set {
+					e.FieldStart("assessment_duration_seconds")
+					s.AssessmentDurationSeconds.Encode(e)
 				}
 			}
 			{
@@ -6249,9 +6249,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.ResolutionTimeSeconds.Set {
-					e.FieldStart("resolution_time_seconds")
-					s.ResolutionTimeSeconds.Encode(e)
+				if s.AssessmentDurationSeconds.Set {
+					e.FieldStart("assessment_duration_seconds")
+					s.AssessmentDurationSeconds.Encode(e)
 				}
 			}
 			{
@@ -9634,9 +9634,9 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ResolutionTimeSeconds.Set {
-			e.FieldStart("resolution_time_seconds")
-			s.ResolutionTimeSeconds.Encode(e)
+		if s.AssessmentDurationSeconds.Set {
+			e.FieldStart("assessment_duration_seconds")
+			s.AssessmentDurationSeconds.Encode(e)
 		}
 	}
 	{
@@ -9720,7 +9720,7 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
 	9:  "alert_name",
 	10: "components_assessed",
 	11: "completed_at",
-	12: "resolution_time_seconds",
+	12: "assessment_duration_seconds",
 	13: "validity_deadline",
 	14: "prometheus_check_after",
 	15: "alertmanager_check_after",
@@ -9876,15 +9876,15 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"completed_at\"")
 			}
-		case "resolution_time_seconds":
+		case "assessment_duration_seconds":
 			if err := func() error {
-				s.ResolutionTimeSeconds.Reset()
-				if err := s.ResolutionTimeSeconds.Decode(d); err != nil {
+				s.AssessmentDurationSeconds.Reset()
+				if err := s.AssessmentDurationSeconds.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"resolution_time_seconds\"")
+				return errors.Wrap(err, "decode field \"assessment_duration_seconds\"")
 			}
 		case "validity_deadline":
 			if err := func() error {

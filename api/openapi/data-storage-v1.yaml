@@ -4067,7 +4067,7 @@ components:
             Timestamp when the assessment completed (EA status.completedAt).
             Only present for assessment.completed events.
           example: "2026-02-12T15:45:00Z"
-        resolution_time_seconds:
+        assessment_duration_seconds:
           type: number
           format: double
           nullable: true
@@ -4075,6 +4075,7 @@ components:
             Seconds from RemediationRequest creation to assessment completion.
             Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set.
             Only present for assessment.completed events.
+            Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution.
           example: 1800.5
 
         validity_deadline:

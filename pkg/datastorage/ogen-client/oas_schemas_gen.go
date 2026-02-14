@@ -4949,7 +4949,8 @@ type EffectivenessAssessmentAuditPayload struct {
 	// Seconds from RemediationRequest creation to assessment completion.
 	// Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set.
 	// Only present for assessment.completed events.
-	ResolutionTimeSeconds OptNilFloat64 `json:"resolution_time_seconds"`
+	// Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution.
+	AssessmentDurationSeconds OptNilFloat64 `json:"assessment_duration_seconds"`
 	// Computed validity deadline (only for assessment.scheduled events).
 	// EA.creationTimestamp + validityWindow from EM config.
 	ValidityDeadline OptDateTime `json:"validity_deadline"`
@@ -5053,9 +5054,9 @@ func (s *EffectivenessAssessmentAuditPayload) GetCompletedAt() OptDateTime {
 	return s.CompletedAt
 }
 
-// GetResolutionTimeSeconds returns the value of ResolutionTimeSeconds.
-func (s *EffectivenessAssessmentAuditPayload) GetResolutionTimeSeconds() OptNilFloat64 {
-	return s.ResolutionTimeSeconds
+// GetAssessmentDurationSeconds returns the value of AssessmentDurationSeconds.
+func (s *EffectivenessAssessmentAuditPayload) GetAssessmentDurationSeconds() OptNilFloat64 {
+	return s.AssessmentDurationSeconds
 }
 
 // GetValidityDeadline returns the value of ValidityDeadline.
@@ -5173,9 +5174,9 @@ func (s *EffectivenessAssessmentAuditPayload) SetCompletedAt(val OptDateTime) {
 	s.CompletedAt = val
 }
 
-// SetResolutionTimeSeconds sets the value of ResolutionTimeSeconds.
-func (s *EffectivenessAssessmentAuditPayload) SetResolutionTimeSeconds(val OptNilFloat64) {
-	s.ResolutionTimeSeconds = val
+// SetAssessmentDurationSeconds sets the value of AssessmentDurationSeconds.
+func (s *EffectivenessAssessmentAuditPayload) SetAssessmentDurationSeconds(val OptNilFloat64) {
+	s.AssessmentDurationSeconds = val
 }
 
 // SetValidityDeadline sets the value of ValidityDeadline.

@@ -1233,7 +1233,7 @@ func (s *EffectivenessAssessmentAuditPayload) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.ResolutionTimeSeconds.Get(); ok {
+		if value, ok := s.AssessmentDurationSeconds.Get(); ok {
 			if err := func() error {
 				if err := (validate.Float{}).Validate(float64(value)); err != nil {
 					return errors.Wrap(err, "float")
@@ -1246,7 +1246,7 @@ func (s *EffectivenessAssessmentAuditPayload) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "resolution_time_seconds",
+			Name:  "assessment_duration_seconds",
 			Error: err,
 		})
 	}

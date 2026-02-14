@@ -170,7 +170,7 @@ Name | Type | Description | Notes
 **score** | **float** | Component score (0.0-1.0), null if not assessed | [optional] 
 **details** | **str** | Human-readable details about the assessment result | [optional] 
 **components_assessed** | **List[str]** | List of component names that were assessed (e.g. [\&quot;health\&quot;,\&quot;hash\&quot;,\&quot;alert\&quot;,\&quot;metrics\&quot;]). Only present for assessment.completed events.  | [optional] 
-**resolution_time_seconds** | **float** | Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events.  | [optional] 
+**assessment_duration_seconds** | **float** | Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events. Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution.  | [optional] 
 **validity_deadline** | **datetime** | Computed validity deadline (only for assessment.scheduled events). EA.creationTimestamp + validityWindow from EM config.  | [optional] 
 **prometheus_check_after** | **datetime** | Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
 **alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
