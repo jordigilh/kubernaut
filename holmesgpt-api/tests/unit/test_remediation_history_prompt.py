@@ -574,8 +574,9 @@ class TestSpecDriftFormatting:
 
         assert "INCONCLUSIVE" in result
         assert "spec drift" in result.lower()
-        # Should NOT show "0.00 (poor)" -- the score is unreliable
-        assert "poor" not in result.lower()
+        # Should NOT show "0.00 (poor)" effectiveness line -- the score is unreliable
+        assert "0.00 (poor)" not in result.lower()
+        assert "Effectiveness: 0.00" not in result
 
     def test_spec_drift_suppresses_health_and_metrics(self):
         """UT-RH-PROMPT-020: spec_drift entries do NOT show health checks or metric deltas."""
@@ -746,7 +747,9 @@ class TestSpecDriftFormatting:
         result = build_remediation_history_section(context)
 
         assert "INCONCLUSIVE" in result
-        assert "poor" not in result.lower()
+        # Should NOT show "0.00 (poor)" effectiveness -- the score is unreliable
+        assert "0.00 (poor)" not in result.lower()
+        assert "effectiveness=0.00" not in result
 
     def test_causal_chain_detected(self):
         """UT-RH-PROMPT-025: spec_drift entry A postHash matches entry B preHash -> causal chain."""
