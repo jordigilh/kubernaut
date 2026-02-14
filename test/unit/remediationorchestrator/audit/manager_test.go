@@ -793,6 +793,7 @@ var _ = Describe("Audit Manager", func() {
 				"default/Deployment/nginx",
 				"wf-scale-001",
 				"1.0.0",
+				"ScaleReplicas",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.EventType).To(Equal("remediation.workflow_created"))
@@ -807,6 +808,7 @@ var _ = Describe("Audit Manager", func() {
 				"production/Deployment/api-server",
 				"wf-restart-pods",
 				"2.1.0",
+				"RestartPod",
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -830,6 +832,7 @@ var _ = Describe("Audit Manager", func() {
 				"default/Pod/test",
 				"wf-test",
 				"1.0.0",
+				"ScaleReplicas",
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -847,6 +850,7 @@ var _ = Describe("Audit Manager", func() {
 				"default/Deployment/nginx",
 				"wf-scale-001",
 				"", // empty version
+				"ScaleReplicas",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event).ToNot(BeNil())
@@ -976,7 +980,7 @@ var _ = Describe("Audit Manager", func() {
 			{
 				name: "RemediationWorkflowCreated",
 				build: func() error {
-					_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0")
+					_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0", "ScaleReplicas")
 					if err != nil {
 						return err
 					}
