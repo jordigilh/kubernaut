@@ -61,6 +61,15 @@ type AlertManagerClient interface {
 	Ready(ctx context.Context) error
 }
 
+// DataStorageQuerier abstracts queries to the DataStorage audit trail.
+// Used by the EM to retrieve the pre-remediation spec hash from the
+// remediation.workflow_created audit event (DD-EM-002).
+type DataStorageQuerier interface {
+	// QueryPreRemediationHash queries DS for the pre-remediation spec hash
+	// associated with a given correlation ID. Returns empty string if not found.
+	QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error)
+}
+
 // ========================================
 // Prometheus Types
 // ========================================

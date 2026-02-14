@@ -63,11 +63,19 @@ type HealthEvent struct {
 	RestartsSinceRemediation int32
 }
 
-// HashEvent contains the audit payload for a hash computation.
+// HashEvent contains the audit payload for a hash computation (DD-EM-002).
 type HashEvent struct {
 	EventData
-	// PostRemediationSpecHash is the computed hash of the target spec.
+	// PostRemediationSpecHash is the computed hash of the target spec after remediation.
 	PostRemediationSpecHash string
+	// PreRemediationSpecHash is the hash from before remediation (from DS audit trail).
+	// Empty string if not available.
+	PreRemediationSpecHash string
+	// Match indicates whether pre and post hashes are identical.
+	// nil if no pre-hash was available (comparison not possible).
+	// true if hashes match (no spec change detected).
+	// false if hashes differ (spec changed).
+	Match *bool
 }
 
 // AlertEvent contains the audit payload for an alert resolution check.
@@ -125,8 +133,10 @@ type Builder interface {
 	// BuildHealthEvent creates an audit event for health assessment.
 	BuildHealthEvent(data EventData, score *float64, totalReplicas, readyReplicas, restarts int32) HealthEvent
 
-	// BuildHashEvent creates an audit event for hash computation.
-	BuildHashEvent(data EventData, hash string) HashEvent
+	// BuildHashEvent creates an audit event for hash computation (DD-EM-002).
+	// Parameters: postHash is the post-remediation hash, preHash is the pre-remediation hash
+	// (empty if unavailable), match indicates whether pre/post match (nil if no pre-hash).
+	BuildHashEvent(data EventData, postHash, preHash string, match *bool) HashEvent
 
 	// BuildAlertEvent creates an audit event for alert resolution.
 	BuildAlertEvent(data EventData, score *float64, alertName string, resolved bool) AlertEvent
@@ -160,11 +170,13 @@ func (b *builder) BuildHealthEvent(data EventData, score *float64, totalReplicas
 	}
 }
 
-// BuildHashEvent creates an audit event for hash computation.
-func (b *builder) BuildHashEvent(data EventData, hash string) HashEvent {
+// BuildHashEvent creates an audit event for hash computation (DD-EM-002).
+func (b *builder) BuildHashEvent(data EventData, postHash, preHash string, match *bool) HashEvent {
 	return HashEvent{
 		EventData:               data,
-		PostRemediationSpecHash: hash,
+		PostRemediationSpecHash: postHash,
+		PreRemediationSpecHash:  preHash,
+		Match:                   match,
 	}
 }
 

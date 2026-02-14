@@ -166,7 +166,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Name: MetricNameAssessmentsCompletedTotal,
 				Help: "Total number of assessments completed by reason.",
 			},
-			[]string{"reason"}, // full, partial, expired, no_execution, metrics_timed_out
+			[]string{"reason"}, // full, partial, expired, no_execution, metrics_timed_out, spec_drift
 		),
 		ExternalCallsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{

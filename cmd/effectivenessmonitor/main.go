@@ -240,9 +240,17 @@ func main() {
 	setupLog.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
 
 	// ========================================
+	// DS QUERIER INITIALIZATION (DD-EM-002: pre-remediation hash lookup)
+	// ========================================
+	var dsQuerier emclient.DataStorageQuerier
+	dsQuerier = emclient.NewDataStorageHTTPQuerier(cfg.Audit.DataStorageURL)
+	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup",
+		"url", cfg.Audit.DataStorageURL)
+
+	// ========================================
 	// CONTROLLER SETUP
 	// ========================================
-	if err = controller.NewReconciler(
+	emReconciler := controller.NewReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
@@ -250,13 +258,16 @@ func main() {
 		promClient,
 		amClient,
 		auditManager,
+		dsQuerier,
 		func() controller.ReconcilerConfig {
 			c := controller.DefaultReconcilerConfig()
 			c.PrometheusEnabled = cfg.External.PrometheusEnabled
 			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
 			return c
 		}(),
-	).SetupWithManager(mgr); err != nil {
+	)
+	emReconciler.SetRESTMapper(mgr.GetRESTMapper())
+	if err = emReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "EffectivenessMonitor")
 		os.Exit(1)
 	}
