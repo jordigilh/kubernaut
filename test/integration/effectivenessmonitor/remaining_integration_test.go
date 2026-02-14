@@ -430,17 +430,8 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Pre-setting health and hash as already assessed (simulating restart)")
-		// Wait a bit for initial reconcile to start
-		time.Sleep(2 * time.Second)
-
-		// Re-fetch the EA to get the latest version
+		By("Waiting for the reconciler to complete the EA fully")
 		fetchedEA := &eav1.EffectivenessAssessment{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name: ea.Name, Namespace: ea.Namespace,
-		}, fetchedEA)).To(Succeed())
-
-		// The reconciler should complete the EA fully
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
@@ -476,14 +467,15 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 		originalCompletedAt := fetchedEA.Status.CompletedAt.DeepCopy()
 
 		By("Verifying subsequent reconciles don't change completedAt")
-		time.Sleep(3 * time.Second)
+		Consistently(func(g Gomega) {
+			recheck := &eav1.EffectivenessAssessment{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, recheck)).To(Succeed())
 
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name: ea.Name, Namespace: ea.Namespace,
-		}, fetchedEA)).To(Succeed())
-
-		Expect(fetchedEA.Status.CompletedAt.Time.Equal(originalCompletedAt.Time)).To(BeTrue(),
-			"completedAt should not change on subsequent reconciles")
+			g.Expect(recheck.Status.CompletedAt.Time.Equal(originalCompletedAt.Time)).To(BeTrue(),
+				"completedAt should not change on subsequent reconciles")
+		}, 3*time.Second, 500*time.Millisecond).Should(Succeed())
 	})
 
 	// ========================================

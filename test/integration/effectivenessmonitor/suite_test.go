@@ -387,7 +387,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Fail("Failed to sync controller manager cache within 60 seconds")
 	}
 
-	time.Sleep(2 * time.Second)
 	GinkgoWriter.Println("✅ Controller manager cache synced and ready")
 
 	GinkgoWriter.Println("✅ EffectivenessMonitor integration test environment ready!")

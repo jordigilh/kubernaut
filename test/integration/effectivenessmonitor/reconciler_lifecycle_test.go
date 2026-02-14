@@ -160,18 +160,18 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 		reason := fetchedEA.Status.AssessmentReason
 
 		By("Verifying the Completed status persists (no regression)")
-		time.Sleep(3 * time.Second)
+		Consistently(func(g Gomega) {
+			recheck := &eav1.EffectivenessAssessment{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      ea.Name,
+				Namespace: ea.Namespace,
+			}, recheck)).To(Succeed())
 
-		recheck := &eav1.EffectivenessAssessment{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      ea.Name,
-			Namespace: ea.Namespace,
-		}, recheck)).To(Succeed())
-
-		Expect(recheck.Status.Phase).To(Equal(eav1.PhaseCompleted))
-		Expect(recheck.Status.AssessmentReason).To(Equal(reason))
-		Expect(recheck.Status.CompletedAt.Time.Equal(completedAt.Time)).To(BeTrue(),
-			"CompletedAt should not change on subsequent reconciles")
+			g.Expect(recheck.Status.Phase).To(Equal(eav1.PhaseCompleted))
+			g.Expect(recheck.Status.AssessmentReason).To(Equal(reason))
+			g.Expect(recheck.Status.CompletedAt.Time.Equal(completedAt.Time)).To(BeTrue(),
+				"CompletedAt should not change on subsequent reconciles")
+		}, 3*time.Second, 500*time.Millisecond).Should(Succeed())
 	})
 
 	// ========================================
