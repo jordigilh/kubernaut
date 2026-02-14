@@ -1,0 +1,32 @@
+# Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
+# Used by: AIAnalysis E2E
+metadata:
+  workflowId: test-signal-handler-v1
+  version: "1.0.0"
+  description:
+    what: "Deletes a pod in response to a test signal for validation purposes"
+    whenToUse: "When a test signal is received that requires pod deletion"
+    whenNotToUse: "In production environments"
+    preconditions: "Pod exists and is deletable"
+
+actionType: DeletePod
+
+labels:
+  signalType: TestSignal
+  severity: low
+  environment: [test]
+  component: pod
+  priority: p3
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: POD_NAME
+    type: string
+    required: true
+    description: "Name of the pod to delete"
