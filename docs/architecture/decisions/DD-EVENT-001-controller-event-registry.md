@@ -157,6 +157,7 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonEscalatedToManualReview` | `EscalatedToManualReview` | Warning | P2 | Unrecoverable failure, escalation notification sent | Planned (v1.1) |
 | ~~`EventReasonRecoveryInitiated`~~ | ~~`RecoveryInitiated`~~ | Normal | P2 | Recovery attempt started after failed remediation | **Deferred to DD-RECOVERY-002** (no recovery path implemented) |
 | `EventReasonNotificationCreated` | `NotificationCreated` | Normal | P2 | NotificationRequest CRD created | Planned (v1.1) |
+| `EventReasonEffectivenessAssessmentCreated` | `EffectivenessAssessmentCreated` | Normal | P2 | EA CRD created on RR terminal phase (ADR-EM-001) | Implemented (v1.0 Batch 2) |
 | `EventReasonCooldownActive` | `CooldownActive` | Normal | P2 | Remediation skipped due to active cooldown (shared constant) | Planned (v1.1) |
 | `EventReasonConsecutiveFailureBlocked` | `ConsecutiveFailureBlocked` | Warning | P2 | Target resource blocked due to consecutive failures | Planned (v1.1) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |

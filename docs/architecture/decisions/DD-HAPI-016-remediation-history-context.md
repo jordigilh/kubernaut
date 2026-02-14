@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: two-tier query, three-way hash comparison, full remediation chain, DS business logic endpoint, prompt reasoning framework |
 | 1.1 | 2026-02-14 | Architecture Team | Updated DS internal logic to reflect EM's component-level audit event architecture (per ADR-EM-001 v1.3). DS now uses a two-step query (RO events by target_resource, then EM component events by correlation_id) and reuses exported scoring functions from effectiveness_handler.go. Health/metric/alert data sourced from typed ogen sub-objects (health_checks, metric_deltas, alert_resolution) on EM component events. signalResolved read from alert_resolution.alert_resolved. Coordinated via issue #82. |
+| 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
 
 ---
 
@@ -285,7 +286,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type`, `outcome`, `signal_type`, `signal_fingerprint`.
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_type`, `signal_fingerprint`.
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)
@@ -296,7 +297,7 @@ DS performs the following when serving this endpoint:
 4. **Query Tier 2**: If `regressionDetected` (any entry's `preRemediationSpecHash` matches `currentSpecHash`), search audit events beyond Tier 1 (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash` using expression index `idx_audit_events_pre_remediation_spec_hash`. Return the full chain from that historical window in summary form.
 5. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`. The `preRemediationSpecHash` match signals configuration regression.
 6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
-7. **Order chronologically**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` ascending.
+7. **Order by completedAt descending**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` descending (most recent first). *V1.0 implementation sorts most-recent-first to prioritize recent effectiveness data for LLM context window optimization.*
 
 DS maintains expression indexes on `pre_remediation_spec_hash`, `target_resource` within the audit table for query performance (migration 027).
 
@@ -340,6 +341,28 @@ For each remediation record in the chain, DS compares `currentSpecHash` against 
 | Neither | Config was changed to something we haven't seen | Tier 1: other records in the chain may still match. Tier 2: if no match in either tier, fresh investigation |
 
 The `preRemediationSpecHash` match is the most powerful signal. It tells the LLM: "We've seen this exact configuration before. Here's what happened. The remediation applied was [X] with effectiveness [Y]. Don't repeat what didn't work."
+
+---
+
+## spec_drift Assessment Reason Handling
+
+When the Effectiveness Monitor (EM) completes an assessment with `assessment_reason = "spec_drift"` (DD-EM-002 v1.1), the target resource spec was modified during the assessment window. The effectiveness score is unreliable (DS short-circuits to 0.0). HAPI's prompt builder applies the following semantics:
+
+1. **INCONCLUSIVE treatment**: `spec_drift` entries are marked as **INCONCLUSIVE** in the LLM prompt — they are not counted as effective or ineffective. The 0.0 score is suppressed; the LLM must not interpret it as "poor effectiveness."
+
+2. **Exclusion from declining effectiveness**: `spec_drift` entries are excluded from the declining effectiveness trend analysis. Their 0.0 scores would create false declining trends (e.g., 0.4 → 0.3 → 0.0) since the score is unreliable. The `_detect_declining_effectiveness` logic skips entries where `assessmentReason == "spec_drift"`.
+
+3. **Causal chain detection**: The prompt builder detects when a `spec_drift` entry's `postRemediationSpecHash` matches a subsequent entry's `preRemediationSpecHash`. This proves the spec_drift led to a follow-up remediation (hash continuity). The algorithm:
+   - Builds an index: `preRemediationSpecHash` → `remediationUID` for all entries
+   - For each `spec_drift` entry, checks if its `postRemediationSpecHash` appears as another entry's `preRemediationSpecHash`
+   - If matched, the spec_drift entry is linked to a follow-up remediation UID for prompt semantic rewriting
+
+4. **LLM reasoning guidance**: When any `spec_drift` entry exists in the prompt, HAPI adds guidance:
+   > "Some remediation assessments were inconclusive because the target resource spec was modified during the assessment window. Do not treat these as failed remediations. Investigate what modified the spec — it may be the root cause or a contributing factor."
+
+   Two prompt variants exist for `spec_drift` entries:
+   - **Default**: "may still be viable under different conditions" — spec changed by external actor (GitOps, manual edit, competing controller)
+   - **Causal chain**: "led to follow-up remediation (UID)" — when hash continuity links the spec_drift to a subsequent remediation
 
 ---
 

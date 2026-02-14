@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.9 | 2026-02-14 | Architecture Team | **Batch 2 implementation**: `remediation.workflow_created` wired at both WFE creation sites (GAP-RO-1). `workflow_type` (DD-WORKFLOW-016 action_type) added end-to-end HAPI→AA→RO (GAP-RO-4). `blockOwnerDeletion` overridden to `false`. `EACreated` K8s event emitted. `no_execution` guard implemented in EM reconciler (Section 5). StabilizationWindow default corrected to 5m. Section 13.1 gap table updated with resolution status. |
 | 1.8 | 2026-02-14 | Architecture Team | **Cross-service audit integration**: Added `blockOwnerDeletion` mismatch and `EventReasonEffectivenessAssessmentCreated` never emitted to Section 13.1 RO prerequisite gaps (from HAPI team audit). |
 | 1.7 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Health scoring updated from weighted sub-check formula to decision-tree algorithm (reflects `pkg/effectivenessmonitor/health/health.go`). Metrics Phase B (memory, latency, error rate) marked as implemented (was incorrectly listed as deferred). `spec_changed` renamed to `hash_match` (inverse semantics, matches OpenAPI). Added `total_replicas`, `ready_replicas`, `pending_count` to health payload. Added `resolution_time_seconds` to alert payload. Annotated v1.0 gaps: `alert_name`, `throughput_*`, `components_assessed`, `completed_at` not yet in OpenAPI payloads. Annotated `no_execution` and `metrics_timed_out` reconciler paths as not yet implemented. |
 | 1.6 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Principle 5 updated — EM component events now carry typed sub-objects (`health_checks`, `metric_deltas`, `alert_resolution`) alongside the human-readable `details` string. Enables DS/HAPI to extract structured assessment data without string parsing. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. OpenAPI spec updated with typed sub-object schemas. Coordinated with HAPI team via DD-HAPI-016 v1.1 and issue #82. |
@@ -694,7 +695,7 @@ This is a **new audit event** emitted by the Remediation Orchestrator when it cr
 | `pre_remediation_spec_hash` | string | Yes | SHA-256 of target resource `.spec` before remediation |
 | `workflow_id` | string | Yes | Workflow catalog ID |
 | `workflow_version` | string | Yes | Workflow version |
-| `workflow_type` | string | Yes | Action type (e.g., `"ScaleUp"`, `"IncreaseMemory"`) |
+| `workflow_type` | string | Yes | DD-WORKFLOW-016 action type (e.g., `"ScaleReplicas"`, `"RestartPod"`). Populated from `AIAnalysis.Status.SelectedWorkflow.ActionType`. |
 | `remediation_request_name` | string | Yes | `RR.Name` |
 | `remediation_request_namespace` | string | Yes | `RR.Namespace` |
 
@@ -1078,13 +1079,16 @@ The following items are specified in this ADR but not yet implemented in the V1.
 
 ### Prerequisite Gaps (Other Services)
 
-| Gap | Service | Impact |
-|-----|---------|--------|
-| `remediation.workflow_created` not emitted in production | RO | Pre-remediation hash comparison always empty; hash diff meaningless | 
-| `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion |
-| RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes |
-| `blockOwnerDeletion` defaults to `true` via `SetControllerReference` | RO | ADR specifies `false` (Section 8 YAML); RR deletion may block on EA finalizers |
-| `EventReasonEffectivenessAssessmentCreated` never emitted | RO | Constant in `reasons.go` but `Recorder.Event` never called; EA creation not observable via `kubectl describe` |
+| Gap | Service | Impact | Status |
+|-----|---------|--------|--------|
+| `remediation.workflow_created` not emitted in production | RO | Pre-remediation hash comparison always empty; hash diff meaningless | **FIXED (Batch 2)**: Wired `emitWorkflowCreatedAudit` at both WFE creation sites |
+| `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion | Open (Batch 3) |
+| RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes | Open (Batch 3) |
+| `blockOwnerDeletion` defaults to `true` via `SetControllerReference` | RO | ADR specifies `false` (Section 8 YAML); RR deletion may block on EA finalizers | **FIXED (Batch 2)**: Override after `SetControllerReference` |
+| `EventReasonEffectivenessAssessmentCreated` never emitted | RO | Constant in `reasons.go` but `Recorder.Event` never called; EA creation not observable via `kubectl describe` | **FIXED (Batch 2)**: `EventRecorder` added to EA creator |
+| `no_execution` reconciliation path not implemented | EM | EAs for failed-before-execution RRs produce misleading scores | **FIXED (Batch 2)**: Guard added before Step 7 component checks |
+| StabilizationWindow default 30s vs ADR 5m | RO | Config drift from specification | **FIXED (Batch 2)**: Default changed to `5 * time.Minute` |
+| `workflow_type` missing from `remediation.workflow_created` payload | RO | DS remediation history has empty `workflowType` | **FIXED (Batch 2)**: `action_type` flows end-to-end HAPI→AA→RO |
 
 ---
 

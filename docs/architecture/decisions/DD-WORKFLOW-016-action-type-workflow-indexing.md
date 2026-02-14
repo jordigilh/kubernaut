@@ -838,6 +838,17 @@ After the LLM returns its selected workflow and parameters, HAPI validates the s
 
 This is the same validation pattern currently used (DD-WORKFLOW-010), updated to validate by `workflow_id` instead of `signal_type`.
 
+### Action Type Propagation
+
+The `action_type` selected by the LLM in Step 1 (list_available_actions) is propagated through the pipeline:
+
+1. **HAPI response**: Included in `selected_workflow.action_type` (alongside `workflow_id`, `version`, etc.)
+2. **AIAnalysis CRD**: Stored in `status.selectedWorkflow.actionType` (DD-CONTRACT-002)
+3. **RO audit event**: Emitted as `workflow_type` in the `remediation.workflow_created` event (ADR-EM-001 Section 9.1)
+4. **DS remediation history**: Read from `event_data.workflow_type` to populate `RemediationHistoryEntry.workflowType`
+
+This end-to-end propagation enables the EM and DS to associate each remediation with its taxonomy action type without requiring a separate catalog lookup.
+
 ### Single Action Type Edge Case
 
 When `ListAvailableActions` returns only one action type and `ListWorkflows` returns only one workflow, the LLM must still:

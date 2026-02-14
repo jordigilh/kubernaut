@@ -265,6 +265,7 @@ The DS endpoint changes required by this design are documented here for blast ra
 - Single code path for both flows -- simpler to test and maintain
 - Audit trail granularity increases from one event to four events per discovery flow
 - `action_type` taxonomy replaces noisy semantic search for deterministic matching
+- `action_type` is propagated from HAPI `selected_workflow` response into `AIAnalysis.Status.SelectedWorkflow.ActionType`, enabling RO audit events (`remediation.workflow_created`) and DS remediation history to carry the taxonomy value end-to-end (DD-CONTRACT-002, DD-WORKFLOW-016)
 
 **Negative**:
 - Recovery flow calls become longer due to validation loop (3 retries max) -- **Mitigation**: Better remediation quality justifies the latency increase; failed validations are rare with structured tools
