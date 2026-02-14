@@ -31,7 +31,7 @@ type Config struct {
 type EACreationConfig struct {
 	// StabilizationWindow is the duration the EM should wait after remediation
 	// before starting assessment checks. Set in the EA spec by the RO.
-	// Default: 30s. Range: [1s, 1h].
+	// Default: 5m (ADR-EM-001 Section 8). Range: [1s, 1h].
 	StabilizationWindow time.Duration `yaml:"stabilizationWindow"`
 }
 
@@ -99,7 +99,7 @@ func DefaultConfig() *Config {
 			LeaderElectionID: "remediationorchestrator.kubernaut.ai",
 		},
 		EA: EACreationConfig{
-			StabilizationWindow: 30 * time.Second, // ADR-EM-001: default 30s
+			StabilizationWindow: 5 * time.Minute, // ADR-EM-001: default 5m (Section 8)
 		},
 	}
 }

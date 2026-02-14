@@ -582,6 +582,7 @@ type RemediationWorkflowCreatedData struct {
 
 // BuildRemediationWorkflowCreatedEvent builds an audit event capturing the
 // pre-remediation spec hash before workflow execution begins (DD-EM-002).
+// workflowType is the DD-WORKFLOW-016 action_type (e.g., "ScaleReplicas", "RestartPod").
 func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	correlationID string,
 	namespace string,
@@ -590,6 +591,7 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	targetResource string,
 	workflowID string,
 	workflowVersion string,
+	workflowType string,
 ) (*ogenclient.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -613,6 +615,9 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 
 	if workflowVersion != "" {
 		payload.WorkflowVersion = api.OptString{Value: workflowVersion, Set: true}
+	}
+	if workflowType != "" {
+		payload.WorkflowType = api.OptString{Value: workflowType, Set: true}
 	}
 
 	event.EventData = api.NewAuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData(payload)

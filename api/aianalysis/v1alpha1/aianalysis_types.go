@@ -276,6 +276,8 @@ type OriginalRCA struct {
 type SelectedWorkflowSummary struct {
 	// Workflow identifier
 	WorkflowID string `json:"workflowId"`
+	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod)
+	ActionType string `json:"actionType,omitempty"`
 	// Workflow version
 	Version string `json:"version"`
 	// Container image used
@@ -582,6 +584,10 @@ type SelectedWorkflow struct {
 	// Workflow identifier (catalog lookup key)
 	// +kubebuilder:validation:Required
 	WorkflowID string `json:"workflowId"`
+	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+	// Propagated from HAPI three-step discovery protocol to RO audit events.
+	// +optional
+	ActionType string `json:"actionType,omitempty"`
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`

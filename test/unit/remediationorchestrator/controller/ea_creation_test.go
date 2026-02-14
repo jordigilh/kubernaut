@@ -72,8 +72,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, stabilizationWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil, // audit store (nil for unit tests per DD-AUDIT-003)
@@ -103,9 +103,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(ea.Spec.TargetResource.Namespace).To(Equal(namespace))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow))
 
-		// Verify owner reference
+		// Verify owner reference (ADR-EM-001 Section 8: blockOwnerDeletion=false)
 		Expect(ea.OwnerReferences).To(HaveLen(1))
 		Expect(ea.OwnerReferences[0].Name).To(Equal(rrName))
+		Expect(*ea.OwnerReferences[0].BlockOwnerDeletion).To(BeFalse(),
+			"ADR-EM-001: blockOwnerDeletion must be false to prevent RR deletion blocking on EA")
 	})
 
 	// ========================================
@@ -125,8 +127,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, stabilizationWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil,
@@ -167,8 +169,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, stabilizationWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil,
@@ -227,8 +229,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, stabilizationWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil,
@@ -270,8 +272,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, stabilizationWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil,
@@ -311,8 +313,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Build()
 
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, customWindow)
 		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, customWindow)
 		reconciler := controller.NewReconciler(
 			k8sClient, k8sClient, scheme,
 			nil,

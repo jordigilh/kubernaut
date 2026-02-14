@@ -63,11 +63,17 @@ type AlertManagerClient interface {
 
 // DataStorageQuerier abstracts queries to the DataStorage audit trail.
 // Used by the EM to retrieve the pre-remediation spec hash from the
-// remediation.workflow_created audit event (DD-EM-002).
+// remediation.workflow_created audit event (DD-EM-002) and to detect
+// whether a workflow was ever started (ADR-EM-001 Section 5).
 type DataStorageQuerier interface {
 	// QueryPreRemediationHash queries DS for the pre-remediation spec hash
 	// associated with a given correlation ID. Returns empty string if not found.
 	QueryPreRemediationHash(ctx context.Context, correlationID string) (string, error)
+
+	// HasWorkflowStarted checks if a workflowexecution.workflow.started event
+	// exists for the given correlation ID. Returns false if not found.
+	// ADR-EM-001 Section 5: Used to detect the no_execution path.
+	HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error)
 }
 
 // ========================================
