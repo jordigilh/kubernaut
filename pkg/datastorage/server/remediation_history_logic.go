@@ -184,9 +184,10 @@ func mapAlertResolution(eventData map[string]interface{}) api.OptNilBool {
 // emCorrelationResult holds the shared data extracted from EM events for a
 // single correlation_id. Used by both CorrelateTier1Chain and BuildTier2Summaries.
 type emCorrelationResult struct {
-	score          api.OptNilFloat64
-	postHash       string
-	signalResolved api.OptNilBool
+	score            api.OptNilFloat64
+	postHash         string
+	signalResolved   api.OptNilBool
+	assessmentReason string // DD-EM-002 v1.1: "full", "partial", "spec_drift", etc.
 }
 
 // correlateEMEvents processes EM events for a given correlation_id, extracting
@@ -204,6 +205,13 @@ func correlateEMEvents(correlationID string, emEvts []*EffectivenessEvent) emCor
 
 	if resp.HashComparison.PostHash != "" {
 		result.postHash = resp.HashComparison.PostHash
+	}
+
+	// DD-EM-002 v1.1: Propagate assessment reason (full, partial, spec_drift, etc.)
+	// This comes from the effectiveness.assessment.completed event's "reason" field,
+	// which BuildEffectivenessResponse stores in AssessmentStatus.
+	if resp.AssessmentStatus != "" && resp.AssessmentStatus != "no_data" && resp.AssessmentStatus != "in_progress" {
+		result.assessmentReason = resp.AssessmentStatus
 	}
 
 	// Extract signalResolved from alert_resolution typed sub-object
@@ -278,6 +286,14 @@ func CorrelateTier1Chain(
 			entry.EffectivenessScore = emResult.score
 			entry.SignalResolved = emResult.signalResolved
 			postHash = emResult.postHash
+
+			// DD-EM-002 v1.1: Propagate assessmentReason to the response entry.
+			if emResult.assessmentReason != "" {
+				entry.AssessmentReason = api.OptNilRemediationHistoryEntryAssessmentReason{
+					Value: api.RemediationHistoryEntryAssessmentReason(emResult.assessmentReason),
+					Set:   true,
+				}
+			}
 
 			if postHash != "" {
 				entry.PostRemediationSpecHash = api.OptString{Value: postHash, Set: true}
@@ -362,6 +378,14 @@ func BuildTier2Summaries(
 			summary.EffectivenessScore = emResult.score
 			summary.SignalResolved = emResult.signalResolved
 			postHash = emResult.postHash
+
+			// DD-EM-002 v1.1: Propagate assessmentReason to summary.
+			if emResult.assessmentReason != "" {
+				summary.AssessmentReason = api.OptNilRemediationHistorySummaryAssessmentReason{
+					Value: api.RemediationHistorySummaryAssessmentReason(emResult.assessmentReason),
+					Set:   true,
+				}
+			}
 		}
 
 		// Compute hash match (using summary-specific type)

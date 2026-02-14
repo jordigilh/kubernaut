@@ -63,12 +63,14 @@ type Invoker interface {
 	CreateNotificationAudit(ctx context.Context, request *NotificationAudit) (CreateNotificationAuditRes, error)
 	// CreateWorkflow invokes createWorkflow operation.
 	//
-	// Create a new workflow in the catalog.
-	// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-	// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+	// Register a new workflow by providing an OCI image pullspec.
+	// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+	// validates the schema, and populates all catalog fields from it.
+	// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+	// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 	//
 	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, request *RemediationWorkflow) (CreateWorkflowRes, error)
+	CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
 	// DisableWorkflow invokes disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
@@ -110,6 +112,24 @@ type Invoker interface {
 	//
 	// GET /api/v1/audit/export
 	ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (ExportAuditEventsRes, error)
+	// GetEffectivenessScore invokes getEffectivenessScore operation.
+	//
+	// Computes the weighted effectiveness score for a given remediation lifecycle
+	// from component audit events in the audit trail.
+	// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+	// The Effectiveness Monitor emits raw component assessment events; this endpoint
+	// aggregates them and applies the DD-017 v2.1 scoring formula:
+	// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+	// **Business Requirements**: BR-EM-001 to BR-EM-004
+	// **Response includes**:
+	// - Weighted overall score (0.0 to 1.0)
+	// - Individual component scores (health, alert, metrics)
+	// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+	// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	//
+	// GET /api/v1/effectiveness/{correlation_id}
+	GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error)
 	// GetMetrics invokes getMetrics operation.
 	//
 	// Exposes Prometheus metrics in text format.
@@ -121,6 +141,29 @@ type Invoker interface {
 	//
 	// GET /metrics
 	GetMetrics(ctx context.Context) (GetMetricsOK, error)
+	// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
+	//
+	// Returns structured remediation history context for LLM prompt enrichment.
+	// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+	// **Design Document**: DD-HAPI-016
+	// **Behavior**:
+	// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+	// audit events into structured remediation chains for a target resource.
+	// **Two-Tier Query Design**:
+	// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+	// and full effectiveness data for the target resource.
+	// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+	// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+	// regression.
+	// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+	// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+	// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+	// `preRemediationSpecHash` matches `currentSpecHash`.
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	// Integration tests use mock X-Auth-Request-User header.
+	//
+	// GET /api/v1/remediation-history/context
+	GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (GetRemediationHistoryContextRes, error)
 	// GetWorkflowByID invokes getWorkflowByID operation.
 	//
 	// Retrieve a specific workflow by its UUID.
@@ -576,17 +619,19 @@ func (c *Client) sendCreateNotificationAudit(ctx context.Context, request *Notif
 
 // CreateWorkflow invokes createWorkflow operation.
 //
-// Create a new workflow in the catalog.
-// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+// Register a new workflow by providing an OCI image pullspec.
+// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+// validates the schema, and populates all catalog fields from it.
+// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 //
 // POST /api/v1/workflows
-func (c *Client) CreateWorkflow(ctx context.Context, request *RemediationWorkflow) (CreateWorkflowRes, error) {
+func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error) {
 	res, err := c.sendCreateWorkflow(ctx, request)
 	return res, err
 }
 
-func (c *Client) sendCreateWorkflow(ctx context.Context, request *RemediationWorkflow) (res CreateWorkflowRes, err error) {
+func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (res CreateWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("createWorkflow"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -1006,6 +1051,109 @@ func (c *Client) sendExportAuditEvents(ctx context.Context, params ExportAuditEv
 	return result, nil
 }
 
+// GetEffectivenessScore invokes getEffectivenessScore operation.
+//
+// Computes the weighted effectiveness score for a given remediation lifecycle
+// from component audit events in the audit trail.
+// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+// The Effectiveness Monitor emits raw component assessment events; this endpoint
+// aggregates them and applies the DD-017 v2.1 scoring formula:
+// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+// **Business Requirements**: BR-EM-001 to BR-EM-004
+// **Response includes**:
+// - Weighted overall score (0.0 to 1.0)
+// - Individual component scores (health, alert, metrics)
+// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// GET /api/v1/effectiveness/{correlation_id}
+func (c *Client) GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error) {
+	res, err := c.sendGetEffectivenessScore(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (res GetEffectivenessScoreRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getEffectivenessScore"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/effectiveness/{correlation_id}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetEffectivenessScoreOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/effectiveness/"
+	{
+		// Encode "correlation_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "correlation_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.CorrelationID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetEffectivenessScoreResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetMetrics invokes getMetrics operation.
 //
 // Exposes Prometheus metrics in text format.
@@ -1077,6 +1225,190 @@ func (c *Client) sendGetMetrics(ctx context.Context) (res GetMetricsOK, err erro
 
 	stage = "DecodeResponse"
 	result, err := decodeGetMetricsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
+//
+// Returns structured remediation history context for LLM prompt enrichment.
+// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+// **Design Document**: DD-HAPI-016
+// **Behavior**:
+// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+// audit events into structured remediation chains for a target resource.
+// **Two-Tier Query Design**:
+// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+// and full effectiveness data for the target resource.
+// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+// regression.
+// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+// `preRemediationSpecHash` matches `currentSpecHash`.
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// GET /api/v1/remediation-history/context
+func (c *Client) GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (GetRemediationHistoryContextRes, error) {
+	res, err := c.sendGetRemediationHistoryContext(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (res GetRemediationHistoryContextRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getRemediationHistoryContext"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/remediation-history/context"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetRemediationHistoryContextOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/remediation-history/context"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "targetKind" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetKind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetKind))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "targetName" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetName",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetName))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "targetNamespace" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetNamespace",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetNamespace))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "currentSpecHash" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "currentSpecHash",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.CurrentSpecHash))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "tier1Window" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "tier1Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Tier1Window.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "tier2Window" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "tier2Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Tier2Window.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetRemediationHistoryContextResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

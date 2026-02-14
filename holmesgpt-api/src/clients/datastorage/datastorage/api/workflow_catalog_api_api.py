@@ -29,6 +29,7 @@ from pydantic import StrictInt, StrictStr, field_validator
 
 from typing import Optional
 
+from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
 from datastorage.models.remediation_workflow import RemediationWorkflow
 from datastorage.models.workflow_disable_request import WorkflowDisableRequest
 from datastorage.models.workflow_list_response import WorkflowListResponse
@@ -55,7 +56,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow(
         self,
-        remediation_workflow: RemediationWorkflow,
+        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -69,12 +70,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RemediationWorkflow:
-        """Create workflow
+        """Register workflow from OCI image
 
-        Create a new workflow in the catalog.  **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management) **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration) 
+        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
 
-        :param remediation_workflow: (required)
-        :type remediation_workflow: RemediationWorkflow
+        :param create_workflow_from_oci_request: (required)
+        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -98,7 +99,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            remediation_workflow=remediation_workflow,
+            create_workflow_from_oci_request=create_workflow_from_oci_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -111,7 +112,9 @@ class WorkflowCatalogAPIApi:
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
+            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
+            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -127,7 +130,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow_with_http_info(
         self,
-        remediation_workflow: RemediationWorkflow,
+        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -141,12 +144,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[RemediationWorkflow]:
-        """Create workflow
+        """Register workflow from OCI image
 
-        Create a new workflow in the catalog.  **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management) **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration) 
+        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
 
-        :param remediation_workflow: (required)
-        :type remediation_workflow: RemediationWorkflow
+        :param create_workflow_from_oci_request: (required)
+        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -170,7 +173,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            remediation_workflow=remediation_workflow,
+            create_workflow_from_oci_request=create_workflow_from_oci_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -183,7 +186,9 @@ class WorkflowCatalogAPIApi:
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
+            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
+            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -199,7 +204,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow_without_preload_content(
         self,
-        remediation_workflow: RemediationWorkflow,
+        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -213,12 +218,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Create workflow
+        """Register workflow from OCI image
 
-        Create a new workflow in the catalog.  **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management) **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration) 
+        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
 
-        :param remediation_workflow: (required)
-        :type remediation_workflow: RemediationWorkflow
+        :param create_workflow_from_oci_request: (required)
+        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -242,7 +247,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            remediation_workflow=remediation_workflow,
+            create_workflow_from_oci_request=create_workflow_from_oci_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -255,7 +260,9 @@ class WorkflowCatalogAPIApi:
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
+            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
+            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -266,7 +273,7 @@ class WorkflowCatalogAPIApi:
 
     def _create_workflow_serialize(
         self,
-        remediation_workflow,
+        create_workflow_from_oci_request,
         _request_auth,
         _content_type,
         _headers,
@@ -290,8 +297,8 @@ class WorkflowCatalogAPIApi:
         # process the header parameters
         # process the form parameters
         # process the body parameter
-        if remediation_workflow is not None:
-            _body_params = remediation_workflow
+        if create_workflow_from_oci_request is not None:
+            _body_params = create_workflow_from_oci_request
 
 
         # set the HTTP header `Accept`

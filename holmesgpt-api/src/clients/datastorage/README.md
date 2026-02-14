@@ -151,11 +151,13 @@ Class | Method | HTTP request | Description
 *AuditWriteAPIApi* | [**place_legal_hold**](docs/AuditWriteAPIApi.md#place_legal_hold) | **POST** /api/v1/audit/legal-hold | Place legal hold on audit events
 *AuditWriteAPIApi* | [**query_audit_events**](docs/AuditWriteAPIApi.md#query_audit_events) | **GET** /api/v1/audit/events | Query audit events
 *AuditWriteAPIApi* | [**release_legal_hold**](docs/AuditWriteAPIApi.md#release_legal_hold) | **DELETE** /api/v1/audit/legal-hold/{correlation_id} | Release legal hold on audit events
+*EffectivenessAssessmentAPIApi* | [**get_effectiveness_score**](docs/EffectivenessAssessmentAPIApi.md#get_effectiveness_score) | **GET** /api/v1/effectiveness/{correlation_id} | Compute weighted effectiveness score on demand
 *HealthApi* | [**health_check**](docs/HealthApi.md#health_check) | **GET** /health | Overall health check
 *HealthApi* | [**liveness_check**](docs/HealthApi.md#liveness_check) | **GET** /health/live | Liveness check
 *HealthApi* | [**readiness_check**](docs/HealthApi.md#readiness_check) | **GET** /health/ready | Readiness check
 *MetricsApi* | [**get_metrics**](docs/MetricsApi.md#get_metrics) | **GET** /metrics | Prometheus metrics
-*WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Create workflow
+*RemediationHistoryAPIApi* | [**get_remediation_history_context**](docs/RemediationHistoryAPIApi.md#get_remediation_history_context) | **GET** /api/v1/remediation-history/context | Get remediation history context for a target resource
+*WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
 *WorkflowCatalogAPIApi* | [**disable_workflow**](docs/WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
 *WorkflowCatalogAPIApi* | [**get_workflow_by_id**](docs/WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 *WorkflowCatalogAPIApi* | [**list_workflows**](docs/WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
@@ -191,10 +193,17 @@ Class | Method | HTTP request | Description
  - [AuditExportResponseHashChainVerification](docs/AuditExportResponseHashChainVerification.md)
  - [BatchAuditEventResponse](docs/BatchAuditEventResponse.md)
  - [CreateNotificationAudit202Response](docs/CreateNotificationAudit202Response.md)
+ - [CreateWorkflowFromOCIRequest](docs/CreateWorkflowFromOCIRequest.md)
  - [DetectedLabels](docs/DetectedLabels.md)
  - [EffectivenessAssessmentAuditPayload](docs/EffectivenessAssessmentAuditPayload.md)
+ - [EffectivenessAssessmentAuditPayloadAlertResolution](docs/EffectivenessAssessmentAuditPayloadAlertResolution.md)
+ - [EffectivenessAssessmentAuditPayloadHealthChecks](docs/EffectivenessAssessmentAuditPayloadHealthChecks.md)
+ - [EffectivenessAssessmentAuditPayloadMetricDeltas](docs/EffectivenessAssessmentAuditPayloadMetricDeltas.md)
+ - [EffectivenessComponents](docs/EffectivenessComponents.md)
+ - [EffectivenessScoreResponse](docs/EffectivenessScoreResponse.md)
  - [ErrorDetails](docs/ErrorDetails.md)
  - [GatewayAuditPayload](docs/GatewayAuditPayload.md)
+ - [HashComparisonData](docs/HashComparisonData.md)
  - [HealthCheck200Response](docs/HealthCheck200Response.md)
  - [HealthCheck503Response](docs/HealthCheck503Response.md)
  - [IncidentResponseData](docs/IncidentResponseData.md)
@@ -225,6 +234,13 @@ Class | Method | HTTP request | Description
  - [ReleaseLegalHoldRequest](docs/ReleaseLegalHoldRequest.md)
  - [RemediationApprovalAuditPayload](docs/RemediationApprovalAuditPayload.md)
  - [RemediationApprovalDecisionPayload](docs/RemediationApprovalDecisionPayload.md)
+ - [RemediationHealthChecks](docs/RemediationHealthChecks.md)
+ - [RemediationHistoryContext](docs/RemediationHistoryContext.md)
+ - [RemediationHistoryEntry](docs/RemediationHistoryEntry.md)
+ - [RemediationHistorySummary](docs/RemediationHistorySummary.md)
+ - [RemediationHistoryTier1](docs/RemediationHistoryTier1.md)
+ - [RemediationHistoryTier2](docs/RemediationHistoryTier2.md)
+ - [RemediationMetricDeltas](docs/RemediationMetricDeltas.md)
  - [RemediationOrchestratorAuditPayload](docs/RemediationOrchestratorAuditPayload.md)
  - [RemediationRequestWebhookAuditPayload](docs/RemediationRequestWebhookAuditPayload.md)
  - [RemediationWorkflow](docs/RemediationWorkflow.md)

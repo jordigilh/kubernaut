@@ -36,6 +36,7 @@ import pytest
 from extensions.remediation_history_prompt import (
     build_remediation_history_section,
     effectiveness_level,
+    _detect_spec_drift_causal_chains,
 )
 
 
@@ -540,3 +541,318 @@ class TestMetricDeltaArrowNotation:
         assert "->" in result
         assert "0.50" in result
         assert "0.30" in result
+
+
+class TestSpecDriftFormatting:
+    """UT-RH-PROMPT-019 through UT-RH-PROMPT-026: spec_drift assessment reason handling (DD-EM-002 v1.1)."""
+
+    def test_spec_drift_entry_shows_inconclusive(self):
+        """UT-RH-PROMPT-019: Entry with assessmentReason='spec_drift' renders INCONCLUSIVE, not 'poor'."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-sd-001",
+                        "completedAt": "2026-02-14T07:00:00Z",
+                        "signalType": "CrashLoop",
+                        "workflowType": "ScaleUp",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                        "postRemediationSpecHash": "sha256:post-sd",
+                        "preRemediationSpecHash": "sha256:pre-sd",
+                    }
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        assert "INCONCLUSIVE" in result
+        assert "spec drift" in result.lower()
+        # Should NOT show "0.00 (poor)" -- the score is unreliable
+        assert "poor" not in result.lower()
+
+    def test_spec_drift_suppresses_health_and_metrics(self):
+        """UT-RH-PROMPT-020: spec_drift entries do NOT show health checks or metric deltas."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-sd-hm",
+                        "completedAt": "2026-02-14T07:00:00Z",
+                        "workflowType": "ScaleUp",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                        "healthChecks": {
+                            "podRunning": True,
+                            "readinessPass": True,
+                        },
+                        "metricDeltas": {
+                            "cpuBefore": 0.8,
+                            "cpuAfter": 0.3,
+                        },
+                    }
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        # Health checks and metrics should be suppressed for spec_drift
+        assert "pod_running" not in result.lower()
+        assert "cpu" not in result.lower()
+        assert "INCONCLUSIVE" in result
+
+    def test_spec_drift_excluded_from_declining_trend(self):
+        """UT-RH-PROMPT-021: spec_drift entries excluded from declining effectiveness detection."""
+        context = {
+            "targetResource": "production/Deployment/payment-api",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-d1",
+                        "completedAt": "2026-02-12T06:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.80,
+                    },
+                    {
+                        "remediationUID": "rr-d2",
+                        "completedAt": "2026-02-12T12:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                    },
+                    {
+                        "remediationUID": "rr-d3",
+                        "completedAt": "2026-02-12T16:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.70,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        # The spec_drift entry (0.0) should be excluded. Only 0.80 and 0.70 remain,
+        # which is only 2 entries -- not enough to trigger declining trend (need >= 3).
+        assert "DECLINING" not in result.upper()
+
+    def test_mixed_entries_no_false_declining_trend(self):
+        """UT-RH-PROMPT-022: 2 normal + 1 spec_drift does not trigger false declining trend."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-m1",
+                        "completedAt": "2026-02-12T06:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.90,
+                    },
+                    {
+                        "remediationUID": "rr-m2",
+                        "completedAt": "2026-02-12T10:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                    },
+                    {
+                        "remediationUID": "rr-m3",
+                        "completedAt": "2026-02-12T14:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.85,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        assert "DECLINING" not in result.upper()
+
+    def test_spec_drift_reasoning_guidance(self):
+        """UT-RH-PROMPT-023: Reasoning guidance includes spec drift note when any entry has spec_drift."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-note",
+                        "completedAt": "2026-02-14T07:00:00Z",
+                        "workflowType": "ScaleUp",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                    }
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        assert "spec drift" in result.lower()
+        assert "inconclusive" in result.lower()
+        # Should include guidance about investigating the spec change
+        assert "modified" in result.lower() or "changed" in result.lower()
+
+    def test_tier2_spec_drift_formatted(self):
+        """UT-RH-PROMPT-024: Tier 2 summary with spec_drift renders INCONCLUSIVE."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {"window": "24h0m0s", "chain": []},
+            "tier2": {
+                "window": "2160h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-t2-sd",
+                        "completedAt": "2026-01-15T08:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                        "hashMatch": "none",
+                    }
+                ],
+            },
+        }
+        result = build_remediation_history_section(context)
+
+        assert "INCONCLUSIVE" in result
+        assert "poor" not in result.lower()
+
+    def test_causal_chain_detected(self):
+        """UT-RH-PROMPT-025: spec_drift entry A postHash matches entry B preHash -> causal chain."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-chain-a",
+                        "completedAt": "2026-02-14T07:00:00Z",
+                        "workflowType": "ScaleUp",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                        "preRemediationSpecHash": "sha256:pre-a",
+                        "postRemediationSpecHash": "sha256:post-a",
+                    },
+                    {
+                        "remediationUID": "rr-chain-b",
+                        "completedAt": "2026-02-14T08:00:00Z",
+                        "workflowType": "Restart",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.85,
+                        "assessmentReason": "full",
+                        "preRemediationSpecHash": "sha256:post-a",
+                        "postRemediationSpecHash": "sha256:post-b",
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        # Causal chain detected: entry A (spec_drift) -> entry B
+        assert "follow-up" in result.lower() or "led to" in result.lower()
+        assert "rr-chain-b" in result
+        assert "unstable" in result.lower()
+
+    def test_spec_drift_no_causal_chain_default(self):
+        """UT-RH-PROMPT-026: spec_drift entry with no matching follow-up -> default 'may still be viable'."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:current",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-solo-sd",
+                        "completedAt": "2026-02-14T07:00:00Z",
+                        "workflowType": "ScaleUp",
+                        "outcome": "Completed",
+                        "effectivenessScore": 0.0,
+                        "assessmentReason": "spec_drift",
+                        "preRemediationSpecHash": "sha256:pre-solo",
+                        "postRemediationSpecHash": "sha256:post-solo",
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        assert "INCONCLUSIVE" in result
+        # Default variant: may still be viable
+        assert "viable" in result.lower() or "different conditions" in result.lower()
+        # Should NOT mention follow-up since there is none
+        assert "follow-up" not in result.lower()
+
+
+class TestDetectSpecDriftCausalChains:
+    """UT-RH-PROMPT-027 through UT-RH-PROMPT-028: Causal chain detection helper."""
+
+    def test_causal_chain_mapping(self):
+        """UT-RH-PROMPT-027: Detects hash chain between spec_drift and follow-up entry."""
+        chain = [
+            {
+                "remediationUID": "rr-drift",
+                "assessmentReason": "spec_drift",
+                "postRemediationSpecHash": "sha256:shared-hash",
+            },
+            {
+                "remediationUID": "rr-followup",
+                "assessmentReason": "full",
+                "preRemediationSpecHash": "sha256:shared-hash",
+            },
+        ]
+        result = _detect_spec_drift_causal_chains(chain)
+        assert result == {"rr-drift": "rr-followup"}
+
+    def test_no_causal_chain_when_hashes_differ(self):
+        """UT-RH-PROMPT-028: No mapping when spec_drift postHash doesn't match any preHash."""
+        chain = [
+            {
+                "remediationUID": "rr-drift",
+                "assessmentReason": "spec_drift",
+                "postRemediationSpecHash": "sha256:hash-a",
+            },
+            {
+                "remediationUID": "rr-other",
+                "assessmentReason": "full",
+                "preRemediationSpecHash": "sha256:hash-b",
+            },
+        ]
+        result = _detect_spec_drift_causal_chains(chain)
+        assert result == {}

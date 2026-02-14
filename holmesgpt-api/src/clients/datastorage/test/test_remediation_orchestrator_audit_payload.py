@@ -68,7 +68,10 @@ class TestRemediationOrchestratorAuditPayload(unittest.TestCase):
                     global = '30m', 
                     processing = '10m', 
                     analyzing = '5m', 
-                    executing = '15m', )
+                    executing = '15m', ),
+                pre_remediation_spec_hash = 'sha256:a1b2c3d4e5f6...',
+                target_resource = 'payment/Deployment/payment-api',
+                workflow_version = '1.0.0'
             )
         else:
             return RemediationOrchestratorAuditPayload(

@@ -29,7 +29,7 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
     def test_create_workflow(self) -> None:
         """Test case for create_workflow
 
-        Create workflow
+        Register workflow from OCI image
         """
         pass
 

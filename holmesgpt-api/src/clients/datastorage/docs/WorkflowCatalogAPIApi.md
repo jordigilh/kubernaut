@@ -4,7 +4,7 @@ All URIs are relative to *http://localhost:8080*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
-[**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Create workflow
+[**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
 [**disable_workflow**](WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
 [**get_workflow_by_id**](WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 [**list_workflows**](WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
@@ -12,11 +12,11 @@ Method | HTTP request | Description
 
 
 # **create_workflow**
-> RemediationWorkflow create_workflow(remediation_workflow)
+> RemediationWorkflow create_workflow(create_workflow_from_oci_request)
 
-Create workflow
+Register workflow from OCI image
 
-Create a new workflow in the catalog.  **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management) **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration) 
+Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
 
 ### Example
 
@@ -25,6 +25,7 @@ Create a new workflow in the catalog.  **Business Requirement**: BR-STORAGE-014 
 import time
 import os
 import datastorage
+from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
 from datastorage.models.remediation_workflow import RemediationWorkflow
 from datastorage.rest import ApiException
 from pprint import pprint
@@ -40,11 +41,11 @@ configuration = datastorage.Configuration(
 with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
-    remediation_workflow = datastorage.RemediationWorkflow() # RemediationWorkflow | 
+    create_workflow_from_oci_request = datastorage.CreateWorkflowFromOCIRequest() # CreateWorkflowFromOCIRequest | 
 
     try:
-        # Create workflow
-        api_response = api_instance.create_workflow(remediation_workflow)
+        # Register workflow from OCI image
+        api_response = api_instance.create_workflow(create_workflow_from_oci_request)
         print("The response of WorkflowCatalogAPIApi->create_workflow:\n")
         pprint(api_response)
     except Exception as e:
@@ -58,7 +59,7 @@ with datastorage.ApiClient(configuration) as api_client:
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **remediation_workflow** | [**RemediationWorkflow**](RemediationWorkflow.md)|  | 
+ **create_workflow_from_oci_request** | [**CreateWorkflowFromOCIRequest**](CreateWorkflowFromOCIRequest.md)|  | 
 
 ### Return type
 
@@ -78,11 +79,13 @@ No authorization required
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
 **201** | Workflow created successfully |  -  |
-**400** | Validation error |  -  |
+**400** | Validation error - schema invalid, unknown action_type, missing mandatory labels, or missing required fields.  |  -  |
 **401** | Authentication failed - Invalid or missing Bearer token.  **Authority**: DD-AUTH-014 (Middleware-based authentication)  |  -  |
 **403** | Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.  **Authority**: DD-AUTH-014 (Middleware-based authorization)  |  -  |
 **409** | Conflict - Duplicate workflow. Workflow with same workflow_name and version already exists.  **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)  |  -  |
+**422** | Unprocessable Entity - /workflow-schema.yaml not found in OCI image.  |  -  |
 **500** | Internal server error |  -  |
+**502** | Bad Gateway - OCI image could not be pulled from registry.  |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

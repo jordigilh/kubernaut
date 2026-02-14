@@ -49,7 +49,32 @@ class TestEffectivenessAssessmentAuditPayload(unittest.TestCase):
                 prometheus_check_after = '2026-02-12T15:05Z',
                 alertmanager_check_after = '2026-02-12T15:05Z',
                 validity_window = '30m0s',
-                stabilization_window = '5m0s'
+                stabilization_window = '5m0s',
+                pre_remediation_spec_hash = 'sha256:a1b2c3d4...',
+                post_remediation_spec_hash = 'sha256:e5f6a7b8...',
+                hash_match = False,
+                health_checks = datastorage.models.effectiveness_assessment_audit_payload_health_checks.EffectivenessAssessmentAuditPayload_health_checks(
+                    pod_running = True, 
+                    readiness_pass = True, 
+                    total_replicas = 3, 
+                    ready_replicas = 3, 
+                    restart_delta = 0, 
+                    crash_loops = False, 
+                    oom_killed = False, 
+                    pending_count = 0, ),
+                metric_deltas = datastorage.models.effectiveness_assessment_audit_payload_metric_deltas.EffectivenessAssessmentAuditPayload_metric_deltas(
+                    cpu_before = 0.95, 
+                    cpu_after = 0.72, 
+                    memory_before = 1.337, 
+                    memory_after = 1.337, 
+                    latency_p95_before_ms = 1.337, 
+                    latency_p95_after_ms = 1.337, 
+                    error_rate_before = 1.337, 
+                    error_rate_after = 1.337, ),
+                alert_resolution = datastorage.models.effectiveness_assessment_audit_payload_alert_resolution.EffectivenessAssessmentAuditPayload_alert_resolution(
+                    alert_resolved = True, 
+                    active_count = 0, 
+                    resolution_time_seconds = 1.337, )
             )
         else:
             return EffectivenessAssessmentAuditPayload(

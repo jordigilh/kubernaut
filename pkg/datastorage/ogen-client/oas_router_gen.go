@@ -283,6 +283,57 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					}
 
+				case 'e': // Prefix: "effectiveness/"
+
+					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "correlation_id"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetEffectivenessScoreRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "GET")
+						}
+
+						return
+					}
+
+				case 'r': // Prefix: "remediation-history/context"
+
+					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetRemediationHistoryContextRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "GET")
+						}
+
+						return
+					}
+
 				case 'w': // Prefix: "workflows"
 
 					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
@@ -886,6 +937,65 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					}
 
+				case 'e': // Prefix: "effectiveness/"
+
+					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "correlation_id"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetEffectivenessScoreOperation
+							r.summary = "Compute weighted effectiveness score on demand"
+							r.operationID = "getEffectivenessScore"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/effectiveness/{correlation_id}"
+							r.args = args
+							r.count = 1
+							return r, true
+						default:
+							return
+						}
+					}
+
+				case 'r': // Prefix: "remediation-history/context"
+
+					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetRemediationHistoryContextOperation
+							r.summary = "Get remediation history context for a target resource"
+							r.operationID = "getRemediationHistoryContext"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/remediation-history/context"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
+						}
+					}
+
 				case 'w': // Prefix: "workflows"
 
 					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
@@ -907,7 +1017,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							return r, true
 						case "POST":
 							r.name = CreateWorkflowOperation
-							r.summary = "Create workflow"
+							r.summary = "Register workflow from OCI image"
 							r.operationID = "createWorkflow"
 							r.operationGroup = ""
 							r.pathPattern = "/api/v1/workflows"

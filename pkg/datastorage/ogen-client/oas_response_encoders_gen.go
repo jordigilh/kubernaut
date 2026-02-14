@@ -250,10 +250,36 @@ func encodeCreateWorkflowResponse(response CreateWorkflowRes, w http.ResponseWri
 
 		return nil
 
+	case *CreateWorkflowUnprocessableEntity:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
 	case *CreateWorkflowInternalServerError:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *CreateWorkflowBadGateway:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(502)
+		span.SetStatus(codes.Error, http.StatusText(502))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -360,6 +386,52 @@ func encodeExportAuditEventsResponse(response ExportAuditEventsRes, w http.Respo
 	}
 }
 
+func encodeGetEffectivenessScoreResponse(response GetEffectivenessScoreRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *EffectivenessScoreResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetEffectivenessScoreNotFound:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetEffectivenessScoreInternalServerError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
 func encodeGetMetricsResponse(response GetMetricsOK, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(200)
@@ -374,6 +446,52 @@ func encodeGetMetricsResponse(response GetMetricsOK, w http.ResponseWriter, span
 	}
 
 	return nil
+}
+
+func encodeGetRemediationHistoryContextResponse(response GetRemediationHistoryContextRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *RemediationHistoryContext:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetRemediationHistoryContextBadRequest:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetRemediationHistoryContextInternalServerError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
 }
 
 func encodeGetWorkflowByIDResponse(response GetWorkflowByIDRes, w http.ResponseWriter, span trace.Span) error {

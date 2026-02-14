@@ -21,6 +21,9 @@ from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from pydantic import BaseModel, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
 from pydantic import Field
+from datastorage.models.effectiveness_assessment_audit_payload_alert_resolution import EffectivenessAssessmentAuditPayloadAlertResolution
+from datastorage.models.effectiveness_assessment_audit_payload_health_checks import EffectivenessAssessmentAuditPayloadHealthChecks
+from datastorage.models.effectiveness_assessment_audit_payload_metric_deltas import EffectivenessAssessmentAuditPayloadMetricDeltas
 try:
     from typing import Self
 except ImportError:
@@ -44,7 +47,13 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     alertmanager_check_after: Optional[datetime] = Field(default=None, description="Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow. ")
     validity_window: Optional[StrictStr] = Field(default=None, description="Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability. ")
     stabilization_window: Optional[StrictStr] = Field(default=None, description="Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability. ")
-    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window"]
+    pre_remediation_spec_hash: Optional[StrictStr] = Field(default=None, description="Canonical SHA-256 hash of the target resource's .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \"sha256:<hex>\". Only present for effectiveness.hash.computed events. ")
+    post_remediation_spec_hash: Optional[StrictStr] = Field(default=None, description="Canonical SHA-256 hash of the target resource's .spec AFTER remediation. Computed by EM during assessment using DD-EM-002 canonical hash algorithm. Format: \"sha256:<hex>\". Only present for effectiveness.hash.computed events. ")
+    hash_match: Optional[StrictBool] = Field(default=None, description="Whether the pre and post remediation spec hashes match. true = no change detected (remediation may have been reverted or had no effect). false = spec changed (expected for successful remediations). Only present for effectiveness.hash.computed events. ")
+    health_checks: Optional[EffectivenessAssessmentAuditPayloadHealthChecks] = None
+    metric_deltas: Optional[EffectivenessAssessmentAuditPayloadMetricDeltas] = None
+    alert_resolution: Optional[EffectivenessAssessmentAuditPayloadAlertResolution] = None
+    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -97,6 +106,15 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of health_checks
+        if self.health_checks:
+            _dict['health_checks'] = self.health_checks.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of metric_deltas
+        if self.metric_deltas:
+            _dict['metric_deltas'] = self.metric_deltas.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of alert_resolution
+        if self.alert_resolution:
+            _dict['alert_resolution'] = self.alert_resolution.to_dict()
         # set to None if score (nullable) is None
         # and model_fields_set contains the field
         if self.score is None and "score" in self.model_fields_set:
@@ -127,7 +145,13 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
             "prometheus_check_after": obj.get("prometheus_check_after"),
             "alertmanager_check_after": obj.get("alertmanager_check_after"),
             "validity_window": obj.get("validity_window"),
-            "stabilization_window": obj.get("stabilization_window")
+            "stabilization_window": obj.get("stabilization_window"),
+            "pre_remediation_spec_hash": obj.get("pre_remediation_spec_hash"),
+            "post_remediation_spec_hash": obj.get("post_remediation_spec_hash"),
+            "hash_match": obj.get("hash_match"),
+            "health_checks": EffectivenessAssessmentAuditPayloadHealthChecks.from_dict(obj.get("health_checks")) if obj.get("health_checks") is not None else None,
+            "metric_deltas": EffectivenessAssessmentAuditPayloadMetricDeltas.from_dict(obj.get("metric_deltas")) if obj.get("metric_deltas") is not None else None,
+            "alert_resolution": EffectivenessAssessmentAuditPayloadAlertResolution.from_dict(obj.get("alert_resolution")) if obj.get("alert_resolution") is not None else None
         })
         return _obj
 

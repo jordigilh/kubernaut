@@ -42,6 +42,9 @@ Name | Type | Description | Notes
 **sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **notification_name** | **str** | Alias for notification_id | [optional] 
 **timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**pre_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
+**target_resource** | **str** | Target resource being remediated | 
+**workflow_version** | **str** | Workflow version | 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
@@ -73,8 +76,6 @@ Name | Type | Description | Notes
 **confidence** | **float** | Workflow confidence level (optional) | 
 **target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
-**workflow_version** | **str** | Workflow version | 
-**target_resource** | **str** | Target resource being remediated | 
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 
 **started_at** | **datetime** | When the PipelineRun started execution | [optional] 
@@ -172,6 +173,11 @@ Name | Type | Description | Notes
 **alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
 **validity_window** | **str** | Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability.  | [optional] 
 **stabilization_window** | **str** | Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability.  | [optional] 
+**post_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec AFTER remediation. Computed by EM during assessment using DD-EM-002 canonical hash algorithm. Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
+**hash_match** | **bool** | Whether the pre and post remediation spec hashes match. true &#x3D; no change detected (remediation may have been reverted or had no effect). false &#x3D; spec changed (expected for successful remediations). Only present for effectiveness.hash.computed events.  | [optional] 
+**health_checks** | [**EffectivenessAssessmentAuditPayloadHealthChecks**](EffectivenessAssessmentAuditPayloadHealthChecks.md) |  | [optional] 
+**metric_deltas** | [**EffectivenessAssessmentAuditPayloadMetricDeltas**](EffectivenessAssessmentAuditPayloadMetricDeltas.md) |  | [optional] 
+**alert_resolution** | [**EffectivenessAssessmentAuditPayloadAlertResolution**](EffectivenessAssessmentAuditPayloadAlertResolution.md) |  | [optional] 
 
 ## Example
 

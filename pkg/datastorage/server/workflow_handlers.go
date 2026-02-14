@@ -18,6 +18,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
@@ -55,116 +58,87 @@ import (
 // - GET /api/v1/workflows/{workflowID} - Step 3: Get workflow with security gate
 
 // HandleCreateWorkflow handles POST /api/v1/workflows
-// BR-STORAGE-014: Workflow catalog management
-// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
+// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+// BR-WORKFLOW-017-001: Accept only containerImage, pull OCI image, extract schema, populate catalog
 func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Parse request body
-	var workflow models.RemediationWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
+	// Step 1: Parse request body — expect only {"container_image": "..."}
+	var req struct {
+		ContainerImage string `json:"container_image"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error(err, "Failed to decode workflow create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
 		return
 	}
 
-	// Validate required fields
-	if err := h.validateCreateWorkflowRequest(&workflow); err != nil {
-		h.logger.Error(err, "Invalid workflow create request",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request", err.Error(), h.logger)
+	// Step 2: Validate containerImage is present
+	if req.ContainerImage == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"container_image is required", h.logger)
 		return
 	}
 
-	// ADR-043: Extract parameter schema from workflow-schema.yaml content
-	// The content field IS the workflow-schema.yaml (single source of truth for parameters).
-	// DataStorage parses it and stores extracted parameters in the parameters JSONB column.
-	// BR-HAPI-191: Parameters are used by HAPI for validation and by MCP tool results for LLM guidance.
-	schemaParser := schema.NewParser()
-	parsedSchema, err := schemaParser.ParseAndValidate(workflow.Content)
-	if err != nil {
-		h.logger.Error(err, "Content is not a valid workflow-schema.yaml (ADR-043)",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Content must be valid workflow-schema.yaml per ADR-043: %v", err), h.logger)
-		return
-	}
-
-	// Extract parameters and wrap in the format expected by HAPI's WorkflowResponseValidator
-	// Format: {"schema": {"parameters": [{"name": "PARAM", "type": "string", ...}]}}
-	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
-	if err != nil {
-		h.logger.Error(err, "Failed to extract parameters from workflow schema",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Failed to extract parameters: %v", err), h.logger)
-		return
-	}
-	// Wrap in {"schema": {"parameters": [...]}} for HAPI validator compatibility
-	wrappedParams := map[string]interface{}{
-		"schema": map[string]json.RawMessage{
-			"parameters": extractedParams,
-		},
-	}
-	wrappedJSON, err := json.Marshal(wrappedParams)
-	if err != nil {
-		h.logger.Error(err, "Failed to marshal wrapped parameters")
+	// Step 3: Validate schema extractor is configured
+	if h.schemaExtractor == nil {
+		h.logger.Error(fmt.Errorf("schemaExtractor not configured"), "Handler misconfiguration")
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to process parameters", h.logger)
+			"OCI schema extraction not configured", h.logger)
 		return
 	}
-	rawMsg := json.RawMessage(wrappedJSON)
-	workflow.Parameters = &rawMsg
 
-	// V1.0: Embedding generation removed (label-only search)
-	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
-
-	// Set default status if not provided
-	if workflow.Status == "" {
-		workflow.Status = "active"
+	// Step 4: Pull OCI image and extract /workflow-schema.yaml (DD-WORKFLOW-017)
+	result, err := h.schemaExtractor.ExtractFromImage(r.Context(), req.ContainerImage)
+	if err != nil {
+		h.classifyExtractionError(w, err, req.ContainerImage)
+		return
 	}
 
-	// DD-WORKFLOW-002 v3.0: New workflows are always the latest version
-	// The repository will handle marking previous versions as not latest
-	workflow.IsLatestVersion = true
+	// Step 5: Build RemediationWorkflow from extracted schema
+	schemaParser := schema.NewParser()
+	workflow, err := h.buildWorkflowFromSchema(schemaParser, result, req.ContainerImage)
+	if err != nil {
+		h.logger.Error(err, "Failed to build workflow from extracted schema",
+			"container_image", req.ContainerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to process extracted schema", h.logger)
+		return
+	}
 
-	// Create workflow in repository
-	if err := h.workflowRepo.Create(r.Context(), &workflow); err != nil {
-		// DS-BUG-001: Check for PostgreSQL unique constraint violation (duplicate workflow)
-		// RFC 9110 Section 15.5.10: Return 409 Conflict for duplicate resources
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			// Duplicate workflow detected - this is an expected condition, not a server error
-			h.logger.Info("Workflow creation skipped - already exists",
+	// Step 6: Create workflow in repository
+	if h.workflowRepo != nil {
+		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
+			// DS-BUG-001: Check for PostgreSQL unique constraint violation (duplicate workflow)
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				h.logger.Info("Workflow creation skipped - already exists",
+					"workflow_name", workflow.WorkflowName,
+					"version", workflow.Version,
+				)
+				detail := fmt.Sprintf("Workflow '%s' version '%s' already exists", workflow.WorkflowName, workflow.Version)
+				response.WriteRFC7807Error(w, http.StatusConflict, "conflict",
+					"Workflow Already Exists", detail, h.logger)
+				return
+			}
+
+			h.logger.Error(err, "Failed to create workflow",
 				"workflow_name", workflow.WorkflowName,
 				"version", workflow.Version,
 			)
-			detail := fmt.Sprintf("Workflow '%s' version '%s' already exists", workflow.WorkflowName, workflow.Version)
-			response.WriteRFC7807Error(w, http.StatusConflict, "conflict",
-				"Workflow Already Exists", detail, h.logger)
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+				"Failed to create workflow", h.logger)
 			return
 		}
-
-		// Other database errors remain 500 Internal Server Error
-		h.logger.Error(err, "Failed to create workflow",
-			"workflow_name", workflow.WorkflowName,
-			"version", workflow.Version,
-		)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to create workflow", h.logger)
-		return
 	}
 
-	// BR-STORAGE-183: Audit workflow creation (business logic operation)
-	// DD-AUDIT-002 V2.0.1: Workflow catalog operations are business logic (not pure CRUD)
+	// Step 7: Audit workflow creation (async, best-effort)
 	if h.auditStore != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(&workflow)
+			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(workflow)
 			if err != nil {
 				h.logger.Error(err, "Failed to create workflow creation audit event",
 					"workflow_id", workflow.WorkflowID,
@@ -183,10 +157,12 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log success
-	h.logger.Info("Workflow created successfully",
+	h.logger.Info("Workflow created successfully from OCI image",
 		"workflow_id", workflow.WorkflowID,
 		"workflow_name", workflow.WorkflowName,
 		"version", workflow.Version,
+		"container_image", req.ContainerImage,
+		"container_digest", workflow.ContainerDigest,
 	)
 
 	// Return created workflow
@@ -197,28 +173,123 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// validateCreateWorkflowRequest validates the workflow create request
-func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWorkflow) error {
-	if workflow.WorkflowName == "" {
-		return fmt.Errorf("workflow_name is required")
+// classifyExtractionError maps OCI extraction errors to appropriate HTTP status codes.
+// DD-WORKFLOW-017 validation order:
+// - Image pull failure → 502 Bad Gateway
+// - /workflow-schema.yaml not found → 422 Unprocessable Entity
+// - Schema validation failure → 400 Bad Request
+func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, containerImage string) {
+	errMsg := err.Error()
+
+	// Image pull failure: errors from the puller contain "pull image"
+	if strings.Contains(errMsg, "pull image") {
+		h.logger.Error(err, "OCI image pull failed",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadGateway, "image-pull-failed", "Image Pull Failed",
+			fmt.Sprintf("Failed to pull OCI image %q: %v", containerImage, err), h.logger)
+		return
 	}
-	if workflow.Version == "" {
-		return fmt.Errorf("version is required")
+
+	// Schema not found: the extractor returns "not found in image layers"
+	if strings.Contains(errMsg, "not found in image layers") {
+		h.logger.Error(err, "workflow-schema.yaml not found in OCI image",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusUnprocessableEntity, "schema-not-found", "Schema Not Found",
+			fmt.Sprintf("/workflow-schema.yaml not found in OCI image %q", containerImage), h.logger)
+		return
 	}
-	if workflow.Name == "" {
-		return fmt.Errorf("name is required")
+
+	// Schema validation failure: errors from ParseAndValidate contain "validate workflow-schema.yaml"
+	if strings.Contains(errMsg, "validate workflow-schema.yaml") {
+		h.logger.Error(err, "Invalid workflow-schema.yaml in OCI image",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Schema Validation Error",
+			fmt.Sprintf("Invalid workflow-schema.yaml in image %q: %v", containerImage, err), h.logger)
+		return
 	}
-	if workflow.Description.What == "" {
-		return fmt.Errorf("description.what is required")
+
+	// Fallback: unknown extraction error
+	h.logger.Error(err, "Unexpected error during OCI schema extraction",
+		"container_image", containerImage,
+	)
+	response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+		fmt.Sprintf("Schema extraction failed: %v", err), h.logger)
+}
+
+// buildWorkflowFromSchema populates a RemediationWorkflow from the extracted OCI schema.
+// DD-WORKFLOW-017: All catalog fields are derived from the schema; nothing from the API request.
+func (h *Handler) buildWorkflowFromSchema(
+	schemaParser *schema.Parser,
+	result *oci.ExtractionResult,
+	containerImage string,
+) (*models.RemediationWorkflow, error) {
+	parsedSchema := result.Schema
+
+	// Extract parameters and wrap for HAPI validator compatibility
+	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
+	if err != nil {
+		return nil, fmt.Errorf("extract parameters: %w", err)
 	}
-	if workflow.Content == "" {
-		return fmt.Errorf("content is required")
+	wrappedParams := map[string]interface{}{
+		"schema": map[string]json.RawMessage{
+			"parameters": extractedParams,
+		},
 	}
-	// V1.0: MandatoryLabels is a struct (not pointer), validate required fields
-	if workflow.Labels.SignalType == "" || workflow.Labels.Severity == "" || workflow.Labels.Component == "" {
-		return fmt.Errorf("labels are required (signalType, severity, component, environment, priority)")
+	wrappedJSON, err := json.Marshal(wrappedParams)
+	if err != nil {
+		return nil, fmt.Errorf("marshal parameters: %w", err)
 	}
-	return nil
+	rawParams := json.RawMessage(wrappedJSON)
+
+	// Extract labels as JSONB
+	labelsJSON, err := schemaParser.ExtractLabels(parsedSchema)
+	if err != nil {
+		return nil, fmt.Errorf("extract labels: %w", err)
+	}
+
+	// Convert WorkflowDescription (schema) to StructuredDescription (DB model)
+	desc := models.StructuredDescription{
+		What:          parsedSchema.Metadata.Description.What,
+		WhenToUse:     parsedSchema.Metadata.Description.WhenToUse,
+		WhenNotToUse:  parsedSchema.Metadata.Description.WhenNotToUse,
+		Preconditions: parsedSchema.Metadata.Description.Preconditions,
+	}
+
+	// Convert execution engine string to ExecutionEngine type
+	execEngine := models.ExecutionEngine(schemaParser.ExtractExecutionEngine(parsedSchema))
+
+	// ContainerImage and ContainerDigest are *string in the DB model
+	imgRef := containerImage
+	digest := result.Digest
+
+	// Build the workflow from schema fields
+	workflow := &models.RemediationWorkflow{
+		WorkflowName:    parsedSchema.Metadata.WorkflowID,
+		Version:         parsedSchema.Metadata.Version,
+		Name:            parsedSchema.Metadata.WorkflowID, // Use workflowId as display name
+		Description:     desc,
+		Content:         result.RawContent,
+		Parameters:      &rawParams,
+		ExecutionEngine: execEngine,
+		ContainerImage:  &imgRef,
+		ContainerDigest: &digest,
+		ActionType:      parsedSchema.ActionType,
+		Status:          "active",
+		IsLatestVersion: true,
+	}
+
+	// Set labels from extracted JSONB
+	if err := json.Unmarshal(labelsJSON, &workflow.Labels); err != nil {
+		return nil, fmt.Errorf("unmarshal labels: %w", err)
+	}
+
+	// Compute content hash (SHA-256)
+	workflow.ContentHash = computeContentHash(result.RawContent)
+
+	return workflow, nil
 }
 
 // HandleListWorkflows handles GET /api/v1/workflows
@@ -902,3 +973,9 @@ func ParsePagination(r *http.Request) (int, int) {
 	return offset, limit
 }
 
+// computeContentHash computes a SHA-256 hash of the workflow content.
+// DD-WORKFLOW-017: Content hash is derived from the raw YAML extracted from the OCI image.
+func computeContentHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
+}
