@@ -524,9 +524,9 @@ The health checks reported in the `health_checks` typed sub-object include: `pod
 
 #### Metric Improvement Scoring
 
-V1.0 compares four metrics: CPU utilization, memory utilization, latency p95, and error rate. Throughput is defined in the audit schema but not yet queried from Prometheus.
+V1.0 compares five metrics: CPU utilization, memory utilization, latency p95, error rate, and throughput (req/s).
 
-For each metric with `lowerIsBetter = true` (CPU, memory, latency, error rate):
+For each metric with `lowerIsBetter = true` (CPU, memory, latency, error rate) or `lowerIsBetter = false` (throughput):
 - **Improved** (post < pre): `improvement = (pre - post) / |pre|`, clamped to [0.0, 1.0]
 - **No change** (post == pre): 0.0 (no improvement demonstrated)
 - **Degraded** (post > pre): 0.0 (clamped — negative scores are not propagated)
@@ -534,7 +534,7 @@ For each metric with `lowerIsBetter = true` (CPU, memory, latency, error rate):
 
 The `metric_improvement_ratio` is the average of all individual metric scores. If no metric comparisons are available, the metrics component is not assessed (score = nil).
 
-> **Implementation note (v1.7)**: DD-017 v2.5 originally designated memory, latency p95, and error rate as "Phase B (deferred)". During implementation, all four PromQL queries were implemented in the metrics scorer (`pkg/effectivenessmonitor/metrics/scorer.go`). Throughput remains unimplemented.
+> **Implementation note (v1.7, updated Batch 3)**: DD-017 v2.5 originally designated memory, latency p95, and error rate as "Phase B (deferred)". During implementation, all four PromQL queries were implemented in the metrics scorer. Throughput (`http_throughput_rps`) was added in Batch 3 as the 5th PromQL query with `lowerIsBetter = false`. All five metric types are now fully implemented.
 
 ---
 
@@ -765,10 +765,10 @@ Emitted immediately after stabilization window (when AlertManager is enabled).
 |-------|------|-------------|
 | `event_type` | string | `"effectiveness.alert.assessed"` |
 | `signal_resolved` | boolean | `true` if triggering alert is no longer active |
-| `alert_name` | string | The alert name queried (**v1.0 gap**: not yet populated in OpenAPI payload; present in `Details` string only) |
+| `alert_name` | string | The alert name queried (Batch 3: `ea.Spec.SignalName` populated via OBS-1) |
 | `active_alerts_count` | integer | Number of matching active alerts at assessment time |
 | `alert_score` | float | 1.0 if resolved, 0.0 if still active; used by DS for scoring |
-| `resolution_time_seconds` | float (nullable) | Time from remediation to alert resolution; `null` if not resolved (**v1.0 gap**: field exists in OpenAPI schema but not yet populated by reconciler) |
+| `resolution_time_seconds` | float (nullable) | Time from remediation to alert resolution; `null` if not resolved (Batch 3: computed from `ea.Spec.RemediationCreatedAt`) |
 
 #### 9.2.4 `effectiveness.metrics.assessed`
 
@@ -785,8 +785,8 @@ Emitted when Prometheus post-remediation data becomes available (may be delayed 
 | `latency_p95_after_ms` | float | p95 latency after |
 | `error_rate_before` | float | Error rate before |
 | `error_rate_after` | float | Error rate after |
-| `throughput_before_rps` | float | Request throughput before (**v1.0 gap**: not yet implemented — no PromQL query for throughput) |
-| `throughput_after_rps` | float | Request throughput after (**v1.0 gap**: not yet implemented) |
+| `throughput_before_rps` | float | Request throughput before (Batch 3: `http_throughput_rps` PromQL query implemented) |
+| `throughput_after_rps` | float | Request throughput after (Batch 3: implemented) |
 | `metrics_score` | float | Average improvement ratio (0.0-1.0), used by DS for scoring |
 
 #### 9.2.5 `effectiveness.assessment.completed` (lifecycle marker)
@@ -800,8 +800,9 @@ Emitted when the EM finishes processing the EA CRD (all components done, validit
 | `service` | string | `"effectivenessmonitor"` |
 | `ea_name` | string | EA CRD name |
 | `assessment_reason` | string | `"full"`, `"partial"`, `"no_execution"`, `"metrics_timed_out"`, `"expired"`, `"spec_drift"` |
-| `components_assessed` | array[string] | List of component event types emitted (e.g., `["health", "alert", "hash"]`) (**v1.0 gap**: not yet in OpenAPI payload) |
-| `completed_at` | string (RFC3339) | When the EA reached Completed phase (**v1.0 gap**: not yet in OpenAPI payload; available in EA status) |
+| `components_assessed` | array[string] | List of component event types emitted (e.g., `["health", "alert", "hash"]`) (Batch 3: implemented in OpenAPI + `RecordAssessmentCompleted`) |
+| `completed_at` | string (RFC3339) | When the EA reached Completed phase (Batch 3: implemented in OpenAPI + `RecordAssessmentCompleted`) |
+| `assessment_duration_seconds` | float (nullable) | Seconds from RR creation to assessment completion (Batch 3: renamed from `resolution_time_seconds` per OBS-2) |
 
 ### 9.3 `workflowexecution.workflow.started` Enhancement
 
@@ -1057,33 +1058,34 @@ Events WRITTEN by EM (consumed by DS for scoring):
 
 ## 13.1 Known V1.0 Implementation Gaps
 
-The following items are specified in this ADR but not yet implemented in the V1.0 codebase. They are tracked here for future batches.
+The following items were specified in this ADR and tracked across batches. Items marked **FIXED** have been implemented and tested.
 
 ### Reconciler Logic Gaps
 
-| Gap | ADR Reference | Impact | Priority |
-|-----|---------------|--------|----------|
-| `no_execution` reconciliation path | Section 5: "No WFE started → skip health/metrics/hash → reason=no_execution" | EAs for RRs where the workflow never ran will produce misleading scores | HIGH |
-| `metrics_timed_out` reason | Section 6: distinct from `partial` when only metrics are missing at validity expiry | Operators cannot distinguish "only metrics unavailable" from "multiple components missing" | MEDIUM |
-| RR terminal phase handling | Section 5: EM should branch on `kubernaut.ai/rr-phase` (Failed/TimedOut) | All EAs follow the same path regardless of RR outcome | MEDIUM |
+| Gap | ADR Reference | Impact | Priority | Status |
+|-----|---------------|--------|----------|--------|
+| `no_execution` reconciliation path | Section 5: "No WFE started → skip health/metrics/hash → reason=no_execution" | EAs for RRs where the workflow never ran will produce misleading scores | HIGH | **FIXED (Batch 2)**: Guard added before Step 7 component checks |
+| `metrics_timed_out` reason | Section 6: distinct from `partial` when only metrics are missing at validity expiry | Operators cannot distinguish "only metrics unavailable" from "multiple components missing" | MEDIUM | **FIXED (Batch 3)**: `determineAssessmentReason` distinguishes `metrics_timed_out` with alert check (GAP-1) |
+| RR terminal phase handling | Section 5: EM should branch on `kubernaut.ai/rr-phase` (Failed/TimedOut) | All EAs follow the same path regardless of RR outcome | MEDIUM | Open — EM branches on `ea.Spec.RemediationRequestPhase` for `no_execution` guard but does not differentiate Failed/TimedOut assessment paths |
 
 ### Audit Payload Gaps
 
 | Gap | ADR Section | Status |
 |-----|-------------|--------|
-| `alert_name` not in OpenAPI payload | 9.2.3 | Present in Details string only |
-| `throughput_before/after_rps` | 9.2.4 | No PromQL query; fields nullable in schema |
-| `components_assessed` array | 9.2.5 | Not in OpenAPI payload |
-| `completed_at` in completed event | 9.2.5 | Not in OpenAPI payload; available in EA status |
-| `resolution_time_seconds` always null | 9.2.3 | Field in schema but not populated by reconciler |
+| `alert_name` not in OpenAPI payload | 9.2.3 | **FIXED (Batch 3)**: `SignalName` added to EA spec, used in `RecordAssessmentCompleted` (OBS-1) |
+| `throughput_before/after_rps` | 9.2.4 | **FIXED (Batch 3)**: 5th PromQL query (`http_throughput_rps`) added; fields populated in `metric_deltas` |
+| `components_assessed` array | 9.2.5 | **FIXED (Batch 3)**: Populated from `ea.Status.Components` flags in `RecordAssessmentCompleted` |
+| `completed_at` in completed event | 9.2.5 | **FIXED (Batch 3)**: Populated from `ea.Status.CompletedAt` in `RecordAssessmentCompleted` |
+| `resolution_time_seconds` in alert.assessed | 9.2.3 | **FIXED (Batch 3)**: Computed as `time.Since(ea.Spec.RemediationCreatedAt)` when alert resolved |
+| `assessment_duration_seconds` in assessment.completed | 9.2.5 | **FIXED (Batch 3)**: Renamed from `resolution_time_seconds` (OBS-2); computed as `CompletedAt - RemediationCreatedAt` |
 
 ### Prerequisite Gaps (Other Services)
 
 | Gap | Service | Impact | Status |
 |-----|---------|--------|--------|
 | `remediation.workflow_created` not emitted in production | RO | Pre-remediation hash comparison always empty; hash diff meaningless | **FIXED (Batch 2)**: Wired `emitWorkflowCreatedAudit` at both WFE creation sites |
-| `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion | Open (Batch 3) |
-| RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes | Open (Batch 3) |
+| `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion | **FIXED (Batch 3)**: Initial `False/AssessmentInProgress` on EA creation (GAP-2); terminal `True/AssessmentCompleted` or `True/AssessmentExpired` on EA completion |
+| RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes | **FIXED (Batch 3)**: `Owns(&eav1.EffectivenessAssessment{})` in `SetupWithManager`; `trackEffectivenessStatus` updates condition |
 | `blockOwnerDeletion` defaults to `true` via `SetControllerReference` | RO | ADR specifies `false` (Section 8 YAML); RR deletion may block on EA finalizers | **FIXED (Batch 2)**: Override after `SetControllerReference` |
 | `EventReasonEffectivenessAssessmentCreated` never emitted | RO | Constant in `reasons.go` but `Recorder.Event` never called; EA creation not observable via `kubectl describe` | **FIXED (Batch 2)**: `EventRecorder` added to EA creator |
 | `no_execution` reconciliation path not implemented | EM | EAs for failed-before-execution RRs produce misleading scores | **FIXED (Batch 2)**: Guard added before Step 7 component checks |
