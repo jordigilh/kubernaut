@@ -50,6 +50,9 @@ def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
 
     sections: List[str] = []
 
+    # DD-EM-002 v1.1: Detect causal chains between spec_drift entries and follow-ups
+    causal_chains = _detect_spec_drift_causal_chains(tier1_chain) if tier1_chain else {}
+
     # Header
     target = context.get("targetResource", "unknown")
     sections.append(f"### REMEDIATION HISTORY for {target}")
@@ -72,7 +75,7 @@ def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
         sections.append("")
 
         for entry in tier1_chain:
-            sections.append(_format_tier1_entry(entry))
+            sections.append(_format_tier1_entry(entry, causal_chains))
             sections.append("")
 
     # Tier 2: Summary entries (wider history)
@@ -85,7 +88,7 @@ def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
             sections.append(_format_tier2_entry(summary))
             sections.append("")
 
-    # Declining effectiveness trend detection
+    # Declining effectiveness trend detection (excludes spec_drift entries)
     if tier1_chain:
         declining = _detect_declining_effectiveness(tier1_chain)
         for workflow_type in declining:
@@ -104,23 +107,76 @@ def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
         "If regression is detected, consider alternative approaches."
     )
 
+    # DD-EM-002 v1.1: Spec drift awareness guidance
+    all_entries = tier1_chain + tier2_chain
+    has_spec_drift = any(
+        e.get("assessmentReason") == "spec_drift" for e in all_entries
+    )
+    if has_spec_drift:
+        sections.append("")
+        sections.append(
+            "**Note on spec drift entries:** Some remediation assessments were inconclusive "
+            "because the target resource spec was modified during the assessment window. Do not "
+            "treat these as failed remediations. Investigate what modified the spec -- it may "
+            "be the root cause or a contributing factor."
+        )
+
     return "\n".join(sections)
 
 
-def _format_tier1_entry(entry: Dict[str, Any]) -> str:
-    """Format a single Tier 1 detailed entry for the prompt."""
+def _format_tier1_entry(
+    entry: Dict[str, Any],
+    causal_chains: Optional[Dict[str, str]] = None,
+) -> str:
+    """Format a single Tier 1 detailed entry for the prompt.
+
+    DD-EM-002 v1.1: When assessmentReason == "spec_drift", the entry is rendered
+    as INCONCLUSIVE with suppressed health/metrics data. Two variants exist:
+    - Default: "may still be viable under different conditions"
+    - Causal chain: "led to follow-up remediation (UID)" when hash chain detected
+    """
     uid = entry.get("remediationUID", "unknown")
     completed = entry.get("completedAt", "unknown")
     outcome = entry.get("outcome", "unknown")
     workflow = entry.get("workflowType", "unknown")
     signal = entry.get("signalType", "")
-    score = entry.get("effectivenessScore")
-    hash_match = entry.get("hashMatch", "none")
+    assessment_reason = entry.get("assessmentReason")
 
     lines = [
         f"- **Remediation {uid}** ({completed})",
         f"  Workflow: {workflow} | Outcome: {outcome} | Signal: {signal}",
     ]
+
+    # DD-EM-002 v1.1: Spec drift semantic rewrite
+    if assessment_reason == "spec_drift":
+        causal_chains = causal_chains or {}
+        followup_uid = causal_chains.get(uid)
+
+        if followup_uid:
+            # Causal chain variant: this spec_drift led to a follow-up remediation
+            lines.append(
+                f"  **Assessment: INCONCLUSIVE (spec drift -- led to follow-up remediation)** -- "
+                f"The target resource spec changed after this remediation, and a subsequent "
+                f"remediation ({followup_uid}) was triggered from the resulting state. This suggests "
+                f"the outcome was unstable, but the workflow may still work under different "
+                f"conditions. Use with caution."
+            )
+        else:
+            # Default variant: no causal chain detected
+            lines.append(
+                "  **Assessment: INCONCLUSIVE (spec drift)** -- The target resource spec was "
+                "modified by an external actor during the assessment window, invalidating "
+                "effectiveness data. This workflow may still be viable under different "
+                "conditions. The spec change could indicate a competing controller, GitOps "
+                "sync, or manual edit that is itself relevant to the root cause."
+            )
+        # Do NOT show health checks, metric deltas, signalResolved, or score
+        # (they are unreliable when spec drift occurred)
+        return "\n".join(lines)
+
+    # Normal entry formatting (non-spec_drift)
+    score = entry.get("effectivenessScore")
+    hash_match = entry.get("hashMatch", "none")
 
     # Effectiveness score
     level = effectiveness_level(score)
@@ -151,16 +207,24 @@ def _format_tier1_entry(entry: Dict[str, Any]) -> str:
 
 
 def _format_tier2_entry(entry: Dict[str, Any]) -> str:
-    """Format a single Tier 2 summary entry for the prompt."""
+    """Format a single Tier 2 summary entry for the prompt.
+
+    DD-EM-002 v1.1: When assessmentReason == "spec_drift", show INCONCLUSIVE
+    instead of the unreliable 0.0 score.
+    """
     uid = entry.get("remediationUID", "unknown")
     completed = entry.get("completedAt", "unknown")
     outcome = entry.get("outcome", "unknown")
     workflow = entry.get("workflowType", "unknown")
     score = entry.get("effectivenessScore")
     hash_match = entry.get("hashMatch", "none")
+    assessment_reason = entry.get("assessmentReason")
 
-    level = effectiveness_level(score)
-    score_text = f"{score:.2f} ({level})" if score is not None else "N/A"
+    if assessment_reason == "spec_drift":
+        score_text = "INCONCLUSIVE (spec drift)"
+    else:
+        level = effectiveness_level(score)
+        score_text = f"{score:.2f} ({level})" if score is not None else "N/A"
 
     return (
         f"- {uid} ({completed}): {workflow} -> {outcome}, "
@@ -242,8 +306,12 @@ def _detect_declining_effectiveness(chain: List[Dict[str, Any]]) -> List[str]:
     from collections import defaultdict
 
     # Group scores by workflow type, preserving order
+    # DD-EM-002 v1.1: Exclude spec_drift entries -- their 0.0 scores would
+    # create false declining trends since the score is unreliable.
     workflow_scores: Dict[str, List[float]] = defaultdict(list)
     for entry in chain:
+        if entry.get("assessmentReason") == "spec_drift":
+            continue  # Skip unreliable spec_drift entries
         wf_type = entry.get("workflowType")
         score = entry.get("effectivenessScore")
         if wf_type and score is not None:
@@ -260,6 +328,45 @@ def _detect_declining_effectiveness(chain: List[Dict[str, Any]]) -> List[str]:
                 declining.append(wf_type)
 
     return declining
+
+
+def _detect_spec_drift_causal_chains(chain: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Detect when a spec_drift entry's postRemediationSpecHash matches
+    a subsequent entry's preRemediationSpecHash, proving the spec_drift
+    entry led to a follow-up remediation.
+
+    DD-EM-002 v1.1: Causal chain detection for prompt semantic rewriting.
+
+    Args:
+        chain: List of tier 1 remediation history entries.
+
+    Returns:
+        Dict mapping spec_drift entry's remediationUID -> follow-up remediationUID.
+    """
+    causal_map: Dict[str, str] = {}
+
+    # Build index of preRemediationSpecHash -> remediationUID for all entries
+    pre_hash_index: Dict[str, str] = {}
+    for entry in chain:
+        pre_hash = entry.get("preRemediationSpecHash", "")
+        uid = entry.get("remediationUID", "")
+        if pre_hash and uid:
+            pre_hash_index[pre_hash] = uid
+
+    # For each spec_drift entry, check if its postHash matches any entry's preHash
+    for entry in chain:
+        if entry.get("assessmentReason") != "spec_drift":
+            continue
+        drift_uid = entry.get("remediationUID", "")
+        post_hash = entry.get("postRemediationSpecHash", "")
+        if not drift_uid or not post_hash:
+            continue
+
+        followup_uid = pre_hash_index.get(post_hash, "")
+        if followup_uid and followup_uid != drift_uid:
+            causal_map[drift_uid] = followup_uid
+
+    return causal_map
 
 
 def effectiveness_level(score: Optional[float]) -> str:

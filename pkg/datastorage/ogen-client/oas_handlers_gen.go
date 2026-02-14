@@ -474,9 +474,11 @@ func (s *Server) handleCreateNotificationAuditRequest(args [0]string, argsEscape
 
 // handleCreateWorkflowRequest handles createWorkflow operation.
 //
-// Create a new workflow in the catalog.
-// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+// Register a new workflow by providing an OCI image pullspec.
+// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+// validates the schema, and populates all catalog fields from it.
+// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 //
 // POST /api/v1/workflows
 func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -571,7 +573,7 @@ func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    CreateWorkflowOperation,
-			OperationSummary: "Create workflow",
+			OperationSummary: "Register workflow from OCI image",
 			OperationID:      "createWorkflow",
 			Body:             request,
 			RawBody:          rawBody,
@@ -580,7 +582,7 @@ func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w
 		}
 
 		type (
-			Request  = *RemediationWorkflow
+			Request  = *CreateWorkflowFromOCIRequest
 			Params   = struct{}
 			Response = CreateWorkflowRes
 		)
@@ -973,6 +975,159 @@ func (s *Server) handleExportAuditEventsRequest(args [0]string, argsEscaped bool
 	}
 }
 
+// handleGetEffectivenessScoreRequest handles getEffectivenessScore operation.
+//
+// Computes the weighted effectiveness score for a given remediation lifecycle
+// from component audit events in the audit trail.
+// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+// The Effectiveness Monitor emits raw component assessment events; this endpoint
+// aggregates them and applies the DD-017 v2.1 scoring formula:
+// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+// **Business Requirements**: BR-EM-001 to BR-EM-004
+// **Response includes**:
+// - Weighted overall score (0.0 to 1.0)
+// - Individual component scores (health, alert, metrics)
+// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// GET /api/v1/effectiveness/{correlation_id}
+func (s *Server) handleGetEffectivenessScoreRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getEffectivenessScore"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/effectiveness/{correlation_id}"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), GetEffectivenessScoreOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: GetEffectivenessScoreOperation,
+			ID:   "getEffectivenessScore",
+		}
+	)
+	params, err := decodeGetEffectivenessScoreParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response GetEffectivenessScoreRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    GetEffectivenessScoreOperation,
+			OperationSummary: "Compute weighted effectiveness score on demand",
+			OperationID:      "getEffectivenessScore",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "correlation_id",
+					In:   "path",
+				}: params.CorrelationID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = GetEffectivenessScoreParams
+			Response = GetEffectivenessScoreRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackGetEffectivenessScoreParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.GetEffectivenessScore(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.GetEffectivenessScore(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeGetEffectivenessScoreResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleGetMetricsRequest handles getMetrics operation.
 //
 // Exposes Prometheus metrics in text format.
@@ -1092,6 +1247,184 @@ func (s *Server) handleGetMetricsRequest(args [0]string, argsEscaped bool, w htt
 	}
 
 	if err := encodeGetMetricsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleGetRemediationHistoryContextRequest handles getRemediationHistoryContext operation.
+//
+// Returns structured remediation history context for LLM prompt enrichment.
+// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+// **Design Document**: DD-HAPI-016
+// **Behavior**:
+// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+// audit events into structured remediation chains for a target resource.
+// **Two-Tier Query Design**:
+// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+// and full effectiveness data for the target resource.
+// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+// regression.
+// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+// `preRemediationSpecHash` matches `currentSpecHash`.
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// GET /api/v1/remediation-history/context
+func (s *Server) handleGetRemediationHistoryContextRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getRemediationHistoryContext"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/remediation-history/context"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), GetRemediationHistoryContextOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: GetRemediationHistoryContextOperation,
+			ID:   "getRemediationHistoryContext",
+		}
+	)
+	params, err := decodeGetRemediationHistoryContextParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response GetRemediationHistoryContextRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    GetRemediationHistoryContextOperation,
+			OperationSummary: "Get remediation history context for a target resource",
+			OperationID:      "getRemediationHistoryContext",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "targetKind",
+					In:   "query",
+				}: params.TargetKind,
+				{
+					Name: "targetName",
+					In:   "query",
+				}: params.TargetName,
+				{
+					Name: "targetNamespace",
+					In:   "query",
+				}: params.TargetNamespace,
+				{
+					Name: "currentSpecHash",
+					In:   "query",
+				}: params.CurrentSpecHash,
+				{
+					Name: "tier1Window",
+					In:   "query",
+				}: params.Tier1Window,
+				{
+					Name: "tier2Window",
+					In:   "query",
+				}: params.Tier2Window,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = GetRemediationHistoryContextParams
+			Response = GetRemediationHistoryContextRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackGetRemediationHistoryContextParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.GetRemediationHistoryContext(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.GetRemediationHistoryContext(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeGetRemediationHistoryContextResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

@@ -667,6 +667,380 @@ func decodeExportAuditEventsParams(args [0]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
+// GetEffectivenessScoreParams is parameters of getEffectivenessScore operation.
+type GetEffectivenessScoreParams struct {
+	// The correlation ID (typically RemediationRequest name) that links all
+	// audit events in a remediation lifecycle.
+	CorrelationID string
+}
+
+func unpackGetEffectivenessScoreParams(packed middleware.Parameters) (params GetEffectivenessScoreParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "correlation_id",
+			In:   "path",
+		}
+		params.CorrelationID = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetEffectivenessScoreParams(args [1]string, argsEscaped bool, r *http.Request) (params GetEffectivenessScoreParams, _ error) {
+	// Decode path: correlation_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "correlation_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.CorrelationID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "correlation_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// GetRemediationHistoryContextParams is parameters of getRemediationHistoryContext operation.
+type GetRemediationHistoryContextParams struct {
+	// Kubernetes resource kind (e.g. Deployment, StatefulSet).
+	TargetKind string
+	// Kubernetes resource name.
+	TargetName string
+	// Kubernetes resource namespace.
+	TargetNamespace string
+	// SHA-256 hash of the current target resource spec (canonical JSON).
+	CurrentSpecHash string
+	// Tier 1 lookback window (default 24h). Accepts Go duration strings.
+	Tier1Window OptString `json:",omitempty,omitzero"`
+	// Tier 2 lookback window (default 2160h / 90d). Accepts Go duration strings.
+	Tier2Window OptString `json:",omitempty,omitzero"`
+}
+
+func unpackGetRemediationHistoryContextParams(packed middleware.Parameters) (params GetRemediationHistoryContextParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "targetKind",
+			In:   "query",
+		}
+		params.TargetKind = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "targetName",
+			In:   "query",
+		}
+		params.TargetName = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "targetNamespace",
+			In:   "query",
+		}
+		params.TargetNamespace = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "currentSpecHash",
+			In:   "query",
+		}
+		params.CurrentSpecHash = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "tier1Window",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Tier1Window = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "tier2Window",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Tier2Window = v.(OptString)
+		}
+	}
+	return params
+}
+
+func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, r *http.Request) (params GetRemediationHistoryContextParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode query: targetKind.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetKind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.TargetKind = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetKind",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: targetName.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetName",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.TargetName = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetName",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: targetNamespace.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetNamespace",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.TargetNamespace = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetNamespace",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: currentSpecHash.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "currentSpecHash",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.CurrentSpecHash = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "currentSpecHash",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: tier1Window.
+	{
+		val := string("24h")
+		params.Tier1Window.SetTo(val)
+	}
+	// Decode query: tier1Window.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "tier1Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotTier1WindowVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotTier1WindowVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Tier1Window.SetTo(paramsDotTier1WindowVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "tier1Window",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: tier2Window.
+	{
+		val := string("2160h")
+		params.Tier2Window.SetTo(val)
+	}
+	// Decode query: tier2Window.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "tier2Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotTier2WindowVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotTier2WindowVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Tier2Window.SetTo(paramsDotTier2WindowVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "tier2Window",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // GetWorkflowByIDParams is parameters of getWorkflowByID operation.
 type GetWorkflowByIDParams struct {
 	WorkflowID uuid.UUID

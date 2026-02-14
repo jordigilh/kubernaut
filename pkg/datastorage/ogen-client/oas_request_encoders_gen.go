@@ -57,7 +57,7 @@ func encodeCreateNotificationAuditRequest(
 }
 
 func encodeCreateWorkflowRequest(
-	req *RemediationWorkflow,
+	req *CreateWorkflowFromOCIRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

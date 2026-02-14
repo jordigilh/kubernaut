@@ -15,10 +15,25 @@ limitations under the License.
 """
 
 """
-Workflow Catalog Toolset for HolmesGPT SDK
+DEPRECATED: Workflow Catalog Toolset for HolmesGPT SDK
 
-Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool, BR-AI-075 - Workflow Selection Contract
-Design Decisions:
+DEPRECATION NOTICE (DD-HAPI-017):
+  This toolset uses POST /api/v1/workflows/search which has been REMOVED
+  from the DataStorage API as part of DD-HAPI-017 (Three-Step Workflow
+  Discovery Integration). All production code now uses the three-step
+  discovery protocol implemented in workflow_discovery.py:
+    - Step 1: list_available_actions (GET /api/v1/workflows/actions)
+    - Step 2: list_workflows (GET /api/v1/workflows/actions/{action_type})
+    - Step 3: get_workflow (GET /api/v1/workflows/{workflow_id})
+
+  register_workflow_catalog_toolset() in llm_config.py is no longer called
+  by any production code. It has been replaced by
+  register_workflow_discovery_toolset().
+
+  This file is retained temporarily for reference during migration. It
+  should be removed once all references are confirmed cleaned up.
+
+Original Design Decisions:
   - DD-WORKFLOW-002 v2.4 - MCP Workflow Catalog Architecture (container_image in response)
   - DD-CONTRACT-001 v1.2 - AIAnalysis passes container_image to WorkflowExecution
   - DD-WORKFLOW-014 v2.1 - Audit trail (Data Storage generates)
@@ -26,24 +41,6 @@ Design Decisions:
   - DD-STORAGE-008 - Workflow Catalog Schema
   - DD-WORKFLOW-004 - Hybrid Weighted Label Scoring
   - DD-HAPI-001 - Custom Labels Auto-Append Architecture
-
-Query Format (per DD-LLM-001):
-  - Structured format: '<signal_type> <severity> [optional_keywords]'
-  - Example: "OOMKilled critical", "CrashLoopBackOff high configuration"
-  - Uses canonical Kubernetes event reasons from LLM's RCA findings
-
-This toolset integrates with the Data Storage Service REST API for workflow search:
-  - V1.0 label-only search (DD-WORKFLOW-015)
-  - Confidence scores: 90-95% for exact label matches
-
-Audit Trail (DD-WORKFLOW-014 v2.1):
-  - HolmesGPT API passes remediation_id in JSON body (not HTTP header)
-  - Data Storage Service generates audit events (has richer workflow context)
-  - remediation_id is for CORRELATION ONLY (not used in search logic)
-
-Configuration:
-  - DATA_STORAGE_URL: Data Storage Service endpoint (default: http://data-storage:8080)
-  - DATA_STORAGE_TIMEOUT: HTTP timeout in seconds (default: 10)
 """
 
 import logging

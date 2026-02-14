@@ -44,12 +44,14 @@ type Handler interface {
 	CreateNotificationAudit(ctx context.Context, req *NotificationAudit) (CreateNotificationAuditRes, error)
 	// CreateWorkflow implements createWorkflow operation.
 	//
-	// Create a new workflow in the catalog.
-	// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-	// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+	// Register a new workflow by providing an OCI image pullspec.
+	// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+	// validates the schema, and populates all catalog fields from it.
+	// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+	// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 	//
 	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, req *RemediationWorkflow) (CreateWorkflowRes, error)
+	CreateWorkflow(ctx context.Context, req *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
 	// DisableWorkflow implements disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
@@ -91,6 +93,24 @@ type Handler interface {
 	//
 	// GET /api/v1/audit/export
 	ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (ExportAuditEventsRes, error)
+	// GetEffectivenessScore implements getEffectivenessScore operation.
+	//
+	// Computes the weighted effectiveness score for a given remediation lifecycle
+	// from component audit events in the audit trail.
+	// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+	// The Effectiveness Monitor emits raw component assessment events; this endpoint
+	// aggregates them and applies the DD-017 v2.1 scoring formula:
+	// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+	// **Business Requirements**: BR-EM-001 to BR-EM-004
+	// **Response includes**:
+	// - Weighted overall score (0.0 to 1.0)
+	// - Individual component scores (health, alert, metrics)
+	// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+	// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	//
+	// GET /api/v1/effectiveness/{correlation_id}
+	GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error)
 	// GetMetrics implements getMetrics operation.
 	//
 	// Exposes Prometheus metrics in text format.
@@ -102,6 +122,29 @@ type Handler interface {
 	//
 	// GET /metrics
 	GetMetrics(ctx context.Context) (GetMetricsOK, error)
+	// GetRemediationHistoryContext implements getRemediationHistoryContext operation.
+	//
+	// Returns structured remediation history context for LLM prompt enrichment.
+	// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+	// **Design Document**: DD-HAPI-016
+	// **Behavior**:
+	// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+	// audit events into structured remediation chains for a target resource.
+	// **Two-Tier Query Design**:
+	// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+	// and full effectiveness data for the target resource.
+	// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+	// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+	// regression.
+	// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+	// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+	// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+	// `preRemediationSpecHash` matches `currentSpecHash`.
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	// Integration tests use mock X-Auth-Request-User header.
+	//
+	// GET /api/v1/remediation-history/context
+	GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (GetRemediationHistoryContextRes, error)
 	// GetWorkflowByID implements getWorkflowByID operation.
 	//
 	// Retrieve a specific workflow by its UUID.

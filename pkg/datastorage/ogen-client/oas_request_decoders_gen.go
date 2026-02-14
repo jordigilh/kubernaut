@@ -278,7 +278,7 @@ func (s *Server) decodeCreateNotificationAuditRequest(r *http.Request) (
 }
 
 func (s *Server) decodeCreateWorkflowRequest(r *http.Request) (
-	req *RemediationWorkflow,
+	req *CreateWorkflowFromOCIRequest,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -325,7 +325,7 @@ func (s *Server) decodeCreateWorkflowRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request RemediationWorkflow
+		var request CreateWorkflowFromOCIRequest
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err
@@ -341,14 +341,6 @@ func (s *Server) decodeCreateWorkflowRequest(r *http.Request) (
 				Err:         err,
 			}
 			return req, rawBody, close, err
-		}
-		if err := func() error {
-			if err := request.Validate(); err != nil {
-				return err
-			}
-			return nil
-		}(); err != nil {
-			return req, rawBody, close, errors.Wrap(err, "validate")
 		}
 		return &request, rawBody, close, nil
 	default:

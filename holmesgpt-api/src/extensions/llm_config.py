@@ -290,8 +290,16 @@ def register_workflow_catalog_toolset(
     owner_chain: Optional[List[Dict[str, str]]] = None
 ) -> Config:
     """
-    Register the workflow catalog toolset with HolmesGPT SDK Config.
+    DEPRECATED: Use register_workflow_discovery_toolset() instead.
 
+    DD-HAPI-017: This function registered the old workflow catalog toolset which
+    used POST /api/v1/workflows/search (now removed from the DataStorage API).
+    It has been replaced by register_workflow_discovery_toolset() which implements
+    the three-step discovery protocol.
+
+    This function is no longer called by any production code.
+
+    Original docs:
     Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
     Business Requirement: BR-AUDIT-001 - Unified audit trail (remediation_id)
     Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id mandatory

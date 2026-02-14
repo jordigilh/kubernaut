@@ -21,6 +21,14 @@ type ExportAuditEventsRes interface {
 	exportAuditEventsRes()
 }
 
+type GetEffectivenessScoreRes interface {
+	getEffectivenessScoreRes()
+}
+
+type GetRemediationHistoryContextRes interface {
+	getRemediationHistoryContextRes()
+}
+
 type GetWorkflowByIDRes interface {
 	getWorkflowByIDRes()
 }

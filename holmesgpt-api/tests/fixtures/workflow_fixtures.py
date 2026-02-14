@@ -37,7 +37,7 @@ hapi_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.insert(0, hapi_root)
 from datastorage import ApiClient, Configuration
 from datastorage.api import WorkflowCatalogAPIApi, WorkflowDiscoveryAPIApi
-from datastorage.models import RemediationWorkflow, MandatoryLabels
+from datastorage.models import CreateWorkflowFromOCIRequest, RemediationWorkflow, MandatoryLabels
 
 
 @dataclass
@@ -89,8 +89,26 @@ execution:
   engine: tekton
   bundle: {self.container_image}"""
 
+    def to_oci_request(self) -> CreateWorkflowFromOCIRequest:
+        """
+        Convert to CreateWorkflowFromOCIRequest (DD-WORKFLOW-017 compliant).
+
+        DD-WORKFLOW-017: Workflow registration accepts only an OCI image pullspec.
+        DataStorage pulls the image, extracts workflow-schema.yaml, validates it,
+        and populates all catalog fields from the extracted schema.
+        """
+        return CreateWorkflowFromOCIRequest(
+            container_image=self.container_image
+        )
+
     def to_remediation_workflow(self) -> RemediationWorkflow:
-        """Convert to RemediationWorkflow model (DD-API-001 compliant)"""
+        """
+        Convert to RemediationWorkflow model for test assertions.
+
+        NOTE: This is no longer used for workflow creation (see to_oci_request()).
+        Retained for tests that need to build expected RemediationWorkflow values
+        for response assertions.
+        """
         content = self.to_yaml_content()
         content_hash = hashlib.sha256(content.encode()).hexdigest()
 
@@ -233,10 +251,10 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     """
     Bootstrap workflow test data into Data Storage.
 
-    DD-API-001 COMPLIANCE: Uses OpenAPI generated client.
+    DD-WORKFLOW-017: Uses OCI pullspec-only registration. DataStorage pulls the OCI image,
+    extracts workflow-schema.yaml, validates it, and populates all catalog fields.
     DD-AUTH-014: Uses shared pool manager with ServiceAccount token injection.
     DD-TEST-011 v2.0: Captures workflow UUIDs for Mock LLM configuration.
-    DD-WORKFLOW-016: Workflows now require action_type (FK to action_type_taxonomy).
 
     Args:
         data_storage_url: Data Storage service URL
@@ -269,10 +287,10 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
 
         for workflow in workflows:
             try:
-                # DD-API-001: Use OpenAPI client to create workflow
-                remediation_workflow = workflow.to_remediation_workflow()
+                # DD-WORKFLOW-017: Register workflow via OCI pullspec only
+                oci_request = workflow.to_oci_request()
                 response = catalog_api.create_workflow(
-                    remediation_workflow=remediation_workflow,
+                    create_workflow_from_oci_request=oci_request,
                     _request_timeout=10
                 )
 
@@ -308,7 +326,7 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                                 results["workflow_id_map"][key] = entry.workflow_id
                                 break
                     except Exception as query_err:
-                        print(f"⚠️  Failed to query existing workflow UUID for {workflow.workflow_name}: {query_err}")
+                        print(f"Warning: Failed to query existing workflow UUID for {workflow.workflow_name}: {query_err}")
                 else:
                     results["failed"].append({
                         "workflow": workflow.workflow_name,
