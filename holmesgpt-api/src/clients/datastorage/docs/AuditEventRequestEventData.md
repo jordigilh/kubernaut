@@ -11,7 +11,7 @@ Name | Type | Description | Notes
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
 **signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
-**alert_name** | **str** | Name of the alert | 
+**alert_name** | **str** | Name of the original alert that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events.  | 
 **namespace** | **str** | Kubernetes namespace of the EffectivenessAssessment | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
@@ -80,7 +80,7 @@ Name | Type | Description | Notes
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 
 **started_at** | **datetime** | When the PipelineRun started execution | [optional] 
-**completed_at** | **datetime** | When the PipelineRun finished (success or failure) | [optional] 
+**completed_at** | **datetime** | Timestamp when the assessment completed (EA status.completedAt). Only present for assessment.completed events.  | [optional] 
 **duration** | **str** | Human-readable execution duration | [optional] 
 **failure_message** | **str** | Detailed failure message from Tekton | [optional] 
 **failed_task_name** | **str** | Name of the failed TaskRun (if identified) | [optional] 
@@ -169,6 +169,8 @@ Name | Type | Description | Notes
 **assessed** | **bool** | Whether the component was successfully assessed | [optional] 
 **score** | **float** | Component score (0.0-1.0), null if not assessed | [optional] 
 **details** | **str** | Human-readable details about the assessment result | [optional] 
+**components_assessed** | **List[str]** | List of component names that were assessed (e.g. [\&quot;health\&quot;,\&quot;hash\&quot;,\&quot;alert\&quot;,\&quot;metrics\&quot;]). Only present for assessment.completed events.  | [optional] 
+**resolution_time_seconds** | **float** | Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events.  | [optional] 
 **validity_deadline** | **datetime** | Computed validity deadline (only for assessment.scheduled events). EA.creationTimestamp + validityWindow from EM config.  | [optional] 
 **prometheus_check_after** | **datetime** | Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
 **alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 

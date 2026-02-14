@@ -39,7 +39,7 @@ ADR-034 Required Fields:
 Event Types (aiagent.{domain}.{action} convention):
   - aiagent.llm.request: LLM prompt sent to model
   - aiagent.llm.response: LLM analysis response received
-  - aiagent.llm.tool_call: LLM tool invocation (e.g., search_workflow_catalog)
+  - aiagent.llm.tool_call: LLM tool invocation (e.g., list_available_actions)
   - aiagent.workflow.validation_attempt: Validation retry event
   - aiagent.response.complete: Full HAPI response (provider perspective)
 
@@ -255,7 +255,7 @@ def create_tool_call_event(
         incident_id: Incident identifier for correlation
         remediation_id: Remediation request ID for audit correlation
         tool_call_index: Index of tool call in sequence (0-based)
-        tool_name: Name of tool invoked (e.g., "search_workflow_catalog")
+        tool_name: Name of tool invoked (e.g., "list_available_actions")
         tool_arguments: Arguments passed to tool
         tool_result: Result returned by tool
 

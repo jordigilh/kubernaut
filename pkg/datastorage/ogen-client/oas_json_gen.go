@@ -3789,6 +3789,34 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.AlertName.Set {
+					e.FieldStart("alert_name")
+					s.AlertName.Encode(e)
+				}
+			}
+			{
+				if s.ComponentsAssessed != nil {
+					e.FieldStart("components_assessed")
+					e.ArrStart()
+					for _, elem := range s.ComponentsAssessed {
+						e.Str(elem)
+					}
+					e.ArrEnd()
+				}
+			}
+			{
+				if s.CompletedAt.Set {
+					e.FieldStart("completed_at")
+					s.CompletedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.ResolutionTimeSeconds.Set {
+					e.FieldStart("resolution_time_seconds")
+					s.ResolutionTimeSeconds.Encode(e)
+				}
+			}
+			{
 				if s.ValidityDeadline.Set {
 					e.FieldStart("validity_deadline")
 					s.ValidityDeadline.Encode(e, json.EncodeDateTime)
@@ -6196,6 +6224,34 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.Reason.Set {
 					e.FieldStart("reason")
 					s.Reason.Encode(e)
+				}
+			}
+			{
+				if s.AlertName.Set {
+					e.FieldStart("alert_name")
+					s.AlertName.Encode(e)
+				}
+			}
+			{
+				if s.ComponentsAssessed != nil {
+					e.FieldStart("components_assessed")
+					e.ArrStart()
+					for _, elem := range s.ComponentsAssessed {
+						e.Str(elem)
+					}
+					e.ArrEnd()
+				}
+			}
+			{
+				if s.CompletedAt.Set {
+					e.FieldStart("completed_at")
+					s.CompletedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.ResolutionTimeSeconds.Set {
+					e.FieldStart("resolution_time_seconds")
+					s.ResolutionTimeSeconds.Encode(e)
 				}
 			}
 			{
@@ -9556,6 +9612,34 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.AlertName.Set {
+			e.FieldStart("alert_name")
+			s.AlertName.Encode(e)
+		}
+	}
+	{
+		if s.ComponentsAssessed != nil {
+			e.FieldStart("components_assessed")
+			e.ArrStart()
+			for _, elem := range s.ComponentsAssessed {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.CompletedAt.Set {
+			e.FieldStart("completed_at")
+			s.CompletedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.ResolutionTimeSeconds.Set {
+			e.FieldStart("resolution_time_seconds")
+			s.ResolutionTimeSeconds.Encode(e)
+		}
+	}
+	{
 		if s.ValidityDeadline.Set {
 			e.FieldStart("validity_deadline")
 			s.ValidityDeadline.Encode(e, json.EncodeDateTime)
@@ -9623,7 +9707,7 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [20]string{
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
 	0:  "event_type",
 	1:  "correlation_id",
 	2:  "namespace",
@@ -9633,17 +9717,21 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [20]string{
 	6:  "score",
 	7:  "details",
 	8:  "reason",
-	9:  "validity_deadline",
-	10: "prometheus_check_after",
-	11: "alertmanager_check_after",
-	12: "validity_window",
-	13: "stabilization_window",
-	14: "pre_remediation_spec_hash",
-	15: "post_remediation_spec_hash",
-	16: "hash_match",
-	17: "health_checks",
-	18: "metric_deltas",
-	19: "alert_resolution",
+	9:  "alert_name",
+	10: "components_assessed",
+	11: "completed_at",
+	12: "resolution_time_seconds",
+	13: "validity_deadline",
+	14: "prometheus_check_after",
+	15: "alertmanager_check_after",
+	16: "validity_window",
+	17: "stabilization_window",
+	18: "pre_remediation_spec_hash",
+	19: "post_remediation_spec_hash",
+	20: "hash_match",
+	21: "health_checks",
+	22: "metric_deltas",
+	23: "alert_resolution",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayload from json.
@@ -9748,6 +9836,55 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "alert_name":
+			if err := func() error {
+				s.AlertName.Reset()
+				if err := s.AlertName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_name\"")
+			}
+		case "components_assessed":
+			if err := func() error {
+				s.ComponentsAssessed = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.ComponentsAssessed = append(s.ComponentsAssessed, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"components_assessed\"")
+			}
+		case "completed_at":
+			if err := func() error {
+				s.CompletedAt.Reset()
+				if err := s.CompletedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completed_at\"")
+			}
+		case "resolution_time_seconds":
+			if err := func() error {
+				s.ResolutionTimeSeconds.Reset()
+				if err := s.ResolutionTimeSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resolution_time_seconds\"")
 			}
 		case "validity_deadline":
 			if err := func() error {
@@ -10349,9 +10486,21 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) encodeFields(e *jx.Enc
 			s.ErrorRateAfter.Encode(e)
 		}
 	}
+	{
+		if s.ThroughputBeforeRps.Set {
+			e.FieldStart("throughput_before_rps")
+			s.ThroughputBeforeRps.Encode(e)
+		}
+	}
+	{
+		if s.ThroughputAfterRps.Set {
+			e.FieldStart("throughput_after_rps")
+			s.ThroughputAfterRps.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [8]string{
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [10]string{
 	0: "cpu_before",
 	1: "cpu_after",
 	2: "memory_before",
@@ -10360,6 +10509,8 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [8]string{
 	5: "latency_p95_after_ms",
 	6: "error_rate_before",
 	7: "error_rate_after",
+	8: "throughput_before_rps",
+	9: "throughput_after_rps",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayloadMetricDeltas from json.
@@ -10449,6 +10600,26 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Decode(d *jx.Decoder) 
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error_rate_after\"")
+			}
+		case "throughput_before_rps":
+			if err := func() error {
+				s.ThroughputBeforeRps.Reset()
+				if err := s.ThroughputBeforeRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughput_before_rps\"")
+			}
+		case "throughput_after_rps":
+			if err := func() error {
+				s.ThroughputAfterRps.Reset()
+				if err := s.ThroughputAfterRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughput_after_rps\"")
 			}
 		default:
 			return d.Skip()
@@ -14525,8 +14696,10 @@ func (s *MandatoryLabels) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		if s.SignalType.Set {
+			e.FieldStart("signal_type")
+			s.SignalType.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("severity")
@@ -14568,11 +14741,9 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
 		case "signal_type":
-			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := d.Str()
-				s.SignalType = string(v)
-				if err != nil {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -14639,7 +14810,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00011110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -29718,8 +29889,10 @@ func (s *WorkflowSearchFilters) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *WorkflowSearchFilters) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		if s.SignalType.Set {
+			e.FieldStart("signal_type")
+			s.SignalType.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("severity")
@@ -29782,11 +29955,9 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
 		case "signal_type":
-			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := d.Str()
-				s.SignalType = string(v)
-				if err != nil {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -29884,7 +30055,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00011110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -43,7 +43,9 @@ class TestEffectivenessAssessmentAuditPayloadMetricDeltas(unittest.TestCase):
                 latency_p95_before_ms = 1.337,
                 latency_p95_after_ms = 1.337,
                 error_rate_before = 1.337,
-                error_rate_after = 1.337
+                error_rate_after = 1.337,
+                throughput_before_rps = 1.337,
+                throughput_after_rps = 1.337
             )
         else:
             return EffectivenessAssessmentAuditPayloadMetricDeltas(

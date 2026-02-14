@@ -179,7 +179,7 @@ class TestLLMAuditIntegration:
             incident_id="inc-12345",
             remediation_id="rem-67890",
             tool_call_index=0,
-            tool_name="search_workflow_catalog",
+            tool_name="list_available_actions",
             tool_arguments={"query": "OOMKilled critical"},
             tool_result={"workflows": []}
         )
@@ -198,7 +198,7 @@ class TestLLMAuditIntegration:
         payload = event.event_data.actual_instance
         assert payload.event_id is not None
         assert payload.incident_id is not None
-        assert payload.tool_name == "search_workflow_catalog"
+        assert payload.tool_name == "list_available_actions"
         assert payload.tool_arguments is not None
         assert payload.tool_result is not None
 

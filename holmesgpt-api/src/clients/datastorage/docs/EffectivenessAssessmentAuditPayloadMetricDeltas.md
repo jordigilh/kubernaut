@@ -14,6 +14,8 @@ Name | Type | Description | Notes
 **latency_p95_after_ms** | **float** | Request latency p95 in milliseconds after remediation (Phase B) | [optional] 
 **error_rate_before** | **float** | Error rate (5xx/total) before remediation (Phase B) | [optional] 
 **error_rate_after** | **float** | Error rate (5xx/total) after remediation (Phase B) | [optional] 
+**throughput_before_rps** | **float** | Request throughput (requests/second) before remediation | [optional] 
+**throughput_after_rps** | **float** | Request throughput (requests/second) after remediation | [optional] 
 
 ## Example
 
