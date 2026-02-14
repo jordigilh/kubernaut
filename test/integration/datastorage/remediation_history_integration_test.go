@@ -82,7 +82,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 
 		_, err = db.ExecContext(testCtx,
 			`INSERT INTO audit_events (
-				event_id, event_date, event_timestamp, event_type, version,
+				event_id, event_date, event_timestamp, event_type, event_version,
 				event_category, event_action, event_outcome, correlation_id,
 				resource_type, resource_id, actor_id, actor_type,
 				retention_days, is_sensitive, event_data

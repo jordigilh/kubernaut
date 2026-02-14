@@ -102,7 +102,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 
 		_, err = testDB.Exec(
 			`INSERT INTO audit_events (
-				event_id, event_date, event_timestamp, event_type, version,
+				event_id, event_date, event_timestamp, event_type, event_version,
 				event_category, event_action, event_outcome, correlation_id,
 				resource_type, resource_id, actor_id, actor_type,
 				retention_days, is_sensitive, event_data

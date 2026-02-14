@@ -132,6 +132,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				// ACT: Create workflow
@@ -177,7 +178,10 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
 				Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
 				Expect(dbName).To(Equal("Test Workflow"))
-				Expect(dbDescription).To(Equal("Integration test workflow"))
+				// Description is now StructuredDescription JSONB (BR-WORKFLOW-004, migration 026)
+			var parsedDesc models.StructuredDescription
+			Expect(json.Unmarshal([]byte(dbDescription), &parsedDesc)).To(Succeed())
+			Expect(parsedDesc.What).To(Equal("Integration test workflow"))
 				Expect(dbContent).To(ContainSubstring("scale"))
 				Expect(dbContentHash).To(Equal(contentHash))
 				Expect(dbStatus).To(Equal("active"))
@@ -230,6 +234,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err := workflowRepo.Create(ctx, testWorkflow)
@@ -249,6 +254,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err = workflowRepo.Create(ctx, duplicateWorkflow)
@@ -294,6 +300,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Status:          "active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
+				ActionType:      "ScaleReplicas",
 			}
 
 			err := workflowRepo.Create(ctx, testWorkflow)
@@ -313,7 +320,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
 				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
 				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
-				Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
+				// Description is now StructuredDescription (BR-WORKFLOW-004, migration 026)
+			Expect(retrievedWorkflow.Description.What).To(Equal("Test workflow for Get method"))
 				Expect(retrievedWorkflow.Status).To(Equal("active"))
 				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
@@ -394,6 +402,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          wf.status,
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err := workflowRepo.Create(ctx, testWorkflow)
@@ -532,6 +541,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Status:          "active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
+				ActionType:      "ScaleReplicas",
 			}
 
 			err := workflowRepo.Create(ctx, testWorkflow)
