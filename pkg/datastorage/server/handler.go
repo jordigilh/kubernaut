@@ -79,6 +79,12 @@ type RemediationHistoryQuerier interface {
 	QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 }
 
+// ActionTypeValidator validates action types against the taxonomy before DB insertion.
+// DD-WORKFLOW-016: Explicit validation for clean 400 errors instead of FK constraint 500.
+type ActionTypeValidator interface {
+	ActionTypeExists(ctx context.Context, actionType string) (bool, error)
+}
+
 // Handler handles REST API requests for Data Storage Service
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
@@ -92,6 +98,7 @@ type Handler struct {
 	actionTraceRepository   *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 	workflowRepo            *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
 	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
+	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
 	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
 	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI-based workflow registration
 	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
@@ -129,6 +136,15 @@ func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 func WithWorkflowLifecycleRepository(repo WorkflowLifecycleRepository) HandlerOption {
 	return func(h *Handler) {
 		h.workflowLifecycleRepo = repo
+	}
+}
+
+// WithActionTypeValidator sets the action type taxonomy validator.
+// DD-WORKFLOW-016 GAP-4: Validates action_type against taxonomy before DB insert
+// for clean 400 errors instead of FK constraint 500.
+func WithActionTypeValidator(v ActionTypeValidator) HandlerOption {
+	return func(h *Handler) {
+		h.actionTypeValidator = v
 	}
 }
 

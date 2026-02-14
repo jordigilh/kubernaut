@@ -303,6 +303,7 @@ func NewServer(
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
+		WithActionTypeValidator(workflowRepo),
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),

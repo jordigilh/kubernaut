@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
+
+// mockActionTypeValidator implements server.ActionTypeValidator for testing.
+type mockActionTypeValidator struct {
+	existsFn func(ctx context.Context, actionType string) (bool, error)
+}
+
+func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionType string) (bool, error) {
+	if m.existsFn != nil {
+		return m.existsFn(ctx, actionType)
+	}
+	return true, nil // default: all types valid
+}
 
 // ========================================
 // OCI-BASED WORKFLOW REGISTRATION HANDLER UNIT TESTS
@@ -230,6 +243,106 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 			Expect(problem).To(HaveKey("title"))
 			Expect(problem).To(HaveKey("status"))
 			Expect(problem).To(HaveKey("detail"))
+		})
+	})
+
+	// ========================================
+	// GAP-4: Action-Type Taxonomy Validation (DD-WORKFLOW-016)
+	// Explicit validation before DB FK constraint for clean 400 errors
+	// ========================================
+
+	Describe("UT-WF-017-008: Invalid action_type rejected with 400 (BR-WORKFLOW-016-001)", func() {
+		// Schema with an action_type not in the taxonomy
+		const invalidActionTypeSchemaYAML = `metadata:
+  workflowId: invalid-action
+  version: "v1.0.0"
+  description:
+    what: Tests invalid action type rejection
+    whenToUse: When testing taxonomy validation
+    whenNotToUse: N/A
+    preconditions: None
+actionType: NonExistentAction
+labels:
+  signalType: OOMKilled
+  severity: critical
+  component: pod
+  environment: [production]
+  priority: P0
+parameters:
+  - name: PARAM_A
+    type: string
+    description: A test parameter
+    required: true
+execution:
+  engine: tekton
+  bundle: quay.io/kubernaut/test:v1.0.0
+`
+
+		It("should return 400 when action_type is not in the taxonomy", func() {
+			// Arrange: valid schema but action_type not in taxonomy
+			puller := oci.NewMockImagePuller(invalidActionTypeSchemaYAML)
+			parser := schema.NewParser()
+			extractor := oci.NewSchemaExtractor(puller, parser)
+			validator := &mockActionTypeValidator{
+				existsFn: func(ctx context.Context, actionType string) (bool, error) {
+					// Only V1.0 taxonomy types are valid
+					validTypes := map[string]bool{
+						"ScaleReplicas": true, "RestartPod": true, "IncreaseCPULimits": true,
+						"IncreaseMemoryLimits": true, "RollbackDeployment": true, "DrainNode": true,
+						"DeletePod": true, "CordonNode": true, "ScaleHPA": true, "TaintNode": true,
+					}
+					return validTypes[actionType], nil
+				},
+			}
+			handler := server.NewHandler(nil,
+				server.WithSchemaExtractor(extractor),
+				server.WithActionTypeValidator(validator),
+			)
+			req := makeCreateRequest("quay.io/kubernaut/invalid-action:v1.0.0")
+			rr := httptest.NewRecorder()
+
+			// Act
+			handler.HandleCreateWorkflow(rr, req)
+
+			// Assert: 400 with RFC 7807 error about invalid action_type
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
+			var problem map[string]interface{}
+			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
+			Expect(problem["detail"]).To(ContainSubstring("action_type"))
+			Expect(problem["detail"]).To(ContainSubstring("NonExistentAction"))
+		})
+	})
+
+	Describe("UT-WF-017-009: Valid action_type accepted (BR-WORKFLOW-016-001)", func() {
+		It("should accept workflow with valid action_type from taxonomy", func() {
+			// Arrange: valid schema with valid action_type
+			puller := oci.NewMockImagePuller(validOCIRegistrationSchemaYAML)
+			parser := schema.NewParser()
+			extractor := oci.NewSchemaExtractor(puller, parser)
+			validator := &mockActionTypeValidator{
+				existsFn: func(ctx context.Context, actionType string) (bool, error) {
+					validTypes := map[string]bool{
+						"ScaleReplicas": true, "RestartPod": true, "IncreaseCPULimits": true,
+						"IncreaseMemoryLimits": true, "RollbackDeployment": true, "DrainNode": true,
+						"DeletePod": true, "CordonNode": true, "ScaleHPA": true, "TaintNode": true,
+					}
+					return validTypes[actionType], nil
+				},
+			}
+			handler := server.NewHandler(nil,
+				server.WithSchemaExtractor(extractor),
+				server.WithActionTypeValidator(validator),
+			)
+			req := makeCreateRequest("quay.io/kubernaut/workflows/scale-memory:v1.0.0")
+			rr := httptest.NewRecorder()
+
+			// Act
+			handler.HandleCreateWorkflow(rr, req)
+
+			// Assert: NOT 400 (validation passed; may get 201 or other status from missing DB)
+			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
+				"Should not reject valid action_type from taxonomy")
 		})
 	})
 })

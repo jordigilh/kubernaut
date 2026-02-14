@@ -106,6 +106,26 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Step 5b: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
+	// Explicit validation for clean 400 instead of FK constraint 500.
+	if h.actionTypeValidator != nil {
+		exists, err := h.actionTypeValidator.ActionTypeExists(r.Context(), workflow.ActionType)
+		if err != nil {
+			h.logger.Error(err, "Failed to validate action_type against taxonomy",
+				"action_type", workflow.ActionType,
+			)
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+				"Failed to validate action type", h.logger)
+			return
+		}
+		if !exists {
+			detail := fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+				detail, h.logger)
+			return
+		}
+	}
+
 	// Step 6: Create workflow in repository
 	if h.workflowRepo != nil {
 		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
