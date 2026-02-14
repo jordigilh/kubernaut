@@ -32,6 +32,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -39,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/config"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	//+kubebuilder:scaffold:imports
 )
@@ -55,6 +57,7 @@ func init() {
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
 	utilruntime.Must(notificationv1.AddToScheme(scheme))
+	utilruntime.Must(eav1.AddToScheme(scheme)) // ADR-EM-001: EA CRD scheme for EA creation on terminal phases
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -190,8 +193,18 @@ func main() {
 	roMetrics := rometrics.NewMetrics()
 	setupLog.Info("RemediationOrchestrator metrics initialized and registered")
 
+	// ADR-EM-001: Create EA creator for EffectivenessAssessment CRD creation on terminal phases
+	eaCreator := creator.NewEffectivenessAssessmentCreator(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		roMetrics,
+		cfg.EA.StabilizationWindow,
+	)
+	setupLog.Info("EffectivenessAssessment creator initialized (ADR-EM-001)",
+		"stabilizationWindow", cfg.EA.StabilizationWindow)
+
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
-	if err = controller.NewReconciler(
+	roReconciler := controller.NewReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		mgr.GetScheme(),
@@ -204,8 +217,12 @@ func main() {
 			Analyzing:  analyzingTimeout,
 			Executing:  executingTimeout,
 		},
-		nil, // Use default routing engine (production)
-	).SetupWithManager(mgr); err != nil {
+		nil,       // Use default routing engine (production)
+		eaCreator, // ADR-EM-001: EA creation on terminal phases
+	)
+	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
+	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}

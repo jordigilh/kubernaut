@@ -565,6 +565,61 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	return event, nil
 }
 
+// EventTypeRemediationWorkflowCreated is the event type for pre-remediation hash capture.
+// Per DD-EM-002: RO emits this event before creating the WorkflowExecution CRD.
+const EventTypeRemediationWorkflowCreated = "remediation.workflow_created"
+
+// ActionWorkflowCreated is the event action for workflow creation events.
+const ActionWorkflowCreated = "workflow_created"
+
+// RemediationWorkflowCreatedData holds the pre-remediation context for audit.
+type RemediationWorkflowCreatedData struct {
+	PreRemediationSpecHash string `json:"pre_remediation_spec_hash"`
+	TargetResource         string `json:"target_resource"`
+	WorkflowID             string `json:"workflow_id"`
+	WorkflowVersion        string `json:"workflow_version,omitempty"`
+}
+
+// BuildRemediationWorkflowCreatedEvent builds an audit event capturing the
+// pre-remediation spec hash before workflow execution begins (DD-EM-002).
+func (m *Manager) BuildRemediationWorkflowCreatedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	preRemediationSpecHash string,
+	targetResource string,
+	workflowID string,
+	workflowVersion string,
+) (*ogenclient.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeRemediationWorkflowCreated)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionWorkflowCreated)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:              api.RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated,
+		RrName:                 rrName,
+		Namespace:              namespace,
+		PreRemediationSpecHash: api.OptString{Value: preRemediationSpecHash, Set: true},
+		TargetResource:         api.OptString{Value: targetResource, Set: true},
+		WorkflowID:             api.OptString{Value: workflowID, Set: true},
+	}
+
+	if workflowVersion != "" {
+		payload.WorkflowVersion = api.OptString{Value: workflowVersion, Set: true}
+	}
+
+	event.EventData = api.NewAuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
 // ========================================
 // OGEN-MIGRATION: Helper functions for type conversion
 // ========================================
