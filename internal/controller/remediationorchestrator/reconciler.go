@@ -36,8 +36,11 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -68,6 +71,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
 // Reconciler reconciles RemediationRequest objects.
@@ -99,6 +103,12 @@ type Reconciler struct {
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
 	Metrics  *metrics.Metrics     // DD-METRICS-001: Dependency-injected metrics for testability
 	Recorder record.EventRecorder // K8s best practice: EventRecorder for debugging
+
+	// ADR-EM-001: EA creator for creating EffectivenessAssessment CRDs on terminal phases
+	eaCreator *creator.EffectivenessAssessmentCreator
+
+	// DD-EM-002: REST mapper for resolving Kind to GVK for pre-remediation hash capture
+	restMapper meta.RESTMapper
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -137,7 +147,7 @@ type TimeoutConfig struct {
 // The timeouts parameter configures all timeout durations (global and per-phase).
 // Zero values use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m.
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch in atomic updates.
-func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
+func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine, eaCreator ...*creator.EffectivenessAssessmentCreator) *Reconciler {
 	// DD-METRICS-001: Metrics are REQUIRED (dependency injection pattern)
 	// Metrics are initialized in main.go via rometrics.NewMetrics()
 	// If nil is passed here, it's a programming error in main.go
@@ -208,6 +218,11 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		Metrics:             m,
 		Recorder:            recorder,
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+	}
+
+	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
+	if len(eaCreator) > 0 && eaCreator[0] != nil {
+		r.eaCreator = eaCreator[0]
 	}
 
 	// ========================================
@@ -1494,6 +1509,9 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		}
 	}
 
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
 }
@@ -1600,6 +1618,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 				fmt.Sprintf("Remediation failed during %s: %s", failurePhase, failureReason))
 		}
 	}
+
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
@@ -1761,7 +1782,27 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
 
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
 	return ctrl.Result{}, nil
+}
+
+// createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
+// ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
+// even if EA creation fails. Errors are logged but not propagated.
+func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	if r.eaCreator == nil {
+		return
+	}
+
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr)
+	if err != nil {
+		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
+		return
+	}
+	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
 }
 
 // ========================================
@@ -2714,4 +2755,101 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 	}
 
 	return nil
+}
+
+// SetRESTMapper sets the REST mapper used by CapturePreRemediationHash to
+// resolve Kind strings to GroupVersionKind for the unstructured client.
+// DD-EM-002: Called from cmd/remediationorchestrator/main.go after manager setup.
+func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
+	r.restMapper = mapper
+}
+
+// CapturePreRemediationHash fetches the target resource via an uncached reader,
+// extracts its .spec, and computes the canonical SHA-256 hash (DD-EM-002).
+//
+// Returns empty string (no error) when:
+//   - The resource is not found (non-fatal: RO logs and continues)
+//   - The resource has no .spec field
+//   - The REST mapper cannot resolve the Kind
+//
+// This is exported for testability from the test package.
+func CapturePreRemediationHash(
+	ctx context.Context,
+	reader client.Reader,
+	restMapper meta.RESTMapper,
+	targetKind string,
+	targetName string,
+	targetNamespace string,
+) (string, error) {
+	logger := log.FromContext(ctx)
+
+	// Resolve Kind to GVK via REST mapper
+	gvk, err := resolveGVKForKind(restMapper, targetKind)
+	if err != nil {
+		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
+			"kind", targetKind, "error", err)
+		return "", nil
+	}
+
+	// Fetch the resource using unstructured client
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	key := client.ObjectKey{Name: targetName, Namespace: targetNamespace}
+	if err := reader.Get(ctx, key, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("Target resource not found, skipping pre-remediation hash",
+				"kind", targetKind, "name", targetName, "namespace", targetNamespace)
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to fetch target resource %s/%s: %w", targetKind, targetName, err)
+	}
+
+	// Extract .spec from unstructured
+	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	if err != nil {
+		return "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
+	}
+	if !found || spec == nil {
+		logger.V(1).Info("Target resource has no .spec, skipping pre-remediation hash",
+			"kind", targetKind, "name", targetName)
+		return "", nil
+	}
+
+	// Compute canonical hash
+	hash, err := canonicalhash.CanonicalSpecHash(spec)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
+	}
+
+	return hash, nil
+}
+
+// resolveGVKForKind resolves a Kind string to its GroupVersionKind using the
+// REST mapper. Falls back to common Kubernetes kinds if the mapper fails.
+func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
+	// Try well-known kinds first for reliability
+	switch kind {
+	case "Deployment":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, nil
+	case "StatefulSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, nil
+	case "DaemonSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}, nil
+	case "Pod":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, nil
+	case "Service":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
+	case "ConfigMap":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
+	}
+
+	// Fall back to REST mapper for custom resources
+	if mapper != nil {
+		gvk, err := mapper.RESTMapping(schema.GroupKind{Kind: kind})
+		if err == nil {
+			return gvk.GroupVersionKind, nil
+		}
+	}
+
+	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
 }

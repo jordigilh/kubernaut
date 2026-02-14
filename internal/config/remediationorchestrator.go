@@ -17,6 +17,22 @@ type Config struct {
 
 	// Controller runtime configuration (DD-005)
 	Controller ControllerConfig `yaml:"controller"`
+
+	// EffectivenessAssessment configuration (ADR-EM-001)
+	// Controls how the RO creates EffectivenessAssessment CRDs on remediation completion.
+	// The RO only sets StabilizationWindow; all other assessment parameters
+	// (PrometheusEnabled, AlertManagerEnabled, ValidityWindow) are EM-internal config.
+	EA EACreationConfig `yaml:"effectivenessAssessment"`
+}
+
+// EACreationConfig controls EffectivenessAssessment CRD creation by the RO.
+// ADR-EM-001: RO creates EA CRD when RR reaches terminal phase (Completed, Failed, TimedOut).
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
+type EACreationConfig struct {
+	// StabilizationWindow is the duration the EM should wait after remediation
+	// before starting assessment checks. Set in the EA spec by the RO.
+	// Default: 30s. Range: [1s, 1h].
+	StabilizationWindow time.Duration `yaml:"stabilizationWindow"`
 }
 
 // AuditConfig defines audit client behavior
@@ -81,6 +97,9 @@ func DefaultConfig() *Config {
 			HealthProbeAddr:  ":8081",
 			LeaderElection:   false,
 			LeaderElectionID: "remediationorchestrator.kubernaut.ai",
+		},
+		EA: EACreationConfig{
+			StabilizationWindow: 30 * time.Second, // ADR-EM-001: default 30s
 		},
 	}
 }
@@ -147,6 +166,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
+	}
+
+	// Validate EA creation config (ADR-EM-001)
+	if c.EA.StabilizationWindow < 1*time.Second {
+		return fmt.Errorf("effectivenessAssessment.stabilizationWindow must be at least 1s, got %v", c.EA.StabilizationWindow)
+	}
+	if c.EA.StabilizationWindow > 1*time.Hour {
+		return fmt.Errorf("effectivenessAssessment.stabilizationWindow must not exceed 1h, got %v", c.EA.StabilizationWindow)
 	}
 
 	return nil
