@@ -125,6 +125,7 @@ spec:
                 - no_execution
                 - metrics_timed_out
                 - expired
+                - spec_drift
                 type: string
               completedAt:
                 description: CompletedAt is the timestamp when the assessment finished.
@@ -142,6 +143,12 @@ spec:
                     description: AlertScore is the alert resolution score (0.0 or
                       1.0), nil if not yet assessed.
                     type: number
+                  currentSpecHash:
+                    description: |-
+                      CurrentSpecHash is the most recent hash of the target resource spec,
+                      re-computed on each reconcile after HashComputed is true (DD-EM-002 v1.1).
+                      If it differs from PostRemediationSpecHash, spec drift was detected.
+                    type: string
                   hashComputed:
                     description: HashComputed indicates whether the spec hash comparison
                       has been completed.

@@ -151,6 +151,12 @@ const (
 	// is created by the orchestrator.
 	EventReasonNotificationCreated = "NotificationCreated"
 
+	// EventReasonEffectivenessAssessmentCreated is emitted when an EffectivenessAssessment CRD
+	// is created by the orchestrator after successful remediation completion (ADR-EM-001).
+	// Type: Normal
+	// Priority: P2
+	EventReasonEffectivenessAssessmentCreated = "EffectivenessAssessmentCreated"
+
 	// EventReasonCooldownActive is emitted when a remediation is skipped because
 	// the target resource is under active cooldown.
 	EventReasonCooldownActive = "CooldownActive"
