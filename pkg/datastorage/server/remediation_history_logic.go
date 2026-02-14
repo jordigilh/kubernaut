@@ -419,3 +419,16 @@ func DetectRegression(entries []api.RemediationHistoryEntry) bool {
 	}
 	return false
 }
+
+// DetectRegressionFromTier2 checks whether any Tier 2 summary has a hashMatch of preRemediation.
+// Used when Tier 1 is empty but Tier 2 (24h-90d window) has historical events with matching hash.
+//
+// GAP-DS-1: Tier 2 must always run; regression can be detected from Tier 2 alone.
+func DetectRegressionFromTier2(summaries []api.RemediationHistorySummary) bool {
+	for _, s := range summaries {
+		if s.HashMatch.Set && s.HashMatch.Value == api.RemediationHistorySummaryHashMatchPreRemediation {
+			return true
+		}
+	}
+	return false
+}

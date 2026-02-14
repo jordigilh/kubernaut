@@ -388,5 +388,36 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				Expect(results).To(BeNil())
 			})
 		})
+
+		// GAP-DS-2: Query must filter by event_type to exclude EM events (effectiveness.hash.computed)
+		// that also carry pre_remediation_spec_hash. Only remediation.workflow_created should be returned.
+		Context("event_type filter (GAP-DS-2)", func() {
+			It("UT-RH-013: should filter by event_type=remediation.workflow_created (BR-HAPI-016)", func() {
+				eventData, _ := json.Marshal(map[string]interface{}{
+					"target_resource":           "prod/Deployment/my-app",
+					"pre_remediation_spec_hash": "sha256:aabb1122",
+					"workflow_type":             "ScaleUp",
+				})
+
+				rows := sqlmock.NewRows([]string{
+					"event_type", "event_data", "event_timestamp", "correlation_id",
+				}).AddRow(
+					"remediation.workflow_created", eventData,
+					time.Now().Add(-21*24*time.Hour), "rr-old-002",
+				)
+
+				// Regex requires event_type filter - without it, query would leak EM events
+				sqlMock.ExpectQuery(`event_type = 'remediation\.workflow_created'`).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(HaveLen(1))
+				Expect(results[0].EventType).To(Equal("remediation.workflow_created"))
+				Expect(results[0].CorrelationID).To(Equal("rr-old-002"))
+			})
+		})
 	})
 })

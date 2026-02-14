@@ -170,6 +170,7 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	query := `SELECT event_type, event_data, event_timestamp, correlation_id
 		FROM audit_events
 		WHERE event_data->>'pre_remediation_spec_hash' = $1
+		AND event_type = 'remediation.workflow_created'
 		AND event_timestamp >= $2
 		AND event_timestamp < $3
 		ORDER BY event_timestamp ASC`

@@ -300,6 +300,69 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.1)", func() {
 			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["regressionDetected"]).To(BeTrue())
 		})
+
+		// GAP-DS-1: Tier 2 must run even when Tier 1 is empty
+		// When Tier 1 has no events, regression can still be detected from Tier 2 (24h-90d window).
+		It("UT-RH-HANDLER-010: should run Tier 2 and detect regression when Tier 1 is empty (BR-HAPI-016)", func() {
+			tier2Called := false
+			tier2FixedTime := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
+
+			mock.queryROEventsByTargetFn = func(_ context.Context, _ string, _ time.Time) ([]repository.RawAuditRow, error) {
+				return nil, nil // Tier 1 empty
+			}
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+				tier2Called = true
+				Expect(specHash).To(Equal("sha256:abc123"))
+				// Tier 2 returns historical event with matching pre_remediation_spec_hash
+				return []repository.RawAuditRow{
+					{
+						EventType:      "remediation.workflow_created",
+						CorrelationID:  "rr-old-tier2",
+						EventTimestamp: tier2FixedTime,
+						EventData: map[string]interface{}{
+							"pre_remediation_spec_hash": "sha256:abc123",
+							"outcome":                  "success",
+							"signal_type":              "alert",
+							"workflow_type":            "ScaleUp",
+							"target_resource":          "default/Deployment/nginx",
+						},
+					},
+				}, nil
+			}
+			mock.queryEffectivenessEventsFn = func(_ context.Context, ids []string) (map[string][]*server.EffectivenessEvent, error) {
+				if len(ids) == 0 {
+					return nil, nil
+				}
+				Expect(ids).To(ConsistOf("rr-old-tier2"))
+				return map[string][]*server.EffectivenessEvent{
+					"rr-old-tier2": {
+						{
+							EventData: map[string]interface{}{
+								"event_type":                 "effectiveness.hash.computed",
+								"pre_remediation_spec_hash":  "sha256:abc123",
+								"post_remediation_spec_hash": "sha256:post_old",
+								"hash_match":                 false,
+							},
+						},
+					},
+				}, nil
+			}
+
+			req := httptest.NewRequest("GET", baseURL, nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(tier2Called).To(BeTrue(), "Tier 2 query must run even when Tier 1 is empty")
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["regressionDetected"]).To(BeTrue(), "Regression must be detected from Tier 2 when Tier 1 empty")
+
+			tier2 := resp["tier2"].(map[string]interface{})
+			t2chain := tier2["chain"].([]interface{})
+			Expect(t2chain).To(HaveLen(1))
+			Expect(t2chain[0].(map[string]interface{})["remediationUID"]).To(Equal("rr-old-tier2"))
+		})
 	})
 
 	// ========================================
