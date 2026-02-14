@@ -32,6 +32,7 @@ import (
 	sigyaml "sigs.k8s.io/yaml"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -703,12 +704,86 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			GinkgoWriter.Printf("  ⚠️  Reconstruction warnings: %v\n", reconstructionResp.Validation.Warnings)
 		}
 
+		// ================================================================
+		// Step 13: Verify EffectivenessAssessment CRD state (ADR-EM-001)
+		// ================================================================
+		// Merged from 02_em_full_pipeline_otlp_test.go and 03_em_full_pipeline_scrape_test.go.
+		// Those tests had a namespace bug (searched kubernaut-system instead of the
+		// dynamic testNamespace) and depended on Ginkgo file ordering which is not
+		// guaranteed. The unique assertions are consolidated here.
+		By("Step 13: Verifying EffectivenessAssessment CRD created by RO and assessed by EM")
+
+		// 13a: List EA CRDs in the test namespace — RO creates them in the RR's namespace
+		eaList := &eav1.EffectivenessAssessmentList{}
+		Eventually(func() int {
+			if err := apiReader.List(testCtx, eaList, client.InNamespace(testNamespace)); err != nil {
+				return 0
+			}
+			return len(eaList.Items)
+		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+			"At least one EA should be created by RO after remediation completion")
+
+		ea := eaList.Items[0]
+		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
+
+		// 13b: Verify EA spec fields (from 02_ assertions)
+		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
+			"EA correlationID should match RR name")
+		Expect(ea.Spec.TargetResource.Kind).ToNot(BeEmpty(),
+			"EA targetResource.kind should be set")
+		Expect(ea.Spec.TargetResource.Name).ToNot(BeEmpty(),
+			"EA targetResource.name should be set")
+		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
+			"EA stabilizationWindow should be positive (set by RO config)")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
+			"EA remediationRequestPhase should be Completed")
+
+		GinkgoWriter.Printf("  EA spec: correlationID=%s, target=%s/%s, stabilizationWindow=%v\n",
+			ea.Spec.CorrelationID, ea.Spec.TargetResource.Kind, ea.Spec.TargetResource.Name,
+			ea.Spec.Config.StabilizationWindow.Duration)
+
+		// 13c: Verify EA reached terminal phase (from 02_ and 03_ assertions)
+		Eventually(func() string {
+			fetched := &eav1.EffectivenessAssessment{}
+			if err := apiReader.Get(testCtx, client.ObjectKey{
+				Name: ea.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 3*time.Minute, 5*time.Second).Should(
+			BeElementOf(eav1.PhaseCompleted, eav1.PhaseFailed),
+			"EA should reach terminal phase (Completed or Failed)")
+
+		// Re-fetch to get final state
+		finalEA := &eav1.EffectivenessAssessment{}
+		Expect(apiReader.Get(testCtx, client.ObjectKey{
+			Name: ea.Name, Namespace: testNamespace,
+		}, finalEA)).To(Succeed())
+
+		// 13d: Verify health and hash components assessed (from 03_ assertions)
+		Expect(finalEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"Health component should be assessed")
+		Expect(finalEA.Status.Components.HashComputed).To(BeTrue(),
+			"Hash component should be computed")
+		Expect(finalEA.Status.Components.PostRemediationSpecHash).ToNot(BeEmpty(),
+			"Post-remediation spec hash should be set")
+
+		GinkgoWriter.Printf("  EA final state: phase=%s, reason=%s, health=%v (score=%v), hash=%v, alert=%v, metrics=%v\n",
+			finalEA.Status.Phase, finalEA.Status.AssessmentReason,
+			finalEA.Status.Components.HealthAssessed, finalEA.Status.Components.HealthScore,
+			finalEA.Status.Components.HashComputed,
+			finalEA.Status.Components.AlertAssessed, finalEA.Status.Components.MetricsAssessed)
+		GinkgoWriter.Printf("  PostRemediationSpecHash: %s\n", finalEA.Status.Components.PostRemediationSpecHash)
+		GinkgoWriter.Println("  ✅ EA CRD verified: created by RO, assessed by EM")
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE (with audit verification)")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification → EM ✅")
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated, temporally ordered ✅")
 		GinkgoWriter.Println("  RR Reconstruction: valid, high completeness ✅")
+		GinkgoWriter.Println("  EA CRD: created by RO, assessed by EM ✅")
 	})
 })
 
