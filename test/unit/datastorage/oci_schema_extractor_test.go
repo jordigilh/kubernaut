@@ -152,6 +152,43 @@ parameters:
 			Expect(desc.Preconditions).To(ContainSubstring("Deployment or StatefulSet"))
 		})
 
+		It("UT-DS-017-008: should accept schema without signalType (DD-WORKFLOW-016)", func() {
+			// DD-WORKFLOW-016: signalType is optional metadata, not required for registration
+			noSignalTypeYAML := `metadata:
+  workflowId: no-signal-type
+  version: "1.0.0"
+  description:
+    what: Workflow without signalType
+    whenToUse: When signalType is optional
+actionType: RestartPod
+labels:
+  severity: critical
+  environment: [production]
+  component: pod
+  priority: p1
+parameters:
+  - name: PARAM
+    type: string
+    required: true
+    description: A param
+execution:
+  engine: tekton
+  bundle: quay.io/test/no-signal:v1.0.0
+`
+			parsedSchema, err := parser.ParseAndValidate(noSignalTypeYAML)
+			Expect(err).ToNot(HaveOccurred(), "schema without signalType should be accepted")
+			Expect(parsedSchema.Labels.SignalType).To(BeEmpty())
+
+			// Labels JSONB should NOT contain signalType key when empty
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels).ToNot(HaveKey("signalType"),
+				"signalType should be omitted from labels JSONB when empty")
+			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
+		})
+
 		It("UT-DS-017-009: should extract structured description as JSON", func() {
 			// BR-WORKFLOW-004: description stored as JSONB in DB
 			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)

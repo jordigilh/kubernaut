@@ -161,11 +161,15 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		return nil, fmt.Errorf("schema is nil")
 	}
 
-	// Build labels map from mandatory label fields (camelCase keys)
-	// DD-WORKFLOW-016: environment is []string for JSONB array storage
+	// Build labels map from label fields (camelCase keys)
+	// DD-WORKFLOW-016: signalType is optional, environment is []string for JSONB array storage
 	labels := map[string]interface{}{
-		"signalType": schema.Labels.SignalType,
-		"severity":   schema.Labels.Severity,
+		"severity": schema.Labels.Severity,
+	}
+
+	// DD-WORKFLOW-016: signalType is optional metadata -- only include when non-empty
+	if schema.Labels.SignalType != "" {
+		labels["signalType"] = schema.Labels.SignalType
 	}
 
 	// Add required labels
