@@ -43,7 +43,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-016 v1.1)", Label("integration", "remediation-history"), Ordered, func() {
+var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-016 v1.1)", Label("integration", "remediation-history"), func() {
 	var (
 		rhRepo          *repository.RemediationHistoryRepository
 		testCtx         context.Context
