@@ -465,6 +465,12 @@ type RemediationRequestStatus struct {
 	// +optional
 	NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
 
+	// EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
+	// Set by the RO after creating the EA CRD on terminal phase transitions.
+	// Reference: ADR-EM-001
+	// +optional
+	EffectivenessAssessmentRef *corev1.ObjectReference `json:"effectivenessAssessmentRef,omitempty"`
+
 	// Approval notification tracking (BR-ORCH-001)
 	// Prevents duplicate notifications when AIAnalysis requires approval
 	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`

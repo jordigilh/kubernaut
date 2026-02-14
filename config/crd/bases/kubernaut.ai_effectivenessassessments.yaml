@@ -76,6 +76,33 @@ spec:
                   Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).
                 minLength: 1
                 type: string
+              remediationCreatedAt:
+                description: |-
+                  RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.
+                  Set by the RO at EA creation time from rr.CreationTimestamp.
+                  Used by the audit manager to compute resolution_time_seconds in the
+                  assessment.completed event (CompletedAt - RemediationCreatedAt).
+                format: date-time
+                type: string
+              remediationRequestPhase:
+                description: |-
+                  RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
+                  the EA was created. Captured as an immutable spec field so the EM can branch
+                  assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+                  Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
+                  for immutability and security.
+                enum:
+                - Completed
+                - Failed
+                - TimedOut
+                type: string
+              signalName:
+                description: |-
+                  SignalName is the original alert/signal name from the parent RemediationRequest.
+                  Set by the RO at EA creation time from rr.Spec.SignalName.
+                  Used by the audit manager to populate the alert_name field in assessment.completed
+                  events (OBS-1: distinct from CorrelationID which is the RR name).
+                type: string
               targetResource:
                 description: TargetResource identifies the Kubernetes resource that
                   was remediated.
@@ -98,6 +125,7 @@ spec:
             required:
             - config
             - correlationID
+            - remediationRequestPhase
             - targetResource
             type: object
             x-kubernetes-validations:

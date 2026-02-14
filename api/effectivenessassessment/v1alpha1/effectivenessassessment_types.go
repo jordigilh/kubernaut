@@ -94,6 +94,20 @@ type EffectivenessAssessmentSpec struct {
 	// Config contains the assessment configuration parameters.
 	// +kubebuilder:validation:Required
 	Config EAConfig `json:"config"`
+
+	// RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.
+	// Set by the RO at EA creation time from rr.CreationTimestamp.
+	// Used by the audit manager to compute resolution_time_seconds in the
+	// assessment.completed event (CompletedAt - RemediationCreatedAt).
+	// +optional
+	RemediationCreatedAt *metav1.Time `json:"remediationCreatedAt,omitempty"`
+
+	// SignalName is the original alert/signal name from the parent RemediationRequest.
+	// Set by the RO at EA creation time from rr.Spec.SignalName.
+	// Used by the audit manager to populate the alert_name field in assessment.completed
+	// events (OBS-1: distinct from CorrelationID which is the RR name).
+	// +optional
+	SignalName string `json:"signalName,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.
