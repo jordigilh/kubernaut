@@ -49,6 +49,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -514,6 +515,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
 		if err := r.trackNotificationStatus(ctx, rr); err != nil {
 			logger.Error(err, "Failed to track notification status in terminal phase")
+			// Non-fatal: continue to return
+		}
+
+		// ADR-EM-001, GAP-RO-2: Track effectiveness assessment status for terminal RRs
+		if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
+			logger.Error(err, "Failed to track effectiveness assessment status in terminal phase")
 			// Non-fatal: continue to return
 		}
 
@@ -1509,12 +1516,21 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 				logger.Error(notifErr, "Failed to create completion notification")
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
-				// Issue #88, BR-ORCH-035 AC-2: Append completion NT to NotificationRequestRefs
-				// Without this, trackNotificationStatus cannot find the NT for delivery tracking.
-				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
-					Name:      notifName,
-					Namespace: rr.Namespace,
-				})
+				// Issue #88, BR-ORCH-035 AC-2: Persist completion NT ref to NotificationRequestRefs
+				// Uses helpers.UpdateRemediationRequestStatus to ensure persistence (Batch 3 fix:
+				// previous in-memory-only append was never written to the API server because the
+				// phase status update at line ~1444 had already completed).
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+						Kind:       "NotificationRequest",
+						Name:       notifName,
+						Namespace:  rr.Namespace,
+						APIVersion: "notification.kubernaut.ai/v1alpha1",
+					})
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
+				}
 				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
 				if r.Recorder != nil {
 					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
@@ -1817,6 +1833,8 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 // createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
 // ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
 // even if EA creation fails. Errors are logged but not propagated.
+// Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
+// so that trackEffectivenessStatus can find the EA for condition tracking.
 func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) {
 	if r.eaCreator == nil {
 		return
@@ -1829,6 +1847,29 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 		return
 	}
 	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
+
+	// ADR-EM-001, Batch 3: Persist EA ref on RR status for trackEffectivenessStatus.
+	// Uses helpers.UpdateRemediationRequestStatus for atomic persistence (same pattern
+	// as NT ref tracking in handleGlobalTimeout).
+	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
+	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			Kind:       "EffectivenessAssessment",
+			Name:       name,
+			Namespace:  rr.Namespace,
+			APIVersion: eav1.GroupVersion.String(),
+		}
+		meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
+			Type:    ConditionEffectivenessAssessed,
+			Status:  metav1.ConditionFalse,
+			Reason:  "AssessmentInProgress",
+			Message: fmt.Sprintf("EffectivenessAssessment %s created, assessment in progress", name),
+		})
+		return nil
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist EA ref on RR status (non-critical)", "eaName", name)
+	}
 }
 
 // ========================================
@@ -2411,6 +2452,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&workflowexecutionv1.WorkflowExecution{}).
 		Owns(&remediationv1.RemediationApprovalRequest{}).
 		Owns(&notificationv1.NotificationRequest{}). // BR-ORCH-029/030: Watch notification lifecycle
+		Owns(&eav1.EffectivenessAssessment{}).       // ADR-EM-001, GAP-RO-3: Watch EA for EffectivenessAssessed condition
 		// V1.0 P1 FIX: GenerationChangedPredicate removed to allow child CRD status changes
 		// Previous optimization filtered status updates, breaking integration tests (RO_INTEGRATION_CRITICAL_BUG_JAN_01_2026.md)
 		// Rationale: Correctness > Performance for P0 orchestration service
