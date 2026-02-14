@@ -31,7 +31,7 @@ class WorkflowSearchFilters(BaseModel):
     """
     WorkflowSearchFilters
     """ # noqa: E501
-    signal_type: StrictStr = Field(description="Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.)")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.)")
     severity: StrictStr = Field(description="Severity level (mandatory: critical, high, medium, low)")
     component: StrictStr = Field(description="Component type (mandatory: pod, node, deployment, etc.)")
     environment: StrictStr = Field(description="Environment filter (mandatory, single value from Signal Processing)")

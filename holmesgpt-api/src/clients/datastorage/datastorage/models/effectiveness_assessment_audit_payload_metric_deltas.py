@@ -38,7 +38,9 @@ class EffectivenessAssessmentAuditPayloadMetricDeltas(BaseModel):
     latency_p95_after_ms: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Request latency p95 in milliseconds after remediation (Phase B)")
     error_rate_before: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Error rate (5xx/total) before remediation (Phase B)")
     error_rate_after: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Error rate (5xx/total) after remediation (Phase B)")
-    __properties: ClassVar[List[str]] = ["cpu_before", "cpu_after", "memory_before", "memory_after", "latency_p95_before_ms", "latency_p95_after_ms", "error_rate_before", "error_rate_after"]
+    throughput_before_rps: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Request throughput (requests/second) before remediation")
+    throughput_after_rps: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Request throughput (requests/second) after remediation")
+    __properties: ClassVar[List[str]] = ["cpu_before", "cpu_after", "memory_before", "memory_after", "latency_p95_before_ms", "latency_p95_after_ms", "error_rate_before", "error_rate_after", "throughput_before_rps", "throughput_after_rps"]
 
     model_config = {
         "populate_by_name": True,
@@ -117,6 +119,16 @@ class EffectivenessAssessmentAuditPayloadMetricDeltas(BaseModel):
         if self.error_rate_after is None and "error_rate_after" in self.model_fields_set:
             _dict['error_rate_after'] = None
 
+        # set to None if throughput_before_rps (nullable) is None
+        # and model_fields_set contains the field
+        if self.throughput_before_rps is None and "throughput_before_rps" in self.model_fields_set:
+            _dict['throughput_before_rps'] = None
+
+        # set to None if throughput_after_rps (nullable) is None
+        # and model_fields_set contains the field
+        if self.throughput_after_rps is None and "throughput_after_rps" in self.model_fields_set:
+            _dict['throughput_after_rps'] = None
+
         return _dict
 
     @classmethod
@@ -136,7 +148,9 @@ class EffectivenessAssessmentAuditPayloadMetricDeltas(BaseModel):
             "latency_p95_before_ms": obj.get("latency_p95_before_ms"),
             "latency_p95_after_ms": obj.get("latency_p95_after_ms"),
             "error_rate_before": obj.get("error_rate_before"),
-            "error_rate_after": obj.get("error_rate_after")
+            "error_rate_after": obj.get("error_rate_after"),
+            "throughput_before_rps": obj.get("throughput_before_rps"),
+            "throughput_after_rps": obj.get("throughput_after_rps")
         })
         return _obj
 

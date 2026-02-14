@@ -1233,6 +1233,24 @@ func (s *EffectivenessAssessmentAuditPayload) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.ResolutionTimeSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "resolution_time_seconds",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.MetricDeltas.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -1489,6 +1507,42 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "error_rate_after",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ThroughputBeforeRps.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "throughput_before_rps",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ThroughputAfterRps.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "throughput_after_rps",
 			Error: err,
 		})
 	}

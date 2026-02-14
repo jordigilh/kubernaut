@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
@@ -29,9 +29,9 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)
+    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)
     """ # noqa: E501
-    signal_type: StrictStr = Field(description="Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)")
     severity: StrictStr = Field(description="Severity level this workflow is designed for ('*' matches any severity)")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")

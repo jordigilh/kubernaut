@@ -40,7 +40,7 @@ class TestLLMToolCallPayload(unittest.TestCase):
                 event_id = '',
                 incident_id = '',
                 tool_call_index = 0,
-                tool_name = 'search_workflow_catalog',
+                tool_name = 'list_available_actions',
                 tool_arguments = { },
                 tool_result = None,
                 tool_result_preview = ''
@@ -51,7 +51,7 @@ class TestLLMToolCallPayload(unittest.TestCase):
                 event_id = '',
                 incident_id = '',
                 tool_call_index = 0,
-                tool_name = 'search_workflow_catalog',
+                tool_name = 'list_available_actions',
                 tool_result = None,
         )
         """

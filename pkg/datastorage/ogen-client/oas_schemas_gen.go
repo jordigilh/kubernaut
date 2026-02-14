@@ -4937,6 +4937,19 @@ type EffectivenessAssessmentAuditPayload struct {
 	Details OptString `json:"details"`
 	// Assessment completion reason (only for assessment.completed events).
 	Reason OptString `json:"reason"`
+	// Name of the original alert that triggered the remediation pipeline.
+	// Extracted from EA spec target resource context. Only present for assessment.completed events.
+	AlertName OptString `json:"alert_name"`
+	// List of component names that were assessed (e.g. ["health","hash","alert","metrics"]).
+	// Only present for assessment.completed events.
+	ComponentsAssessed []string `json:"components_assessed"`
+	// Timestamp when the assessment completed (EA status.completedAt).
+	// Only present for assessment.completed events.
+	CompletedAt OptDateTime `json:"completed_at"`
+	// Seconds from RemediationRequest creation to assessment completion.
+	// Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set.
+	// Only present for assessment.completed events.
+	ResolutionTimeSeconds OptNilFloat64 `json:"resolution_time_seconds"`
 	// Computed validity deadline (only for assessment.scheduled events).
 	// EA.creationTimestamp + validityWindow from EM config.
 	ValidityDeadline OptDateTime `json:"validity_deadline"`
@@ -5023,6 +5036,26 @@ func (s *EffectivenessAssessmentAuditPayload) GetDetails() OptString {
 // GetReason returns the value of Reason.
 func (s *EffectivenessAssessmentAuditPayload) GetReason() OptString {
 	return s.Reason
+}
+
+// GetAlertName returns the value of AlertName.
+func (s *EffectivenessAssessmentAuditPayload) GetAlertName() OptString {
+	return s.AlertName
+}
+
+// GetComponentsAssessed returns the value of ComponentsAssessed.
+func (s *EffectivenessAssessmentAuditPayload) GetComponentsAssessed() []string {
+	return s.ComponentsAssessed
+}
+
+// GetCompletedAt returns the value of CompletedAt.
+func (s *EffectivenessAssessmentAuditPayload) GetCompletedAt() OptDateTime {
+	return s.CompletedAt
+}
+
+// GetResolutionTimeSeconds returns the value of ResolutionTimeSeconds.
+func (s *EffectivenessAssessmentAuditPayload) GetResolutionTimeSeconds() OptNilFloat64 {
+	return s.ResolutionTimeSeconds
 }
 
 // GetValidityDeadline returns the value of ValidityDeadline.
@@ -5123,6 +5156,26 @@ func (s *EffectivenessAssessmentAuditPayload) SetDetails(val OptString) {
 // SetReason sets the value of Reason.
 func (s *EffectivenessAssessmentAuditPayload) SetReason(val OptString) {
 	s.Reason = val
+}
+
+// SetAlertName sets the value of AlertName.
+func (s *EffectivenessAssessmentAuditPayload) SetAlertName(val OptString) {
+	s.AlertName = val
+}
+
+// SetComponentsAssessed sets the value of ComponentsAssessed.
+func (s *EffectivenessAssessmentAuditPayload) SetComponentsAssessed(val []string) {
+	s.ComponentsAssessed = val
+}
+
+// SetCompletedAt sets the value of CompletedAt.
+func (s *EffectivenessAssessmentAuditPayload) SetCompletedAt(val OptDateTime) {
+	s.CompletedAt = val
+}
+
+// SetResolutionTimeSeconds sets the value of ResolutionTimeSeconds.
+func (s *EffectivenessAssessmentAuditPayload) SetResolutionTimeSeconds(val OptNilFloat64) {
+	s.ResolutionTimeSeconds = val
 }
 
 // SetValidityDeadline sets the value of ValidityDeadline.
@@ -5487,6 +5540,10 @@ type EffectivenessAssessmentAuditPayloadMetricDeltas struct {
 	ErrorRateBefore OptNilFloat64 `json:"error_rate_before"`
 	// Error rate (5xx/total) after remediation (Phase B).
 	ErrorRateAfter OptNilFloat64 `json:"error_rate_after"`
+	// Request throughput (requests/second) before remediation.
+	ThroughputBeforeRps OptNilFloat64 `json:"throughput_before_rps"`
+	// Request throughput (requests/second) after remediation.
+	ThroughputAfterRps OptNilFloat64 `json:"throughput_after_rps"`
 }
 
 // GetCPUBefore returns the value of CPUBefore.
@@ -5529,6 +5586,16 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetErrorRateAfter() Op
 	return s.ErrorRateAfter
 }
 
+// GetThroughputBeforeRps returns the value of ThroughputBeforeRps.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetThroughputBeforeRps() OptNilFloat64 {
+	return s.ThroughputBeforeRps
+}
+
+// GetThroughputAfterRps returns the value of ThroughputAfterRps.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetThroughputAfterRps() OptNilFloat64 {
+	return s.ThroughputAfterRps
+}
+
 // SetCPUBefore sets the value of CPUBefore.
 func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetCPUBefore(val OptNilFloat64) {
 	s.CPUBefore = val
@@ -5567,6 +5634,16 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetErrorRateBefore(val
 // SetErrorRateAfter sets the value of ErrorRateAfter.
 func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetErrorRateAfter(val OptNilFloat64) {
 	s.ErrorRateAfter = val
+}
+
+// SetThroughputBeforeRps sets the value of ThroughputBeforeRps.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetThroughputBeforeRps(val OptNilFloat64) {
+	s.ThroughputBeforeRps = val
+}
+
+// SetThroughputAfterRps sets the value of ThroughputAfterRps.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetThroughputAfterRps(val OptNilFloat64) {
+	s.ThroughputAfterRps = val
 }
 
 // Individual component assessment scores.
@@ -7964,11 +8041,11 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 // LivenessCheckOK is response for LivenessCheck operation.
 type LivenessCheckOK struct{}
 
-// 5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support).
+// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
-	// Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff).
-	SignalType string `json:"signal_type"`
+	// Signal type this workflow handles (optional metadata per DD-WORKFLOW-016).
+	SignalType OptString `json:"signal_type"`
 	// Severity level this workflow is designed for ('*' matches any severity).
 	Severity MandatoryLabelsSeverity `json:"severity"`
 	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
@@ -7980,7 +8057,7 @@ type MandatoryLabels struct {
 }
 
 // GetSignalType returns the value of SignalType.
-func (s *MandatoryLabels) GetSignalType() string {
+func (s *MandatoryLabels) GetSignalType() OptString {
 	return s.SignalType
 }
 
@@ -8005,7 +8082,7 @@ func (s *MandatoryLabels) GetPriority() MandatoryLabelsPriority {
 }
 
 // SetSignalType sets the value of SignalType.
-func (s *MandatoryLabels) SetSignalType(val string) {
+func (s *MandatoryLabels) SetSignalType(val OptString) {
 	s.SignalType = val
 }
 
@@ -19185,8 +19262,8 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
-	// Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.).
-	SignalType string `json:"signal_type"`
+	// Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.).
+	SignalType OptString `json:"signal_type"`
 	// Severity level (mandatory: critical, high, medium, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Component type (mandatory: pod, node, deployment, etc.).
@@ -19202,7 +19279,7 @@ type WorkflowSearchFilters struct {
 }
 
 // GetSignalType returns the value of SignalType.
-func (s *WorkflowSearchFilters) GetSignalType() string {
+func (s *WorkflowSearchFilters) GetSignalType() OptString {
 	return s.SignalType
 }
 
@@ -19242,7 +19319,7 @@ func (s *WorkflowSearchFilters) GetStatus() []WorkflowSearchFiltersStatusItem {
 }
 
 // SetSignalType sets the value of SignalType.
-func (s *WorkflowSearchFilters) SetSignalType(val string) {
+func (s *WorkflowSearchFilters) SetSignalType(val OptString) {
 	s.SignalType = val
 }
 

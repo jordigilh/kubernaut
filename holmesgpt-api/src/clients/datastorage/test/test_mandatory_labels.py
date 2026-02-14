@@ -44,7 +44,6 @@ class TestMandatoryLabels(unittest.TestCase):
             )
         else:
             return MandatoryLabels(
-                signal_type = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
                 environment = ["staging","production"],
