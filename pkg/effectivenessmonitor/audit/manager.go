@@ -214,7 +214,7 @@ type AlertAssessedData struct {
 // MetricsAssessedData contains the structured metric delta fields for the
 // effectiveness.metrics.assessed audit event (DD-017 v2.5 typed sub-objects).
 // Phase A (V1.0): Only CPUBefore/CPUAfter are populated.
-// Phase B: Memory, latency, error rate fields will be added.
+// Phase B: Memory, latency, error rate, throughput fields will be added.
 type MetricsAssessedData struct {
 	// CPUBefore is the CPU utilization before remediation (nil if unavailable).
 	CPUBefore *float64
@@ -232,6 +232,10 @@ type MetricsAssessedData struct {
 	ErrorRateBefore *float64
 	// ErrorRateAfter is the error rate after remediation (Phase B, nil for now).
 	ErrorRateAfter *float64
+	// ThroughputBeforeRPS is the request throughput (req/s) before remediation (nil if unavailable).
+	ThroughputBeforeRPS *float64
+	// ThroughputAfterRPS is the request throughput (req/s) after remediation (nil if unavailable).
+	ThroughputAfterRPS *float64
 }
 
 // RecordHealthAssessed records the effectiveness.health.assessed audit event with
@@ -327,6 +331,12 @@ func (m *Manager) RecordMetricsAssessed(ctx context.Context, ea *eav1.Effectiven
 	}
 	if metricsData.ErrorRateAfter != nil {
 		md.ErrorRateAfter = ogenclient.NewOptNilFloat64(*metricsData.ErrorRateAfter)
+	}
+	if metricsData.ThroughputBeforeRPS != nil {
+		md.ThroughputBeforeRps = ogenclient.NewOptNilFloat64(*metricsData.ThroughputBeforeRPS)
+	}
+	if metricsData.ThroughputAfterRPS != nil {
+		md.ThroughputAfterRps = ogenclient.NewOptNilFloat64(*metricsData.ThroughputAfterRPS)
 	}
 	payload.MetricDeltas = ogenclient.NewOptEffectivenessAssessmentAuditPayloadMetricDeltas(md)
 
@@ -526,6 +536,13 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 // RecordAssessmentCompleted records the final assessment.completed audit event.
 // This is called when the EA transitions to the Completed phase.
 //
+// ADR-EM-001 Section 9.2: Populates all enrichment fields:
+//   - alert_name: Original alert name from EA spec SignalName (OBS-1)
+//   - components_assessed: List of assessed component names
+//   - completed_at: EA completion timestamp
+//   - assessment_duration_seconds: Time from RR creation to assessment completion (OBS-2)
+//   - (throughput is part of metric_deltas in component events, not here)
+//
 // Parameters:
 //   - ctx: Context for the audit call
 //   - ea: The EffectivenessAssessment that completed
@@ -549,6 +566,42 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	// Set details with the assessment reason
 	payload.Details = ogenclient.NewOptString(fmt.Sprintf("Assessment completed: %s", reason))
 
+	// ADR-EM-001, Batch 3: Populate all 5 audit payload gaps.
+
+	// 1. alert_name: Original alert/signal name from the parent RemediationRequest.
+	//    OBS-1: Uses ea.Spec.SignalName (set by the RO creator from rr.Spec.SignalName),
+	//    which is the actual alert name — distinct from CorrelationID (the RR name).
+	payload.AlertName = ogenclient.NewOptString(ea.Spec.SignalName)
+
+	// 2. components_assessed: Build array from EA status component flags.
+	var assessed []string
+	if ea.Status.Components.HealthAssessed {
+		assessed = append(assessed, "health")
+	}
+	if ea.Status.Components.HashComputed {
+		assessed = append(assessed, "hash")
+	}
+	if ea.Status.Components.AlertAssessed {
+		assessed = append(assessed, "alert")
+	}
+	if ea.Status.Components.MetricsAssessed {
+		assessed = append(assessed, "metrics")
+	}
+	payload.ComponentsAssessed = assessed
+
+	// 3. completed_at: EA completion timestamp.
+	if ea.Status.CompletedAt != nil {
+		payload.CompletedAt = ogenclient.NewOptDateTime(ea.Status.CompletedAt.Time)
+	}
+
+	// 4. assessment_duration_seconds (OBS-2: renamed from resolution_time_seconds):
+	//    Time from RR creation to assessment completion. Distinct from
+	//    alert_resolution.resolution_time_seconds which is alert-level.
+	if ea.Spec.RemediationCreatedAt != nil && ea.Status.CompletedAt != nil {
+		duration := ea.Status.CompletedAt.Time.Sub(ea.Spec.RemediationCreatedAt.Time).Seconds()
+		payload.AssessmentDurationSeconds = ogenclient.NewOptNilFloat64(duration)
+	}
+
 	event := pkgaudit.NewAuditEventRequest()
 	event.Version = "1.0"
 	pkgaudit.SetEventType(event, string(emtypes.AuditAssessmentCompleted))
@@ -570,6 +623,9 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 
 	m.logger.V(1).Info("Assessment completed audit event stored",
 		"correlationID", ea.Spec.CorrelationID,
-		"reason", reason)
+		"reason", reason,
+		"alertName", ea.Spec.SignalName,
+		"componentsAssessed", assessed,
+	)
 	return nil
 }
