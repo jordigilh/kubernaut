@@ -521,6 +521,106 @@ class TestWorkflowDiscoveryToolset:
         for tool in toolset.tools:
             assert tool._detected_labels is detected_labels
 
+    def test_toolset_accepts_custom_labels(self):
+        """
+        DD-HAPI-001: WorkflowDiscoveryToolset accepts custom_labels in constructor.
+
+        Ported from legacy test_custom_labels_auto_append_dd_hapi_001.py
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+
+        custom = {"constraint": ["cost-constrained", "stateful-safe"]}
+        toolset = WorkflowDiscoveryToolset(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            custom_labels=custom,
+        )
+
+        for tool in toolset.tools:
+            assert tool._custom_labels == custom
+
+    def test_toolset_handles_none_custom_labels(self):
+        """
+        DD-HAPI-001: custom_labels=None defaults to empty dict.
+
+        Ported from legacy test_custom_labels_auto_append_dd_hapi_001.py
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+
+        toolset = WorkflowDiscoveryToolset(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            custom_labels=None,
+        )
+
+        for tool in toolset.tools:
+            # None custom_labels should be stored as None or empty
+            assert tool._custom_labels is None or tool._custom_labels == {}
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_custom_labels_appended_to_query_params(self, mock_get):
+        """
+        DD-HAPI-001: custom_labels are included in HTTP query params.
+
+        Ported from legacy test_custom_labels_auto_append_dd_hapi_001.py
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"action_types": []}
+        mock_get.return_value = mock_response
+
+        custom = {"constraint": ["cost-constrained"]}
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            custom_labels=custom,
+        )
+
+        tool.invoke(params={})
+
+        mock_get.assert_called_once()
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params", {})
+        # custom_labels should be serialized in params
+        assert "custom_labels" in params
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_empty_custom_labels_not_in_params(self, mock_get):
+        """
+        DD-HAPI-001: Empty custom_labels are not added to query params.
+
+        Ported from legacy test_custom_labels_auto_append_dd_hapi_001.py
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"action_types": []}
+        mock_get.return_value = mock_response
+
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            custom_labels={},
+        )
+
+        tool.invoke(params={})
+
+        mock_get.assert_called_once()
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params", {})
+        assert "custom_labels" not in params
+
 
 # ========================================
 # PHASE 4b: detected_labels Propagation Tests (DD-HAPI-017)
@@ -779,6 +879,19 @@ class TestOldToolRemoval:
         assert not hasattr(discovery_module, "SearchWorkflowCatalogTool"), (
             "SearchWorkflowCatalogTool should not be in the new discovery module"
         )
+
+    def test_workflow_catalog_module_deleted_ut_006_003(self):
+        """
+        UT-HAPI-017-006-003: workflow_catalog.py module no longer exists.
+
+        BR: BR-HAPI-017-006, DD-WORKFLOW-016 Gap 5
+        The legacy workflow_catalog.py source module has been deleted.
+        Shared utilities moved to workflow_discovery.py.
+        """
+        import importlib
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("src.toolsets.workflow_catalog")
 
     def test_no_active_search_workflow_catalog_usage_in_source_ut_006_002(self):
         """
