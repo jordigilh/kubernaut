@@ -1,7 +1,7 @@
 # DD-017: Effectiveness Monitor Service — V1.0 Level 1 + V1.1 Level 2
 
-**Status**: ✅ APPROVED (v2.3 — EA CRD Pattern)
-**Last Reviewed**: 2026-02-12
+**Status**: ✅ APPROVED (v2.5 — Typed Audit Sub-Objects)
+**Last Reviewed**: 2026-02-14
 **Confidence**: 95%
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.5 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Added `health_checks`, `metric_deltas`, `alert_resolution` typed sub-objects to `EffectivenessAssessmentAuditPayload` in OpenAPI spec. EM component assessors now emit structured data alongside the human-readable `details` string. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. Metrics assessor expansion (memory, latency p95, error rate PromQL queries) deferred to Phase B. Coordinated with HAPI team (DD-HAPI-016 v1.1) via issue #82. |
 | 2.4 | 2026-02-13 | Architecture Team | EA spec simplification: EAConfig only has StabilizationWindow; ScoringThreshold, PrometheusEnabled, AlertManagerEnabled removed from EA spec (EM operational config only). EM always emits Normal EffectivenessAssessed; RemediationIneffective removed. DS computes weighted score on demand from component audit events. |
 | 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
 | 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
@@ -87,30 +88,43 @@ The hash comparison logic (three-way matching) is documented in DD-HAPI-016.
 
 #### 2. Health Checks (K8s API)
 
-After stabilization, the EM queries the K8s API for the target resource:
+After stabilization, the EM queries the K8s API for the target resource and emits a typed `health_checks` sub-object in the `effectiveness.health.assessed` audit event:
 
-- Pod running status
-- Readiness probe passing
-- Restart count delta (before vs. after remediation)
-- CrashLoopBackOff detection
-- OOMKilled detection since remediation
+- **pod_running** (bool): At least one pod found for the target resource
+- **readiness_pass** (bool): All desired replicas are ready (`readyReplicas == totalReplicas`)
+- **total_replicas** (int): Total desired replicas
+- **ready_replicas** (int): Number of ready replicas
+- **restart_delta** (int): Total container restart count since remediation
+- **crash_loops** (bool): Any container in CrashLoopBackOff waiting state (v2.5)
+- **oom_killed** (bool): Any container terminated with OOMKilled reason since remediation (v2.5)
+- **pending_count** (int): Number of pods still in Pending phase after stabilization window (v2.5). Non-zero after stabilization indicates scheduling failures, image pull issues, or resource exhaustion.
 
 #### 3. Pre/Post Metric Comparison (Prometheus)
 
-The EM queries Prometheus for key metrics:
+The EM queries Prometheus for key metrics and emits a typed `metric_deltas` sub-object in the `effectiveness.metrics.assessed` audit event. Metrics are compared as pre-remediation (earliest sample) vs. post-remediation (latest sample) within a query range window.
 
-- CPU utilization (before vs. after)
-- Memory utilization (before vs. after)
-- Request latency — p50, p95, p99 (before vs. after)
-- Error rate (before vs. after)
-- Request throughput (before vs. after)
+**Phase A (V1.0)**:
+- CPU utilization (`container_cpu_usage_seconds_total`)
 
-"Before" = average over 30-minute window before the triggering signal fired.
-"After" = average over the stabilization window after workflow completion.
+**Phase B (V1.0 follow-up)**:
+- Memory utilization (`container_memory_working_set_bytes`)
+- Request latency p95 (`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[...]))`)
+- Error rate (cluster-specific; default: `rate(http_requests_total{code=~"5.."}[...])`)
+
+> **v2.5 Note**: The `metric_deltas` typed sub-object includes all fields (cpu, memory, latency, error_rate) from Phase A. Fields not yet populated are nullable. This forward-compatible design avoids OpenAPI schema changes when Phase B is implemented.
+
+"Before" = earliest sample in the query range (before EA creation).
+"After" = latest sample in the query range (post-stabilization).
 
 #### 4. Alert Resolution Check (AlertManager)
 
-The EM queries AlertManager to determine whether the triggering alert resolved after remediation. If AlertManager is unavailable, this check is skipped and marked as `unknown` in the assessment.
+The EM queries AlertManager to determine whether the triggering alert resolved after remediation and emits a typed `alert_resolution` sub-object in the `effectiveness.alert.assessed` audit event:
+
+- **alert_resolved** (bool): Whether the triggering alert is no longer active
+- **active_count** (int): Number of matching active alerts in AlertManager
+- **resolution_time_seconds** (nullable float): Time from remediation to resolution (null if not resolved)
+
+If AlertManager is unavailable, the check fails with `assessed: false` and the component is excluded from the weighted score.
 
 #### 5. Effectiveness Scoring (V1.0)
 
@@ -183,39 +197,96 @@ All EM assessment data is stored as **structured audit events**, leveraging the 
 }
 ```
 
-**EM audit events**:
-- `effectiveness.assessment.scheduled` (v2.3): Emitted when the EM schedules the assessment; captures derived timing (validityDeadline, prometheusCheckAfter, alertManagerCheckAfter).
-- `effectiveness.assessment.completed`: Emitted after assessment completes:
+**EM audit events** (per ADR-EM-001 Principle 5: EM collects, DS scores):
+
+The EM emits **individual component-level audit events**, not a single monolithic event. Each component event carries a typed sub-object with structured assessment data alongside the human-readable `details` string. DS correlates component events by `correlation_id` and computes the weighted score on demand.
+
+- `effectiveness.assessment.scheduled` (v2.3): Emitted on first reconciliation; captures derived timing (`validityDeadline`, `prometheusCheckAfter`, `alertManagerCheckAfter`).
+
+- `effectiveness.health.assessed`: Health check results with typed `health_checks` sub-object:
 ```json
 {
-    "event_type": "effectiveness.assessment.completed",
-    "service": "effectivenessmonitor",
-    "remediation_request_uid": "rr-xxx",
-    "target_resource": "Deployment/prod/my-app",
-    "post_remediation_spec_hash": "sha256:ccdd3344...",
-    "effectiveness_score": 0.4,
-    "signal_resolved": false,
+    "event_type": "effectiveness.health.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "health",
+    "assessed": true,
+    "score": 1.0,
+    "details": "all 3 pods ready, no restarts",
     "health_checks": {
         "pod_running": true,
         "readiness_pass": true,
+        "total_replicas": 3,
+        "ready_replicas": 3,
         "restart_delta": 0,
         "crash_loops": false,
-        "oom_killed": false
-    },
+        "oom_killed": false,
+        "pending_count": 0
+    }
+}
+```
+
+- `effectiveness.alert.assessed`: Alert resolution with typed `alert_resolution` sub-object:
+```json
+{
+    "event_type": "effectiveness.alert.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "alert",
+    "assessed": true,
+    "score": 0.0,
+    "details": "alert \"HighCPULoad\" still active (1 active alerts)",
+    "alert_resolution": {
+        "alert_resolved": false,
+        "active_count": 1,
+        "resolution_time_seconds": null
+    }
+}
+```
+
+- `effectiveness.metrics.assessed`: Metric comparison with typed `metric_deltas` sub-object:
+```json
+{
+    "event_type": "effectiveness.metrics.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "metrics",
+    "assessed": true,
+    "score": 0.5,
+    "details": "1 of 1 metrics improved, average score 0.50",
     "metric_deltas": {
         "cpu_before": 0.95,
-        "cpu_after": 0.92,
-        "memory_before": 0.60,
-        "memory_after": 0.62,
-        "latency_p95_before_ms": 200,
-        "latency_p95_after_ms": 195,
-        "error_rate_before": 0.02,
-        "error_rate_after": 0.019,
-        "throughput_before_rps": 1000,
-        "throughput_after_rps": 1000
-    },
-    "side_effects_detected": [],
-    "assessed_at": "2026-02-05T14:05:00Z"
+        "cpu_after": 0.72,
+        "memory_before": null,
+        "memory_after": null,
+        "latency_p95_before_ms": null,
+        "latency_p95_after_ms": null,
+        "error_rate_before": null,
+        "error_rate_after": null
+    }
+}
+```
+
+> **v2.5 Note — Metrics Phase B**: V1.0 populates `cpu_before`/`cpu_after` only. Memory, latency p95, and error rate fields are nullable pending Phase B metrics assessor expansion (additional PromQL queries). The typed sub-object includes all fields from the start so no schema change is needed when Phase B is implemented.
+
+- `effectiveness.hash.computed`: Spec hash comparison (DD-EM-002):
+```json
+{
+    "event_type": "effectiveness.hash.computed",
+    "correlation_id": "rr-xxx",
+    "component": "hash",
+    "assessed": true,
+    "post_remediation_spec_hash": "sha256:ccdd3344...",
+    "pre_remediation_spec_hash": "sha256:aabb1122...",
+    "hash_match": false
+}
+```
+
+- `effectiveness.assessment.completed`: Lifecycle marker with reason:
+```json
+{
+    "event_type": "effectiveness.assessment.completed",
+    "correlation_id": "rr-xxx",
+    "component": "completed",
+    "assessed": true,
+    "reason": "full"
 }
 ```
 
@@ -367,6 +438,8 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 - **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
 - **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
+- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete` and `SpecIntegrity` condition types
+- **DD-EM-002 v1.1**: [Canonical Spec Hashing & Spec Drift Guard](DD-EM-002-canonical-spec-hash.md) — Re-hash on each reconcile, `spec_drift` reason, DS score=0.0 short-circuit
 - **DD-EVENT-001**: Controller Event Registry (event reason constants)
 
 ---
@@ -382,6 +455,6 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ---
 
-**Status**: ✅ APPROVED (v2.3) — Level 1 in V1.0 (EA CRD pattern), Level 2 in V1.1
+**Status**: ✅ APPROVED (v2.5) — Level 1 in V1.0 (EA CRD pattern, typed audit sub-objects), Level 2 in V1.1
 **Authoritative Integration Architecture**: [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md)
-**Next Review**: V1.1 planning (estimated Q2 2026)
+**Next Review**: Phase B metrics expansion, then V1.1 planning (estimated Q2 2026)

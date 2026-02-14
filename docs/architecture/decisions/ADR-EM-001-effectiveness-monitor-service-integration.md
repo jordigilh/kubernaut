@@ -8,11 +8,14 @@
 **Related Decisions**:
 - [DD-017 v2.2](DD-017-effectiveness-monitor-v1.1-deferral.md) — EM Level 1/Level 2 scoping and design refinements
 - [DD-EFFECTIVENESS-001](DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) — Hybrid automated + AI analysis approach
-- [DD-EFFECTIVENESS-003](DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) — Watch strategy (superseded by EA CRD trigger in v1.1 of this ADR)
+- ~~[DD-EFFECTIVENESS-003](DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md)~~ — Watch strategy (**fully superseded** by EA CRD trigger in v1.1; EM watches EA CRDs, not RR CRDs)
+- [DD-EM-002 v1.1](DD-EM-002-canonical-spec-hash.md) — Canonical spec hashing and Spec Drift Guard
+- [DD-CRD-002-EA](DD-CRD-002-effectivenessassessment-conditions.md) — Kubernetes Conditions for EffectivenessAssessment CRD
 - [DD-HAPI-016](DD-HAPI-016-remediation-history-context.md) — Remediation history context enrichment (depends on EM data)
 - [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) — Workflow lifecycle component interactions (Phase 2: Discovery is where EM effectiveness data feeds back into LLM decisions)
 - [DD-EVENT-001](../../services/crd-controllers/DD-EVENT-001-controller-event-registry.md) — Controller Kubernetes Event Registry
 - DD-AUDIT-CORRELATION-002 — Correlation ID convention (`RR.Name`)
+- [DD-EM-002](DD-EM-002-canonical-spec-hash.md) — Canonical spec hash algorithm (shared between RO and EM for pre/post comparison)
 
 ---
 
@@ -20,6 +23,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.6 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Principle 5 updated — EM component events now carry typed sub-objects (`health_checks`, `metric_deltas`, `alert_resolution`) alongside the human-readable `details` string. Enables DS/HAPI to extract structured assessment data without string parsing. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. OpenAPI spec updated with typed sub-object schemas. Coordinated with HAPI team via DD-HAPI-016 v1.1 and issue #82. |
+| 1.5 | 2026-02-13 | Architecture Team | Clarified Principle 1: EM queries DS during reconciliation for audit context (pre-hash, signal metadata), not via polling. EM is a CRD controller watching EA CRDs, not a stateless polling service. Added DD-EM-002 (canonical spec hash algorithm) to related decisions. Removed stale DD-EFFECTIVENESS-003 reference (fully superseded by EA CRD trigger since v1.1). |
 | 1.4 | 2026-02-13 | Architecture Team | EA spec simplified: EAConfig now only contains `stabilizationWindow`. Removed `scoringThreshold`, `prometheusEnabled`, `alertManagerEnabled` from EA spec. EM reads `prometheusEnabled` and `alertManagerEnabled` from its own config (EMConfig.External). ScoringThreshold removed entirely — EM no longer computes average score or compares against threshold. EM always emits Normal `EffectivenessAssessed` event on completion; `RemediationIneffective` K8s event removed. DS computes weighted effectiveness score on demand. |
 | 1.3 | 2026-02-12 | Architecture Team | ValidityDeadline moved from EA spec to status (EM computes on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event emitted on first reconciliation capturing all derived timing. Follows K8s spec/status convention: RO sets desired state (StabilizationWindow in spec), EM computes derived state (timing fields in status). |
 | 1.2 | 2026-02-09 | Architecture Team | EM emits individual component audit events (health, alert, metrics, hash); DS computes weighted score on demand. Assessment validity window (30m default) prevents stale data collection. Replaces single `effectiveness.assessment.completed` data event with component events + lifecycle marker. |
@@ -54,11 +59,11 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 
 ### Design Principles
 
-1. **Audit-trace-only data source**: EM reads all remediation context from DataStorage audit events, never from the RemediationRequest CRD directly (DD-017 v2.1). The RR is transient and may be deleted or tampered.
+1. **Audit-trace-only data source**: EM reads all remediation context from DataStorage audit events, never from the RemediationRequest CRD directly (DD-017 v2.1). The RR is transient and may be deleted or tampered. **Clarification (v1.5)**: The EM is a Kubernetes CRD controller that watches `EffectivenessAssessment` CRDs (not a stateless service that polls for RR completions). "Reads from DS audit events" means the EM **queries** DS during reconciliation to obtain context needed for assessment (e.g., `pre_remediation_spec_hash` from the `remediation.workflow_created` event, signal metadata from `gateway.signal.received`). This is a point-in-time query, not polling. The EM's reconciliation is triggered by EA CRD creation/updates via the standard controller-runtime watch mechanism.
 2. **RO-managed lifecycle**: The Remediation Orchestrator creates the `EffectivenessAssessment` CRD — the same pattern used for AIAnalysis, WorkflowExecution, and NotificationRequest. The RO is the single lifecycle owner for all remediation sub-resources. The EA spec contains only `stabilizationWindow` (the desired wait time before assessment); the RO sets this when creating the EA. As with the other CRDs, the spec is **immutable after creation** via CEL validation (`self == oldSelf`), enforced by the Kubernetes API server. This prevents tampering — any attempt to modify the EA spec after creation is rejected by the API server, guaranteeing the EM always operates on the original spec set by the RO.
 3. **Deterministic outcomes**: No graceful degradation for Prometheus or AlertManager. If configured as enabled but unreachable, EM fails to start (DD-017 v2.1).
 4. **Idempotent assessment**: The EA CRD spec is immutable (CEL: `self == oldSelf`), and the EA status tracks assessment progress. Duplicate EM reconciles check `status.phase` and `status.components` before proceeding. DS deduplicates component audit events by correlation ID + event type.
-5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events.
+5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). Each component event carries both a human-readable `details` string (for logs/debugging) and a **typed sub-object** (`health_checks`, `metric_deltas`, `alert_resolution`) with structured assessment data that downstream consumers (DS, HAPI) can extract without string parsing. **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events, and the typed sub-objects allow consumers to populate structured response fields (e.g., DD-HAPI-016 `RemediationHealthChecks`, `RemediationMetricDeltas`) directly from the ogen-typed payload.
 6. **Assessment validity window**: Component data is only meaningful within a bounded time after remediation. If the EM cannot assess a component within the `validityWindow` (default 30m), it marks the EA as expired rather than collecting misleading data that may reflect system drift or subsequent remediations.
 7. **Derived timing in status**: The EM computes all timing-derived fields (`validityDeadline`, `prometheusCheckAfter`, `alertManagerCheckAfter`) on first reconciliation and persists them in EA status. This follows K8s spec/status convention (RO sets spec, EM computes status), avoids redundant recomputation, prevents StabilizationWindow > ValidityDeadline misconfiguration, and provides operator observability.
 8. **SOC2 chain of custody**: Every hop in the remediation chain emits an audit event capturing what it decided/applied, enabling end-to-end traceability.
@@ -324,6 +329,25 @@ sequenceDiagram
             else window expired
                 Note over Ctrl: Metrics will not be collected (validity expired)
             end
+        end
+    end
+
+    Note over Ctrl,K8s: Step 6.5 — Spec Drift Guard (DD-EM-002 v1.1)
+    alt EA.status.components.hashComputed == true AND postRemediationSpecHash != ""
+        Ctrl->>K8s: GET target resource .spec (re-hash current state)
+        K8s-->>Ctrl: Current .spec
+        Ctrl->>Ctrl: SHA-256 hash of current .spec
+        alt currentHash != postRemediationSpecHash
+            Note over Ctrl: Spec drift detected — resource modified since remediation
+            Ctrl->>EA: Update: phase=Completed, reason=spec_drift, currentSpecHash=X
+            Ctrl->>EA: Set condition: SpecIntegrity=False (SpecDrifted)
+            Ctrl->>EA: Set condition: AssessmentComplete=True (SpecDrift)
+            Ctrl->>DS: POST audit: effectiveness.assessment.completed (reason=spec_drift)
+            Ctrl->>K8s: Event(Warning, SpecDriftDetected) on EA
+            Note over Ctrl: Return — do NOT assess metrics/alerts (unreliable)
+            Note over DS: DS short-circuits score to 0.0 for spec_drift (DD-EM-002 v1.1)
+        else hashes match
+            Ctrl->>EA: Set condition: SpecIntegrity=True (SpecUnchanged)
         end
     end
 
@@ -756,7 +780,7 @@ Emitted when the EM finishes processing the EA CRD (all components done, validit
 | `correlation_id` | string | `RR.Name` |
 | `service` | string | `"effectivenessmonitor"` |
 | `ea_name` | string | EA CRD name |
-| `assessment_reason` | string | `"full"`, `"partial"`, `"no_execution"`, `"metrics_timed_out"`, `"expired"` |
+| `assessment_reason` | string | `"full"`, `"partial"`, `"no_execution"`, `"metrics_timed_out"`, `"expired"`, `"spec_drift"` |
 | `components_assessed` | array[string] | List of component event types emitted (e.g., `["health", "alert", "hash"]`) |
 | `completed_at` | string (RFC3339) | When the EA reached Completed phase |
 
@@ -946,6 +970,7 @@ No graceful degradation at runtime. If a dependency becomes unreachable after st
 | **No `remediation.workflow_created` event** | Skip hash comparison. Assessment proceeds with health checks, metrics, and alert resolution only. | Pre-remediation hash is a new event; older remediations won't have it. |
 | **WFE completed but RO marked RR as Failed** | RO still creates EA CRD (for all terminal phases). EM performs full assessment. The WFE did execute; the failure may be in a subsequent phase (e.g., notification). | EM assesses execution effectiveness, independent of the RR's overall outcome. |
 | **RO fails to create EA CRD** | Standard controller-runtime error handling. RO requeues the RR reconcile. EA creation is part of the RR terminal-phase handling. | Same pattern as NR creation failure. |
+| **Target resource spec modified during assessment (spec drift)** | EM detects hash mismatch on each reconcile (Step 6.5, DD-EM-002 v1.1). EA completed immediately with `assessment_reason` = `"spec_drift"`. DS short-circuits score to **0.0** — component scores are unreliable because the spec changed (likely another remediation). `SpecIntegrity` condition set to `False/SpecDrifted`. | Prevents misleading scores when a subsequent remediation modifies the target before the assessment completes. |
 | **Validity window expired with partial data** | EM marks EA as Completed with `assessment_reason` = `"metrics_timed_out"` or `"partial"`. Component events already emitted remain in DS. DS computes score from available components with redistributed weights. | Validity window ensures assessments don't hang and data remains fresh. |
 | **Validity window expired with NO data** | EM marks EA as Completed with `assessment_reason` = `"expired"`. No component events emitted. DS returns `score = null` for this correlation ID. | No misleading score — better to have no data than wrong data from a stale assessment. |
 | **EM delayed beyond validity (e.g., DS outage)** | On first reconcile after recovery, EM checks validity window. If expired, marks EA as `expired` without collecting any data. | Prevents collecting metrics that reflect a different system state (drift, new remediations, etc.). |
@@ -1009,6 +1034,7 @@ Events WRITTEN by EM (consumed by DS for scoring):
 - **Formula-based scoring limitations**: The weighted formula may not capture nuanced scenarios (e.g., "CPU dropped 3% but crossed below alert threshold" vs. "CPU dropped 3% but still critical"). Level 2 AI analysis in V1.1 addresses this.
 - **No side-effect detection in V1.0**: The scoring formula does not account for collateral damage. A remediation could score 1.0 while causing issues in other workloads. Post-V1.0 scope.
 - **Audit trail completeness**: If a service fails to emit its audit event, the EM's assessment is degraded. This is mitigated by ADR-032 (mandatory audit emission) and the `assessment_reason` field indicating partial data.
+- **Spec drift short-circuit**: When `assessment_reason` = `"spec_drift"`, DS overrides the weighted score to **0.0** regardless of individual component scores (DD-EM-002 v1.1). This is a hard override because component data was measured against a different spec version and is therefore unreliable.
 
 ---
 
