@@ -45,6 +45,12 @@ type TargetStatus struct {
 	RestartsSinceRemediation int32
 	// TargetExists indicates whether the target resource was found.
 	TargetExists bool
+	// CrashLoops indicates whether any container is in CrashLoopBackOff waiting state (DD-017 v2.5).
+	CrashLoops bool
+	// OOMKilled indicates whether any container was terminated with OOMKilled reason since remediation (DD-017 v2.5).
+	OOMKilled bool
+	// PendingCount is the number of pods still in Pending phase after stabilization (DD-017 v2.5).
+	PendingCount int32
 }
 
 // Scorer evaluates the health of a target resource and produces a score.
@@ -92,11 +98,24 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 		return result
 	}
 
+	// CrashLoopBackOff detected -> 0.0 (most severe, DD-017 v2.5)
+	if status.CrashLoops {
+		score := 0.0
+		result.Score = &score
+		result.Details = fmt.Sprintf("CrashLoopBackOff detected (%d/%d pods ready, %d restarts)",
+			status.ReadyReplicas, status.TotalReplicas, status.RestartsSinceRemediation)
+		return result
+	}
+
 	// No pods ready -> 0.0
 	if status.ReadyReplicas == 0 {
 		score := 0.0
 		result.Score = &score
-		result.Details = fmt.Sprintf("0/%d pods ready", status.TotalReplicas)
+		if status.PendingCount > 0 {
+			result.Details = fmt.Sprintf("0/%d pods ready (%d pending)", status.TotalReplicas, status.PendingCount)
+		} else {
+			result.Details = fmt.Sprintf("0/%d pods ready", status.TotalReplicas)
+		}
 		return result
 	}
 
@@ -104,11 +123,25 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 	if status.ReadyReplicas < status.TotalReplicas {
 		score := 0.5
 		result.Score = &score
-		result.Details = fmt.Sprintf("%d/%d pods ready (partial)", status.ReadyReplicas, status.TotalReplicas)
+		if status.PendingCount > 0 {
+			result.Details = fmt.Sprintf("%d/%d pods ready (%d pending)", status.ReadyReplicas, status.TotalReplicas, status.PendingCount)
+		} else {
+			result.Details = fmt.Sprintf("%d/%d pods ready (partial)", status.ReadyReplicas, status.TotalReplicas)
+		}
 		return result
 	}
 
-	// All pods ready
+	// All pods ready — check for OOMKilled (DD-017 v2.5)
+	if status.OOMKilled {
+		// OOMKilled with all pods ready -> 0.25 (pods recovered but memory pressure is a concern)
+		score := 0.25
+		result.Score = &score
+		result.Details = fmt.Sprintf("all %d pods ready, OOMKilled detected (%d restarts since remediation)",
+			status.TotalReplicas, status.RestartsSinceRemediation)
+		return result
+	}
+
+	// All pods ready, no OOMKilled
 	if status.RestartsSinceRemediation > 0 {
 		// All ready but restarts detected -> 0.75
 		score := 0.75
@@ -118,7 +151,7 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 		return result
 	}
 
-	// All pods ready, no restarts -> 1.0
+	// All pods ready, no restarts, no OOMKilled, no CrashLoops -> 1.0
 	score := 1.0
 	result.Score = &score
 	result.Details = fmt.Sprintf("all %d pods ready, no restarts", status.TotalReplicas)
