@@ -224,10 +224,29 @@ async def analyze_incident(
 
     # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
     try:
+        # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
+        # Graceful degradation: if DS unavailable, context is None and prompt is unchanged
+        from clients.remediation_history_client import (
+            create_remediation_history_api,
+            fetch_remediation_history_for_request,
+        )
+        rh_api = create_remediation_history_api(app_config)
+        enrichment_results = request_data.get("enrichment_results", {}) or {}
+        current_spec_hash = ""
+        if isinstance(enrichment_results, dict):
+            current_spec_hash = enrichment_results.get("currentSpecHash", "")
+        remediation_history_context = fetch_remediation_history_for_request(
+            api=rh_api,
+            request_data=request_data,
+            current_spec_hash=current_spec_hash,
+        )
+
         # Create base investigation prompt
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
-        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
+        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(
+            request_data, remediation_history_context=remediation_history_context
+        ))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))

@@ -160,22 +160,31 @@ def build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     # Remove empty string values
     filters = {k: v for k, v in filters.items() if v}
 
+    # Build conditional guidance based on which labels are actually present in filters
+    # DD-WORKFLOW-001 v2.1: Only mention labels that weren't excluded by failedDetections
+    guidance_lines = []
+    if "gitops_managed" in filters:
+        guidance_lines.append("If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.")
+    if "stateful" in filters:
+        guidance_lines.append("If `stateful=true`, prefer stateful-aware workflows.")
+    if "pdb_protected" in filters:
+        guidance_lines.append("If `pdb_protected=true`, ensure the selected workflow respects PodDisruptionBudget constraints.")
+
+    guidance_text = "\n".join(guidance_lines) if guidance_lines else "Use the detected characteristics to guide workflow selection."
+
     return f"""
 ### Workflow Discovery Context (DetectedLabels)
 
 The following detected labels describe the target cluster environment.
-These are automatically included in your workflow discovery tool calls as context filters.
-You do NOT need to pass them manually — they are injected by the system.
+Use these to inform your workflow selection reasoning — prefer workflows
+that are compatible with the detected environment characteristics.
 
-Detected label filters:
+Detected environment characteristics:
 ```json
 {json.dumps(filters, indent=4)}
 ```
 
-The Data Storage service uses these labels to return only workflows compatible
-with the detected cluster environment.
-
-**IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+**IMPORTANT**: {guidance_text}
 """
 
 
@@ -233,13 +242,23 @@ Your previous workflow response had validation errors:
 """
 
 
-def create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
+def create_incident_investigation_prompt(
+    request_data: Dict[str, Any],
+    remediation_history_context: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create investigation prompt for initial incident analysis (ADR-041 v3.3).
 
     Used by: /incident/analyze endpoint
     Input: IncidentRequest model data
     Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
+
+    Args:
+        request_data: IncidentRequest model data.
+        remediation_history_context: Optional remediation history context from
+            DataStorage (BR-HAPI-016, DD-HAPI-016 v1.1). When provided, a
+            remediation history section is appended to the prompt to inform
+            the LLM about past remediations for the affected resource.
     """
     # Extract fields from IncidentRequest
     signal_type = request_data.get("signal_type", "Unknown")
@@ -415,11 +434,24 @@ that a **{signal_type}** event will occur for **{namespace}/{resource_kind}/{res
 ## Cluster Environment Characteristics (AUTO-DETECTED)
 
 The following characteristics were automatically detected for the target resource.
-**These are automatically included as context filters in your workflow discovery tool calls.**
+**Use these to guide your workflow selection reasoning.**
 
 {build_cluster_context_section(detected_labels)}
 
 {build_mcp_filter_instructions(detected_labels)}
+
+"""
+
+    # BR-HAPI-016: Add remediation history section if context is available
+    if remediation_history_context:
+        from extensions.remediation_history_prompt import build_remediation_history_section
+
+        history_section = build_remediation_history_section(remediation_history_context)
+        if history_section:
+            prompt += f"""
+## Remediation History Context (AUTO-DETECTED)
+
+{history_section}
 
 """
 
