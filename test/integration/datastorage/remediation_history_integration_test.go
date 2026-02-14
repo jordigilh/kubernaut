@@ -33,11 +33,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/google/uuid"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	. "github.com/onsi/ginkgo/v2"
@@ -275,135 +274,131 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 	// ============================================================================
 
 	Describe("Adapter Layer", func() {
-		It("IT-DS-016-004: Adapter converts EffectivenessEventRow to EffectivenessEvent losslessly", func() {
-			// Arrange: insert EM events and create adapter
+		It("IT-DS-016-004: EM scoring data (health, metrics, hash) is complete after repository query through adapter", func() {
+			// Business outcome: EM scoring data queried from real PostgreSQL is complete
+			// and available to the correlation engine after passing through the adapter.
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-adapter-%s", testID)
 			insertEMEvents(cid, "full", 0.85, "sha256:pre_a", "sha256:post_a", now.Add(-1*time.Hour))
 
 			adapter := server.NewRemediationHistoryRepoAdapter(rhRepo)
 
-			// Act: query through adapter
+			// Act: query through adapter (same path as handler orchestration)
 			result, err := adapter.QueryEffectivenessEventsBatch(testCtx, []string{cid})
 
-			// Assert
+			// Assert: all 5 EM component events available for scoring
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveKey(cid))
-			Expect(result[cid]).To(HaveLen(5), "Adapter should return all 5 EM events")
+			Expect(result[cid]).To(HaveLen(5), "All 5 EM component events must be available for scoring")
 
-			// Verify event_data is preserved through the conversion
+			// Verify hash data is complete (required for spec_drift detection)
 			var foundHashEvent bool
 			for _, event := range result[cid] {
 				if preHash, ok := event.EventData["pre_remediation_spec_hash"]; ok {
 					Expect(preHash).To(Equal("sha256:pre_a"))
+					postHash, hasPost := event.EventData["post_remediation_spec_hash"]
+					Expect(hasPost).To(BeTrue(), "post_remediation_spec_hash must be present for spec_drift detection")
+					Expect(postHash).To(Equal("sha256:post_a"))
 					foundHashEvent = true
 				}
 			}
-			Expect(foundHashEvent).To(BeTrue(), "hash.computed event data should be preserved through adapter conversion")
+			Expect(foundHashEvent).To(BeTrue(), "Hash event data must survive the repository-to-server adapter boundary")
 		})
 	})
 
 	// ============================================================================
-	// 3. Handler Layer Tests (httptest + real DB)
+	// 3. Orchestration Pipeline Tests (direct business logic calls + real DB)
+	//
+	// Pattern: Queries real PostgreSQL via adapter, then calls CorrelateTier1Chain
+	// and DetectRegression directly. NO HTTP layer (per TESTING_GUIDELINES.md
+	// anti-pattern: HTTP Testing in Integration Tests).
 	// ============================================================================
 
-	Describe("Handler Layer (HTTP + Real DB)", func() {
+	Describe("Orchestration Pipeline (Direct Business Logic + Real DB)", func() {
 		var (
-			handler *server.Handler
+			adapter server.RemediationHistoryQuerier
 		)
 
 		BeforeEach(func() {
-			adapter := server.NewRemediationHistoryRepoAdapter(rhRepo)
-			handler = server.NewHandler(nil,
-				server.WithRemediationHistoryQuerier(adapter),
-				server.WithLogger(logger),
-			)
+			adapter = server.NewRemediationHistoryRepoAdapter(rhRepo)
 		})
 
-		// makeRequest creates an httptest request for the remediation history endpoint
-		makeRequest := func(params map[string]string) (*httptest.ResponseRecorder, map[string]interface{}) {
+		// queryAndCorrelate reproduces the handler's orchestration pipeline
+		// using direct business logic calls (no HTTP):
+		//   1. QueryROEventsByTarget
+		//   2. QueryEffectivenessEventsBatch (batch by correlation_id)
+		//   3. CorrelateTier1Chain (correlation + scoring)
+		//   4. DetectRegression (hash match analysis)
+		queryAndCorrelate := func(target, specHash string, since time.Time) ([]api.RemediationHistoryEntry, bool) {
 			GinkgoHelper()
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation-history/context", nil)
-			q := req.URL.Query()
-			for k, v := range params {
-				q.Set(k, v)
-			}
-			req.URL.RawQuery = q.Encode()
 
-			rec := httptest.NewRecorder()
-			handler.HandleGetRemediationHistoryContext(rec, req)
+			// Step 1: Query RO events by target
+			roEvents, err := adapter.QueryROEventsByTarget(testCtx, target, since)
+			Expect(err).ToNot(HaveOccurred())
 
-			var body map[string]interface{}
-			if rec.Code == http.StatusOK {
-				err := json.Unmarshal(rec.Body.Bytes(), &body)
-				Expect(err).ToNot(HaveOccurred(), "Failed to parse JSON response")
+			// Step 2: Batch query EM events
+			var emEvents map[string][]*server.EffectivenessEvent
+			if len(roEvents) > 0 {
+				correlationIDs := make([]string, 0, len(roEvents))
+				for _, ro := range roEvents {
+					correlationIDs = append(correlationIDs, ro.CorrelationID)
+				}
+				emEvents, err = adapter.QueryEffectivenessEventsBatch(testCtx, correlationIDs)
+				Expect(err).ToNot(HaveOccurred())
 			}
-			return rec, body
+
+			// Step 3: Correlate into Tier 1 entries
+			entries := server.CorrelateTier1Chain(roEvents, emEvents, specHash)
+
+			// Step 4: Detect regression
+			regressionDetected := server.DetectRegression(entries)
+
+			return entries, regressionDetected
 		}
 
-		It("IT-DS-016-005: Full pipeline with reason=full returns correct assessmentReason and weighted score", func() {
-			// Arrange
+		It("IT-DS-016-005: Full pipeline with reason=full produces correct assessmentReason and positive weighted score", func() {
+			// Business outcome: LLM receives accurate effectiveness data from real DB.
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-full-%s", testID)
 			insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
 			insertEMEvents(cid, "full", 0.85, currentSpecHash, "sha256:post_full_"+testID, now.Add(-2*time.Hour))
 
-			// Act
-			rec, body := makeRequest(map[string]string{
-				"targetKind":      "Deployment",
-				"targetName":      fmt.Sprintf("nginx-%s", testID),
-				"targetNamespace": "default",
-				"currentSpecHash": currentSpecHash,
-				"tier1Window":     "24h",
-			})
+			// Act: direct business logic pipeline (no HTTP)
+			entries, _ := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
 
 			// Assert
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			tier1 := body["tier1"].(map[string]interface{})
-			chain := tier1["chain"].([]interface{})
-			Expect(chain).To(HaveLen(1), "Should have 1 Tier 1 entry")
-
-			entry := chain[0].(map[string]interface{})
-			Expect(entry).To(HaveKey("assessmentReason"))
-			Expect(entry["assessmentReason"]).To(Equal("full"))
-			Expect(entry).To(HaveKey("effectivenessScore"))
-			score := entry["effectivenessScore"].(float64)
-			Expect(score).To(BeNumerically(">", 0.0), "Full assessment should have a positive score")
+			Expect(entries).To(HaveLen(1), "Should have 1 Tier 1 entry")
+			entry := entries[0]
+			Expect(entry.AssessmentReason.Set).To(BeTrue(), "assessmentReason must be set")
+			Expect(string(entry.AssessmentReason.Value)).To(Equal("full"))
+			Expect(entry.EffectivenessScore.Set).To(BeTrue(), "effectivenessScore must be set")
+			Expect(entry.EffectivenessScore.Value).To(BeNumerically(">", 0.0),
+				"Full assessment should have a positive weighted score")
+			Expect(entry.WorkflowType.Value).To(Equal("ScaleUp"))
 		})
 
-		It("IT-DS-016-006: Full pipeline with reason=spec_drift returns assessmentReason=spec_drift and score=0.0", func() {
-			// Arrange
+		It("IT-DS-016-006: Pipeline with reason=spec_drift produces assessmentReason=spec_drift and score=0.0", func() {
+			// Business outcome: LLM correctly informed that spec_drift != failure.
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-drift-%s", testID)
 			insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
 			insertEMEvents(cid, "spec_drift", 0.0, currentSpecHash, "sha256:post_drift_"+testID, now.Add(-2*time.Hour))
 
 			// Act
-			rec, body := makeRequest(map[string]string{
-				"targetKind":      "Deployment",
-				"targetName":      fmt.Sprintf("nginx-%s", testID),
-				"targetNamespace": "default",
-				"currentSpecHash": currentSpecHash,
-				"tier1Window":     "24h",
-			})
+			entries, _ := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
 
 			// Assert
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			tier1 := body["tier1"].(map[string]interface{})
-			chain := tier1["chain"].([]interface{})
-			Expect(chain).To(HaveLen(1))
-
-			entry := chain[0].(map[string]interface{})
-			Expect(entry["assessmentReason"]).To(Equal("spec_drift"))
-			// spec_drift hard-sets score to 0.0 in EM
-			Expect(entry["effectivenessScore"]).To(BeNumerically("==", 0.0),
-				"spec_drift assessment should have score 0.0 (unreliable)")
+			Expect(entries).To(HaveLen(1))
+			entry := entries[0]
+			Expect(entry.AssessmentReason.Set).To(BeTrue())
+			Expect(string(entry.AssessmentReason.Value)).To(Equal("spec_drift"))
+			Expect(entry.EffectivenessScore.Set).To(BeTrue())
+			Expect(entry.EffectivenessScore.Value).To(BeNumerically("==", 0.0),
+				"spec_drift assessment should have score 0.0 (unreliable, not failure)")
 		})
 
 		It("IT-DS-016-007: Regression detected when currentSpecHash matches preRemediationSpecHash", func() {
-			// Arrange: insert RO event whose preHash == currentSpecHash (regression)
+			// Business outcome: LLM warned about configuration regression.
 			now := time.Now().UTC()
 			regressionHash := currentSpecHash // Same hash means config reverted
 			cid := fmt.Sprintf("corr-regr-%s", testID)
@@ -411,59 +406,30 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertEMEvents(cid, "full", 0.7, regressionHash, "sha256:post_regr_"+testID, now.Add(-2*time.Hour))
 
 			// Act
-			rec, body := makeRequest(map[string]string{
-				"targetKind":      "Deployment",
-				"targetName":      fmt.Sprintf("nginx-%s", testID),
-				"targetNamespace": "default",
-				"currentSpecHash": currentSpecHash,
-				"tier1Window":     "24h",
-			})
+			entries, regressionDetected := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
 
 			// Assert
-			Expect(rec.Code).To(Equal(http.StatusOK))
-			Expect(body["regressionDetected"]).To(BeTrue(),
-				"Regression should be detected when currentSpecHash matches preRemediationSpecHash")
+			Expect(entries).To(HaveLen(1))
+			Expect(regressionDetected).To(BeTrue(),
+				"Regression must be detected when currentSpecHash matches preRemediationSpecHash")
+			Expect(entries[0].HashMatch.Value).To(Equal(api.RemediationHistoryEntryHashMatchPreRemediation),
+				"HashMatch should indicate preRemediation match")
 		})
 
-		It("IT-DS-016-008: Invalid tier1Window returns 400 Bad Request", func() {
-			// Act
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation-history/context", nil)
-			q := req.URL.Query()
-			q.Set("targetKind", "Deployment")
-			q.Set("targetName", "nginx")
-			q.Set("targetNamespace", "default")
-			q.Set("currentSpecHash", "sha256:abc")
-			q.Set("tier1Window", "not-a-duration")
-			req.URL.RawQuery = q.Encode()
+		It("IT-DS-016-008: Non-existent target produces empty entries and no regression", func() {
+			// Business outcome: Empty history gracefully handled (no errors, no false positives).
+			now := time.Now().UTC()
 
-			rec := httptest.NewRecorder()
-			handler.HandleGetRemediationHistoryContext(rec, req)
+			// Act: query for target with no events
+			entries, regressionDetected := queryAndCorrelate(
+				"ghost-ns/Deployment/nonexistent-"+testID,
+				"sha256:no_such_hash",
+				now.Add(-24*time.Hour),
+			)
 
 			// Assert
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
-		})
-
-		It("IT-DS-016-009: Non-existent target returns 200 with empty chains", func() {
-			// Act: query for a target that has no events
-			rec, body := makeRequest(map[string]string{
-				"targetKind":      "Deployment",
-				"targetName":      "nonexistent-" + testID,
-				"targetNamespace": "ghost-ns",
-				"currentSpecHash": "sha256:no_such_hash",
-				"tier1Window":     "24h",
-			})
-
-			// Assert
-			Expect(rec.Code).To(Equal(http.StatusOK))
-			tier1 := body["tier1"].(map[string]interface{})
-			chain := tier1["chain"].([]interface{})
-			Expect(chain).To(BeEmpty(), "Non-existent target should return empty Tier 1 chain")
-
-			tier2 := body["tier2"].(map[string]interface{})
-			t2chain := tier2["chain"].([]interface{})
-			Expect(t2chain).To(BeEmpty(), "Non-existent target should return empty Tier 2 chain")
-
-			Expect(body["regressionDetected"]).To(BeFalse(),
+			Expect(entries).To(BeEmpty(), "Non-existent target should produce empty entries")
+			Expect(regressionDetected).To(BeFalse(),
 				"No regression when there are no events")
 		})
 	})

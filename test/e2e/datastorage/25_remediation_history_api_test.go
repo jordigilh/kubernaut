@@ -303,4 +303,25 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		Expect(reasons).To(Equal([]string{"full", "spec_drift", "partial"}),
 			"Assessment reasons should match insertion order (ASC by timestamp)")
 	})
+
+	It("E2E-DS-016-005: Invalid tier1Window returns 400 Bad Request", func() {
+		// Business outcome: Malformed parameters rejected cleanly by the deployed service.
+		req, err := http.NewRequest(http.MethodGet, serviceURL+"/api/v1/remediation-history/context", nil)
+		Expect(err).ToNot(HaveOccurred())
+
+		q := req.URL.Query()
+		q.Set("targetKind", "Deployment")
+		q.Set("targetName", "e2e-nginx-invalid")
+		q.Set("targetNamespace", "default")
+		q.Set("currentSpecHash", "sha256:abc")
+		q.Set("tier1Window", "not-a-duration")
+		req.URL.RawQuery = q.Encode()
+
+		resp, err := AuthHTTPClient.Do(req)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
+			"Invalid tier1Window should be rejected with 400")
+	})
 })
