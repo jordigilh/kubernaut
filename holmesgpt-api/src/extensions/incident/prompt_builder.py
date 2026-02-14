@@ -549,6 +549,7 @@ and choose a different workflow.
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
+    "action_type": "ScaleReplicas",
     "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
@@ -738,8 +739,9 @@ You have three workflow discovery tools available. Use them in order:
 3. **`get_workflow`** with `workflow_id` — Get the full workflow with parameter schema.
    If "not found", the workflow doesn't match your signal context — choose another.
 
-**Signal context filters** (severity, component, environment, priority) are automatically
-included in all discovery calls. You do NOT need to provide them manually.
+**Signal context filters** (severity, component, environment, priority, custom_labels,
+detected_labels) are automatically included in all discovery calls. You do NOT need to
+provide them manually — they are injected by the system.
 
 **Canonical Signal Types** (for reference during RCA):
 - `OOMKilled`, `CrashLoopBackOff`, `ImagePullBackOff`, `Evicted`
@@ -768,7 +770,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "action_type": "ScaleReplicas", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
 [{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]

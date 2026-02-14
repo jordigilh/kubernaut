@@ -54,7 +54,7 @@ from tests.fixtures.workflow_fixtures import (
     TEST_WORKFLOWS,
     bootstrap_workflows,
     bootstrap_action_type_taxonomy,
-    ACTION_TYPE_ADJUST_RESOURCES,
+    ACTION_TYPE_INCREASE_MEMORY_LIMITS,
 )
 
 from tests.integration.conftest import (
@@ -83,10 +83,10 @@ def seeded_workflows(data_storage_url):
 @pytest.fixture(scope="module")
 def known_workflow_id(data_storage_url, seeded_workflows):
     """
-    Discover a valid workflow_id for AdjustResources workflows.
+    Discover a valid workflow_id for IncreaseMemoryLimits workflows.
 
-    DD-WORKFLOW-016: Go seeds oomkill-increase-memory-v1 with
-    action_type=AdjustResources, severity=critical, component=pod,
+    DD-WORKFLOW-016 V1.0: Go seeds oomkill-increase-memory-v1 with
+    action_type=IncreaseMemoryLimits, severity=critical, component=pod,
     environment=production, priority=P0.
     """
     api_client, discovery_api = create_authenticated_datastorage_client(
@@ -95,7 +95,7 @@ def known_workflow_id(data_storage_url, seeded_workflows):
 
     with api_client:
         response = discovery_api.list_workflows_by_action_type(
-            action_type=ACTION_TYPE_ADJUST_RESOURCES,
+            action_type=ACTION_TYPE_INCREASE_MEMORY_LIMITS,
             severity="critical",
             component="pod",
             environment="production",
@@ -103,7 +103,7 @@ def known_workflow_id(data_storage_url, seeded_workflows):
             _request_timeout=10,
         )
         assert len(response.workflows) >= 1, (
-            f"No {ACTION_TYPE_ADJUST_RESOURCES} workflows found in DS"
+            f"No {ACTION_TYPE_INCREASE_MEMORY_LIMITS} workflows found in DS"
         )
         return response.workflows[0].workflow_id
 

@@ -497,6 +497,145 @@ class TestWorkflowDiscoveryToolset:
             assert tool._environment == "production"
             assert tool._priority == "P0"
 
+    def test_toolset_passes_detected_labels_to_all_tools(self):
+        """
+        DD-HAPI-017: WorkflowDiscoveryToolset passes detected_labels to all three tools.
+
+        BR: BR-HAPI-017-001
+        Verifies detected_labels are propagated to list_available_actions,
+        list_workflows, and get_workflow.
+        """
+        from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+        from src.models.incident_models import DetectedLabels
+
+        detected_labels = DetectedLabels(gitOpsManaged=True, gitOpsTool="argocd")
+
+        toolset = WorkflowDiscoveryToolset(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            detected_labels=detected_labels,
+        )
+
+        for tool in toolset.tools:
+            assert tool._detected_labels is detected_labels
+
+
+# ========================================
+# PHASE 4b: detected_labels Propagation Tests (DD-HAPI-017)
+# ========================================
+
+class TestDetectedLabelsPropagation:
+    """
+    DD-HAPI-017: Verify detected_labels are passed through the three-step protocol.
+    BR-HAPI-017-001: All tools pass full signal context filters including detected_labels.
+    DD-WORKFLOW-001 v2.1: strip_failed_detections applied before sending.
+    """
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_build_context_params_includes_detected_labels_when_provided(self, mock_get):
+        """
+        _build_context_params() includes detected_labels when provided.
+
+        Verifies detected_labels are JSON-encoded and added to query params.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+        from src.models.incident_models import DetectedLabels
+
+        detected_labels = DetectedLabels(gitOpsManaged=True, gitOpsTool="argocd")
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"actionTypes": [], "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False}}),
+            raise_for_status=Mock(),
+        )
+
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            detected_labels=detected_labels,
+        )
+        tool.invoke({})
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert "detected_labels" in params
+        parsed = json.loads(params["detected_labels"])
+        assert parsed.get("gitOpsManaged") is True
+        assert parsed.get("gitOpsTool") == "argocd"
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_strip_failed_detections_applied_before_sending(self, mock_get):
+        """
+        strip_failed_detections() is applied before sending.
+
+        DD-WORKFLOW-001 v2.1: Fields in failedDetections are excluded from params.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+        from src.models.incident_models import DetectedLabels
+
+        # pdbProtected detection failed - should be stripped
+        detected_labels = DetectedLabels(
+            gitOpsManaged=True,
+            pdbProtected=False,
+            failedDetections=["pdbProtected"],
+        )
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"actionTypes": [], "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False}}),
+            raise_for_status=Mock(),
+        )
+
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            detected_labels=detected_labels,
+        )
+        tool.invoke({})
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert "detected_labels" in params
+        parsed = json.loads(params["detected_labels"])
+        # pdbProtected should NOT be in params (stripped due to failedDetections)
+        assert "pdbProtected" not in parsed
+        # gitOpsManaged should be present (not in failedDetections)
+        assert parsed.get("gitOpsManaged") is True
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_detected_labels_none_omitted_from_params(self, mock_get):
+        """
+        detected_labels=None works - no detected_labels in params.
+
+        When no detected_labels provided, params should not include detected_labels key.
+        """
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"actionTypes": [], "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False}}),
+            raise_for_status=Mock(),
+        )
+
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            detected_labels=None,
+        )
+        tool.invoke({})
+
+        call_kwargs = mock_get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert "detected_labels" not in params
+
 
 # ========================================
 # PHASE 5: remediationId Propagation Tests

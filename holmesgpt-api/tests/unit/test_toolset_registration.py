@@ -118,6 +118,7 @@ class TestRegisterWorkflowDiscoveryToolset:
                 environment="production",
                 priority="P0",
                 custom_labels={"team": ["payments"]},
+                detected_labels=None,
             )
 
     def test_injects_via_list_server_toolsets_ut_reg_003(self):

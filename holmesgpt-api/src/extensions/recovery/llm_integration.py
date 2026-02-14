@@ -275,6 +275,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         app_config,
         remediation_id=remediation_id,
         custom_labels=custom_labels,
+        detected_labels=detected_labels,
         severity=request_data.get("severity", ""),
         component=request_data.get("resource_kind", ""),
         environment=request_data.get("environment", ""),

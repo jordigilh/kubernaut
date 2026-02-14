@@ -29,7 +29,7 @@ type HAPIWorkflowFixture struct {
 	Version         string
 	DisplayName     string
 	Description     string
-	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "AdjustResources", "ScaleReplicas")
+	ActionType      string // DD-WORKFLOW-016 V1.0: FK to action_type_taxonomy (e.g., "IncreaseMemoryLimits", "ScaleReplicas")
 	SignalType      string
 	Severity        string
 	Component       string
@@ -80,7 +80,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Increase Memory Limits",
 			Description:     "Increases memory limits for pods experiencing OOMKilled events",
-			ActionType:      "AdjustResources", // DD-WORKFLOW-016: Modify resource requests/limits
+			ActionType:      "IncreaseMemoryLimits", // DD-WORKFLOW-016 V1.0: Increase memory limits
 			SignalType:      "OOMKilled",
 			Severity:        "critical",
 			Component:       "pod",
@@ -108,7 +108,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "CrashLoopBackOff - Fix Configuration",
 			Description:     "Identifies and fixes configuration issues causing CrashLoopBackOff",
-			ActionType:      "ReconfigureService", // DD-WORKFLOW-016: Update ConfigMap/Secret values
+			ActionType:      "RestartDeployment", // DD-WORKFLOW-016 V1.0: Rolling restart for config fix
 			SignalType:      "CrashLoopBackOff",
 			Severity:        "high",
 			Component:       "pod",
@@ -136,7 +136,7 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "ImagePullBackOff - Fix Registry Credentials",
 			Description:     "Fixes ImagePullBackOff errors by updating registry credentials",
-			ActionType:      "ReconfigureService", // DD-WORKFLOW-016: Update credentials = configuration
+			ActionType:      "RollbackDeployment", // DD-WORKFLOW-016 V1.0: Revert to previous revision
 			SignalType:      "ImagePullBackOff",
 			Severity:        "high",
 			Component:       "pod",

@@ -369,6 +369,7 @@ async def analyze_incident(
             app_config,
             remediation_id=remediation_id,
             custom_labels=custom_labels,
+            detected_labels=detected_labels_for_toolset,
             severity=request_data.get("severity", ""),
             component=request_data.get("resource_kind", ""),
             environment=request_data.get("environment", ""),
