@@ -60,6 +60,7 @@ import (
 
 	// Import ALL CRD types that RO interacts with
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -274,6 +275,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// NotificationRequest (RO creates these)
 	err = notificationv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// EffectivenessAssessment (RO owns these - ADR-EM-001, GAP-RO-3)
+	err = eav1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Bootstrapping per-process envtest with ALL CRDs")
