@@ -112,11 +112,13 @@ type WorkflowMaintainer struct {
 // These fields are used by the three-step discovery protocol (DD-HAPI-017) to filter
 // workflows for a given incident context. Stored in the labels JSONB column.
 //
-// BR-WORKFLOW-004: All fields are required.
+// BR-WORKFLOW-004: severity, environment, component, priority are required.
+// DD-WORKFLOW-016: signalType changed to optional metadata (not used for matching in V1.0).
 type WorkflowSchemaLabels struct {
-	// SignalType is the signal type this workflow handles (REQUIRED)
+	// SignalType is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
+	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalType string `yaml:"signalType" json:"signalType" validate:"required"`
+	SignalType string `yaml:"signalType,omitempty" json:"signalType,omitempty" validate:"omitempty"`
 
 	// Severity is the severity level this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
@@ -188,11 +190,10 @@ type WorkflowParameter struct {
 // ========================================
 
 // ValidateMandatoryLabels checks if all mandatory labels are present
-// BR-WORKFLOW-004: signalType, severity, environment, component, priority are required
+// BR-WORKFLOW-004 + DD-WORKFLOW-016: severity, environment, component, priority are required.
+// signalType is optional metadata (DD-WORKFLOW-016).
 func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
-	if l.SignalType == "" {
-		return NewSchemaValidationError("labels.signalType", "signalType is required")
-	}
+	// Note: signalType intentionally NOT validated -- optional per DD-WORKFLOW-016
 	if l.Severity == "" {
 		return NewSchemaValidationError("labels.severity", "severity is required")
 	}
