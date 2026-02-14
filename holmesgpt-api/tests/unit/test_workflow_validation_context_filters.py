@@ -287,6 +287,7 @@ class TestValidatorHappyPathWithContext:
         mock_workflow = Mock()
         mock_workflow.workflow_id = "uuid-1"
         mock_workflow.container_image = "quay.io/kubernaut-ai/scale:v1.0.0"
+        mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
                 "parameters": [
@@ -295,6 +296,10 @@ class TestValidatorHappyPathWithContext:
             }
         }
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
+        # Gap 3: cross-check expects list_available_actions to return matching action_type
+        mock_ds_client.list_available_actions.return_value = {
+            "action_types": [{"action_type": "ScaleReplicas"}]
+        }
 
         validator = WorkflowResponseValidator(
             mock_ds_client,
@@ -322,6 +327,7 @@ class TestValidatorHappyPathWithContext:
         mock_workflow = Mock()
         mock_workflow.workflow_id = "uuid-1"
         mock_workflow.container_image = "quay.io/kubernaut-ai/scale:v1.0.0"
+        mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
                 "parameters": [
@@ -330,6 +336,10 @@ class TestValidatorHappyPathWithContext:
             }
         }
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
+        # Gap 3: cross-check expects list_available_actions to return matching action_type
+        mock_ds_client.list_available_actions.return_value = {
+            "action_types": [{"action_type": "ScaleReplicas"}]
+        }
 
         validator = WorkflowResponseValidator(
             mock_ds_client,
