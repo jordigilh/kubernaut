@@ -1,6 +1,6 @@
 # Effectiveness Monitor (EM) Comprehensive Test Plan
 
-**Version**: 1.1.0
+**Version**: 1.3.0
 **Created**: 2026-02-09
 **Status**: Draft
 **Service Type**: CRD Controller
@@ -368,6 +368,8 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-SD-001 | Target spec changes after hash computation -> EA completes with spec_drift | | X | | Status patch + watch trigger |
 | IT-EM-SD-002 | Target spec unchanged -> EA completes normally (no drift) | | X | | Negative test |
 | IT-EM-SD-003 | Target resource missing -> hash from empty spec, no drift | | X | | Graceful degradation |
+| E2E-EM-SD-001 | Spec drift detected -> EA completes with spec_drift, DS scores 0.0 | | | X | Full stack: CRD + audit + DS scoring |
+| E2E-EM-SD-002 | No drift -> normal completion, DS scores normally | | | X | Negative E2E test |
 
 ---
 
