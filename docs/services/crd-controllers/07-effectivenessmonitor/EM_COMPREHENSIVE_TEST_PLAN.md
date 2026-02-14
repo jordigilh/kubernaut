@@ -168,7 +168,7 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-AR-002 | Mock AM returns firing -> alert event in DS with score 0.0 | | X | | httptest mock |
 | IT-EM-AR-003 | Mock AM returns no alerts for target -> alert event with score 0.5 | | X | | Ambiguous/no-match case |
 | IT-EM-AR-004 | Mock AM returns error (503) -> alert not assessed, reconcile requeues | | X | | Error path |
-| IT-EM-AR-005 | AM disabled in config -> no alert assessment, no alert event emitted | | X | | Config: alertmanager.enabled=false |
+| ~~IT-EM-AR-005~~ | ~~AM disabled in config -> no alert assessment~~ | | | | Moved to UT-EM-CF-010 (config-disable logic is unit-testable) |
 | IT-EM-AR-006 | Alert event payload verified in DS (correlation_id, signal_resolved, score) | | X | | Query DS API, verify structure |
 | E2E-EM-AR-001 | Real AM with resolved alert -> alert score 1.0 in DS | | | X | Real AlertManager |
 | E2E-EM-AR-002 | Real AM with active alerts -> alert score 0.0 in DS | | | X | Real AlertManager |
@@ -264,8 +264,8 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-AE-003 | Only completed event emitted when validity expired with no data | | X | | |
 | IT-EM-AE-004 | Events emitted incrementally (health first, then hash, alert, metrics, completed) | | X | | Verify ordering by timestamp |
 | IT-EM-AE-005 | Correlation ID in all events matches EA.spec.correlationID | | X | | Cross-event consistency |
-| IT-EM-AE-006 | Partial assessment (Prom disabled): 4 events emitted (health, hash, alert, completed) | | X | | Config: prometheus.enabled=false |
-| IT-EM-AE-007 | Partial assessment (AM disabled): 4 events emitted (health, hash, metrics, completed) | | X | | Config: alertmanager.enabled=false |
+| ~~IT-EM-AE-006~~ | ~~Partial assessment (Prom disabled): 4 events~~ | | | | Moved to UT-EM-CF-011 (config-disable logic is unit-testable) |
+| ~~IT-EM-AE-007~~ | ~~Partial assessment (AM disabled): 4 events~~ | | | | Moved to UT-EM-CF-012 (config-disable logic is unit-testable) |
 | IT-EM-AE-008 | DS write failure for component event -> reconcile requeues, retries event emission | | X | | DS mock returns 500 on first attempt |
 | E2E-EM-AE-001 | Full pipeline -> all 6 events in DS with correct payloads (scheduled + 4 components + completed) | | | X | |
 
@@ -291,8 +291,13 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | UT-EM-CF-006 | prometheus.enabled = false -> metrics assessment skipped | X | | | |
 | UT-EM-CF-007 | alertmanager.enabled = false -> alert assessment skipped | X | | | |
 | UT-EM-CF-008 | maxConcurrentAssessments sets MaxConcurrentReconciles | X | | | |
+| UT-EM-CF-009 | Both Prom+AM disabled → nil scores, assessed-as-skipped flags true | X | | | Moved from IT-EM-CF-002; fake client |
+| UT-EM-CF-010 | AM disabled → nil alert score, no panic with nil AM client | X | | | Moved from IT-EM-AR-005; fake client |
+| UT-EM-CF-011 | Prom disabled → nil metrics score, no panic with nil Prom client | X | | | Moved from IT-EM-AE-006; fake client |
+| UT-EM-CF-012 | Both disabled → all 4 assessed flags true, 2 nil scores | X | | | Moved from IT-EM-AE-007; fake client |
+| UT-EM-CF-013 | Nil Prom+AM clients with disabled config → no panic across 10 reconciles | X | | | Moved from IT-EM-FF-005; fake client |
 | IT-EM-CF-001 | Controller starts with valid config -> reconciler operational | | X | | Full wired-up config |
-| IT-EM-CF-002 | Prom disabled + AM disabled -> reconciler runs without external deps | | X | | Health + hash only |
+| ~~IT-EM-CF-002~~ | ~~Prom disabled + AM disabled -> reconciler runs without external deps~~ | | | | Moved to UT-EM-CF-009 (config-disable logic is unit-testable) |
 | IT-EM-CF-003 | Custom validityWindow (e.g., 5m) -> EA deadline computed correctly | | X | | Verify status.spec.config |
 
 ### Fail-Fast Startup (FF)
@@ -309,7 +314,7 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-FF-002 | Controller start with DS unreachable -> startup fails (FATAL) | | X | | DS health check fails |
 | IT-EM-FF-003 | Controller start with Prom enabled but mock unreachable -> startup fails | | X | | Prom mock not started |
 | IT-EM-FF-004 | Controller start with AM enabled but mock unreachable -> startup fails | | X | | AM mock not started |
-| IT-EM-FF-005 | Controller start with Prom disabled, mock absent -> startup succeeds | | X | | Config override |
+| ~~IT-EM-FF-005~~ | ~~Controller start with Prom disabled, mock absent -> startup succeeds~~ | | | | Moved to UT-EM-CF-013 (nil-client safety is unit-testable) |
 | E2E-EM-FF-001 | EM started without Prometheus running -> pod fails to start | | | X | Real failure |
 
 ### Operational Metrics (OM)
@@ -511,7 +516,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 |--------|-------------|-------|--------------|
 | **AR** (Alert Resolution) | 5 | 6 | UT-EM-AR-001, -002, -003, -004, -005 |
 | **AE** (Audit Events) | 5 | 7 | UT-EM-AE-001, -002, -003, -004, -005 |
-| **CF** (Configuration) | 8 | 8 | UT-EM-CF-001, -002, -003, -004, -005, -006, -007, -008 |
+| **CF** (Configuration) | 13 | 13 | UT-EM-CF-001 to -008, -009, -010, -011, -012, -013 |
 | **OM** (Operational Metrics) | 3 | 3 | UT-EM-OM-001, -002, -003 |
 | **SH** (Spec Hash) | 5 | 5 | UT-EM-SH-001, -002, -003, -004, -005 |
 | **HC** (Health Check) | 6 | 10 | UT-EM-HC-001, -002, -003, -004, -005, -006 |
@@ -523,28 +528,30 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | **FF** (Fail-Fast) | 0 | 4 | — |
 | **RR** (Restart Recovery) | 0 | 4 | — |
 | **GS** (Graceful Shutdown) | 0 | 4 | — |
-| **Total** | **47** | **~75** | |
+| **Total** | **52** | **~80** | |
 
 #### Integration Tests (IT-EM-*): Implemented Scenarios
 
 | Domain | Implemented | Total | Scenario IDs |
 |--------|-------------|-------|--------------|
 | **RC** (Reconciler) | 6 | 9 | IT-EM-RC-001, -002, -003, -005, -006, -007 |
-| **CF** (Configuration) | 2 | 4 | IT-EM-CF-001, -003 |
+| **CF** (Configuration) | 2 | 2 | IT-EM-CF-001, -003 |
 | **VW** (Validity Window) | 3 | 5 | IT-EM-VW-001, -002, -005 |
 | **HC** (Health Check) | 0 | 6 | — |
-| **AR** (Alert Resolution) | 0 | 6 | — |
+| **AR** (Alert Resolution) | 0 | 5 | — (IT-EM-AR-005 moved to UT) |
 | **MC** (Metric Comparison) | 0 | 8 | — |
 | **SH** (Spec Hash) | 0 | 3 | — |
-| **AE** (Audit Events) | 0 | 8 | — |
+| **AE** (Audit Events) | 0 | 6 | — (IT-EM-AE-006, -007 moved to UT) |
 | **KE** (K8s Events) | 0 | 4 | — |
-| **FF** (Fail-Fast) | 0 | 5 | — |
+| **FF** (Fail-Fast) | 0 | 4 | — (IT-EM-FF-005 moved to UT) |
 | **OM** (Operational Metrics) | 0 | 3 | — |
 | **RR** (Restart Recovery) | 0 | 3 | — |
 | **GS** (Graceful Shutdown) | 0 | 3 | — |
-| **Total** | **11** | **67** | |
+| **Total** | **11** | **62** | |
 
-Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (8); all SH (3); IT-EM-VW-003, -004; all AE (8); all KE (4); IT-EM-CF-002, -004; all FF (5); all OM (3); all RR (3); all GS (3) = **56 remaining**.
+Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); IT-EM-AR-001 to -004, -006 (5); all MC (8); all SH (3); IT-EM-VW-003, -004; IT-EM-AE-001 to -005, -008 (6); all KE (4); IT-EM-CF-004 (1); IT-EM-FF-001 to -004 (4); all OM (3); all RR (3); all GS (3) = **51 remaining**.
+
+> **Note**: 5 config-disable scenarios (IT-EM-CF-002, IT-EM-AR-005, IT-EM-AE-006, IT-EM-AE-007, IT-EM-FF-005) were moved from IT to UT tier. Config-disable logic is pure unit-testable: it gates nil-client safety and flag toggling, requiring no envtest or shared infrastructure. See UT-EM-CF-009 through UT-EM-CF-013.
 
 #### E2E Tests (E2E-EM-*): Implemented Scenarios
 
@@ -652,6 +659,7 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); all AR (6); all MC (
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3.0 | 2026-02-14 | AI Assistant | Re-tiered 5 config-disable scenarios from IT to UT (UT-EM-CF-009 to -013); reverted anti-pattern INT commit (separate envtest, Ordered container, direct Reconcile()); rewrote as unit tests with fake.NewClientBuilder(); IT total 67→62, UT total ~75→~80 |
 | 1.2.0 | 2026-02-14 | AI Assistant | Added Spec Drift Guard (SD) domain: 11 UT (conditions) + 3 UT (DS scoring) + 3 IT = 17 scenarios (DD-EM-002 v1.1, DD-CRD-002-EA); covers conditions infrastructure, DS score=0.0 short-circuit, reconciler drift detection |
 | 1.1.1 | 2026-02-13 | AI Assistant | Removed ScoringThreshold: UT-EM-CF-008, IT-EM-CF-004; removed RemediationIneffective: UT-EM-KE-002, IT-EM-KE-003; EM always emits Normal EffectivenessAssessed; DS computes score on demand; grand total 149 scenarios |
 | 1.1.0 | 2026-02-12 | AI Assistant | Added Derived Timing (DT) domain: 6 UT + 9 IT + 2 E2E = 17 scenarios (ADR-EM-001 v1.3); updated AE domain with UT-EM-AE-008 (scheduled event payload); updated IT-EM-AE-001 and E2E-EM-AE-001 counts from 5 to 6 events; ValidityDeadline moved from spec to status |
