@@ -40,7 +40,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -283,6 +285,15 @@ func NewServer(
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
+	// DD-WORKFLOW-017: Create OCI schema extractor for pullspec-only workflow registration
+	imagePuller := oci.NewCraneImagePuller(logger)
+	schemaParser := schema.NewParser()
+	schemaExtractor := oci.NewSchemaExtractor(imagePuller, schemaParser)
+
+	// BR-HAPI-016: Remediation history context repository (DD-HAPI-016 v1.1)
+	remHistoryRepo := repository.NewRemediationHistoryRepository(db, logger)
+	remHistoryQuerier := NewRemediationHistoryRepoAdapter(remHistoryRepo)
+
 	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
 	// V1.0: Embedding service removed (label-only search)
 	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
@@ -291,7 +302,9 @@ func NewServer(
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithAuditStore(auditStore),
-		WithSQLDB(db))
+		WithSQLDB(db),
+		WithSchemaExtractor(schemaExtractor),
+		WithRemediationHistoryQuerier(remHistoryQuerier))
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
@@ -320,8 +333,8 @@ func NewServer(
 		repository:      repo,
 		dlqClient:       dlqClient,
 		validator:       validator,
-		auditEventsRepo: auditEventsRepo,
-		auditStore:      auditStore,
+		auditEventsRepo:        auditEventsRepo,
+		auditStore:             auditStore,
 		metrics:         metrics,
 		signer:          signer,
 		authenticator:   authenticator,   // DD-AUTH-014: Injected at runtime
@@ -472,6 +485,14 @@ func (s *Server) Handler() http.Handler {
 		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
 		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
 		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
+
+		// BR-EM-001 to BR-EM-004: On-demand effectiveness scoring (DD-017 v2.1, ADR-EM-001 Principle 5)
+		s.logger.V(1).Info("Registering GET /api/v1/effectiveness/{correlation_id} handler")
+		r.Get("/effectiveness/{correlation_id}", s.handleGetEffectivenessScore)
+
+		// BR-HAPI-016: Remediation history context for LLM prompt enrichment (DD-HAPI-016 v1.1)
+		s.logger.V(1).Info("Registering GET /api/v1/remediation-history/context handler")
+		r.Get("/remediation-history/context", s.handler.HandleGetRemediationHistoryContext)
 
 		// BR-STORAGE-013, BR-STORAGE-014: Workflow catalog management
 		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration

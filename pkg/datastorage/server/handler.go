@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
@@ -56,6 +58,17 @@ type DBInterface interface {
 	AggregateIncidentTrend(period string) (*models.TrendAggregationResponse, error)
 }
 
+// RemediationHistoryQuerier defines the data access interface for remediation
+// history context queries. Used by HandleGetRemediationHistoryContext.
+//
+// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// DD-HAPI-016 v1.1: Two-step query pattern (RO events by target, EM events by correlation_id).
+type RemediationHistoryQuerier interface {
+	QueryROEventsByTarget(ctx context.Context, targetResource string, since time.Time) ([]repository.RawAuditRow, error)
+	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
+	QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+}
+
 // Handler handles REST API requests for Data Storage Service
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
@@ -69,6 +82,8 @@ type Handler struct {
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
 	auditStore            audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
+	schemaExtractor       *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI-based workflow registration
+	remediationHistoryRepo RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -111,6 +126,22 @@ func WithSQLDB(db *sql.DB) HandlerOption {
 func WithAuditStore(store audit.AuditStore) HandlerOption {
 	return func(h *Handler) {
 		h.auditStore = store
+	}
+}
+
+// WithSchemaExtractor sets the OCI schema extractor for workflow registration
+// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
+	return func(h *Handler) {
+		h.schemaExtractor = extractor
+	}
+}
+
+// WithRemediationHistoryQuerier sets the remediation history repository.
+// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
+	return func(h *Handler) {
+		h.remediationHistoryRepo = repo
 	}
 }
 
