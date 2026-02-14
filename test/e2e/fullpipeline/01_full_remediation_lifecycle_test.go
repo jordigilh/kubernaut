@@ -435,6 +435,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"orchestrator.lifecycle.created",   // pkg/remediationorchestrator/audit: emitRemediationCreatedAudit
 			"orchestrator.lifecycle.started",   // pkg/remediationorchestrator/audit: emitLifecycleStartedAudit
 			"orchestrator.lifecycle.completed", // pkg/remediationorchestrator/audit: emitCompletionAudit
+			// Effectiveness Monitor: assessment lifecycle + component events
+			// The RO creates an EA CRD on RR completion (ADR-EM-001). The EM waits
+			// for the stabilization window (30s default), then runs all 4 component
+			// checks in a single reconcile, emitting one audit event per component.
+			// Each event is guarded by its component flag (emitted exactly once per EA).
+			"effectiveness.assessment.scheduled",  // pkg/effectivenessmonitor/audit: RecordAssessmentScheduled
+			"effectiveness.health.assessed",       // pkg/effectivenessmonitor/audit: RecordHealthAssessed
+			"effectiveness.hash.computed",          // pkg/effectivenessmonitor/audit: RecordHashComputed
+			"effectiveness.alert.assessed",         // pkg/effectivenessmonitor/audit: RecordAlertAssessed
+			"effectiveness.metrics.assessed",       // pkg/effectivenessmonitor/audit: RecordMetricsAssessed
+			"effectiveness.assessment.completed",   // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
 		}
 
 		// === Events that MUST appear at least once ===
@@ -506,7 +517,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			GinkgoWriter.Printf("  [Step 11] Found %d audit events (%d unique types), %d required types still missing\n",
 				len(allAuditEvents), len(eventTypeCounts), len(missing))
 			return missing
-		}, 90*time.Second, 2*time.Second).Should(BeEmpty(),
+		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
 			"All required audit event types must be present in the trail")
 
 		// Log all events for debugging
@@ -531,6 +542,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Expect(eventTypeCounts[eventType]).To(BeNumerically(">=", 1),
 				"Event %s must appear at least once, but found %d", eventType, eventTypeCounts[eventType])
 		}
+
+		// Total event count validation: the audit trail must contain at least
+		// len(exactlyOnceEvents) + len(atLeastOnceEvents) events. At-least-once
+		// events may repeat (phase transitions, retries), and optional events
+		// (tool calls, business classification) may also be present.
+		expectedMinTotal := len(exactlyOnceEvents) + len(atLeastOnceEvents)
+		Expect(len(allAuditEvents)).To(BeNumerically(">=", expectedMinTotal),
+			"Audit trail must contain at least %d events (got %d): %d exactly-once + %d at-least-once",
+			expectedMinTotal, len(allAuditEvents), len(exactlyOnceEvents), len(atLeastOnceEvents))
 
 		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
 		// Audit timestamps have second-level precision, so multiple events emitted in the
@@ -686,7 +706,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE (with audit verification)")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification ✅")
+		GinkgoWriter.Println("  Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification → EM ✅")
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated, temporally ordered ✅")
 		GinkgoWriter.Println("  RR Reconstruction: valid, high completeness ✅")
 	})
