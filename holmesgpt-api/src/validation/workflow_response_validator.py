@@ -162,6 +162,10 @@ class WorkflowResponseValidator:
             # Can't continue validation without workflow
             return ValidationResult(is_valid=False, errors=errors)
 
+        # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
+        action_type_errors = self._validate_action_type_crosscheck(workflow)
+        errors.extend(action_type_errors)
+
         # STEP 2: Container Image Consistency (BR-HAPI-196)
         image_errors = self._validate_container_image(
             container_image,
@@ -231,6 +235,68 @@ class WorkflowResponseValidator:
                 raise _SecurityGateRejection(workflow_id, self._context_filters) from e
             logger.error(f"Error checking workflow existence: {e}")
             return None
+
+    def _validate_action_type_crosscheck(self, workflow) -> List[str]:
+        """
+        STEP 1b: Cross-check workflow's action_type against available actions.
+
+        DD-WORKFLOW-016 Gap 3: When context filters are set, queries DS for
+        available action types and verifies the selected workflow's action_type
+        is in that set. This is a belt-and-suspenders check on top of the
+        security gate.
+
+        Only performed when context filters are active (otherwise skip).
+        Gracefully degrades on DS errors (returns empty errors list).
+
+        Args:
+            workflow: Workflow fetched from DS (has action_type attribute)
+
+        Returns:
+            List of error messages (empty if valid or skipped)
+        """
+        # Skip if no context filters (nothing to cross-check against)
+        if not self._context_filters:
+            return []
+
+        # Skip if workflow has no action_type
+        action_type = getattr(workflow, "action_type", None)
+        if not action_type:
+            return []
+
+        try:
+            # Query DS directly for available action types with context filters
+            response = self.ds_client.list_available_actions(**self._context_filters)
+
+            # Extract action_type strings from response
+            action_types_data = response.get("action_types", []) if isinstance(response, dict) else []
+            available_types = {
+                at.get("action_type", "") if isinstance(at, dict) else str(at)
+                for at in action_types_data
+            }
+
+            if action_type not in available_types:
+                logger.info(
+                    f"DD-WORKFLOW-016 Gap 3: action_type '{action_type}' not in available "
+                    f"actions for context {self._context_filters}. "
+                    f"Available: {sorted(available_types)}"
+                )
+                return [
+                    f"Workflow '{workflow.workflow_id}' has action_type '{action_type}' "
+                    f"which was not in the available actions for this context. "
+                    f"Please use list_available_actions to discover valid actions."
+                ]
+
+            logger.debug(
+                f"DD-WORKFLOW-016 Gap 3: action_type '{action_type}' confirmed in available actions"
+            )
+            return []
+
+        except Exception as e:
+            # Graceful degradation: don't block validation on DS errors
+            logger.warning(
+                f"DD-WORKFLOW-016 Gap 3: action_type cross-check failed (graceful degradation): {e}"
+            )
+            return []
 
     def _validate_container_image(
         self,

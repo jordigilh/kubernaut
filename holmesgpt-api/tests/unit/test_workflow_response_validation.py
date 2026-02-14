@@ -785,3 +785,174 @@ class TestCompleteValidationFlow:
         assert len(result.errors) == 0
         assert result.validated_container_image == "ghcr.io/kubernaut/restart:v1.0.0"
 
+
+# =============================================================================
+# PHASE 6: Action-Type Cross-Check Validation (DD-WORKFLOW-016, Gap 3)
+# =============================================================================
+
+class TestActionTypeCrossCheckValidation:
+    """
+    DD-WORKFLOW-016 Gap 3: Validator cross-checks the workflow's action_type
+    against available action types from DS (queried directly).
+
+    The validator queries GET /api/v1/workflows/actions with context filters
+    to get available action types, then verifies the selected workflow's
+    action_type is in that set.
+    """
+
+    @pytest.fixture
+    def mock_ds_client(self):
+        """Mock Data Storage client."""
+        return Mock()
+
+    def test_rejects_workflow_with_unknown_action_type(self, mock_ds_client):
+        """
+        Gap 3: Workflow with action_type not in available actions is rejected.
+
+        Given: DS returns ["RestartPod", "ScaleReplicas"] as available actions
+        And: LLM selected a workflow with action_type="CordonNode"
+        When: validate() is called
+        Then: Returns error about action_type not in available actions
+        """
+        workflow = Mock()
+        workflow.workflow_id = "wf-001"
+        workflow.action_type = "CordonNode"
+        workflow.container_image = "ghcr.io/kubernaut/cordon:v1.0.0"
+        workflow.parameters = None
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        # DS returns available action types (without CordonNode)
+        mock_ds_client.list_available_actions.return_value = {
+            "action_types": [
+                {"action_type": "RestartPod", "workflow_count": 3},
+                {"action_type": "ScaleReplicas", "workflow_count": 2},
+            ]
+        }
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(
+            mock_ds_client,
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        result = validator.validate(
+            workflow_id="wf-001",
+            container_image=None,
+            parameters={},
+        )
+
+        assert result.is_valid is False
+        assert any("action_type" in e.lower() and "CordonNode" in e for e in result.errors), (
+            f"Expected action_type cross-check error, got: {result.errors}"
+        )
+
+    def test_passes_workflow_with_valid_action_type(self, mock_ds_client):
+        """
+        Gap 3: Workflow with action_type in available actions is accepted.
+
+        Given: DS returns ["RestartPod", "ScaleReplicas"] as available actions
+        And: LLM selected a workflow with action_type="RestartPod"
+        When: validate() is called
+        Then: No action_type cross-check error
+        """
+        workflow = Mock()
+        workflow.workflow_id = "wf-001"
+        workflow.action_type = "RestartPod"
+        workflow.container_image = "ghcr.io/kubernaut/restart:v1.0.0"
+        workflow.parameters = None
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        mock_ds_client.list_available_actions.return_value = {
+            "action_types": [
+                {"action_type": "RestartPod", "workflow_count": 3},
+                {"action_type": "ScaleReplicas", "workflow_count": 2},
+            ]
+        }
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(
+            mock_ds_client,
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        result = validator.validate(
+            workflow_id="wf-001",
+            container_image=None,
+            parameters={},
+        )
+
+        assert result.is_valid is True
+
+    def test_skips_crosscheck_when_no_context_filters(self, mock_ds_client):
+        """
+        Gap 3: Cross-check is skipped when no context filters are set.
+
+        Given: Validator constructed without context filters
+        When: validate() is called
+        Then: Cross-check is not performed (list_available_actions not called)
+        """
+        workflow = Mock()
+        workflow.workflow_id = "wf-001"
+        workflow.action_type = "AnyAction"
+        workflow.container_image = "ghcr.io/kubernaut/any:v1.0.0"
+        workflow.parameters = None
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        # No context filters
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        result = validator.validate(
+            workflow_id="wf-001",
+            container_image=None,
+            parameters={},
+        )
+
+        assert result.is_valid is True
+        # list_available_actions should NOT have been called
+        mock_ds_client.list_available_actions.assert_not_called()
+
+    def test_crosscheck_graceful_on_ds_error(self, mock_ds_client):
+        """
+        Gap 3: Cross-check fails gracefully if DS call errors.
+
+        Given: list_available_actions raises an exception
+        When: validate() is called
+        Then: Validation continues without action_type error (graceful degradation)
+        """
+        workflow = Mock()
+        workflow.workflow_id = "wf-001"
+        workflow.action_type = "RestartPod"
+        workflow.container_image = "ghcr.io/kubernaut/restart:v1.0.0"
+        workflow.parameters = None
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+        mock_ds_client.list_available_actions.side_effect = Exception("Connection refused")
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(
+            mock_ds_client,
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+        )
+
+        result = validator.validate(
+            workflow_id="wf-001",
+            container_image=None,
+            parameters={},
+        )
+
+        # Should be valid -- graceful degradation on DS error
+        assert result.is_valid is True
+
