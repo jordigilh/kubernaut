@@ -120,14 +120,11 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 
 		// Verify EA spec fields
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
 		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app"))
 		Expect(ea.Spec.TargetResource.Namespace).To(Equal(ns))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0))
-
-		// Verify labels
-		Expect(ea.Labels["kubernaut.ai/correlation-id"]).To(Equal(rr.Name))
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("Completed"))
 
 		// Verify owner reference (cascade deletion)
 		Expect(ea.OwnerReferences).To(HaveLen(1))
@@ -170,14 +167,14 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		By("Verifying EA was created with Failed label")
+		By("Verifying EA was created with Failed phase in spec")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR failure")
 
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("Failed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
 	})
 
@@ -221,14 +218,14 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseTimedOut))
 
-		By("Verifying EA was created with TimedOut label")
+		By("Verifying EA was created with TimedOut phase in spec")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR timeout")
 
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("TimedOut"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"))
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
 	})
 

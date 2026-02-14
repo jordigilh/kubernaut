@@ -143,12 +143,10 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-002",
 				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-ke-002",
-				},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-ke-002",
+				CorrelationID:           "rr-ke-002",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
@@ -202,12 +200,10 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-ke-003",
 				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-ke-003",
-				},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-ke-003",
+				CorrelationID:           "rr-ke-003",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",

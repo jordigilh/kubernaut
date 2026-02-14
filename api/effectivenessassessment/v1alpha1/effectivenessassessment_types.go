@@ -33,9 +33,7 @@ import (
 // Immutability: Spec is immutable after creation (CEL validation, ADR-001)
 // Owner: RemediationRequest (ownerRef for garbage collection)
 //
-// Labels (per DD-AUDIT-CORRELATION-002):
-//   - kubernaut.ai/correlation-id: RR.Name
-//   - kubernaut.ai/rr-phase: RR phase at EA creation time
+// Note: correlation-id and rr-phase were formerly labels; now in spec for immutability.
 // ============================================================================
 
 // Phase constants for EffectivenessAssessment
@@ -79,6 +77,15 @@ type EffectivenessAssessmentSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	CorrelationID string `json:"correlationID"`
+
+	// RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
+	// the EA was created. Captured as an immutable spec field so the EM can branch
+	// assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+	// Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
+	// for immutability and security.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=Completed;Failed;TimedOut
+	RemediationRequestPhase string `json:"remediationRequestPhase"`
 
 	// TargetResource identifies the Kubernetes resource that was remediated.
 	// +kubebuilder:validation:Required

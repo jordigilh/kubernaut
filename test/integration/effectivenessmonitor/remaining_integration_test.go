@@ -144,10 +144,10 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-vw-003", Namespace: ns,
-				Labels: map[string]string{"kubernaut.ai/correlation-id": "rr-vw-003"},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-vw-003",
+				CorrelationID:           "rr-vw-003",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
@@ -416,10 +416,10 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "ea-rr-001", Namespace: ns,
-				Labels: map[string]string{"kubernaut.ai/correlation-id": "rr-rr-001"},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-rr-001",
+				CorrelationID:           "rr-rr-001",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},

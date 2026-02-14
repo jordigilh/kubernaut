@@ -42,12 +42,10 @@ func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.Eff
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/correlation-id": correlationID,
-			},
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID: correlationID,
+			CorrelationID:           correlationID,
+			RemediationRequestPhase: "Completed",
 			TargetResource: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",

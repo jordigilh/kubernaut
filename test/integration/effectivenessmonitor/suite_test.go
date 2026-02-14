@@ -483,12 +483,10 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/correlation-id": correlationID,
-			},
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID: correlationID,
+			CorrelationID:           correlationID,
+			RemediationRequestPhase: "Completed",
 			TargetResource: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",
@@ -541,12 +539,10 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/correlation-id": correlationID,
-			},
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID: correlationID,
+			CorrelationID:           correlationID,
+			RemediationRequestPhase: "Completed",
 			TargetResource: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",

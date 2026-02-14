@@ -251,12 +251,10 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-dt-010",
 				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-dt-010",
-				},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-dt-010",
+				CorrelationID:           "rr-dt-010",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
