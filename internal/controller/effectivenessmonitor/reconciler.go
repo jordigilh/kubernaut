@@ -542,16 +542,23 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 // alertAssessResult contains both the component result and the structured alert data
 // for populating the alert_resolution typed sub-object in audit events (DD-017 v2.5).
 type alertAssessResult struct {
-	Component     emtypes.ComponentResult
-	AlertResolved bool
-	ActiveCount   int32
+	Component             emtypes.ComponentResult
+	AlertResolved         bool
+	ActiveCount           int32
+	ResolutionTimeSeconds *float64 // Seconds from remediation to alert resolution (nil if not resolved)
 }
 
 func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAssessment) alertAssessResult {
 	logger := log.FromContext(ctx)
 
+	// OBS-1: Use SignalName (the actual alert name) when available,
+	// falling back to CorrelationID for backward compatibility.
+	alertName := ea.Spec.SignalName
+	if alertName == "" {
+		alertName = ea.Spec.CorrelationID
+	}
 	alertCtx := alert.AlertContext{
-		AlertName: ea.Spec.CorrelationID, // Use correlationID as alert name for now
+		AlertName: alertName,
 		Namespace: ea.Spec.TargetResource.Namespace,
 	}
 
@@ -574,25 +581,36 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 		activeCount = 1
 	}
 
+	// ADR-EM-001 Section 9.2.3: resolution_time_seconds = time from remediation to alert resolution.
+	// Only computed when the alert is resolved and RemediationCreatedAt is available.
+	var resolutionTime *float64
+	if alertResolved && ea.Spec.RemediationCreatedAt != nil {
+		rt := time.Since(ea.Spec.RemediationCreatedAt.Time).Seconds()
+		resolutionTime = &rt
+	}
+
 	return alertAssessResult{
-		Component:     result,
-		AlertResolved: alertResolved,
-		ActiveCount:   activeCount,
+		Component:             result,
+		AlertResolved:         alertResolved,
+		ActiveCount:           activeCount,
+		ResolutionTimeSeconds: resolutionTime,
 	}
 }
 
 // metricsAssessResult contains both the component result and the structured metric deltas
 // for populating the metric_deltas typed sub-object in audit events (DD-017 v2.5).
 type metricsAssessResult struct {
-	Component          emtypes.ComponentResult
-	CPUBefore          *float64
-	CPUAfter           *float64
-	MemoryBefore       *float64
-	MemoryAfter        *float64
-	LatencyP95BeforeMs *float64
-	LatencyP95AfterMs  *float64
-	ErrorRateBefore    *float64
-	ErrorRateAfter     *float64
+	Component            emtypes.ComponentResult
+	CPUBefore            *float64
+	CPUAfter             *float64
+	MemoryBefore         *float64
+	MemoryAfter          *float64
+	LatencyP95BeforeMs   *float64
+	LatencyP95AfterMs    *float64
+	ErrorRateBefore      *float64
+	ErrorRateAfter       *float64
+	ThroughputBeforeRPS  *float64
+	ThroughputAfterRPS   *float64
 }
 
 // metricQuerySpec defines a PromQL query for a single metric type.
@@ -616,7 +634,7 @@ type metricQueryResult struct {
 
 // assessMetrics compares pre/post remediation metrics (BR-EM-003, DD-017 v2.5 Phase B).
 //
-// Executes up to 4 independent PromQL queries (CPU, memory, latency p95, error rate).
+// Executes up to 5 independent PromQL queries (CPU, memory, latency p95, error rate, throughput).
 // Each query is independent — individual query failures don't prevent overall assessment
 // (graceful degradation). The score is the average of all available metric improvements.
 //
@@ -654,6 +672,11 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 			Name:          "http_error_rate",
 			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s",code=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns, ns),
 			LowerIsBetter: true,
+		},
+		{
+			Name:          "http_throughput_rps",
+			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns),
+			LowerIsBetter: false, // Higher throughput is better
 		},
 	}
 
@@ -714,6 +737,9 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 		case "http_error_rate":
 			mr.ErrorRateBefore = &qr.PreValue
 			mr.ErrorRateAfter = &qr.PostValue
+		case "http_throughput_rps":
+			mr.ThroughputBeforeRPS = &qr.PreValue
+			mr.ThroughputAfterRPS = &qr.PostValue
 		}
 	}
 
@@ -1055,6 +1081,13 @@ func (r *Reconciler) emitCompletionMetricsAndEvents(ctx context.Context, ea *eav
 }
 
 // determineAssessmentReason computes the reason based on component assessment state.
+//
+// Reason hierarchy (highest priority first):
+//   - full: All enabled components assessed
+//   - metrics_timed_out: Core checks done (health+hash), Prometheus enabled but metrics
+//     not assessed, validity expired (distinct from generic partial)
+//   - partial: Some components assessed, some not (generic)
+//   - expired: Validity expired with no data collected
 func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment) string {
 	components := &ea.Status.Components
 
@@ -1070,7 +1103,22 @@ func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment)
 	}
 
 	// Check if validity expired (ValidityDeadline is always set by first reconciliation)
-	if ea.Status.ValidityDeadline != nil && r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time) == 0 {
+	validityExpired := ea.Status.ValidityDeadline != nil &&
+		r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time) == 0
+
+	if validityExpired {
+		// ADR-EM-001, Batch 3: Distinguish metrics_timed_out from generic partial.
+		// metrics_timed_out: ALL non-temporal checks completed (health + hash + alerts),
+		// Prometheus is enabled but metrics were NOT assessed before validity expired.
+		// This gives HAPI/DS a precise signal that the assessment was complete
+		// except for metrics collection which requires temporal data.
+		// If alerts are also missing, the correct reason is "partial" (multiple gaps).
+		if r.Config.PrometheusEnabled && !components.MetricsAssessed &&
+			components.HealthAssessed && components.HashComputed &&
+			(components.AlertAssessed || !r.Config.AlertManagerEnabled) {
+			return eav1.AssessmentReasonMetricsTimedOut
+		}
+
 		if anyAssessed {
 			return eav1.AssessmentReasonPartial
 		}
@@ -1150,8 +1198,9 @@ func (r *Reconciler) emitAlertEvent(ctx context.Context, ea *eav1.EffectivenessA
 
 	r.emitAuditEvent(ctx, emtypes.AuditAlertAssessed, func() error {
 		return r.AuditManager.RecordAlertAssessed(ctx, ea, ar.Component, emaudit.AlertAssessedData{
-			AlertResolved: ar.AlertResolved,
-			ActiveCount:   ar.ActiveCount,
+			AlertResolved:         ar.AlertResolved,
+			ActiveCount:           ar.ActiveCount,
+			ResolutionTimeSeconds: ar.ResolutionTimeSeconds,
 		})
 	})
 }
@@ -1162,14 +1211,16 @@ func (r *Reconciler) emitMetricsEvent(ctx context.Context, ea *eav1.Effectivenes
 
 	r.emitAuditEvent(ctx, emtypes.AuditMetricsAssessed, func() error {
 		return r.AuditManager.RecordMetricsAssessed(ctx, ea, mr.Component, emaudit.MetricsAssessedData{
-			CPUBefore:          mr.CPUBefore,
-			CPUAfter:           mr.CPUAfter,
-			MemoryBefore:       mr.MemoryBefore,
-			MemoryAfter:        mr.MemoryAfter,
-			LatencyP95BeforeMs: mr.LatencyP95BeforeMs,
-			LatencyP95AfterMs:  mr.LatencyP95AfterMs,
-			ErrorRateBefore:    mr.ErrorRateBefore,
-			ErrorRateAfter:     mr.ErrorRateAfter,
+			CPUBefore:           mr.CPUBefore,
+			CPUAfter:            mr.CPUAfter,
+			MemoryBefore:        mr.MemoryBefore,
+			MemoryAfter:         mr.MemoryAfter,
+			LatencyP95BeforeMs:  mr.LatencyP95BeforeMs,
+			LatencyP95AfterMs:   mr.LatencyP95AfterMs,
+			ErrorRateBefore:     mr.ErrorRateBefore,
+			ErrorRateAfter:      mr.ErrorRateAfter,
+			ThroughputBeforeRPS: mr.ThroughputBeforeRPS,
+			ThroughputAfterRPS:  mr.ThroughputAfterRPS,
 		})
 	})
 }
