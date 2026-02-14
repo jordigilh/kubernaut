@@ -18,15 +18,12 @@ package infrastructure
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"gopkg.in/yaml.v3"
 )
 
 // TestWorkflow represents a workflow for test seeding in DataStorage
@@ -95,8 +92,8 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 }
 
 // RegisterWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client
-// Pattern: DD-API-001 (OpenAPI Generated Client MANDATORY)
-// Authority: .cursor/rules/* - All Go services must use OpenAPI clients
+// DD-WORKFLOW-017: Pullspec-only registration — sends only containerImage.
+// DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
 //
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
 // DD-AUTH-014: Accepts authenticated client instead of creating unauthenticated one
@@ -106,106 +103,25 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 //
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
 func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
-	version := "1.0.0"
-
-	// ADR-043: Generate valid workflow-schema.yaml content
-	// DataStorage HandleCreateWorkflow will parse this content, validate it,
-	// and extract parameters into the parameters JSONB column (BR-HAPI-191)
-	content, err := buildWorkflowSchemaContent(wf, version)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate workflow-schema.yaml content for %s: %w", wf.WorkflowID, err)
-	}
-	contentBytes := []byte(content)
-	hash := sha256.Sum256(contentBytes)
-	contentHash := fmt.Sprintf("%x", hash)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	// Convert string severity to OpenAPI enum type
-	// Accepts "*" for wildcard matching (any severity)
-	severity := ogenclient.MandatoryLabelsSeverity(wf.Severity)
-
-	// Convert string priority to OpenAPI enum type
-	// Supports "*" wildcard (matches any priority during search)
-	var priority ogenclient.MandatoryLabelsPriority
-	switch wf.Priority {
-	case "P0":
-		priority = ogenclient.MandatoryLabelsPriority_P0
-	case "P1":
-		priority = ogenclient.MandatoryLabelsPriority_P1
-	case "P2":
-		priority = ogenclient.MandatoryLabelsPriority_P2
-	case "P3":
-		priority = ogenclient.MandatoryLabelsPriority_P3
-	case "*":
-		priority = ogenclient.MandatoryLabelsPriority_ // Wildcard: matches any priority
-	default:
-		priority = ogenclient.MandatoryLabelsPriority_P2 // Default to P2
-	}
 
 	// Handle container image: use provided value or generate default pattern
 	containerImage := wf.ContainerImage
 	if containerImage == "" {
 		// Default pattern for tests that don't specify a container image
-		containerImage = fmt.Sprintf("quay.io/jordigilh/test-workflows/%s:%s", wf.WorkflowID, version)
+		containerImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", wf.WorkflowID)
 	}
 
-	// Extract container_digest from container_image if present
-	// Pattern: Matches Python workflow_fixtures.py logic (line 91-94)
-	// BR-AI-075: Container digest field for audit trail
-	// Example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..." → "sha256:abc123..."
-	var containerDigest ogenclient.OptString
-	if strings.Contains(containerImage, "@sha256:") {
-		parts := strings.Split(containerImage, "@")
-		if len(parts) == 2 {
-			// Found digest: image@sha256:abc123...
-			containerDigest = ogenclient.NewOptString(parts[1]) // "sha256:abc123..."
-		}
-	}
-
-	// BR-WE-014: Use ExecutionEngine from TestWorkflow, default to "tekton" for backwards compatibility
-	executionEngine := wf.ExecutionEngine
-	if executionEngine == "" {
-		executionEngine = "tekton"
-	}
-
-	// DD-WORKFLOW-016: Default to ScaleReplicas if action_type not specified
-	actionType := wf.ActionType
-	if actionType == "" {
-		actionType = "ScaleReplicas"
-	}
-
-	// Build workflow request using OpenAPI generated types (compile-time validation)
-	workflowReq := &ogenclient.RemediationWorkflow{
-		// Note: WorkflowID is NOT set - DataStorage auto-generates it
-		WorkflowName:    wf.WorkflowID, // Human-readable identifier (workflow_name field)
-		ActionType:      actionType,     // DD-WORKFLOW-016: FK to action_type_taxonomy
-		Version:         version,
-		Name:            wf.Name,
-		Description:     wf.Description,
-		Content:         content,
-		ContentHash:     contentHash,
-		ExecutionEngine: executionEngine,
-		ContainerImage:  ogenclient.NewOptString(containerImage),
-		ContainerDigest: containerDigest, // BR-AI-075: Extract from ContainerImage
-		Labels: ogenclient.MandatoryLabels{
-			SignalType:  wf.SignalType,
-			Severity:    severity,
-			Component:   wf.Component,
-			Environment: []ogenclient.MandatoryLabelsEnvironmentItem{ogenclient.MandatoryLabelsEnvironmentItem(wf.Environment)},
-			Priority:    priority,
-		},
-		Status: "active",
+	// DD-WORKFLOW-017: Pullspec-only registration request
+	workflowReq := &ogenclient.CreateWorkflowFromOCIRequest{
+		ContainerImage: containerImage,
 	}
 
 	// POST to DataStorage workflow creation endpoint
-	// BR-STORAGE-014: Workflow catalog management
 	resp, err := client.CreateWorkflow(ctx, workflowReq)
 	if err != nil {
 		// DD-WORKFLOW-002 v3.0: If creation fails (likely 409 Conflict), query for existing UUID
-		// OpenAPI client returns errors for non-2xx responses
-		// We handle this by falling through to query logic - idempotent workflow registration
 		_, _ = fmt.Fprintf(output, "  ⚠️  Workflow may already exist (%v), querying for UUID...\n", err)
 	}
 
@@ -216,8 +132,6 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 			return r.WorkflowID.Value.String(), nil
 		case *ogenclient.CreateWorkflowConflict:
 			// DS-BUG-001: 409 Conflict - workflow already exists
-			// Fall through to query logic below to retrieve existing UUID
-			// This maintains idempotency for test workflows
 			_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409 Conflict), querying for UUID...\n")
 		default:
 			return "", fmt.Errorf("unexpected response type from CreateWorkflow: %T", resp)
@@ -225,18 +139,14 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	}
 
 	// For 409 Conflict or other errors, query by workflow_name to get existing UUID
-	// Authority: DD-WORKFLOW-002 v3.0 (UUID primary key, workflow_name is metadata)
-	// This is idempotent - safe to call in tests even if workflow exists
-	// DD-API-001: Use OpenAPI client (workflow_name filter in listWorkflows endpoint)
 	listResp, err := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
 		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
-		Limit:        ogenclient.NewOptInt(1), // Only need first match
+		Limit:        ogenclient.NewOptInt(1),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to query existing workflow: %w", err)
 	}
 
-	// Extract workflow_id from response
 	switch r := listResp.(type) {
 	case *ogenclient.WorkflowListResponse:
 		if len(r.Workflows) == 0 {
@@ -248,59 +158,5 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	}
 }
 
-// buildWorkflowSchemaContent generates valid workflow-schema.yaml content per ADR-043
-// from a TestWorkflow definition. This content is what DataStorage's HandleCreateWorkflow
-// will parse to extract and store parameter schemas (BR-HAPI-191).
-func buildWorkflowSchemaContent(wf TestWorkflow, version string) (string, error) {
-	// BR-WORKFLOW-004: riskTolerance removed (deprecated, never stored in DB)
-
-	// Build execution engine config
-	executionEngine := wf.ExecutionEngine
-	if executionEngine == "" {
-		executionEngine = "tekton"
-	}
-
-	// Ensure at least one parameter exists (ADR-043 requires min=1)
-	params := wf.SchemaParameters
-	if len(params) == 0 {
-		// Provide a minimal default parameter for workflows that don't define any
-		params = []models.WorkflowParameter{
-			{
-				Name:        "TARGET_RESOURCE",
-				Type:        "string",
-				Required:    true,
-				Description: "Target resource being remediated",
-			},
-		}
-	}
-
-	schema := models.WorkflowSchema{
-		ActionType: wf.ActionType,
-		Metadata: models.WorkflowSchemaMetadata{
-			WorkflowID: wf.WorkflowID,
-			Version:    version,
-			Description: models.WorkflowDescription{
-				What:      wf.Description,
-				WhenToUse: "Test workflow for " + wf.ActionType,
-			},
-		},
-		Labels: models.WorkflowSchemaLabels{
-			SignalType:  wf.SignalType,
-			Severity:    wf.Severity,
-			Environment: wf.Environment,
-			Component:   wf.Component,
-			Priority:    strings.ToLower(wf.Priority),
-		},
-		Execution: &models.WorkflowExecution{
-			Engine: executionEngine,
-		},
-		Parameters: params,
-	}
-
-	yamlBytes, err := yaml.Marshal(&schema)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal workflow schema to YAML: %w", err)
-	}
-
-	return string(yamlBytes), nil
-}
+// Note: buildWorkflowSchemaContent removed — DD-WORKFLOW-017 pullspec-only registration
+// means DataStorage extracts schema from OCI image, not from client-provided content.

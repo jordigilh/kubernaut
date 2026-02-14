@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
@@ -72,6 +73,7 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 		scheme = runtime.NewScheme()
 		_ = remediationv1.AddToScheme(scheme)
 		_ = notificationv1.AddToScheme(scheme)
+		_ = eav1.AddToScheme(scheme)
 
 		// Create fake client with field index and status subresource
 		fakeClient = fake.NewClientBuilder().

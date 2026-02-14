@@ -19,7 +19,6 @@ package datastorage
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -62,51 +62,11 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 		var discoveryWorkflowID string
 
 		BeforeEach(func() {
-			// Create a workflow for discovery tests
-			testID := uuid.New().String()[:8]
-			workflowName := fmt.Sprintf("discovery-e2e-%s", testID)
-			content := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "1.0.0"
-  description:
-    what: E2E discovery test workflow
-    whenToUse: Test workflow
-actionType: ScaleReplicas
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: pod
-  environment: production
-  priority: p0
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: Target resource
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/discovery-test:v1.0.0
-`, workflowName)
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-			createReq := dsgen.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				ActionType:      "ScaleReplicas",
-				Version:         "1.0.0",
-				Name:            "Discovery E2E Test Workflow",
-				Description:     "E2E test workflow for three-step discovery",
-				Content:         content,
-				ContentHash:     contentHash,
-				ExecutionEngine: "tekton",
-				ContainerImage:  dsgen.NewOptString("ghcr.io/kubernaut/workflows/discovery-test:v1.0.0"),
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",
-					Severity:    dsgen.MandatoryLabelsSeverity_critical,
-					Component:   "pod",
-					Priority:    dsgen.MandatoryLabelsPriority_P0,
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
-				},
+			// DD-WORKFLOW-017: Register workflow from OCI image (pullspec-only)
+			// The image at quay.io contains /workflow-schema.yaml with ScaleReplicas action type,
+			// OOMKilled signal type, and production labels for discovery E2E tests.
+			createReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/discovery-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
@@ -210,52 +170,9 @@ execution:
 			logger.Info("E2E-DS-017-001-002: Disabled workflow excluded from discovery")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			testID := uuid.New().String()[:8]
-
-			// Create ACTIVE workflow
-			activeName := fmt.Sprintf("discovery-active-%s", testID)
-			activeContent := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "1.0.0"
-  description:
-    what: Active workflow for exclusion test
-    whenToUse: Test workflow
-actionType: RollbackDeployment
-labels:
-  signalType: OOMKilled
-  severity: high
-  component: deployment
-  environment: staging
-  priority: p1
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: Target resource
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/active-test:v1.0.0
-`, activeName)
-			activeHash := fmt.Sprintf("%x", sha256.Sum256([]byte(activeContent)))
-
-			activeReq := dsgen.RemediationWorkflow{
-				WorkflowName:    activeName,
-				ActionType:      "RollbackDeployment",
-				Version:         "1.0.0",
-				Name:            "Active Discovery Test",
-				Description:     "Active workflow for exclusion test",
-				Content:         activeContent,
-				ContentHash:     activeHash,
-				ExecutionEngine: "tekton",
-				ContainerImage:  dsgen.NewOptString("ghcr.io/kubernaut/workflows/active-test:v1.0.0"),
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",
-					Severity:    dsgen.MandatoryLabelsSeverity_high,
-					Component:   "deployment",
-					Priority:    dsgen.MandatoryLabelsPriority_P1,
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("staging")},
-				},
+			// Create ACTIVE workflow via OCI pullspec (DD-WORKFLOW-017)
+			activeReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/rollback-deployment-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 			activeResp, err := DSClient.CreateWorkflow(testCtx, &activeReq)
 			Expect(err).ToNot(HaveOccurred())
@@ -263,52 +180,20 @@ execution:
 			Expect(ok).To(BeTrue())
 			activeUUID := activeWorkflow.WorkflowID.Value.String()
 
-			// Create DISABLED workflow (same action type)
-			disabledName := fmt.Sprintf("discovery-disabled-%s", testID)
-			disabledContent := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "1.0.0"
-  description:
-    what: Disabled workflow for exclusion test
-    whenToUse: Test workflow
-actionType: RollbackDeployment
-labels:
-  signalType: OOMKilled
-  severity: high
-  component: deployment
-  environment: staging
-  priority: p1
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: Target resource
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/disabled-test:v1.0.0
-`, disabledName)
-			disabledHash := fmt.Sprintf("%x", sha256.Sum256([]byte(disabledContent)))
-
-			disabledReq := dsgen.RemediationWorkflow{
-				WorkflowName:    disabledName,
-				ActionType:      "RollbackDeployment",
-				Version:         "1.0.0",
-				Name:            "Disabled Discovery Test",
-				Description:     "Disabled workflow for exclusion test",
-				Content:         disabledContent,
-				ContentHash:     disabledHash,
-				ExecutionEngine: "tekton",
-				ContainerImage:  dsgen.NewOptString("ghcr.io/kubernaut/workflows/disabled-test:v1.0.0"),
-				Status:          dsgen.RemediationWorkflowStatusDisabled,
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",
-					Severity:    dsgen.MandatoryLabelsSeverity_high,
-					Component:   "deployment",
-					Priority:    dsgen.MandatoryLabelsPriority_P1,
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("staging")},
-				},
+			// Create a second workflow from OCI, then disable it via PATCH (DD-WORKFLOW-017)
+			disabledReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/rollback-deployment-disabled-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
-			_, err = DSClient.CreateWorkflow(testCtx, &disabledReq)
+			disabledResp, err := DSClient.CreateWorkflow(testCtx, &disabledReq)
+			Expect(err).ToNot(HaveOccurred())
+			disabledWorkflow, ok := disabledResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue())
+			disabledUUID := disabledWorkflow.WorkflowID.Value
+
+			// Disable the workflow via PATCH endpoint
+			_, err = DSClient.DisableWorkflow(testCtx, dsgen.OptWorkflowDisableRequest{}, dsgen.DisableWorkflowParams{
+				WorkflowID: disabledUUID,
+			})
 			Expect(err).ToNot(HaveOccurred())
 
 			// Query discovery — disabled workflow should NOT appear
@@ -331,7 +216,7 @@ execution:
 				if wf.WorkflowId.String() == activeUUID {
 					foundActive = true
 				}
-				if wf.WorkflowName == disabledName {
+				if wf.WorkflowId == disabledUUID {
 					foundDisabled = true
 				}
 			}
@@ -351,50 +236,9 @@ execution:
 			logger.Info("E2E-DS-017-001-003: Security gate — context mismatch → 404")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			testID := uuid.New().String()[:8]
-			workflowName := fmt.Sprintf("security-gate-e2e-%s", testID)
-			content := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "1.0.0"
-  description:
-    what: Security gate test workflow
-    whenToUse: Test workflow
-actionType: AdjustResources
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: pod
-  environment: production
-  priority: p0
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: Target resource
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/security-gate:v1.0.0
-`, workflowName)
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-			createReq := dsgen.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				ActionType:      "AdjustResources",
-				Version:         "1.0.0",
-				Name:            "Security Gate E2E Test",
-				Description:     "Workflow for security gate testing",
-				Content:         content,
-				ContentHash:     contentHash,
-				ExecutionEngine: "tekton",
-				ContainerImage:  dsgen.NewOptString("ghcr.io/kubernaut/workflows/security-gate:v1.0.0"),
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",
-					Severity:    dsgen.MandatoryLabelsSeverity_critical,
-					Component:   "pod",
-					Priority:    dsgen.MandatoryLabelsPriority_P0,
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
-				},
+			// DD-WORKFLOW-017: Register workflow from OCI image for security gate test
+			createReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/security-gate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			resp, err := DSClient.CreateWorkflow(testCtx, &createReq)

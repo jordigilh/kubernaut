@@ -79,9 +79,9 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		waitForPodReady(testNS, "target-pod")
 
 		name := uniqueName("ea-ar-resolved")
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
-			withPrometheusDisabled(), // Focus on alert resolution
 		)
 
 		By("Waiting for EM to complete the assessment")
@@ -129,9 +129,9 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		waitForPodReady(testNS, "target-pod")
 
 		name := uniqueName("ea-ar-firing")
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
-			withPrometheusDisabled(), // Focus on alert resolution
 		)
 
 		By("Waiting for EM to complete the assessment")

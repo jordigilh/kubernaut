@@ -232,10 +232,9 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 
 		name := uniqueName("ea-sh-hash")
 		correlationID := uniqueName("corr-sh-hash")
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
-			withPrometheusDisabled(),
-			withAlertManagerDisabled(),
 		)
 
 		By("Waiting for EA to complete")

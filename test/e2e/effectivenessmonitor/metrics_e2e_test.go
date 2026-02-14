@@ -93,9 +93,9 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		name := uniqueName("ea-mc-improve")
 		correlationID := uniqueName("corr-mc-improve")
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
-			withAlertManagerDisabled(), // Focus on metric comparison
 		)
 
 		By("Waiting for EM to complete the assessment")
@@ -157,9 +157,9 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 
 		name := uniqueName("ea-mc-nochange")
 		correlationID := uniqueName("corr-mc-nochange")
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
-			withAlertManagerDisabled(), // Focus on metric comparison
 		)
 
 		By("Waiting for EM to complete the assessment")

@@ -72,6 +72,7 @@ import (
 
 	// Import audit infrastructure (ADR-032)
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -379,6 +380,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		scopeMgr, // BR-SCOPE-010: Mandatory scope checker
 	)
 
+	// ADR-EM-001: Create EA creator for EffectivenessAssessment CRD creation on terminal phases
+	eaCreator := creator.NewEffectivenessAssessmentCreator(
+		k8sManager.GetClient(),
+		k8sManager.GetScheme(),
+		roMetrics,
+		30*time.Second, // Stabilization window for integration tests
+	)
+
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
@@ -388,7 +397,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
 		controller.TimeoutConfig{}, // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
 		routingEngine,              // Real routing engine for integration tests (BR-ORCH-042)
+		eaCreator,                  // ADR-EM-001: EA creation on terminal phases
 	)
+	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
+	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

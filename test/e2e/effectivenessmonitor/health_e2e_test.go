@@ -49,10 +49,10 @@ var _ = Describe("EffectivenessMonitor Health Check E2E Tests", Label("e2e"), fu
 
 		// The target pod "nonexistent-pod" does not exist in the namespace,
 		// so the health check should produce a score of 0.0.
+		// ADR-EM-001 v1.4: Component isolation is at EM config level, not per-EA.
+		// All components run; health check is the focus of this test's assertions.
 		createEA(testNS, name, correlationID,
 			withTargetPod("nonexistent-pod"),
-			withPrometheusDisabled(),   // Focus on health check only
-			withAlertManagerDisabled(), // Focus on health check only
 		)
 
 		By("Waiting for EM to complete the assessment")
