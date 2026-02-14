@@ -109,6 +109,8 @@ type Reconciler struct {
 
 	// DD-EM-002: REST mapper for resolving Kind to GVK for pre-remediation hash capture
 	restMapper meta.RESTMapper
+	// DD-EM-002: Uncached API reader for pre-remediation hash capture
+	apiReader client.Reader
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -218,6 +220,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		Metrics:             m,
 		Recorder:            recorder,
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+		apiReader:           apiReader,     // DD-EM-002: Uncached reader for pre-remediation hash
 	}
 
 	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
@@ -421,18 +424,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// 1. Initial state (OverallPhase == "") → Allow (initialization)
 	// 2. Pending phase → Skip (not yet orchestrating, wasteful)
 	// 3. Processing/Analyzing/Executing → Allow (active orchestration of child CRDs)
-	// 4. Terminal phases (Completed/Failed) → Skip (orchestration complete)
+	// 4. Terminal phases (Completed/Failed) → Allow (owned-resource housekeeping: Issue #88)
+	//    Terminal RRs must still process NT delivery status and EA completion events.
+	//    Guard2 (below) handles terminal phases with a dedicated housekeeping block.
 	//
-	// Tradeoff: Accepts extra reconciles during active phases (~150 vs 301 prevented)
-	// Benefit: Allows critical polling and child status update processing
+	// Tradeoff: Accepts extra reconciles during active and terminal phases
+	// Benefit: Allows critical polling, child status updates, and terminal housekeeping
 	if rr.Status.ObservedGeneration == rr.Generation &&
-		(rr.Status.OverallPhase == phase.Pending ||
-			phase.IsTerminal(phase.Phase(rr.Status.OverallPhase))) {
-		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in this phase",
+		rr.Status.OverallPhase == phase.Pending {
+		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,
 			"observedGeneration", rr.Status.ObservedGeneration,
-			"reason", "ObservedGeneration matches and phase not actively orchestrating")
+			"reason", "ObservedGeneration matches and phase is Pending")
 		return ctrl.Result{}, nil
 	}
 
@@ -500,9 +504,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	// Skip terminal phases
+	// Terminal-phase housekeeping (Issue #88: process owned-resource completion events)
+	// Terminal RRs still need to track NotificationRequest delivery status and
+	// (future) EffectivenessAssessment completion. Without this block, owned-resource
+	// events arriving after RR reaches terminal state are silently dropped.
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
-		logger.V(1).Info("RemediationRequest in terminal phase, skipping", "phase", rr.Status.OverallPhase)
+		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
+
+		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
+		if err := r.trackNotificationStatus(ctx, rr); err != nil {
+			logger.Error(err, "Failed to track notification status in terminal phase")
+			// Non-fatal: continue to return
+		}
 
 		// BR-ORCH-044: Track routing decision - no action needed
 		r.Metrics.NoActionNeededTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
@@ -896,6 +909,10 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Routing checks passed - create WorkflowExecution
 		logger.Info("Routing checks passed, creating WorkflowExecution")
 
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created BEFORE WFE creation
+		// Captures pre-remediation spec hash for EM comparison (DD-EM-002)
+		r.emitWorkflowCreatedAudit(ctx, rr, ai)
+
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
 		// DD-CRD-002-RR: Creator sets WorkflowExecutionReady condition in-memory
 		weName, err := r.weCreator.Create(ctx, rr, ai)
@@ -1051,6 +1068,9 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			logger.Error(err, "Failed to fetch AIAnalysis CRD")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
+
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created BEFORE WFE creation
+		r.emitWorkflowCreatedAudit(ctx, rr, ai)
 
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
 		weName, err := r.weCreator.Create(ctx, rr, ai)
@@ -1489,6 +1509,12 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 				logger.Error(notifErr, "Failed to create completion notification")
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
+				// Issue #88, BR-ORCH-035 AC-2: Append completion NT to NotificationRequestRefs
+				// Without this, trackNotificationStatus cannot find the NT for delivery tracking.
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+					Name:      notifName,
+					Namespace: rr.Namespace,
+				})
 				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
 				if r.Recorder != nil {
 					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
@@ -1860,6 +1886,61 @@ func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remedi
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store remediation created audit event")
+	}
+}
+
+// emitWorkflowCreatedAudit emits the remediation.workflow_created audit event
+// before WorkflowExecution creation. Captures the pre-remediation spec hash
+// and selected workflow metadata for the EM to compare post-remediation.
+// ADR-EM-001 Section 9.1, GAP-RO-1, DD-EM-002.
+// Non-blocking — failures are logged but don't affect business logic.
+func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) {
+	logger := log.FromContext(ctx)
+
+	if r.auditStore == nil {
+		logger.Error(fmt.Errorf("auditStore is nil"),
+			"CRITICAL: Cannot record workflow_created audit event - violates ADR-032 §1",
+			"remediationRequest", rr.Name)
+		return
+	}
+
+	correlationID := rr.Name
+	targetResource := fmt.Sprintf("%s/%s/%s",
+		rr.Spec.TargetResource.Namespace,
+		rr.Spec.TargetResource.Kind,
+		rr.Spec.TargetResource.Name)
+
+	// DD-EM-002: Capture pre-remediation spec hash via uncached reader
+	preHash, err := CapturePreRemediationHash(
+		ctx, r.apiReader, r.restMapper,
+		rr.Spec.TargetResource.Kind,
+		rr.Spec.TargetResource.Name,
+		rr.Spec.TargetResource.Namespace,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to capture pre-remediation hash (non-fatal)")
+	}
+
+	// Extract workflow metadata from AIAnalysis status
+	var workflowID, workflowVersion, workflowType string
+	if ai.Status.SelectedWorkflow != nil {
+		workflowID = ai.Status.SelectedWorkflow.WorkflowID
+		workflowVersion = ai.Status.SelectedWorkflow.Version
+		workflowType = ai.Status.SelectedWorkflow.ActionType
+	}
+
+	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
+		correlationID, rr.Namespace, rr.Name,
+		preHash, targetResource,
+		workflowID, workflowVersion, workflowType,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build workflow_created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store workflow_created audit event")
 	}
 }
 
