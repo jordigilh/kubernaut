@@ -395,16 +395,20 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 - ✅ **Debugging Value**: Critical for understanding AI learning
 - ✅ **ML Observability**: Model performance tracking
 
-**Audit Events** (per DD-017 v2.0):
+**Audit Events** (per ADR-EM-001 v1.3, component-level architecture):
 
-| Event Type | Description | Scope | Priority |
-|------------|-------------|-------|----------|
-| `effectiveness.assessment.completed` | Level 1 assessment completed (dual spec hash, health checks, metrics, score, side effects) | V1.0 (Level 1) | P0 |
-| `effectiveness.assessment.started` | Effectiveness assessment started | V1.0 (Level 1) | P0 |
-| `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | V1.1 (Level 2) | P0 |
-| `effectiveness.crd.updated` | Effectiveness CRD updated | V1.1 (Level 2) | P1 |
+| Event Type | Description | Typed Sub-Objects | Scope | Priority |
+|------------|-------------|-------------------|-------|----------|
+| `effectiveness.health.assessed` | Health component assessment (pod status, readiness, restarts) | `health_checks` (pod_running, readiness_pass, restart_delta, crash_loops, oom_killed, pending_count) | V1.0 (Level 1) | P0 |
+| `effectiveness.alert.assessed` | Alert component assessment (signal resolution) | `alert_resolution` (alert_resolved, active_count, resolution_time_seconds) | V1.0 (Level 1) | P0 |
+| `effectiveness.metrics.assessed` | Metrics component assessment (before/after comparison) | `metric_deltas` (cpu_before/after, memory_before/after, latency_p95_before/after_ms, error_rate_before/after) | V1.0 (Level 1) | P0 |
+| `effectiveness.hash.computed` | Pre/post remediation spec hash comparison (DD-EM-002) | pre_remediation_spec_hash, post_remediation_spec_hash, hash_match | V1.0 (Level 1) | P0 |
+| `effectiveness.assessment.completed` | Lifecycle marker — assessment finished | reason ("full", "partial", "expired") | V1.0 (Level 1) | P0 |
+| `effectiveness.assessment.started` | Effectiveness assessment started | — | V1.0 (Level 1) | P0 |
+| `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | — | V1.1 (Level 2) | P0 |
+| `effectiveness.crd.updated` | Effectiveness CRD updated | — | V1.1 (Level 2) | P1 |
 
-**Note**: EM Level 1 (V1.0) emits `effectiveness.assessment.completed` as the primary audit event. Data stored as audit traces only—no new database tables. DD-HAPI-016 uses these events for remediation history context enrichment.
+**Note**: EM Level 1 (V1.0) emits **component-level** audit events (per ADR-EM-001 v1.3) rather than a single monolithic event. Each component event carries typed sub-objects in the `EffectivenessAssessmentAuditPayload` (ogen-generated). The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-HAPI-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
 
 **Industry Precedent**: MLflow tracking, Weights & Biases audit logs, Kubeflow Pipelines logs
 
