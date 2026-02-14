@@ -12,69 +12,81 @@
 """  # noqa: E501
 
 
-import unittest
+from __future__ import annotations
+import pprint
+import re  # noqa: F401
+import json
 
-from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+
+from typing import Any, ClassVar, Dict, List, Optional
+from pydantic import BaseModel, StrictStr
+from pydantic import Field
+from typing_extensions import Annotated
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
+
+class WorkflowLifecycleRequest(BaseModel):
+    """
+    Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4.
+    """ # noqa: E501
+    reason: Annotated[str, Field(min_length=1, strict=True)] = Field(description="Why the lifecycle operation is being performed (mandatory)")
+    updated_by: Optional[StrictStr] = Field(default=None, description="Who is performing the operation")
+    __properties: ClassVar[List[str]] = ["reason", "updated_by"]
+
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+    }
 
 
-class TestWorkflowCatalogAPIApi(unittest.TestCase):
-    """WorkflowCatalogAPIApi unit test stubs"""
+    def to_str(self) -> str:
+        """Returns the string representation of the model using alias"""
+        return pprint.pformat(self.model_dump(by_alias=True))
 
-    def setUp(self) -> None:
-        self.api = WorkflowCatalogAPIApi()
+    def to_json(self) -> str:
+        """Returns the JSON representation of the model using alias"""
+        # TODO: pydantic v2: use .model_dump_json(by_alias=True, exclude_unset=True) instead
+        return json.dumps(self.to_dict())
 
-    def tearDown(self) -> None:
-        pass
+    @classmethod
+    def from_json(cls, json_str: str) -> Self:
+        """Create an instance of WorkflowLifecycleRequest from a JSON string"""
+        return cls.from_dict(json.loads(json_str))
 
-    def test_create_workflow(self) -> None:
-        """Test case for create_workflow
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the dictionary representation of the model using alias.
 
-        Register workflow from OCI image
+        This has the following differences from calling pydantic's
+        `self.model_dump(by_alias=True)`:
+
+        * `None` is only added to the output dict for nullable fields that
+          were set at model initialization. Other fields with value `None`
+          are ignored.
         """
-        pass
+        _dict = self.model_dump(
+            by_alias=True,
+            exclude={
+            },
+            exclude_none=True,
+        )
+        return _dict
 
-    def test_deprecate_workflow(self) -> None:
-        """Test case for deprecate_workflow
+    @classmethod
+    def from_dict(cls, obj: Dict) -> Self:
+        """Create an instance of WorkflowLifecycleRequest from a dict"""
+        if obj is None:
+            return None
 
-        Deprecate workflow
-        """
-        pass
+        if not isinstance(obj, dict):
+            return cls.model_validate(obj)
 
-    def test_disable_workflow(self) -> None:
-        """Test case for disable_workflow
-
-        Disable workflow
-        """
-        pass
-
-    def test_enable_workflow(self) -> None:
-        """Test case for enable_workflow
-
-        Enable workflow
-        """
-        pass
-
-    def test_get_workflow_by_id(self) -> None:
-        """Test case for get_workflow_by_id
-
-        Get workflow by UUID (with optional security gate)
-        """
-        pass
-
-    def test_list_workflows(self) -> None:
-        """Test case for list_workflows
-
-        List workflows
-        """
-        pass
-
-    def test_update_workflow(self) -> None:
-        """Test case for update_workflow
-
-        Update workflow mutable fields
-        """
-        pass
+        _obj = cls.model_validate({
+            "reason": obj.get("reason"),
+            "updated_by": obj.get("updated_by")
+        })
+        return _obj
 
 
-if __name__ == '__main__':
-    unittest.main()

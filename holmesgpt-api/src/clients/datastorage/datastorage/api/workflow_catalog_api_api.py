@@ -31,7 +31,7 @@ from typing import Optional
 
 from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
 from datastorage.models.remediation_workflow import RemediationWorkflow
-from datastorage.models.workflow_disable_request import WorkflowDisableRequest
+from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
 from datastorage.models.workflow_list_response import WorkflowListResponse
 from datastorage.models.workflow_update_request import WorkflowUpdateRequest
 
@@ -346,10 +346,10 @@ class WorkflowCatalogAPIApi:
 
 
     @validate_call
-    def disable_workflow(
+    def deprecate_workflow(
         self,
         workflow_id: StrictStr,
-        workflow_disable_request: Optional[WorkflowDisableRequest] = None,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -363,14 +363,14 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RemediationWorkflow:
-        """Disable workflow
+        """Deprecate workflow
 
-        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete) 
+        Mark a workflow as deprecated. Deprecated workflows are excluded from discovery results but remain in the catalog for audit history.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
 
         :param workflow_id: (required)
         :type workflow_id: str
-        :param workflow_disable_request:
-        :type workflow_disable_request: WorkflowDisableRequest
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -393,9 +393,9 @@ class WorkflowCatalogAPIApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._disable_workflow_serialize(
+        _param = self._deprecate_workflow_serialize(
             workflow_id=workflow_id,
-            workflow_disable_request=workflow_disable_request,
+            workflow_lifecycle_request=workflow_lifecycle_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -404,6 +404,7 @@ class WorkflowCatalogAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
             '404': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -418,10 +419,10 @@ class WorkflowCatalogAPIApi:
 
 
     @validate_call
-    def disable_workflow_with_http_info(
+    def deprecate_workflow_with_http_info(
         self,
         workflow_id: StrictStr,
-        workflow_disable_request: Optional[WorkflowDisableRequest] = None,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -435,14 +436,14 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[RemediationWorkflow]:
-        """Disable workflow
+        """Deprecate workflow
 
-        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete) 
+        Mark a workflow as deprecated. Deprecated workflows are excluded from discovery results but remain in the catalog for audit history.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
 
         :param workflow_id: (required)
         :type workflow_id: str
-        :param workflow_disable_request:
-        :type workflow_disable_request: WorkflowDisableRequest
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -465,9 +466,9 @@ class WorkflowCatalogAPIApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._disable_workflow_serialize(
+        _param = self._deprecate_workflow_serialize(
             workflow_id=workflow_id,
-            workflow_disable_request=workflow_disable_request,
+            workflow_lifecycle_request=workflow_lifecycle_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -476,6 +477,7 @@ class WorkflowCatalogAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
             '404': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -490,10 +492,10 @@ class WorkflowCatalogAPIApi:
 
 
     @validate_call
-    def disable_workflow_without_preload_content(
+    def deprecate_workflow_without_preload_content(
         self,
         workflow_id: StrictStr,
-        workflow_disable_request: Optional[WorkflowDisableRequest] = None,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -507,14 +509,14 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Disable workflow
+        """Deprecate workflow
 
-        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete) 
+        Mark a workflow as deprecated. Deprecated workflows are excluded from discovery results but remain in the catalog for audit history.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
 
         :param workflow_id: (required)
         :type workflow_id: str
-        :param workflow_disable_request:
-        :type workflow_disable_request: WorkflowDisableRequest
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -537,9 +539,9 @@ class WorkflowCatalogAPIApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._disable_workflow_serialize(
+        _param = self._deprecate_workflow_serialize(
             workflow_id=workflow_id,
-            workflow_disable_request=workflow_disable_request,
+            workflow_lifecycle_request=workflow_lifecycle_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -548,6 +550,7 @@ class WorkflowCatalogAPIApi:
 
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
             '404': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
@@ -557,10 +560,10 @@ class WorkflowCatalogAPIApi:
         return response_data.response
 
 
-    def _disable_workflow_serialize(
+    def _deprecate_workflow_serialize(
         self,
         workflow_id,
-        workflow_disable_request,
+        workflow_lifecycle_request,
         _request_auth,
         _content_type,
         _headers,
@@ -586,8 +589,300 @@ class WorkflowCatalogAPIApi:
         # process the header parameters
         # process the form parameters
         # process the body parameter
-        if workflow_disable_request is not None:
-            _body_params = workflow_disable_request
+        if workflow_lifecycle_request is not None:
+            _body_params = workflow_lifecycle_request
+
+
+        # set the HTTP header `Accept`
+        _header_params['Accept'] = self.api_client.select_header_accept(
+            [
+                'application/json', 
+                'application/problem+json'
+            ]
+        )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+        ]
+
+        return self.api_client.param_serialize(
+            method='PATCH',
+            resource_path='/api/v1/workflows/{workflow_id}/deprecate',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def disable_workflow(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RemediationWorkflow:
+        """Disable workflow
+
+        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._disable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def disable_workflow_with_http_info(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[RemediationWorkflow]:
+        """Disable workflow
+
+        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._disable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def disable_workflow_without_preload_content(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Disable workflow
+
+        Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._disable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _disable_workflow_serialize(
+        self,
+        workflow_id,
+        workflow_lifecycle_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> Tuple:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[str, str] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if workflow_id is not None:
+            _path_params['workflow_id'] = workflow_id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if workflow_lifecycle_request is not None:
+            _body_params = workflow_lifecycle_request
 
 
         # set the HTTP header `Accept`
@@ -619,6 +914,298 @@ class WorkflowCatalogAPIApi:
         return self.api_client.param_serialize(
             method='PATCH',
             resource_path='/api/v1/workflows/{workflow_id}/disable',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def enable_workflow(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RemediationWorkflow:
+        """Enable workflow
+
+        Re-enable a previously disabled or deprecated workflow. Sets status to 'active' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._enable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def enable_workflow_with_http_info(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[RemediationWorkflow]:
+        """Enable workflow
+
+        Re-enable a previously disabled or deprecated workflow. Sets status to 'active' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._enable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def enable_workflow_without_preload_content(
+        self,
+        workflow_id: StrictStr,
+        workflow_lifecycle_request: WorkflowLifecycleRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Enable workflow
+
+        Re-enable a previously disabled or deprecated workflow. Sets status to 'active' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
+
+        :param workflow_id: (required)
+        :type workflow_id: str
+        :param workflow_lifecycle_request: (required)
+        :type workflow_lifecycle_request: WorkflowLifecycleRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._enable_workflow_serialize(
+            workflow_id=workflow_id,
+            workflow_lifecycle_request=workflow_lifecycle_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
+            '400': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _enable_workflow_serialize(
+        self,
+        workflow_id,
+        workflow_lifecycle_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> Tuple:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[str, str] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if workflow_id is not None:
+            _path_params['workflow_id'] = workflow_id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if workflow_lifecycle_request is not None:
+            _body_params = workflow_lifecycle_request
+
+
+        # set the HTTP header `Accept`
+        _header_params['Accept'] = self.api_client.select_header_accept(
+            [
+                'application/json', 
+                'application/problem+json'
+            ]
+        )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+        ]
+
+        return self.api_client.param_serialize(
+            method='PATCH',
+            resource_path='/api/v1/workflows/{workflow_id}/enable',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,

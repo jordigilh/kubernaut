@@ -16,6 +16,71 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+// DeprecateWorkflowParams is parameters of deprecateWorkflow operation.
+type DeprecateWorkflowParams struct {
+	WorkflowID uuid.UUID
+}
+
+func unpackDeprecateWorkflowParams(packed middleware.Parameters) (params DeprecateWorkflowParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "workflow_id",
+			In:   "path",
+		}
+		params.WorkflowID = packed[key].(uuid.UUID)
+	}
+	return params
+}
+
+func decodeDeprecateWorkflowParams(args [1]string, argsEscaped bool, r *http.Request) (params DeprecateWorkflowParams, _ error) {
+	// Decode path: workflow_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "workflow_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToUUID(val)
+				if err != nil {
+					return err
+				}
+
+				params.WorkflowID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "workflow_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // DisableWorkflowParams is parameters of disableWorkflow operation.
 type DisableWorkflowParams struct {
 	WorkflowID uuid.UUID
@@ -33,6 +98,71 @@ func unpackDisableWorkflowParams(packed middleware.Parameters) (params DisableWo
 }
 
 func decodeDisableWorkflowParams(args [1]string, argsEscaped bool, r *http.Request) (params DisableWorkflowParams, _ error) {
+	// Decode path: workflow_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "workflow_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToUUID(val)
+				if err != nil {
+					return err
+				}
+
+				params.WorkflowID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "workflow_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// EnableWorkflowParams is parameters of enableWorkflow operation.
+type EnableWorkflowParams struct {
+	WorkflowID uuid.UUID
+}
+
+func unpackEnableWorkflowParams(packed middleware.Parameters) (params EnableWorkflowParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "workflow_id",
+			In:   "path",
+		}
+		params.WorkflowID = packed[key].(uuid.UUID)
+	}
+	return params
+}
+
+func decodeEnableWorkflowParams(args [1]string, argsEscaped bool, r *http.Request) (params EnableWorkflowParams, _ error) {
 	// Decode path: workflow_id.
 	if err := func() error {
 		param := args[0]

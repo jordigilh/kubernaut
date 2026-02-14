@@ -447,26 +447,98 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/disable"
+						case '/': // Prefix: "/"
 
-							if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "PATCH":
-									s.handleDisableWorkflowRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "PATCH")
+								break
+							}
+							switch elem[0] {
+							case 'd': // Prefix: "d"
+
+								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+									elem = elem[l:]
+								} else {
+									break
 								}
 
-								return
+								if len(elem) == 0 {
+									break
+								}
+								switch elem[0] {
+								case 'e': // Prefix: "eprecate"
+
+									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "PATCH":
+											s.handleDeprecateWorkflowRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "PATCH")
+										}
+
+										return
+									}
+
+								case 'i': // Prefix: "isable"
+
+									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "PATCH":
+											s.handleDisableWorkflowRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "PATCH")
+										}
+
+										return
+									}
+
+								}
+
+							case 'e': // Prefix: "enable"
+
+								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "PATCH":
+										s.handleEnableWorkflowRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, "PATCH")
+									}
+
+									return
+								}
+
 							}
 
 						}
@@ -1137,29 +1209,107 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							}
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/disable"
+						case '/': // Prefix: "/"
 
-							if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "PATCH":
-									r.name = DisableWorkflowOperation
-									r.summary = "Disable workflow"
-									r.operationID = "disableWorkflow"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
+								break
+							}
+							switch elem[0] {
+							case 'd': // Prefix: "d"
+
+								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+									elem = elem[l:]
+								} else {
+									break
 								}
+
+								if len(elem) == 0 {
+									break
+								}
+								switch elem[0] {
+								case 'e': // Prefix: "eprecate"
+
+									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PATCH":
+											r.name = DeprecateWorkflowOperation
+											r.summary = "Deprecate workflow"
+											r.operationID = "deprecateWorkflow"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/workflows/{workflow_id}/deprecate"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
+								case 'i': // Prefix: "isable"
+
+									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PATCH":
+											r.name = DisableWorkflowOperation
+											r.summary = "Disable workflow"
+											r.operationID = "disableWorkflow"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
+								}
+
+							case 'e': // Prefix: "enable"
+
+								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "PATCH":
+										r.name = EnableWorkflowOperation
+										r.summary = "Enable workflow"
+										r.operationID = "enableWorkflow"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/{workflow_id}/enable"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
 							}
 
 						}

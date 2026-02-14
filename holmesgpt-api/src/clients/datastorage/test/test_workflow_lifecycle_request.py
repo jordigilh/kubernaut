@@ -13,68 +13,42 @@
 
 
 import unittest
+import datetime
 
-from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
 
+class TestWorkflowLifecycleRequest(unittest.TestCase):
+    """WorkflowLifecycleRequest unit test stubs"""
 
-class TestWorkflowCatalogAPIApi(unittest.TestCase):
-    """WorkflowCatalogAPIApi unit test stubs"""
-
-    def setUp(self) -> None:
-        self.api = WorkflowCatalogAPIApi()
-
-    def tearDown(self) -> None:
+    def setUp(self):
         pass
 
-    def test_create_workflow(self) -> None:
-        """Test case for create_workflow
+    def tearDown(self):
+        pass
 
-        Register workflow from OCI image
+    def make_instance(self, include_optional) -> WorkflowLifecycleRequest:
+        """Test WorkflowLifecycleRequest
+            include_option is a boolean, when False only required
+            params are included, when True both required and
+            optional params are included """
+        # uncomment below to create an instance of `WorkflowLifecycleRequest`
         """
-        pass
-
-    def test_deprecate_workflow(self) -> None:
-        """Test case for deprecate_workflow
-
-        Deprecate workflow
+        model = WorkflowLifecycleRequest()
+        if include_optional:
+            return WorkflowLifecycleRequest(
+                reason = '0',
+                updated_by = ''
+            )
+        else:
+            return WorkflowLifecycleRequest(
+                reason = '0',
+        )
         """
-        pass
 
-    def test_disable_workflow(self) -> None:
-        """Test case for disable_workflow
-
-        Disable workflow
-        """
-        pass
-
-    def test_enable_workflow(self) -> None:
-        """Test case for enable_workflow
-
-        Enable workflow
-        """
-        pass
-
-    def test_get_workflow_by_id(self) -> None:
-        """Test case for get_workflow_by_id
-
-        Get workflow by UUID (with optional security gate)
-        """
-        pass
-
-    def test_list_workflows(self) -> None:
-        """Test case for list_workflows
-
-        List workflows
-        """
-        pass
-
-    def test_update_workflow(self) -> None:
-        """Test case for update_workflow
-
-        Update workflow mutable fields
-        """
-        pass
-
+    def testWorkflowLifecycleRequest(self):
+        """Test WorkflowLifecycleRequest"""
+        # inst_req_only = self.make_instance(include_optional=False)
+        # inst_req_and_optional = self.make_instance(include_optional=True)
 
 if __name__ == '__main__':
     unittest.main()

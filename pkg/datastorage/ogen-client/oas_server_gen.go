@@ -52,14 +52,30 @@ type Handler interface {
 	//
 	// POST /api/v1/workflows
 	CreateWorkflow(ctx context.Context, req *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
+	// DeprecateWorkflow implements deprecateWorkflow operation.
+	//
+	// Mark a workflow as deprecated. Deprecated workflows are excluded from
+	// discovery results but remain in the catalog for audit history.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/deprecate
+	DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
 	// DisableWorkflow implements disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
 	// Sets status to 'disabled' with timestamp and reason.
-	// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+	// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 	//
 	// PATCH /api/v1/workflows/{workflow_id}/disable
-	DisableWorkflow(ctx context.Context, req OptWorkflowDisableRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	DisableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	// EnableWorkflow implements enableWorkflow operation.
+	//
+	// Re-enable a previously disabled or deprecated workflow.
+	// Sets status to 'active' with timestamp and reason.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/enable
+	EnableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error)
 	// ExportAuditEvents implements exportAuditEvents operation.
 	//
 	// Exports audit events matching the specified filters with cryptographic signatures

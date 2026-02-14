@@ -4609,6 +4609,14 @@ func (s *CustomLabels) init() CustomLabels {
 	return m
 }
 
+type DeprecateWorkflowBadRequest RFC7807Problem
+
+func (*DeprecateWorkflowBadRequest) deprecateWorkflowRes() {}
+
+type DeprecateWorkflowNotFound RFC7807Problem
+
+func (*DeprecateWorkflowNotFound) deprecateWorkflowRes() {}
+
 // Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types.
 // Ref: #/components/schemas/DetectedLabels
 type DetectedLabels struct {
@@ -4895,6 +4903,14 @@ func (s *DetectedLabelsServiceMesh) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+type DisableWorkflowBadRequest RFC7807Problem
+
+func (*DisableWorkflowBadRequest) disableWorkflowRes() {}
+
+type DisableWorkflowNotFound RFC7807Problem
+
+func (*DisableWorkflowNotFound) disableWorkflowRes() {}
 
 // Type-safe audit event payload for Effectiveness Monitor controller.
 // Covers component-level events (health, alert, metrics, hash),
@@ -5855,6 +5871,14 @@ func (s *EffectivenessScoreResponseAssessmentStatus) UnmarshalText(data []byte) 
 	}
 }
 
+type EnableWorkflowBadRequest RFC7807Problem
+
+func (*EnableWorkflowBadRequest) enableWorkflowRes() {}
+
+type EnableWorkflowNotFound RFC7807Problem
+
+func (*EnableWorkflowNotFound) enableWorkflowRes() {}
+
 // Standardized error information for audit events (BR-AUDIT-005 Gap.
 // Ref: #/components/schemas/ErrorDetails
 type ErrorDetails struct {
@@ -6719,7 +6743,7 @@ type IncidentResponseData struct {
 	Analysis string `json:"analysis"`
 	// Structured RCA with summary, severity, contributing_factors.
 	RootCauseAnalysis IncidentResponseDataRootCauseAnalysis `json:"root_cause_analysis"`
-	// Selected workflow with workflow_id, containerImage, confidence, parameters (optional).
+	// Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional).
 	SelectedWorkflow OptIncidentResponseDataSelectedWorkflow `json:"selected_workflow"`
 	// Overall confidence in analysis.
 	Confidence float32 `json:"confidence"`
@@ -7059,9 +7083,12 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byt
 	}
 }
 
-// Selected workflow with workflow_id, containerImage, confidence, parameters (optional).
+// Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional).
 type IncidentResponseDataSelectedWorkflow struct {
-	WorkflowID     OptString                                         `json:"workflow_id"`
+	WorkflowID OptString `json:"workflow_id"`
+	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+	// Propagated from HAPI three-step discovery protocol.
+	ActionType     OptString                                         `json:"action_type"`
 	ContainerImage OptString                                         `json:"container_image"`
 	Confidence     OptFloat32                                        `json:"confidence"`
 	Parameters     OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
@@ -7070,6 +7097,11 @@ type IncidentResponseDataSelectedWorkflow struct {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowID() OptString {
 	return s.WorkflowID
+}
+
+// GetActionType returns the value of ActionType.
+func (s *IncidentResponseDataSelectedWorkflow) GetActionType() OptString {
+	return s.ActionType
 }
 
 // GetContainerImage returns the value of ContainerImage.
@@ -7090,6 +7122,11 @@ func (s *IncidentResponseDataSelectedWorkflow) GetParameters() OptIncidentRespon
 // SetWorkflowID sets the value of WorkflowID.
 func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *IncidentResponseDataSelectedWorkflow) SetActionType(val OptString) {
+	s.ActionType = val
 }
 
 // SetContainerImage sets the value of ContainerImage.
@@ -13211,52 +13248,6 @@ func (o OptWorkflowCatalogCreatedPayloadLabels) Or(d WorkflowCatalogCreatedPaylo
 	return d
 }
 
-// NewOptWorkflowDisableRequest returns new OptWorkflowDisableRequest with value set to v.
-func NewOptWorkflowDisableRequest(v WorkflowDisableRequest) OptWorkflowDisableRequest {
-	return OptWorkflowDisableRequest{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkflowDisableRequest is optional WorkflowDisableRequest.
-type OptWorkflowDisableRequest struct {
-	Value WorkflowDisableRequest
-	Set   bool
-}
-
-// IsSet returns true if OptWorkflowDisableRequest was set.
-func (o OptWorkflowDisableRequest) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkflowDisableRequest) Reset() {
-	var v WorkflowDisableRequest
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkflowDisableRequest) SetTo(v WorkflowDisableRequest) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkflowDisableRequest) Get() (v WorkflowDisableRequest, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkflowDisableRequest) Or(d WorkflowDisableRequest) WorkflowDisableRequest {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptWorkflowDiscoveryEntryExecutionEngine returns new OptWorkflowDiscoveryEntryExecutionEngine with value set to v.
 func NewOptWorkflowDiscoveryEntryExecutionEngine(v WorkflowDiscoveryEntryExecutionEngine) OptWorkflowDiscoveryEntryExecutionEngine {
 	return OptWorkflowDiscoveryEntryExecutionEngine{
@@ -13874,8 +13865,7 @@ func (s *RFC7807Problem) SetFieldErrors(val OptRFC7807ProblemFieldErrors) {
 	s.FieldErrors = val
 }
 
-func (*RFC7807Problem) disableWorkflowRes() {}
-func (*RFC7807Problem) listWorkflowsRes()   {}
+func (*RFC7807Problem) listWorkflowsRes() {}
 
 // Map of field names to error messages for validation errors.
 // Only present for 400 Bad Request responses.
@@ -15433,6 +15423,10 @@ type RemediationOrchestratorAuditPayload struct {
 	TargetResource OptString `json:"target_resource"`
 	// Version of the selected workflow.
 	WorkflowVersion OptString `json:"workflow_version"`
+	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
+	// Used by DS remediation history to populate workflowType on entries and summaries.
+	WorkflowType OptString `json:"workflow_type"`
 }
 
 // GetEventType returns the value of EventType.
@@ -15570,6 +15564,11 @@ func (s *RemediationOrchestratorAuditPayload) GetWorkflowVersion() OptString {
 	return s.WorkflowVersion
 }
 
+// GetWorkflowType returns the value of WorkflowType.
+func (s *RemediationOrchestratorAuditPayload) GetWorkflowType() OptString {
+	return s.WorkflowType
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationOrchestratorAuditPayload) SetEventType(val RemediationOrchestratorAuditPayloadEventType) {
 	s.EventType = val
@@ -15703,6 +15702,11 @@ func (s *RemediationOrchestratorAuditPayload) SetTargetResource(val OptString) {
 // SetWorkflowVersion sets the value of WorkflowVersion.
 func (s *RemediationOrchestratorAuditPayload) SetWorkflowVersion(val OptString) {
 	s.WorkflowVersion = val
+}
+
+// SetWorkflowType sets the value of WorkflowType.
+func (s *RemediationOrchestratorAuditPayload) SetWorkflowType(val OptString) {
+	s.WorkflowType = val
 }
 
 // Approval decision.
@@ -16592,10 +16596,12 @@ func (s *RemediationWorkflow) SetUpdatedBy(val OptString) {
 	s.UpdatedBy = val
 }
 
-func (*RemediationWorkflow) createWorkflowRes()  {}
-func (*RemediationWorkflow) disableWorkflowRes() {}
-func (*RemediationWorkflow) getWorkflowByIDRes() {}
-func (*RemediationWorkflow) updateWorkflowRes()  {}
+func (*RemediationWorkflow) createWorkflowRes()    {}
+func (*RemediationWorkflow) deprecateWorkflowRes() {}
+func (*RemediationWorkflow) disableWorkflowRes()   {}
+func (*RemediationWorkflow) enableWorkflowRes()    {}
+func (*RemediationWorkflow) getWorkflowByIDRes()   {}
+func (*RemediationWorkflow) updateWorkflowRes()    {}
 
 // Workflow parameters (JSONB).
 type RemediationWorkflowParameters map[string]jx.Raw
@@ -18108,35 +18114,6 @@ func (s *WorkflowCatalogUpdatedPayload) SetUpdatedFields(val WorkflowCatalogUpda
 	s.UpdatedFields = val
 }
 
-// Convenience request to disable a workflow.
-// Ref: #/components/schemas/WorkflowDisableRequest
-type WorkflowDisableRequest struct {
-	// Why the workflow is being disabled.
-	Reason OptString `json:"reason"`
-	// Who is disabling the workflow.
-	UpdatedBy OptString `json:"updated_by"`
-}
-
-// GetReason returns the value of Reason.
-func (s *WorkflowDisableRequest) GetReason() OptString {
-	return s.Reason
-}
-
-// GetUpdatedBy returns the value of UpdatedBy.
-func (s *WorkflowDisableRequest) GetUpdatedBy() OptString {
-	return s.UpdatedBy
-}
-
-// SetReason sets the value of Reason.
-func (s *WorkflowDisableRequest) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetUpdatedBy sets the value of UpdatedBy.
-func (s *WorkflowDisableRequest) SetUpdatedBy(val OptString) {
-	s.UpdatedBy = val
-}
-
 // Audit event payload for three-step workflow discovery operations.
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
@@ -19012,6 +18989,36 @@ func (s *WorkflowExecutionWebhookAuditPayloadPreviousState) UnmarshalText(data [
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per
+// DD-WORKFLOW-017 Phase 4.4.
+// Ref: #/components/schemas/WorkflowLifecycleRequest
+type WorkflowLifecycleRequest struct {
+	// Why the lifecycle operation is being performed (mandatory).
+	Reason string `json:"reason"`
+	// Who is performing the operation.
+	UpdatedBy OptString `json:"updated_by"`
+}
+
+// GetReason returns the value of Reason.
+func (s *WorkflowLifecycleRequest) GetReason() string {
+	return s.Reason
+}
+
+// GetUpdatedBy returns the value of UpdatedBy.
+func (s *WorkflowLifecycleRequest) GetUpdatedBy() OptString {
+	return s.UpdatedBy
+}
+
+// SetReason sets the value of Reason.
+func (s *WorkflowLifecycleRequest) SetReason(val string) {
+	s.Reason = val
+}
+
+// SetUpdatedBy sets the value of UpdatedBy.
+func (s *WorkflowLifecycleRequest) SetUpdatedBy(val OptString) {
+	s.UpdatedBy = val
 }
 
 // Ref: #/components/schemas/WorkflowListResponse

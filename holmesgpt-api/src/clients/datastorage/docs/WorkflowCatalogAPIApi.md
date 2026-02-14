@@ -5,7 +5,9 @@ All URIs are relative to *http://localhost:8080*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
+[**deprecate_workflow**](WorkflowCatalogAPIApi.md#deprecate_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/deprecate | Deprecate workflow
 [**disable_workflow**](WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
+[**enable_workflow**](WorkflowCatalogAPIApi.md#enable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/enable | Enable workflow
 [**get_workflow_by_id**](WorkflowCatalogAPIApi.md#get_workflow_by_id) | **GET** /api/v1/workflows/{workflow_id} | Get workflow by UUID (with optional security gate)
 [**list_workflows**](WorkflowCatalogAPIApi.md#list_workflows) | **GET** /api/v1/workflows | List workflows
 [**update_workflow**](WorkflowCatalogAPIApi.md#update_workflow) | **PATCH** /api/v1/workflows/{workflow_id} | Update workflow mutable fields
@@ -89,12 +91,12 @@ No authorization required
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
-# **disable_workflow**
-> RemediationWorkflow disable_workflow(workflow_id, workflow_disable_request=workflow_disable_request)
+# **deprecate_workflow**
+> RemediationWorkflow deprecate_workflow(workflow_id, workflow_lifecycle_request)
 
-Disable workflow
+Deprecate workflow
 
-Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete) 
+Mark a workflow as deprecated. Deprecated workflows are excluded from discovery results but remain in the catalog for audit history.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
 
 ### Example
 
@@ -104,7 +106,7 @@ import time
 import os
 import datastorage
 from datastorage.models.remediation_workflow import RemediationWorkflow
-from datastorage.models.workflow_disable_request import WorkflowDisableRequest
+from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
 from datastorage.rest import ApiException
 from pprint import pprint
 
@@ -120,11 +122,86 @@ with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
     workflow_id = 'workflow_id_example' # str | 
-    workflow_disable_request = datastorage.WorkflowDisableRequest() # WorkflowDisableRequest |  (optional)
+    workflow_lifecycle_request = datastorage.WorkflowLifecycleRequest() # WorkflowLifecycleRequest | 
+
+    try:
+        # Deprecate workflow
+        api_response = api_instance.deprecate_workflow(workflow_id, workflow_lifecycle_request)
+        print("The response of WorkflowCatalogAPIApi->deprecate_workflow:\n")
+        pprint(api_response)
+    except Exception as e:
+        print("Exception when calling WorkflowCatalogAPIApi->deprecate_workflow: %s\n" % e)
+```
+
+
+
+### Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **workflow_id** | **str**|  | 
+ **workflow_lifecycle_request** | [**WorkflowLifecycleRequest**](WorkflowLifecycleRequest.md)|  | 
+
+### Return type
+
+[**RemediationWorkflow**](RemediationWorkflow.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+### HTTP response details
+
+| Status code | Description | Response headers |
+|-------------|-------------|------------------|
+**200** | Workflow deprecated |  -  |
+**400** | Missing required field (reason) |  -  |
+**404** | Workflow not found |  -  |
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **disable_workflow**
+> RemediationWorkflow disable_workflow(workflow_id, workflow_lifecycle_request)
+
+Disable workflow
+
+Convenience endpoint to disable a workflow (soft delete). Sets status to 'disabled' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4 
+
+### Example
+
+
+```python
+import time
+import os
+import datastorage
+from datastorage.models.remediation_workflow import RemediationWorkflow
+from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
+from datastorage.rest import ApiException
+from pprint import pprint
+
+# Defining the host is optional and defaults to http://localhost:8080
+# See configuration.py for a list of all supported configuration parameters.
+configuration = datastorage.Configuration(
+    host = "http://localhost:8080"
+)
+
+
+# Enter a context with an instance of the API client
+with datastorage.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
+    workflow_id = 'workflow_id_example' # str | 
+    workflow_lifecycle_request = datastorage.WorkflowLifecycleRequest() # WorkflowLifecycleRequest | 
 
     try:
         # Disable workflow
-        api_response = api_instance.disable_workflow(workflow_id, workflow_disable_request=workflow_disable_request)
+        api_response = api_instance.disable_workflow(workflow_id, workflow_lifecycle_request)
         print("The response of WorkflowCatalogAPIApi->disable_workflow:\n")
         pprint(api_response)
     except Exception as e:
@@ -139,7 +216,7 @@ with datastorage.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **workflow_id** | **str**|  | 
- **workflow_disable_request** | [**WorkflowDisableRequest**](WorkflowDisableRequest.md)|  | [optional] 
+ **workflow_lifecycle_request** | [**WorkflowLifecycleRequest**](WorkflowLifecycleRequest.md)|  | 
 
 ### Return type
 
@@ -159,6 +236,82 @@ No authorization required
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
 **200** | Workflow disabled |  -  |
+**400** | Missing required field (reason) |  -  |
+**404** | Workflow not found |  -  |
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **enable_workflow**
+> RemediationWorkflow enable_workflow(workflow_id, workflow_lifecycle_request)
+
+Enable workflow
+
+Re-enable a previously disabled or deprecated workflow. Sets status to 'active' with timestamp and reason.  **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints) 
+
+### Example
+
+
+```python
+import time
+import os
+import datastorage
+from datastorage.models.remediation_workflow import RemediationWorkflow
+from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
+from datastorage.rest import ApiException
+from pprint import pprint
+
+# Defining the host is optional and defaults to http://localhost:8080
+# See configuration.py for a list of all supported configuration parameters.
+configuration = datastorage.Configuration(
+    host = "http://localhost:8080"
+)
+
+
+# Enter a context with an instance of the API client
+with datastorage.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
+    workflow_id = 'workflow_id_example' # str | 
+    workflow_lifecycle_request = datastorage.WorkflowLifecycleRequest() # WorkflowLifecycleRequest | 
+
+    try:
+        # Enable workflow
+        api_response = api_instance.enable_workflow(workflow_id, workflow_lifecycle_request)
+        print("The response of WorkflowCatalogAPIApi->enable_workflow:\n")
+        pprint(api_response)
+    except Exception as e:
+        print("Exception when calling WorkflowCatalogAPIApi->enable_workflow: %s\n" % e)
+```
+
+
+
+### Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **workflow_id** | **str**|  | 
+ **workflow_lifecycle_request** | [**WorkflowLifecycleRequest**](WorkflowLifecycleRequest.md)|  | 
+
+### Return type
+
+[**RemediationWorkflow**](RemediationWorkflow.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+### HTTP response details
+
+| Status code | Description | Response headers |
+|-------------|-------------|------------------|
+**200** | Workflow enabled |  -  |
+**400** | Missing required field (reason) |  -  |
 **404** | Workflow not found |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

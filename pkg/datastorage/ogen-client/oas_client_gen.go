@@ -71,14 +71,30 @@ type Invoker interface {
 	//
 	// POST /api/v1/workflows
 	CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
+	// DeprecateWorkflow invokes deprecateWorkflow operation.
+	//
+	// Mark a workflow as deprecated. Deprecated workflows are excluded from
+	// discovery results but remain in the catalog for audit history.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/deprecate
+	DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
 	// DisableWorkflow invokes disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
 	// Sets status to 'disabled' with timestamp and reason.
-	// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+	// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 	//
 	// PATCH /api/v1/workflows/{workflow_id}/disable
-	DisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	DisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	// EnableWorkflow invokes enableWorkflow operation.
+	//
+	// Re-enable a previously disabled or deprecated workflow.
+	// Sets status to 'active' with timestamp and reason.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/enable
+	EnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error)
 	// ExportAuditEvents invokes exportAuditEvents operation.
 	//
 	// Exports audit events matching the specified filters with cryptographic signatures
@@ -697,19 +713,116 @@ func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflow
 	return result, nil
 }
 
+// DeprecateWorkflow invokes deprecateWorkflow operation.
+//
+// Mark a workflow as deprecated. Deprecated workflows are excluded from
+// discovery results but remain in the catalog for audit history.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/deprecate
+func (c *Client) DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error) {
+	res, err := c.sendDeprecateWorkflow(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendDeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (res DeprecateWorkflowRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deprecateWorkflow"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/{workflow_id}/deprecate"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeprecateWorkflowOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/workflows/"
+	{
+		// Encode "workflow_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workflow_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.WorkflowID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/deprecate"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeDeprecateWorkflowRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeprecateWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DisableWorkflow invokes disableWorkflow operation.
 //
 // Convenience endpoint to disable a workflow (soft delete).
 // Sets status to 'disabled' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 //
 // PATCH /api/v1/workflows/{workflow_id}/disable
-func (c *Client) DisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (DisableWorkflowRes, error) {
+func (c *Client) DisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error) {
 	res, err := c.sendDisableWorkflow(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendDisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (res DisableWorkflowRes, err error) {
+func (c *Client) sendDisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (res DisableWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("disableWorkflow"),
 		semconv.HTTPRequestMethodKey.String("PATCH"),
@@ -787,6 +900,103 @@ func (c *Client) sendDisableWorkflow(ctx context.Context, request OptWorkflowDis
 
 	stage = "DecodeResponse"
 	result, err := decodeDisableWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// EnableWorkflow invokes enableWorkflow operation.
+//
+// Re-enable a previously disabled or deprecated workflow.
+// Sets status to 'active' with timestamp and reason.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/enable
+func (c *Client) EnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error) {
+	res, err := c.sendEnableWorkflow(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendEnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (res EnableWorkflowRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("enableWorkflow"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/{workflow_id}/enable"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, EnableWorkflowOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/workflows/"
+	{
+		// Encode "workflow_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workflow_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.WorkflowID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/enable"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeEnableWorkflowRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeEnableWorkflowResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

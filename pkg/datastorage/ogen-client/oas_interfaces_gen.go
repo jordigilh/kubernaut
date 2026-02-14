@@ -13,8 +13,16 @@ type CreateWorkflowRes interface {
 	createWorkflowRes()
 }
 
+type DeprecateWorkflowRes interface {
+	deprecateWorkflowRes()
+}
+
 type DisableWorkflowRes interface {
 	disableWorkflowRes()
+}
+
+type EnableWorkflowRes interface {
+	enableWorkflowRes()
 }
 
 type ExportAuditEventsRes interface {
