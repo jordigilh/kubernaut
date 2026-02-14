@@ -385,6 +385,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		k8sManager.GetClient(),
 		k8sManager.GetScheme(),
 		roMetrics,
+		k8sManager.GetEventRecorderFor("remediationorchestrator-controller"),
 		30*time.Second, // Stabilization window for integration tests
 	)
 

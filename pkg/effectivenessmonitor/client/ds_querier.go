@@ -99,3 +99,42 @@ func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, co
 
 	return "", nil
 }
+
+// HasWorkflowStarted checks if a workflowexecution.workflow.started event
+// exists for the given correlation ID (ADR-EM-001 Section 5).
+// Returns false when no such event exists, indicating the remediation
+// failed before workflow execution began (e.g., AA failed, approval rejected).
+func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correlationID string) (bool, error) {
+	// Build URL: GET /api/v1/audit/events?correlation_id=<id>&event_type=workflowexecution.workflow.started
+	u, err := url.Parse(q.baseURL)
+	if err != nil {
+		return false, fmt.Errorf("invalid DS base URL: %w", err)
+	}
+	u.Path = "/api/v1/audit/events"
+	params := url.Values{}
+	params.Set("correlation_id", correlationID)
+	params.Set("event_type", "workflowexecution.workflow.started")
+	u.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create DS request: %w", err)
+	}
+
+	resp, err := q.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("DS query failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
+	}
+
+	var events []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return false, fmt.Errorf("failed to decode DS response: %w", err)
+	}
+
+	return len(events) > 0, nil
+}

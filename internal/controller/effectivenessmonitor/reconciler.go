@@ -339,6 +339,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
+	// Step 6b: no_execution guard (ADR-EM-001 Section 5)
+	// If no workflowexecution.workflow.started event exists, the remediation failed
+	// before execution began (e.g., AA failed, approval rejected). Skip all component
+	// checks and complete with reason=no_execution.
+	if r.DSQuerier != nil {
+		started, err := r.DSQuerier.HasWorkflowStarted(ctx, ea.Spec.CorrelationID)
+		if err != nil {
+			logger.Error(err, "Failed to check workflow started status (non-fatal, continuing assessment)",
+				"correlationID", ea.Spec.CorrelationID)
+		} else if !started {
+			logger.Info("No workflow execution started for this correlation ID — completing as no_execution",
+				"correlationID", ea.Spec.CorrelationID)
+			return r.completeAssessmentWithReason(ctx, ea, startTime, eav1.AssessmentReasonNoExecution)
+		}
+	}
+
 	// Step 7: Run component checks (skip already-completed)
 	componentsChanged := false
 

@@ -198,6 +198,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		roMetrics,
+		mgr.GetEventRecorderFor("remediationorchestrator-controller"),
 		cfg.EA.StabilizationWindow,
 	)
 	setupLog.Info("EffectivenessAssessment creator initialized (ADR-EM-001)",
