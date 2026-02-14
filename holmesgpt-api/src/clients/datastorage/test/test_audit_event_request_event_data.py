@@ -312,7 +312,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 score = 0.85,
                 details = '1 of 1 replicas ready',
                 components_assessed = [health, hash, alert],
-                resolution_time_seconds = 1800.5,
+                assessment_duration_seconds = 1800.5,
                 validity_deadline = '2026-02-12T15:30Z',
                 prometheus_check_after = '2026-02-12T15:05Z',
                 alertmanager_check_after = '2026-02-12T15:05Z',

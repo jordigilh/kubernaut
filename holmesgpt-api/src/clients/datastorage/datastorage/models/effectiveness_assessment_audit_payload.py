@@ -45,7 +45,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     alert_name: Optional[StrictStr] = Field(default=None, description="Name of the original alert that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events. ")
     components_assessed: Optional[List[StrictStr]] = Field(default=None, description="List of component names that were assessed (e.g. [\"health\",\"hash\",\"alert\",\"metrics\"]). Only present for assessment.completed events. ")
     completed_at: Optional[datetime] = Field(default=None, description="Timestamp when the assessment completed (EA status.completedAt). Only present for assessment.completed events. ")
-    resolution_time_seconds: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events. ")
+    assessment_duration_seconds: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events. Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution. ")
     validity_deadline: Optional[datetime] = Field(default=None, description="Computed validity deadline (only for assessment.scheduled events). EA.creationTimestamp + validityWindow from EM config. ")
     prometheus_check_after: Optional[datetime] = Field(default=None, description="Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow. ")
     alertmanager_check_after: Optional[datetime] = Field(default=None, description="Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow. ")
@@ -57,7 +57,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     health_checks: Optional[EffectivenessAssessmentAuditPayloadHealthChecks] = None
     metric_deltas: Optional[EffectivenessAssessmentAuditPayloadMetricDeltas] = None
     alert_resolution: Optional[EffectivenessAssessmentAuditPayloadAlertResolution] = None
-    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "alert_name", "components_assessed", "completed_at", "resolution_time_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
+    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "alert_name", "components_assessed", "completed_at", "assessment_duration_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -124,10 +124,10 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
         if self.score is None and "score" in self.model_fields_set:
             _dict['score'] = None
 
-        # set to None if resolution_time_seconds (nullable) is None
+        # set to None if assessment_duration_seconds (nullable) is None
         # and model_fields_set contains the field
-        if self.resolution_time_seconds is None and "resolution_time_seconds" in self.model_fields_set:
-            _dict['resolution_time_seconds'] = None
+        if self.assessment_duration_seconds is None and "assessment_duration_seconds" in self.model_fields_set:
+            _dict['assessment_duration_seconds'] = None
 
         return _dict
 
@@ -153,7 +153,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
             "alert_name": obj.get("alert_name"),
             "components_assessed": obj.get("components_assessed"),
             "completed_at": obj.get("completed_at"),
-            "resolution_time_seconds": obj.get("resolution_time_seconds"),
+            "assessment_duration_seconds": obj.get("assessment_duration_seconds"),
             "validity_deadline": obj.get("validity_deadline"),
             "prometheus_check_after": obj.get("prometheus_check_after"),
             "alertmanager_check_after": obj.get("alertmanager_check_after"),

@@ -48,7 +48,7 @@ class TestEffectivenessAssessmentAuditPayload(unittest.TestCase):
                 alert_name = 'HighCPUUsage',
                 components_assessed = ["health","hash","alert"],
                 completed_at = '2026-02-12T15:45Z',
-                resolution_time_seconds = 1800.5,
+                assessment_duration_seconds = 1800.5,
                 validity_deadline = '2026-02-12T15:30Z',
                 prometheus_check_after = '2026-02-12T15:05Z',
                 alertmanager_check_after = '2026-02-12T15:05Z',
