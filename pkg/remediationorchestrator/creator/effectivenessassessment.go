@@ -101,6 +101,7 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	}
 
 	// Build EffectivenessAssessment CRD
+	rrCreatedAt := rr.CreationTimestamp.DeepCopy()
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -117,6 +118,8 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
 			},
+			RemediationCreatedAt: rrCreatedAt,
+			SignalName:           rr.Spec.SignalName, // OBS-1: Propagate actual alert name for audit
 		},
 	}
 
