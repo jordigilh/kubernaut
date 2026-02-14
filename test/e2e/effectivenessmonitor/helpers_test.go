@@ -69,16 +69,66 @@ func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.Eff
 // eaOption is a functional option for customizing EA creation.
 type eaOption func(*eav1.EffectivenessAssessment)
 
-// withValidityDeadline sets the validity deadline on the EA status.
-// NOTE: When the EM reconciler processes an EA, it computes ValidityDeadline from
-// EA.creationTimestamp + config.ValidityWindow. This option pre-sets the status field
-// which is only useful for testing expired scenarios where the EA is created with
-// a past deadline that is manually set on the status after creation.
-func withValidityDeadline(deadline time.Time) eaOption {
-	return func(ea *eav1.EffectivenessAssessment) {
-		t := metav1.NewTime(deadline)
-		ea.Status.ValidityDeadline = &t
+// createExpiredEA creates an EA and patches its status with an already-expired
+// ValidityDeadline via the status subresource. Kubernetes ignores status fields
+// on Create(), so the deadline must be set via a separate Status().Update().
+//
+// A long StabilizationWindow (10m) ensures the reconciler's first reconcile
+// requeues at the stabilization gate (Step 5) without reaching component
+// assessment (Step 7+). The validity checker evaluates expiration BEFORE
+// stabilization (validity.Check: "expired takes priority"), so once our
+// status patch sets an expired deadline, the next reconcile completes the EA
+// as expired with no component assessments — matching the ADR-EM-001 scenario:
+// "On first reconcile after recovery, EM checks validity window. If expired,
+// marks EA as expired without collecting any data."
+//
+// This mirrors the integration helper createExpiredEffectivenessAssessment
+// but adapts for E2E where the controller runs asynchronously in a pod.
+func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
+	ea := &eav1.EffectivenessAssessment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: eav1.EffectivenessAssessmentSpec{
+			CorrelationID:           correlationID,
+			RemediationRequestPhase: "Completed",
+			TargetResource: eav1.TargetResource{
+				Kind:      "Pod",
+				Name:      "target-pod",
+				Namespace: namespace,
+			},
+			Config: eav1.EAConfig{
+				// Long stabilization ensures the reconciler's first reconcile
+				// requeues at the stabilization gate (Step 5) without reaching
+				// component assessment (Step 7+). Our status patch then triggers
+				// a new reconcile that hits the expired path (Step 4).
+				StabilizationWindow: metav1.Duration{Duration: 10 * time.Minute},
+			},
+		},
 	}
+
+	GinkgoHelper()
+	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", namespace, name)
+
+	// Patch status with an expired ValidityDeadline via the status subresource.
+	// Use Eventually to handle potential resourceVersion conflicts if the
+	// reconciler updates status between our Get and Update.
+	Eventually(func(g Gomega) {
+		fetched := &eav1.EffectivenessAssessment{}
+		g.Expect(apiReader.Get(ctx, client.ObjectKey{
+			Namespace: namespace, Name: name,
+		}, fetched)).To(Succeed())
+
+		expired := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		fetched.Status.ValidityDeadline = &expired
+		g.Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
+	}, 10*time.Second, 200*time.Millisecond).Should(Succeed(),
+		"Failed to patch expired ValidityDeadline on EA %s/%s", namespace, name)
+
+	GinkgoWriter.Printf("✅ Created expired EA: %s/%s (correlationID: %s)\n",
+		namespace, name, correlationID)
+	return ea
 }
 
 // NOTE: withPrometheusDisabled and withAlertManagerDisabled were removed.

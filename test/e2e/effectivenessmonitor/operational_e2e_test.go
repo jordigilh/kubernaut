@@ -61,12 +61,9 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 			name := uniqueName("ea-vw-expired")
 			correlationID := uniqueName("corr-vw")
 
-			// Set deadline 1 minute in the past so it's already expired
-			pastDeadline := time.Now().Add(-1 * time.Minute)
-
-			createEA(testNS, name, correlationID,
-				withValidityDeadline(pastDeadline),
-			)
+			// createExpiredEA uses a two-step approach: Create + Status().Update()
+			// because Kubernetes ignores status fields on Create (status is a subresource).
+			createExpiredEA(testNS, name, correlationID)
 
 			By("Waiting for EM to mark the EA as Completed with expired reason")
 			ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
