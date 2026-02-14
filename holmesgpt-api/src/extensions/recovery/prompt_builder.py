@@ -25,7 +25,7 @@ including failure reason guidance, cluster context, and investigation prompts.
 """
 
 import json
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 from src.models.incident_models import DetectedLabels
 
@@ -352,17 +352,27 @@ retrieve its full parameter schema. If you get "not found", go back to Step 2
 and choose a different workflow.{closing}"""
 
 
-def _create_recovery_investigation_prompt(request_data: Dict[str, Any]) -> str:
+def _create_recovery_investigation_prompt(
+    request_data: Dict[str, Any],
+    remediation_history_context: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create investigation prompt for recovery analysis.
 
     Design Decision: DD-RECOVERY-003
+    BR-HAPI-016: Remediation history context for LLM prompt enrichment.
 
     Key Differences from Incident Prompt:
     1. Adds "Previous Remediation Attempt" section at TOP
     2. Includes Kubernetes reason code with specific guidance
     3. Instructs LLM NOT to repeat failed workflow
     4. Expects signal type may have CHANGED
+
+    Args:
+        request_data: Recovery request data dict.
+        remediation_history_context: Optional remediation history context from
+            DataStorage (BR-HAPI-016, DD-HAPI-016 v1.1). When provided, a
+            remediation history section is appended to the prompt.
     """
     # Extract previous execution context
     previous = request_data.get("previous_execution", {})
@@ -597,12 +607,37 @@ True
 no_matching_workflows
 """
 
+    # BR-HAPI-016: Add remediation history section if context is available
+    if remediation_history_context:
+        from extensions.remediation_history_prompt import build_remediation_history_section
+
+        history_section = build_remediation_history_section(remediation_history_context)
+        if history_section:
+            prompt += f"""
+## Remediation History Context (AUTO-DETECTED)
+
+{history_section}
+
+"""
+
     return prompt
-def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
+
+
+def _create_investigation_prompt(
+    request_data: Dict[str, Any],
+    remediation_history_context: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create investigation prompt with complete ADR-041 v3.3 hybrid format.
 
     Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
+    BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+
+    Args:
+        request_data: Request data dict.
+        remediation_history_context: Optional remediation history context from
+            DataStorage (BR-HAPI-016, DD-HAPI-016 v1.1). When provided, a
+            remediation history section is appended to the prompt.
     """
     # Extract fields
     signal_type = request_data.get("signal_type", "Unknown")
@@ -946,6 +981,17 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 - Use your RCA findings to determine parameter values
 """
 
+    # BR-HAPI-016: Add remediation history section if context is available
+    if remediation_history_context:
+        from extensions.remediation_history_prompt import build_remediation_history_section
+
+        history_section = build_remediation_history_section(remediation_history_context)
+        if history_section:
+            prompt += f"""
+## Remediation History Context (AUTO-DETECTED)
+
+{history_section}
+
+"""
+
     return prompt
-
-

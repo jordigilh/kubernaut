@@ -286,6 +286,22 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
     # register_workflow_discovery_toolset() - LLM calls three-step tools during investigation
     # per DD-HAPI-017
     try:
+        # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
+        # Graceful degradation: if DS unavailable, context is None and prompt is unchanged
+        from clients.remediation_history_client import (
+            create_remediation_history_api,
+            fetch_remediation_history_for_request,
+        )
+        rh_api = create_remediation_history_api(app_config)
+        current_spec_hash = ""
+        if isinstance(enrichment_results, dict):
+            current_spec_hash = enrichment_results.get("currentSpecHash", "")
+        remediation_history_context = fetch_remediation_history_for_request(
+            api=rh_api,
+            request_data=request_data,
+            current_spec_hash=current_spec_hash,
+        )
+
         # Build base investigation prompt (before validation loop)
         # DD-RECOVERY-003: Use recovery-specific prompt for recovery attempts
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
@@ -293,14 +309,18 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
 
         is_recovery = request_data.get("is_recovery_attempt", False)
         if is_recovery and request_data.get("previous_execution"):
-            base_prompt = sanitize_for_llm(_create_recovery_investigation_prompt(request_data))
+            base_prompt = sanitize_for_llm(_create_recovery_investigation_prompt(
+                request_data, remediation_history_context=remediation_history_context
+            ))
             logger.info({
                 "event": "using_recovery_prompt",
                 "incident_id": incident_id,
                 "recovery_attempt_number": request_data.get("recovery_attempt_number", 1)
             })
         else:
-            base_prompt = sanitize_for_llm(_create_investigation_prompt(request_data))
+            base_prompt = sanitize_for_llm(_create_investigation_prompt(
+                request_data, remediation_history_context=remediation_history_context
+            ))
 
         # Create minimal DAL (no Robusta Platform database needed)
         dal = MinimalDAL(cluster_name=request_data.get("context", {}).get("cluster"))
