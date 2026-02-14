@@ -118,31 +118,34 @@ func GetHAPIE2ETestWorkflows() []TestWorkflow {
 	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
 	// HAPI validates LLM response parameters against workflow schema from DataStorage
 	// DD-WORKFLOW-016: ActionType values MUST match Python fixtures (workflow_fixtures.py)
+	// DD-WORKFLOW-017: ContainerImage references real OCI images at quay.io/kubernaut-cicd/test-workflows
+	// These images contain /workflow-schema.yaml (BR-WORKFLOW-004) for pullspec-only registration
+	const hapiWorkflowRegistry = "quay.io/kubernaut-cicd/test-workflows"
 	baseWorkflows := []TestWorkflow{
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", SignalType: "OOMKilled", Severity: "critical", Component: "pod", Priority: "P0", ContainerImage: "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001",
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", SignalType: "OOMKilled", Severity: "critical", Component: "pod", Priority: "P0", ContainerImage: hapiWorkflowRegistry + "/oomkill-increase-memory:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit for the container (e.g., 1Gi)"},
 				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the target resource (e.g., Deployment)"},
 				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the target resource"},
 				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
 			}},
-		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", SignalType: "OOMKilled", Severity: "high", Component: "deployment", Priority: "P1", ContainerImage: "ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002",
+		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", SignalType: "OOMKilled", Severity: "high", Component: "deployment", Priority: "P1", ContainerImage: hapiWorkflowRegistry + "/memory-optimize:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "OPTIMIZATION_LEVEL", Type: "string", Required: true, Description: "Optimization aggressiveness level"},
 				{Name: "MEMORY_TARGET", Type: "string", Required: true, Description: "Target memory allocation"},
 			}},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", SignalType: "CrashLoopBackOff", Severity: "high", Component: "pod", Priority: "P1", ContainerImage: "ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003",
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", SignalType: "CrashLoopBackOff", Severity: "high", Component: "pod", Priority: "P1", ContainerImage: hapiWorkflowRegistry + "/crashloop-config-fix:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "CONFIG_MAP", Type: "string", Required: true, Description: "ConfigMap name to fix"},
 				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
 			}},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "RestartPod", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Priority: "P0", ContainerImage: "ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004",
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "RestartPod", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Priority: "P0", ContainerImage: hapiWorkflowRegistry + "/node-drain-reboot:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NODE_NAME", Type: "string", Required: true, Description: "Name of the node to drain and reboot"},
 				{Name: "GRACE_PERIOD", Type: "string", Required: true, Description: "Grace period in seconds for pod eviction"},
 			}},
-		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", SignalType: "ImagePullBackOff", Severity: "high", Component: "pod", Priority: "P1", ContainerImage: "ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005"},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", SignalType: "Unknown", Severity: "medium", Component: "deployment", Priority: "P2", ContainerImage: "ghcr.io/kubernaut/workflows/generic-restart:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000006",
+		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", SignalType: "ImagePullBackOff", Severity: "high", Component: "pod", Priority: "P1", ContainerImage: hapiWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", SignalType: "Unknown", Severity: "medium", Component: "deployment", Priority: "P2", ContainerImage: hapiWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "ACTION", Type: "string", Required: true, Description: "Restart action to perform"},
 			}},

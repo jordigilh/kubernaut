@@ -85,7 +85,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "*",
 			Priority:        "*",
-			ContainerImage:  "busybox:latest",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
 			ExecutionEngine: "job",
 			// BR-HAPI-191: Parameter schema for LLM guidance and HAPI validation
 			SchemaParameters: []models.WorkflowParameter{
@@ -112,7 +112,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "*",
 			Priority:        "*",
-			ContainerImage:  "quay.io/jordigilh/kubernaut-cicd/test-workflows/oomkill-increase-memory:fullpipeline-e2e-arm64",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
 			ExecutionEngine: "job",
 			// BR-HAPI-191: Parameter schema matching oomkill-increase-memory.sh expectations
 			SchemaParameters: []models.WorkflowParameter{
