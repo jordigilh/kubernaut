@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.7 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Health scoring updated from weighted sub-check formula to decision-tree algorithm (reflects `pkg/effectivenessmonitor/health/health.go`). Metrics Phase B (memory, latency, error rate) marked as implemented (was incorrectly listed as deferred). `spec_changed` renamed to `hash_match` (inverse semantics, matches OpenAPI). Added `total_replicas`, `ready_replicas`, `pending_count` to health payload. Added `resolution_time_seconds` to alert payload. Annotated v1.0 gaps: `alert_name`, `throughput_*`, `components_assessed`, `completed_at` not yet in OpenAPI payloads. Annotated `no_execution` and `metrics_timed_out` reconciler paths as not yet implemented. |
 | 1.6 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Principle 5 updated — EM component events now carry typed sub-objects (`health_checks`, `metric_deltas`, `alert_resolution`) alongside the human-readable `details` string. Enables DS/HAPI to extract structured assessment data without string parsing. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. OpenAPI spec updated with typed sub-object schemas. Coordinated with HAPI team via DD-HAPI-016 v1.1 and issue #82. |
 | 1.5 | 2026-02-13 | Architecture Team | Clarified Principle 1: EM queries DS during reconciliation for audit context (pre-hash, signal metadata), not via polling. EM is a CRD controller watching EA CRDs, not a stateless polling service. Added DD-EM-002 (canonical spec hash algorithm) to related decisions. Removed stale DD-EFFECTIVENESS-003 reference (fully superseded by EA CRD trigger since v1.1). |
 | 1.4 | 2026-02-13 | Architecture Team | EA spec simplified: EAConfig now only contains `stabilizationWindow`. Removed `scoringThreshold`, `prometheusEnabled`, `alertManagerEnabled` from EA spec. EM reads `prometheusEnabled` and `alertManagerEnabled` from its own config (EMConfig.External). ScoringThreshold removed entirely — EM no longer computes average score or compares against threshold. EM always emits Normal `EffectivenessAssessed` event on completion; `RemediationIneffective` K8s event removed. DS computes weighted effectiveness score on demand. |
@@ -502,24 +503,36 @@ Weight redistribution happens automatically by normalizing over available compon
 
 #### Health Check Sub-Scoring
 
-The `health_check_pass_rate` is a weighted composite of five checks, prioritizing running state and readiness:
+The `health_check_pass_rate` uses a decision-tree algorithm that evaluates conditions in priority order, returning a fixed score at the first matching branch. This approach was chosen during implementation over the original weighted sub-check formula because it produces more intuitive scores for operators (e.g., "all ready but OOMKilled" is clearly worse than "all ready with minor restarts") and avoids counter-intuitive composite scores from independent weighted checks.
 
-| Check | Weight | Score |
-|-------|--------|-------|
-| `pod_running` | 0.30 | 1.0 if Running, 0.0 otherwise |
-| `readiness_pass` | 0.30 | 1.0 if ready, 0.0 otherwise |
-| `restart_delta` | 0.15 | 1.0 if delta ≤ 0, 0.5 if delta == 1, 0.0 if delta > 1 |
-| `no_crash_loops` | 0.15 | 1.0 if no CrashLoopBackOff, 0.0 otherwise |
-| `no_oom_killed` | 0.10 | 1.0 if no OOMKilled since remediation, 0.0 otherwise |
+| Condition (evaluated in order) | Score | Rationale |
+|-------------------------------|-------|-----------|
+| Target not found (Deployment/StatefulSet missing) | 0.0 | Catastrophic — resource deleted |
+| Zero total replicas (scaled to 0) | 0.0 | No pods to assess |
+| CrashLoopBackOff detected | 0.0 | Active crash loop — remediation ineffective |
+| No pods ready (`readyReplicas == 0`) | 0.0 | All pods unhealthy |
+| Partial readiness (`readyReplicas < totalReplicas`) | 0.5 | Degraded but partially functional |
+| All ready + OOMKilled since remediation | 0.25 | Running but memory pressure indicates instability |
+| All ready + restarts since remediation (`restartDelta > 0`) | 0.75 | Recovered but required restarts |
+| All ready, no restarts, no OOM, no crash loops | 1.0 | Ideal post-remediation state |
+
+The health checks reported in the `health_checks` typed sub-object include: `pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `total_replicas`, `ready_replicas`, `pending_count`. All checks are evaluated and emitted regardless of which branch determines the score, providing full observability.
+
+> **Implementation note (v1.7)**: The original ADR v1.0–v1.6 specified a weighted formula (`pod_running` 0.30, `readiness_pass` 0.30, `restart_delta` 0.15, `no_crash_loops` 0.15, `no_oom_killed` 0.10). This was replaced during implementation with the decision-tree above. See `pkg/effectivenessmonitor/health/health.go`.
 
 #### Metric Improvement Scoring
 
-For each metric (CPU, memory, latency, error rate, throughput):
-- **Improved**: Proportional score 0.0–1.0 based on improvement magnitude
-- **No change**: 0.0 (no improvement demonstrated)
-- **Degraded**: Negative proportional score (clamped to 0.0 for the component)
+V1.0 compares four metrics: CPU utilization, memory utilization, latency p95, and error rate. Throughput is defined in the audit schema but not yet queried from Prometheus.
 
-The `metric_improvement_ratio` is the average of individual metric scores.
+For each metric with `lowerIsBetter = true` (CPU, memory, latency, error rate):
+- **Improved** (post < pre): `improvement = (pre - post) / |pre|`, clamped to [0.0, 1.0]
+- **No change** (post == pre): 0.0 (no improvement demonstrated)
+- **Degraded** (post > pre): 0.0 (clamped — negative scores are not propagated)
+- **Pre-value is zero**: special case — 1.0 if post is also zero, 0.0 otherwise
+
+The `metric_improvement_ratio` is the average of all individual metric scores. If no metric comparisons are available, the metrics component is not assessed (score = nil).
+
+> **Implementation note (v1.7)**: DD-017 v2.5 originally designated memory, latency p95, and error rate as "Phase B (deferred)". During implementation, all four PromQL queries were implemented in the metrics scorer (`pkg/effectivenessmonitor/metrics/scorer.go`). Throughput remains unimplemented.
 
 ---
 
@@ -726,7 +739,10 @@ Emitted immediately after stabilization window.
 | `restart_delta` | integer | Restart count: after - before remediation |
 | `crash_loops` | boolean | CrashLoopBackOff detected |
 | `oom_killed` | boolean | OOMKilled since remediation |
-| `health_score` | float | Weighted composite score (0.0-1.0), used by DS for scoring |
+| `total_replicas` | integer | Total desired replicas at assessment time |
+| `ready_replicas` | integer | Ready replicas at assessment time |
+| `pending_count` | integer | Pods in Pending phase at assessment time |
+| `health_score` | float | Decision-tree score (0.0-1.0), used by DS for scoring |
 
 #### 9.2.2 `effectiveness.hash.computed`
 
@@ -737,7 +753,7 @@ Emitted immediately after stabilization window. Not scored — metadata for conf
 | `event_type` | string | `"effectiveness.hash.computed"` |
 | `pre_remediation_spec_hash` | string | SHA-256 from `remediation.workflow_created` event (or empty if unavailable) |
 | `post_remediation_spec_hash` | string | SHA-256 of current target resource `.spec` |
-| `spec_changed` | boolean | `true` if pre != post (confirms workflow modified the resource) |
+| `hash_match` | boolean | `true` if pre == post (spec unchanged after remediation); `false` confirms workflow modified the resource |
 
 #### 9.2.3 `effectiveness.alert.assessed`
 
@@ -747,9 +763,10 @@ Emitted immediately after stabilization window (when AlertManager is enabled).
 |-------|------|-------------|
 | `event_type` | string | `"effectiveness.alert.assessed"` |
 | `signal_resolved` | boolean | `true` if triggering alert is no longer active |
-| `alert_name` | string | The alert name queried |
+| `alert_name` | string | The alert name queried (**v1.0 gap**: not yet populated in OpenAPI payload; present in `Details` string only) |
 | `active_alerts_count` | integer | Number of matching active alerts at assessment time |
 | `alert_score` | float | 1.0 if resolved, 0.0 if still active; used by DS for scoring |
+| `resolution_time_seconds` | float (nullable) | Time from remediation to alert resolution; `null` if not resolved (**v1.0 gap**: field exists in OpenAPI schema but not yet populated by reconciler) |
 
 #### 9.2.4 `effectiveness.metrics.assessed`
 
@@ -766,8 +783,8 @@ Emitted when Prometheus post-remediation data becomes available (may be delayed 
 | `latency_p95_after_ms` | float | p95 latency after |
 | `error_rate_before` | float | Error rate before |
 | `error_rate_after` | float | Error rate after |
-| `throughput_before_rps` | float | Request throughput before |
-| `throughput_after_rps` | float | Request throughput after |
+| `throughput_before_rps` | float | Request throughput before (**v1.0 gap**: not yet implemented — no PromQL query for throughput) |
+| `throughput_after_rps` | float | Request throughput after (**v1.0 gap**: not yet implemented) |
 | `metrics_score` | float | Average improvement ratio (0.0-1.0), used by DS for scoring |
 
 #### 9.2.5 `effectiveness.assessment.completed` (lifecycle marker)
@@ -781,8 +798,8 @@ Emitted when the EM finishes processing the EA CRD (all components done, validit
 | `service` | string | `"effectivenessmonitor"` |
 | `ea_name` | string | EA CRD name |
 | `assessment_reason` | string | `"full"`, `"partial"`, `"no_execution"`, `"metrics_timed_out"`, `"expired"`, `"spec_drift"` |
-| `components_assessed` | array[string] | List of component event types emitted (e.g., `["health", "alert", "hash"]`) |
-| `completed_at` | string (RFC3339) | When the EA reached Completed phase |
+| `components_assessed` | array[string] | List of component event types emitted (e.g., `["health", "alert", "hash"]`) (**v1.0 gap**: not yet in OpenAPI payload) |
+| `completed_at` | string (RFC3339) | When the EA reached Completed phase (**v1.0 gap**: not yet in OpenAPI payload; available in EA status) |
 
 ### 9.3 `workflowexecution.workflow.started` Enhancement
 
@@ -1035,6 +1052,38 @@ Events WRITTEN by EM (consumed by DS for scoring):
 - **No side-effect detection in V1.0**: The scoring formula does not account for collateral damage. A remediation could score 1.0 while causing issues in other workloads. Post-V1.0 scope.
 - **Audit trail completeness**: If a service fails to emit its audit event, the EM's assessment is degraded. This is mitigated by ADR-032 (mandatory audit emission) and the `assessment_reason` field indicating partial data.
 - **Spec drift short-circuit**: When `assessment_reason` = `"spec_drift"`, DS overrides the weighted score to **0.0** regardless of individual component scores (DD-EM-002 v1.1). This is a hard override because component data was measured against a different spec version and is therefore unreliable.
+
+---
+
+## 13.1 Known V1.0 Implementation Gaps
+
+The following items are specified in this ADR but not yet implemented in the V1.0 codebase. They are tracked here for future batches.
+
+### Reconciler Logic Gaps
+
+| Gap | ADR Reference | Impact | Priority |
+|-----|---------------|--------|----------|
+| `no_execution` reconciliation path | Section 5: "No WFE started → skip health/metrics/hash → reason=no_execution" | EAs for RRs where the workflow never ran will produce misleading scores | HIGH |
+| `metrics_timed_out` reason | Section 6: distinct from `partial` when only metrics are missing at validity expiry | Operators cannot distinguish "only metrics unavailable" from "multiple components missing" | MEDIUM |
+| RR terminal phase handling | Section 5: EM should branch on `kubernaut.ai/rr-phase` (Failed/TimedOut) | All EAs follow the same path regardless of RR outcome | MEDIUM |
+
+### Audit Payload Gaps
+
+| Gap | ADR Section | Status |
+|-----|-------------|--------|
+| `alert_name` not in OpenAPI payload | 9.2.3 | Present in Details string only |
+| `throughput_before/after_rps` | 9.2.4 | No PromQL query; fields nullable in schema |
+| `components_assessed` array | 9.2.5 | Not in OpenAPI payload |
+| `completed_at` in completed event | 9.2.5 | Not in OpenAPI payload; available in EA status |
+| `resolution_time_seconds` always null | 9.2.3 | Field in schema but not populated by reconciler |
+
+### Prerequisite Gaps (Other Services)
+
+| Gap | Service | Impact |
+|-----|---------|--------|
+| `remediation.workflow_created` not emitted in production | RO | Pre-remediation hash comparison always empty; hash diff meaningless | 
+| `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion |
+| RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes |
 
 ---
 

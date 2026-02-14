@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.6 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Phase B metrics (memory, latency p95, error rate) were implemented during V1.0 — updated Phase A/B sections to reflect this. Health scoring documented as decision-tree algorithm (matches implementation). Throughput queries remain unimplemented. See ADR-EM-001 v1.7 for full gap inventory. |
 | 2.5 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Added `health_checks`, `metric_deltas`, `alert_resolution` typed sub-objects to `EffectivenessAssessmentAuditPayload` in OpenAPI spec. EM component assessors now emit structured data alongside the human-readable `details` string. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. Metrics assessor expansion (memory, latency p95, error rate PromQL queries) deferred to Phase B. Coordinated with HAPI team (DD-HAPI-016 v1.1) via issue #82. |
 | 2.4 | 2026-02-13 | Architecture Team | EA spec simplification: EAConfig only has StabilizationWindow; ScoringThreshold, PrometheusEnabled, AlertManagerEnabled removed from EA spec (EM operational config only). EM always emits Normal EffectivenessAssessed; RemediationIneffective removed. DS computes weighted score on demand from component audit events. |
 | 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
@@ -103,15 +104,16 @@ After stabilization, the EM queries the K8s API for the target resource and emit
 
 The EM queries Prometheus for key metrics and emits a typed `metric_deltas` sub-object in the `effectiveness.metrics.assessed` audit event. Metrics are compared as pre-remediation (earliest sample) vs. post-remediation (latest sample) within a query range window.
 
-**Phase A (V1.0)**:
+**Implemented in V1.0** (all four metrics):
 - CPU utilization (`container_cpu_usage_seconds_total`)
-
-**Phase B (V1.0 follow-up)**:
 - Memory utilization (`container_memory_working_set_bytes`)
 - Request latency p95 (`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[...]))`)
 - Error rate (cluster-specific; default: `rate(http_requests_total{code=~"5.."}[...])`)
 
-> **v2.5 Note**: The `metric_deltas` typed sub-object includes all fields (cpu, memory, latency, error_rate) from Phase A. Fields not yet populated are nullable. This forward-compatible design avoids OpenAPI schema changes when Phase B is implemented.
+**Not yet implemented**:
+- Throughput (`throughput_before_rps`, `throughput_after_rps`) — fields exist in OpenAPI schema but no PromQL query is wired.
+
+> **v2.6 Note**: The original Phase A (CPU only) / Phase B (memory, latency, error rate) split was eliminated during implementation. All four PromQL queries were implemented in the V1.0 metrics scorer (`pkg/effectivenessmonitor/metrics/scorer.go`). The `metric_deltas` typed sub-object populates all fields. Throughput remains as a future enhancement.
 
 "Before" = earliest sample in the query range (before EA creation).
 "After" = latest sample in the query range (post-stabilization).
@@ -264,7 +266,7 @@ The EM emits **individual component-level audit events**, not a single monolithi
 }
 ```
 
-> **v2.5 Note — Metrics Phase B**: V1.0 populates `cpu_before`/`cpu_after` only. Memory, latency p95, and error rate fields are nullable pending Phase B metrics assessor expansion (additional PromQL queries). The typed sub-object includes all fields from the start so no schema change is needed when Phase B is implemented.
+> **v2.6 Note — Metrics**: All four metrics (CPU, memory, latency p95, error rate) are populated in V1.0. Throughput fields remain nullable. See ADR-EM-001 v1.7.
 
 - `effectiveness.hash.computed`: Spec hash comparison (DD-EM-002):
 ```json
@@ -457,4 +459,4 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 **Status**: ✅ APPROVED (v2.5) — Level 1 in V1.0 (EA CRD pattern, typed audit sub-objects), Level 2 in V1.1
 **Authoritative Integration Architecture**: [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md)
-**Next Review**: Phase B metrics expansion, then V1.1 planning (estimated Q2 2026)
+**Next Review**: Throughput PromQL query implementation, then V1.1 planning (estimated Q2 2026)

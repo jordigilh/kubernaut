@@ -93,9 +93,8 @@ func main() {
 	// ========================================
 	// FAIL-FAST STARTUP: Validate External Dependencies
 	// Per ADR-EM-001: EM must verify Prometheus/AlertManager connectivity at startup
+	// Implemented below: promClient.Ready() and amClient.Ready() with os.Exit(1) on failure
 	// ========================================
-	// TODO: Implement fail-fast health checks for Prometheus and AlertManager
-	// This will be wired in TDD GREEN phase (BR-EM-010: Fail-fast startup)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
