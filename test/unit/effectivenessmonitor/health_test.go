@@ -160,5 +160,148 @@ var _ = Describe("Health Check Scorer (BR-EM-001)", func() {
 			// Partial readiness takes precedence over restarts -> 0.5
 			Expect(*result.Score).To(Equal(0.5))
 		})
+
+		// ========================================
+		// v2.5: CrashLoopBackOff and OOMKilled detection (DD-017 v2.5)
+		// ========================================
+
+		// UT-EM-HC-007: CrashLoopBackOff detected -> 0.0
+		It("UT-EM-HC-007: should return 0.0 when CrashLoopBackOff detected", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           2,
+				RestartsSinceRemediation: 5,
+				TargetExists:           true,
+				CrashLoops:             true,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.0))
+			Expect(result.Details).To(ContainSubstring("CrashLoopBackOff"))
+		})
+
+		// UT-EM-HC-008: OOMKilled detected with all pods ready -> 0.25
+		It("UT-EM-HC-008: should return 0.25 when OOMKilled detected with all pods ready", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           3,
+				RestartsSinceRemediation: 1,
+				TargetExists:           true,
+				OOMKilled:              true,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.25))
+			Expect(result.Details).To(ContainSubstring("OOMKilled"))
+		})
+
+		// UT-EM-HC-009: Both CrashLoopBackOff and OOMKilled -> 0.0 (CrashLoop takes precedence)
+		It("UT-EM-HC-009: should return 0.0 when both CrashLoopBackOff and OOMKilled detected", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           1,
+				RestartsSinceRemediation: 10,
+				TargetExists:           true,
+				CrashLoops:             true,
+				OOMKilled:              true,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.0))
+			Expect(result.Details).To(ContainSubstring("CrashLoopBackOff"))
+		})
+
+		// UT-EM-HC-010: All healthy with no CrashLoop/OOM -> 1.0 (unchanged)
+		It("UT-EM-HC-010: should still return 1.0 when healthy with no CrashLoop/OOM", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           3,
+				RestartsSinceRemediation: 0,
+				TargetExists:           true,
+				CrashLoops:             false,
+				OOMKilled:              false,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(*result.Score).To(Equal(1.0))
+		})
+
+		// ========================================
+		// v2.5: Pending pod detection (DD-017 v2.5)
+		// ========================================
+
+		// UT-EM-HC-011: All pods pending -> 0.0
+		It("UT-EM-HC-011: should return 0.0 when all pods are pending", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           0,
+				RestartsSinceRemediation: 0,
+				TargetExists:           true,
+				PendingCount:           3,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.0))
+			Expect(result.Details).To(ContainSubstring("pending"))
+		})
+
+		// UT-EM-HC-012: Some pods pending, some ready -> 0.5 (partial readiness)
+		It("UT-EM-HC-012: should return 0.5 when some pods pending and some ready", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           2,
+				RestartsSinceRemediation: 0,
+				TargetExists:           true,
+				PendingCount:           1,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.5))
+			Expect(result.Details).To(ContainSubstring("pending"))
+		})
+
+		// UT-EM-HC-013: CrashLoopBackOff takes precedence over pending
+		It("UT-EM-HC-013: CrashLoopBackOff should take precedence over pending", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           0,
+				RestartsSinceRemediation: 5,
+				TargetExists:           true,
+				CrashLoops:             true,
+				PendingCount:           2,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).ToNot(BeNil())
+			Expect(*result.Score).To(Equal(0.0))
+			Expect(result.Details).To(ContainSubstring("CrashLoopBackOff"))
+		})
+
+		// UT-EM-HC-014: All ready, zero pending -> 1.0 (unchanged behavior)
+		It("UT-EM-HC-014: should return 1.0 when all ready and zero pending", func() {
+			status := health.TargetStatus{
+				TotalReplicas:           3,
+				ReadyReplicas:           3,
+				RestartsSinceRemediation: 0,
+				TargetExists:           true,
+				PendingCount:           0,
+			}
+
+			result := scorer.Score(context.Background(), status)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(*result.Score).To(Equal(1.0))
+		})
 	})
 })

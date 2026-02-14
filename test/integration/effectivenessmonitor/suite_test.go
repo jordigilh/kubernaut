@@ -359,6 +359,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		promClient,
 		amClient,
 		nil, // AuditManager: nil for integration tests (audit tested in E2E)
+		nil, // DSQuerier: nil for integration tests (DS querier tested separately)
 		func() controller.ReconcilerConfig {
 			c := controller.DefaultReconcilerConfig()
 			c.PrometheusEnabled = true
@@ -366,6 +367,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			return c
 		}(),
 	)
+	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

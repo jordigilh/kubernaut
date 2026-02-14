@@ -18,12 +18,10 @@ package effectivenessmonitor
 
 import (
 	"net/http"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -174,52 +172,6 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
-	})
-
-	// ========================================
-	// IT-EM-AR-005: AM disabled in config -> no alert assessment
-	// ========================================
-	// TODO: Per-EA AlertManager enable/disable was removed from EAConfig. This test relied on
-	// AlertManagerEnabled: false. To test disabled AM, configure ReconcilerConfig.AlertManagerEnabled.
-	It("IT-EM-AR-005: should skip alert assessment when AM is disabled in config", func() {
-		ns := createTestNamespace("em-ar-005")
-		defer deleteTestNamespace(ns)
-
-		By("Creating an EA (reconciler has AM enabled; per-EA disable no longer supported)")
-		ea := &eav1.EffectivenessAssessment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "ea-ar-005",
-				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-ar-005",
-				},
-			},
-			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-ar-005",
-				TargetResource: eav1.TargetResource{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: ns,
-				},
-				Config: eav1.EAConfig{
-					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
-
-		By("Verifying the EA completes")
-		fetchedEA := &eav1.EffectivenessAssessment{}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: ea.Name, Namespace: ea.Namespace,
-			}, fetchedEA)).To(Succeed())
-			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
-		}, timeout, interval).Should(Succeed())
-
-		// With reconciler AM enabled, alert is assessed
-		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.AlertScore).NotTo(BeNil())
 	})
 
 	// ========================================

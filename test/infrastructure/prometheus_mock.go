@@ -225,6 +225,14 @@ func (mp *MockPrometheus) SetQueryRangeResponse(resp *PromQueryResponse) {
 	mp.config.QueryRangeResponse = resp
 }
 
+// SetQueryRangeHandler sets a custom handler for /api/v1/query_range requests.
+// When set, QueryRangeResponse is ignored. Pass nil to clear and revert to canned responses.
+func (mp *MockPrometheus) SetQueryRangeHandler(handler http.HandlerFunc) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	mp.config.QueryRangeHandler = handler
+}
+
 // SetReady updates the readiness state of the mock.
 func (mp *MockPrometheus) SetReady(ready bool) {
 	mp.mu.Lock()

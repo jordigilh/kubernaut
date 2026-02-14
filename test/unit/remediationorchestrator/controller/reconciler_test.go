@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -61,6 +62,7 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 		_ = aianalysisv1.AddToScheme(scheme)
 		_ = workflowexecutionv1.AddToScheme(scheme)
 		_ = notificationv1.AddToScheme(scheme)
+		_ = eav1.AddToScheme(scheme)
 
 		// Create fake client and reconciler
 		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)

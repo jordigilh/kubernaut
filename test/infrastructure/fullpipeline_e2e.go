@@ -41,9 +41,9 @@ import (
 // Deploys ALL Kubernaut services in a single Kind cluster to test the complete
 // remediation lifecycle end-to-end:
 //
-//   Event → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification
+//   Event → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification → EA → EM
 //
-// Services deployed (10):
+// Services deployed (13):
 //   1. PostgreSQL + Redis (infrastructure)
 //   2. DataStorage (audit trail, workflow catalog)
 //   3. AuthWebhook (SOC2 CC8.1 user attribution)
@@ -54,6 +54,9 @@ import (
 //   8. WorkflowExecution (CRD controller, Job engine)
 //   9. Notification (CRD controller, file-based delivery)
 //  10. HolmesGPT API + Mock LLM (AI service)
+//  11. Prometheus (metric comparison for EM, ADR-EM-001)
+//  12. AlertManager (alert resolution for EM, ADR-EM-001)
+//  13. EffectivenessMonitor (CRD controller, watches EA CRDs)
 //
 // Test infrastructure:
 //   - kubernetes-event-exporter: watches K8s Events, POSTs to Gateway webhook
@@ -103,6 +106,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "holmesgpt-api", ImageName: "kubernaut/holmesgpt-api", DockerfilePath: "holmesgpt-api/Dockerfile"},
 	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile", BuildContextPath: "test/services/mock-llm"},
+	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 }
 
 // SetupFullPipelineInfrastructure deploys the complete Kubernaut service pipeline
@@ -200,6 +204,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"kubernaut.ai_aianalyses.yaml",
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
+		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EM
 	}
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
@@ -239,6 +244,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"authwebhook",
 		"workflowexecution-controller",
 		"holmesgpt-api-sa",
+		"effectivenessmonitor-controller", // ADR-EM-001: EM needs DataStorage audit access
 	}
 	for _, sa := range auditServices {
 		if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, sa, writer); err != nil {
@@ -332,6 +338,29 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 7.5: Deploy monitoring infrastructure (Prometheus + AlertManager)
+	// ADR-EM-001: Required for EM metric comparison and alert resolution checks
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📊 PHASE 7.5: Monitoring infrastructure (Prometheus + AlertManager)...")
+	phase7_5Start := time.Now()
+
+	monitoringResults := make(chan deployResult, 2)
+	go func() {
+		monitoringResults <- deployResult{"Prometheus", DeployPrometheus(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	go func() {
+		monitoringResults <- deployResult{"AlertManager", DeployAlertManager(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	for i := 0; i < 2; i++ {
+		r := <-monitoringResults
+		if r.err != nil {
+			return builtImages, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", r.name)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 7.5 complete (%s)\n", time.Since(phase7_5Start).Round(time.Second))
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 8: Deploy CRD controllers
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⚙️  PHASE 8: CRD controllers...")
@@ -339,7 +368,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// Deploy all controllers in parallel — they'll reconcile once CRDs and
 	// dependencies are available (Kubernetes handles dependency ordering)
-	controllerResults := make(chan deployResult, 5)
+	controllerResults := make(chan deployResult, 6)
 
 	go func() {
 		err := deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
@@ -361,9 +390,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		err := DeployNotificationController(ctx, namespace, kubeconfigPath, builtImages["notification"], writer)
 		controllerResults <- deployResult{"Notification", err}
 	}()
+	go func() {
+		// ADR-EM-001: EM controller watches EA CRDs, performs assessment checks
+		err := DeployEMController(ctx, namespace, kubeconfigPath, builtImages["effectivenessmonitor"], writer)
+		controllerResults <- deployResult{"EffectivenessMonitor", err}
+	}()
 
 	var ctrlErrors []error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		r := <-controllerResults
 		if r.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
@@ -821,6 +855,8 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"holmesgpt-api",
 		"gateway",
 		"event-exporter",
+		"prometheus",                       // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager",                     // ADR-EM-001: AlertManager for EM alert resolution
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")
@@ -847,6 +883,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"AIAnalysis":              "app=aianalysis-controller",
 		"WorkflowExecution":       "app=workflowexecution-controller",
 		"Notification":            "app=notification-controller",
+		"EffectivenessMonitor":    "app=effectivenessmonitor-controller", // ADR-EM-001
 	}
 
 	for name, selector := range controllerLabels {

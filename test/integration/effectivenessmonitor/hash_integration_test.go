@@ -53,9 +53,11 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 			"hash should be computed")
 		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).NotTo(BeEmpty(),
 			"post-remediation spec hash should be set")
-		// Hash should be a hex-encoded SHA256 (64 chars)
-		Expect(len(fetchedEA.Status.Components.PostRemediationSpecHash)).To(Equal(64),
-			"hash should be 64 character hex (SHA256)")
+		// Hash uses DD-EM-002 canonical format: "sha256:<64-hex>" (71 chars)
+		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HavePrefix("sha256:"),
+			"hash should use canonical sha256: prefix (DD-EM-002)")
+		Expect(len(fetchedEA.Status.Components.PostRemediationSpecHash)).To(Equal(71),
+			"hash should be 71 characters: 'sha256:' (7) + 64 hex digits")
 	})
 
 	// ========================================

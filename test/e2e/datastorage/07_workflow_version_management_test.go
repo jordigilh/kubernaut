@@ -18,18 +18,17 @@ package datastorage
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/google/uuid"
 )
 
 // Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
@@ -139,53 +138,9 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.0.0 with UUID and is_latest_version=true", func() {
 			testLogger.Info("📝 Creating workflow v1.0.0...")
 
-			// DD-WORKFLOW-002 v3.0: Create workflow request
-			// DD-API-001: Use typed OpenAPI struct
-			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
-			workflowID := fmt.Sprintf("%s-v1-0-0", workflowName)
-			workflowContent := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "v1.0.0"
-  description:
-    what: Increases memory limits conservatively for OOMKilled pods
-    whenToUse: Test workflow
-actionType: ScaleReplicas
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: deployment
-  environment: production
-  priority: P0
-parameters:
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: Name of the deployment to remediate
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0
-`, workflowID)
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
-			containerImage := "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456"
-
-			createReq := dsgen.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
-				Version:         "v1.0.0",
-				Name:            "OOM Recovery - Conservative Memory Increase",
-				Description:     "Increases memory limits conservatively for OOMKilled pods",
-				Content:         workflowContent,
-				ContentHash:     contentHash,
-				ExecutionEngine: "tekton",
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
-					Component:   "deployment",                                                                               // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
-				},
-				ContainerImage: dsgen.NewOptString(containerImage),
+			// DD-WORKFLOW-017: Register workflow v1.0.0 from OCI image
+			createReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/oom-recovery:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
@@ -197,7 +152,9 @@ execution:
 			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
 			workflowV1UUID = workflowResp.WorkflowID.Value.String()
 			Expect(workflowV1UUID).ToNot(BeEmpty())
-			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
+			// DD-WORKFLOW-017: Capture workflow name from OCI schema for subsequent assertions
+			workflowName = workflowResp.WorkflowName
+			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID, "name", workflowName)
 
 			// Verify UUID format (8-4-4-4-12)
 			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -213,54 +170,9 @@ execution:
 		It("should create workflow v1.1.0 and mark v1.0.0 as not latest", func() {
 			testLogger.Info("📝 Creating workflow v1.1.0...")
 
-			// DD-API-001: Use typed OpenAPI struct
-			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
-			workflowID := fmt.Sprintf("%s-v1-1-0", workflowName)
-			workflowContent := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "v1.1.0"
-  description:
-    what: Improved version with better memory calculation
-    whenToUse: Test workflow
-actionType: ScaleReplicas
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: deployment
-  environment: production
-  priority: P0
-parameters:
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: Name of the deployment to remediate
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.1.0
-`, workflowID)
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
-			containerImage := "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789"
-			previousVersion := "v1.0.0"
-
-			createReq := dsgen.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
-				Version:         "v1.1.0",
-				Name:            "OOM Recovery - Conservative Memory Increase (Improved)",
-				Description:     "Improved version with better memory calculation",
-				Content:         workflowContent,
-				ContentHash:     contentHash,
-				ExecutionEngine: "tekton",
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				PreviousVersion: dsgen.NewOptString(previousVersion),
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
-					Component:   "deployment",                                                                               // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
-				},
-				ContainerImage: dsgen.NewOptString(containerImage),
+			// DD-WORKFLOW-017: Register workflow v1.1.0 from OCI image
+			createReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/oom-recovery:v1.1.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
@@ -296,54 +208,9 @@ execution:
 		It("should create workflow v2.0.0 and only latest version is marked", func() {
 			testLogger.Info("📝 Creating workflow v2.0.0...")
 
-			// DD-API-001: Use typed OpenAPI struct
-			// ADR-043: WorkflowSchema format required (rejects raw Tekton Pipeline YAML)
-			workflowID := fmt.Sprintf("%s-v2-0-0", workflowName)
-			workflowContent := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "v2.0.0"
-  description:
-    what: Major version with horizontal scaling support
-    whenToUse: Test workflow
-actionType: ScaleReplicas
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: deployment
-  environment: production
-  priority: P0
-parameters:
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: Name of the deployment to remediate
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v2.0.0
-`, workflowID)
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
-			containerImage := "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012"
-			previousVersion := "v1.1.0"
-
-			createReq := dsgen.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: FK to action_type_taxonomy
-				Version:         "v2.0.0",
-				Name:            "OOM Recovery - Major Refactor",
-				Description:     "Major version with horizontal scaling support",
-				Content:         workflowContent,
-				ContentHash:     contentHash,
-				ExecutionEngine: "tekton",
-				Status:          dsgen.RemediationWorkflowStatusActive,
-				PreviousVersion: dsgen.NewOptString(previousVersion),
-				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                                                                                // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverity_critical,                                                      // mandatory
-					Component:   "deployment",                                                                               // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,                                                           // mandatory
-					Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")}, // mandatory
-				},
-				ContainerImage: dsgen.NewOptString(containerImage),
+			// DD-WORKFLOW-017: Register workflow v2.0.0 from OCI image
+			createReq := dsgen.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/oom-recovery:v2.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)

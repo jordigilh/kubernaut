@@ -395,6 +395,135 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 	})
 
 	// ========================================
+	// AssessmentReason propagation -- spec_drift / full / partial
+	// DD-EM-002 v1.1: assessmentReason from BuildEffectivenessResponse
+	// ========================================
+	Describe("AssessmentReason propagation", func() {
+
+		// makeSpecDriftEMEvents creates EM events where assessment.completed reason = "spec_drift".
+		// BuildEffectivenessResponse short-circuits score to 0.0 for spec_drift.
+		makeSpecDriftEMEvents := func() []*server.EffectivenessEvent {
+			return []*server.EffectivenessEvent{
+				{
+					EventData: map[string]interface{}{
+						"event_type":                 "effectiveness.hash.computed",
+						"pre_remediation_spec_hash":  "sha256:pre-sd",
+						"post_remediation_spec_hash": "sha256:post-sd",
+						"hash_match":                 false,
+					},
+				},
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "spec_drift",
+					},
+				},
+			}
+		}
+
+		Context("Tier 1 (CorrelateTier1Chain)", func() {
+
+			It("UT-RH-LOGIC-017: should propagate assessmentReason='spec_drift' with score 0.0", func() {
+				roEvents := []repository.RawAuditRow{
+					makeROEvent("rr-sd-001", "sha256:pre-sd", "success", "alert", "fp-sd-1", "restart", fixedTime),
+				}
+				emEvents := map[string][]*server.EffectivenessEvent{
+					"rr-sd-001": makeSpecDriftEMEvents(),
+				}
+
+				entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+				Expect(entries).To(HaveLen(1))
+				entry := entries[0]
+
+				// assessmentReason must be propagated
+				Expect(entry.AssessmentReason.Set).To(BeTrue())
+				Expect(string(entry.AssessmentReason.Value)).To(Equal("spec_drift"))
+
+				// score is 0.0 (spec_drift short-circuit in BuildEffectivenessResponse)
+				Expect(entry.EffectivenessScore.Set).To(BeTrue())
+				Expect(entry.EffectivenessScore.Value).To(BeNumerically("==", 0.0))
+			})
+
+			It("UT-RH-LOGIC-018: should propagate assessmentReason='full' with normal score", func() {
+				roEvents := []repository.RawAuditRow{
+					makeROEvent("rr-full-001", "sha256:pre123", "success", "alert", "fp-full-1", "restart", fixedTime),
+				}
+				emEvents := map[string][]*server.EffectivenessEvent{
+					"rr-full-001": makeFullEMEvents(),
+				}
+
+				entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+				Expect(entries).To(HaveLen(1))
+				entry := entries[0]
+
+				// assessmentReason must be "full"
+				Expect(entry.AssessmentReason.Set).To(BeTrue())
+				Expect(string(entry.AssessmentReason.Value)).To(Equal("full"))
+
+				// score is normal (not 0.0)
+				Expect(entry.EffectivenessScore.Set).To(BeTrue())
+				Expect(entry.EffectivenessScore.Value).To(BeNumerically(">", 0.0))
+			})
+
+			It("UT-RH-LOGIC-019: should leave assessmentReason unset when no EM data", func() {
+				roEvents := []repository.RawAuditRow{
+					makeROEvent("rr-no-em", "sha256:pre", "success", "alert", "fp-1", "restart", fixedTime),
+				}
+				emEvents := map[string][]*server.EffectivenessEvent{}
+
+				entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+				Expect(entries).To(HaveLen(1))
+				// No EM events -> assessmentReason should be unset
+				Expect(entries[0].AssessmentReason.Set).To(BeFalse())
+			})
+		})
+
+		Context("Tier 2 (BuildTier2Summaries)", func() {
+
+			It("UT-RH-LOGIC-020: should propagate assessmentReason='spec_drift' on summary", func() {
+				roEvents := []repository.RawAuditRow{
+					makeROEvent("rr-t2-sd", "sha256:pre-sd", "success", "alert", "fp-sd", "restart", fixedTime),
+				}
+				emEvents := map[string][]*server.EffectivenessEvent{
+					"rr-t2-sd": makeSpecDriftEMEvents(),
+				}
+
+				summaries := server.BuildTier2Summaries(roEvents, emEvents, "sha256:current")
+
+				Expect(summaries).To(HaveLen(1))
+				s := summaries[0]
+
+				Expect(s.AssessmentReason.Set).To(BeTrue())
+				Expect(string(s.AssessmentReason.Value)).To(Equal("spec_drift"))
+
+				// score is 0.0
+				Expect(s.EffectivenessScore.Set).To(BeTrue())
+				Expect(s.EffectivenessScore.Value).To(BeNumerically("==", 0.0))
+			})
+
+			It("UT-RH-LOGIC-021: should propagate assessmentReason='full' on summary", func() {
+				roEvents := []repository.RawAuditRow{
+					makeROEvent("rr-t2-full", "sha256:pre123", "success", "alert", "fp-full", "restart", fixedTime),
+				}
+				emEvents := map[string][]*server.EffectivenessEvent{
+					"rr-t2-full": makeFullEMEvents(),
+				}
+
+				summaries := server.BuildTier2Summaries(roEvents, emEvents, "sha256:current")
+
+				Expect(summaries).To(HaveLen(1))
+				s := summaries[0]
+
+				Expect(s.AssessmentReason.Set).To(BeTrue())
+				Expect(string(s.AssessmentReason.Value)).To(Equal("full"))
+			})
+		})
+	})
+
+	// ========================================
 	// DetectRegression -- checks if any entry has preRemediation hashMatch
 	// DD-HAPI-016 v1.1: regression = current spec matches a previous preHash
 	// ========================================

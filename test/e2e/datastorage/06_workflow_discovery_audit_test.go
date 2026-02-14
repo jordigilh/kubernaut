@@ -18,13 +18,13 @@ package datastorage
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -53,52 +53,12 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		// Create a workflow for audit event tests
+		// DD-WORKFLOW-017: Register workflow from OCI image for audit tests
 		testID := uuid.New().String()[:8]
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
-		workflowName := fmt.Sprintf("audit-discovery-e2e-%s", testID)
-		content := fmt.Sprintf(`metadata:
-  workflowId: %s
-  version: "1.0.0"
-  description:
-    what: Audit event test workflow
-    whenToUse: Test workflow
-actionType: ScaleReplicas
-labels:
-  signalType: OOMKilled
-  severity: critical
-  component: pod
-  environment: production
-  priority: p0
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: Target resource
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/audit-test:v1.0.0
-`, workflowName)
-		contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-		createReq := dsgen.RemediationWorkflow{
-			WorkflowName:    workflowName,
-			ActionType:      "ScaleReplicas",
-			Version:         "1.0.0",
-			Name:            "Audit Discovery E2E Test",
-			Description:     "Workflow for discovery audit event testing",
-			Content:         content,
-			ContentHash:     contentHash,
-			ExecutionEngine: "tekton",
-			ContainerImage:  dsgen.NewOptString("ghcr.io/kubernaut/workflows/audit-test:v1.0.0"),
-			Status:          dsgen.RemediationWorkflowStatusActive,
-			Labels: dsgen.MandatoryLabels{
-				SignalType:  "OOMKilled",
-				Severity:    dsgen.MandatoryLabelsSeverity_critical,
-				Component:   "pod",
-				Priority:    dsgen.MandatoryLabelsPriority_P0,
-				Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem("production")},
-			},
+		createReq := dsgen.CreateWorkflowFromOCIRequest{
+			ContainerImage: fmt.Sprintf("%s/audit-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 		}
 
 		resp, err := DSClient.CreateWorkflow(testCtx, &createReq)

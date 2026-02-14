@@ -75,23 +75,51 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 	})
 
 	// ========================================
-	// UT-EM-AE-002: Build hash audit event
+	// UT-EM-AE-002: Build hash audit event (DD-EM-002 pre/post/match)
 	// ========================================
-	Describe("BuildHashEvent (UT-EM-AE-002)", func() {
+	Describe("BuildHashEvent (UT-EM-AE-002, DD-EM-002)", func() {
 
-		It("should build hash audit event with computed hash", func() {
+		It("should build hash audit event with post and pre hashes and match=true", func() {
 			data := baseEventData()
+			match := true
 
-			event := builder.BuildHashEvent(data, "abc123def456")
+			event := builder.BuildHashEvent(data,
+				"sha256:aaa111", "sha256:aaa111", &match)
 
 			Expect(event.CorrelationID).To(Equal("rr-test-001"))
-			Expect(event.PostRemediationSpecHash).To(Equal("abc123def456"))
+			Expect(event.PostRemediationSpecHash).To(Equal("sha256:aaa111"))
+			Expect(event.PreRemediationSpecHash).To(Equal("sha256:aaa111"))
+			Expect(event.Match).ToNot(BeNil())
+			Expect(*event.Match).To(BeTrue())
 		})
 
-		It("should handle empty hash", func() {
+		It("should build hash audit event with match=false when hashes differ", func() {
+			data := baseEventData()
+			match := false
+
+			event := builder.BuildHashEvent(data,
+				"sha256:post123", "sha256:pre456", &match)
+
+			Expect(event.PostRemediationSpecHash).To(Equal("sha256:post123"))
+			Expect(event.PreRemediationSpecHash).To(Equal("sha256:pre456"))
+			Expect(*event.Match).To(BeFalse())
+		})
+
+		It("should build hash audit event with match=nil when no pre-hash", func() {
 			data := baseEventData()
 
-			event := builder.BuildHashEvent(data, "")
+			event := builder.BuildHashEvent(data,
+				"sha256:post789", "", nil)
+
+			Expect(event.PostRemediationSpecHash).To(Equal("sha256:post789"))
+			Expect(event.PreRemediationSpecHash).To(BeEmpty())
+			Expect(event.Match).To(BeNil())
+		})
+
+		It("should handle empty post hash", func() {
+			data := baseEventData()
+
+			event := builder.BuildHashEvent(data, "", "", nil)
 
 			Expect(event.PostRemediationSpecHash).To(BeEmpty())
 		})

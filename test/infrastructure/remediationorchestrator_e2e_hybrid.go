@@ -171,6 +171,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_signalprocessings.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
+		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EA creation on terminal phases
 	}
 
 	for _, crdFile := range crdFiles {
@@ -499,6 +500,8 @@ data:
       healthProbeAddr: :8084
       leaderElection: false
       leaderElectionId: remediationorchestrator.kubernaut.ai
+    effectivenessAssessment:
+      stabilizationWindow: 5s  # E2E: Short window for fast test cycles (ADR-EM-001)
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -615,6 +618,12 @@ rules:
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["notificationrequests/status"]
+  verbs: ["get"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["effectivenessassessments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["effectivenessassessments/status"]
   verbs: ["get"]
 - apiGroups: [""]
   resources: ["events"]

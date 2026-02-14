@@ -1,0 +1,43 @@
+# Data Storage Service Configuration Template for Integration Tests
+#
+# ADR-030: Service Configuration Management
+# DD-TEST-001: Port Allocation Strategy
+#
+# This template is used by all integration test infrastructure code.
+# Values in {{BRACKETS}} are replaced at runtime by the infrastructure code.
+
+server:
+  port: 8080  # Internal container port
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+
+logging:
+  level: "info"  # Replaced: "info", "debug", "error"
+  format: "json"
+
+database:
+  host: "host.containers.internal"  # Replaced: container name or "host.containers.internal"
+  port: 15438    # Replaced: internal port (5432 for network, or host port)
+  name: "action_history"        # Replaced: database name
+  user: "slm_user"        # Replaced: database user
+  ssl_mode: "disable"  # Integration tests use insecure connections
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "5m"
+  conn_max_idle_time: "5m"
+  # ADR-030 Section 6: Secrets loaded from mounted files
+  secretsFile: "/etc/datastorage-secrets/database-credentials.yaml"
+  passwordKey: "password"
+
+redis:
+  addr: "host.containers.internal:16384"  # Replaced: Redis address
+  db: 0  # Replaced: Redis database number
+  # DD-009: Redis DLQ configuration
+  dlq_stream_name: "audit:dlq:integration"
+  dlq_max_len: 10000
+  dlq_consumer_group: "datastorage-dlq-integration"
+  # ADR-030 Section 6: Secrets loaded from mounted files
+  secretsFile: "/etc/datastorage-secrets/redis-credentials.yaml"
+  passwordKey: "password"
+

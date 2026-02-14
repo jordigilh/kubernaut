@@ -35,10 +35,23 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 
 	// Restore mock Prometheus to default state after each test
 	AfterEach(func() {
+		// Clear any custom handlers (e.g., from MC-005 503 test)
+		mockProm.SetQueryRangeHandler(nil)
+		// Restore instant query response
 		mockProm.SetQueryResponse(infrastructure.NewPromVectorResponse(
 			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
 			0.25,
 			float64(time.Now().Unix()),
+		))
+		// Restore range query response (reconciler uses /api/v1/query_range)
+		now := float64(time.Now().Unix())
+		preRemediationTime := now - 60
+		mockProm.SetQueryRangeResponse(infrastructure.NewPromMatrixResponse(
+			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
+			[][]interface{}{
+				{preRemediationTime, "0.500000"}, // pre-remediation: 50% CPU
+				{now, "0.250000"},                 // post-remediation: 25% CPU (improvement)
+			},
 		))
 	})
 
@@ -200,34 +213,19 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 
 		queryRangeCount := 0
 		By("Configuring mock Prometheus to return 503 initially, then recover")
-		mockProm.SetQueryRangeResponse(nil) // Clear default range response
-		// Override with custom handler that fails first on query_range, then succeeds.
-		// The reconciler uses QueryRange (not instant Query) for metrics assessment.
-		mockProm.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/query_range" {
-				queryRangeCount++
-				if queryRangeCount <= 2 {
-					w.WriteHeader(http.StatusServiceUnavailable)
-					_, _ = fmt.Fprint(w, "Service Unavailable")
-					return
-				}
-				// After failures, return valid matrix data with 2 samples (pre/post remediation)
-				now := time.Now().Unix()
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"cpu"},"values":[[%d,"0.5"],[%d,"0.25"]]}]}}`, now-60, now)
+		// Use the built-in QueryRangeHandler override (not Server.Config.Handler)
+		// to avoid corrupting the mux for other tests in the same process.
+		mockProm.SetQueryRangeHandler(func(w http.ResponseWriter, r *http.Request) {
+			queryRangeCount++
+			if queryRangeCount <= 2 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprint(w, "Service Unavailable")
 				return
 			}
-			if r.URL.Path == "/api/v1/query" {
-				// Instant query fallback (not used by reconciler, but keep for completeness)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
-				return
-			}
-			if r.URL.Path == "/-/ready" || r.URL.Path == "/-/healthy" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
+			// After failures, return valid matrix data with 2 samples (pre/post remediation)
+			now := time.Now().Unix()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"cpu"},"values":[[%d,"0.5"],[%d,"0.25"]]}]}}`, now-60, now)
 		})
 
 		By("Creating an EA")
@@ -250,16 +248,24 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	})
 
 	// ========================================
-	// IT-EM-MC-006: Prom disabled in config -> no metrics assessment
+	// IT-EM-MC-006: No metric data -> metrics stay un-assessed, EA remains Assessing
 	// ========================================
-	// TODO: Per-EA Prometheus enable/disable was removed from EAConfig. This test relied on
-	// PrometheusEnabled: false. To test disabled Prometheus, configure the reconciler's
-	// ReconcilerConfig.PrometheusEnabled instead (shared across all EAs).
-	It("IT-EM-MC-006: should skip metrics assessment when Prometheus is disabled", func() {
+	// Updated: Per-EA Prometheus enable/disable was removed (DD-017 v2.5).
+	// Prometheus is now globally enabled via ReconcilerConfig. This test
+	// verifies graceful degradation when Prometheus has no relevant data:
+	// the reconciler requeues because assessMetrics returns Assessed=false.
+	// The EA remains in Assessing phase with nil metrics score.
+	// NOTE: ValidityWindow (30m default) is too long for the integration test
+	// timeout (120s), so we verify the intermediate Assessing state rather than
+	// waiting for expiry-based completion.
+	It("IT-EM-MC-006: should keep metrics un-assessed when Prometheus returns no data", func() {
 		ns := createTestNamespace("em-mc-006")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA (reconciler has Prometheus enabled; per-EA disable no longer supported)")
+		By("Configuring mock Prometheus range endpoint to return no data")
+		mockProm.SetQueryRangeResponse(nil)
+
+		By("Creating an EA with short stabilization window")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-006",
@@ -282,20 +288,26 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes without metrics assessment")
+		By("Waiting for EA to reach Assessing phase (stabilization passed)")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
 			}, fetchedEA)).To(Succeed())
-			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing))
 		}, timeout, interval).Should(Succeed())
 
-		// MetricsAssessed is set to true (skipped) but MetricsScore remains nil
-		Expect(fetchedEA.Status.Components.MetricsAssessed).To(BeTrue(),
-			"metrics should be marked assessed (skipped) when disabled")
+		By("Verifying metrics score remains nil (Prometheus returned empty data)")
+		// Health and alert components may be assessed independently,
+		// but metrics should remain nil because Prometheus returned no data.
 		Expect(fetchedEA.Status.Components.MetricsScore).To(BeNil(),
-			"metrics score should be nil when Prometheus is disabled")
+			"metrics score should be nil when Prometheus returns no data")
+
+		By("Verifying EA is NOT completed (validity window not yet expired)")
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing),
+			"EA should stay in Assessing (validity window 30m not expired)")
+		Expect(fetchedEA.Status.CompletedAt).To(BeNil(),
+			"EA should not have completed yet")
 	})
 
 	// ========================================
