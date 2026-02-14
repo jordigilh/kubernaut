@@ -172,12 +172,10 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-004",
 				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-mc-004",
-				},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-mc-004",
+				CorrelationID:           "rr-mc-004",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
@@ -270,12 +268,10 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-mc-006",
 				Namespace: ns,
-				Labels: map[string]string{
-					"kubernaut.ai/correlation-id": "rr-mc-006",
-				},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: "rr-mc-006",
+				CorrelationID:           "rr-mc-006",
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",

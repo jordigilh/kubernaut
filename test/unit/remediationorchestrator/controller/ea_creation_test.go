@@ -97,14 +97,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 		// Verify EA spec
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
 		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app"))
 		Expect(ea.Spec.TargetResource.Namespace).To(Equal(namespace))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow))
-
-		// Verify labels
-		Expect(ea.Labels["kubernaut.ai/correlation-id"]).To(Equal(rrName))
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("Completed"))
 
 		// Verify owner reference
 		Expect(ea.OwnerReferences).To(HaveLen(1))
@@ -143,14 +140,14 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		_, err := reconciler.TransitionToFailedForTest(ctx, rr, "Executing", nil)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify EA was created with Failed label
+		// Verify EA was created with Failed phase in spec
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
 		Expect(err).ToNot(HaveOccurred(), "EA should have been created on failure")
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("Failed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
 	})
 
 	// ========================================
@@ -185,14 +182,14 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		_, err := reconciler.HandleGlobalTimeoutForTest(ctx, rr)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify EA was created with TimedOut label
+		// Verify EA was created with TimedOut phase in spec
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
 		Expect(err).ToNot(HaveOccurred(), "EA should have been created on timeout")
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("TimedOut"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"))
 	})
 
 	// ========================================
@@ -212,7 +209,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 				Namespace: namespace,
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: rrName,
+				CorrelationID:           rrName,
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: namespace,
 				},

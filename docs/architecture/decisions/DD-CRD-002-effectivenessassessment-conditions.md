@@ -54,6 +54,19 @@ Indicates whether the target resource's `.spec` has remained unchanged since the
 
 ---
 
+## Status Fields Referenced by Conditions
+
+The `SpecIntegrity` condition depends on two hash fields in `status.components`, both populated by the reconciler's hash computation step (DD-EM-002 v1.1):
+
+| Field | Type | Description | Set When |
+|-------|------|-------------|----------|
+| `postRemediationSpecHash` | `string` | Hash of target resource `.spec` at first reconcile (baseline) | `HashComputed` transitions to `true` |
+| `currentSpecHash` | `string` | Most recent hash of target resource `.spec`, recomputed every reconcile after `HashComputed=true` | Every reconcile after baseline is established |
+
+**Drift detection**: When `currentSpecHash != postRemediationSpecHash`, the reconciler sets `SpecIntegrity=False` with reason `SpecDrifted` and completes the assessment with reason `spec_drift` (DD-EM-002 v1.1 Spec Drift Guard).
+
+---
+
 ## Implementation
 
 **Helper File**: `pkg/effectivenessmonitor/conditions/conditions.go`

@@ -66,7 +66,7 @@ func NewEffectivenessAssessmentCreator(c client.Client, s *runtime.Scheme, m *me
 //   - CorrelationID: RR.Name (used for audit trail correlation)
 //   - TargetResource: from RR.Spec.TargetResource
 //   - Config.StabilizationWindow: from RO's EACreationConfig
-//   - Labels: kubernaut.ai/correlation-id, kubernaut.ai/rr-phase
+//   - RemediationRequestPhase: RR.Status.OverallPhase at creation time (immutable spec field)
 //   - OwnerReference: RR (for cascade deletion, BR-ORCH-031)
 //
 // Returns the EA name if created (or already exists), or an error.
@@ -99,15 +99,10 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				// DD-AUDIT-CORRELATION-002: Correlation labels for audit trail
-				"kubernaut.ai/correlation-id": rr.Name,
-				"kubernaut.ai/rr-phase":       string(rr.Status.OverallPhase),
-				"kubernaut.ai/component":      "remediation-orchestrator",
-			},
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID: rr.Name,
+			CorrelationID:          rr.Name,
+			RemediationRequestPhase: string(rr.Status.OverallPhase),
 			TargetResource: eav1.TargetResource{
 				Kind:      rr.Spec.TargetResource.Kind,
 				Name:      rr.Spec.TargetResource.Name,

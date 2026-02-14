@@ -88,10 +88,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name, Namespace: ns,
-				Labels: map[string]string{"kubernaut.ai/correlation-id": corrID},
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
-				CorrelationID: corrID,
+				CorrelationID:           corrID,
+				RemediationRequestPhase: "Completed",
 				TargetResource: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},

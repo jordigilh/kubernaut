@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.8 | 2026-02-14 | Architecture Team | **Cross-service audit integration**: Added `blockOwnerDeletion` mismatch and `EventReasonEffectivenessAssessmentCreated` never emitted to Section 13.1 RO prerequisite gaps (from HAPI team audit). |
 | 1.7 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Health scoring updated from weighted sub-check formula to decision-tree algorithm (reflects `pkg/effectivenessmonitor/health/health.go`). Metrics Phase B (memory, latency, error rate) marked as implemented (was incorrectly listed as deferred). `spec_changed` renamed to `hash_match` (inverse semantics, matches OpenAPI). Added `total_replicas`, `ready_replicas`, `pending_count` to health payload. Added `resolution_time_seconds` to alert payload. Annotated v1.0 gaps: `alert_name`, `throughput_*`, `components_assessed`, `completed_at` not yet in OpenAPI payloads. Annotated `no_execution` and `metrics_timed_out` reconciler paths as not yet implemented. |
 | 1.6 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Principle 5 updated — EM component events now carry typed sub-objects (`health_checks`, `metric_deltas`, `alert_resolution`) alongside the human-readable `details` string. Enables DS/HAPI to extract structured assessment data without string parsing. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. OpenAPI spec updated with typed sub-object schemas. Coordinated with HAPI team via DD-HAPI-016 v1.1 and issue #82. |
 | 1.5 | 2026-02-13 | Architecture Team | Clarified Principle 1: EM queries DS during reconciliation for audit context (pre-hash, signal metadata), not via polling. EM is a CRD controller watching EA CRDs, not a stateless polling service. Added DD-EM-002 (canonical spec hash algorithm) to related decisions. Removed stale DD-EFFECTIVENESS-003 reference (fully superseded by EA CRD trigger since v1.1). |
@@ -834,11 +835,9 @@ metadata:
       uid: {rr.uid}
       controller: true
       blockOwnerDeletion: false  # RR deletion GC's EA — audit events in DS survive
-  labels:
-    kubernaut.ai/correlation-id: "{rr.name}"
-    kubernaut.ai/rr-phase: "{rr.status.overallPhase}"  # Completed|Failed|TimedOut
 spec:
   correlationID: "{rr.name}"
+  remediationRequestPhase: "{rr.status.overallPhase}"  # Completed|Failed|TimedOut — immutable spec field
   targetResource:
     kind: Deployment
     name: my-app
@@ -1084,6 +1083,8 @@ The following items are specified in this ADR but not yet implemented in the V1.
 | `remediation.workflow_created` not emitted in production | RO | Pre-remediation hash comparison always empty; hash diff meaningless | 
 | `EffectivenessAssessed` condition not set on RR | RO | No feedback to RR about assessment completion |
 | RO does not watch EA CRDs | RO | No mechanism to update RR condition when EA completes |
+| `blockOwnerDeletion` defaults to `true` via `SetControllerReference` | RO | ADR specifies `false` (Section 8 YAML); RR deletion may block on EA finalizers |
+| `EventReasonEffectivenessAssessmentCreated` never emitted | RO | Constant in `reasons.go` but `Recorder.Event` never called; EA creation not observable via `kubectl describe` |
 
 ---
 

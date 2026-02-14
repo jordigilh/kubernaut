@@ -89,10 +89,8 @@ var _ = Describe("EM Full Pipeline - OTLP Adapter [E2E-EM-OTLP-001]", Ordered, f
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"stabilizationWindow should be positive (set by RO config)")
 
-		By("Verifying labels")
-		Expect(ea.Labels).To(HaveKey("kubernaut.ai/correlation-id"))
-		Expect(ea.Labels).To(HaveKey("kubernaut.ai/component"))
-		Expect(ea.Labels["kubernaut.ai/component"]).To(Equal("remediation-orchestrator"))
+		By("Verifying spec fields")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 
 		GinkgoWriter.Printf("EA spec: correlationID=%s, target=%s/%s, stabilizationWindow=%v\n",
 			ea.Spec.CorrelationID, ea.Spec.TargetResource.Kind, ea.Spec.TargetResource.Name,

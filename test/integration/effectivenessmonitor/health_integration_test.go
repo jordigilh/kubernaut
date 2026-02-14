@@ -297,9 +297,8 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// Verify correlation ID preserved
+		// Verify correlation ID preserved in spec
 		Expect(fetchedEA.Spec.CorrelationID).To(Equal(correlationID))
-		Expect(fetchedEA.Labels["kubernaut.ai/correlation-id"]).To(Equal(correlationID))
 
 		// Verify health component data
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())

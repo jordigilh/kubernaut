@@ -276,6 +276,13 @@ const (
 	// Type: Normal (success) or Warning (error)
 	// Priority: P2
 	EventReasonComponentAssessed = "ComponentAssessed"
+
+	// EventReasonSpecDriftDetected is emitted when the target resource's .spec
+	// has changed since the post-remediation hash was computed (DD-EM-002 v1.1).
+	// The assessment is invalidated and completed with reason "spec_drift".
+	// Type: Warning
+	// Priority: P2
+	EventReasonSpecDriftDetected = "SpecDriftDetected"
 )
 
 // ============================================================

@@ -216,8 +216,6 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 
 		// Correlation ID should be in spec
 		Expect(fetchedEA.Spec.CorrelationID).To(Equal(correlationID))
-		// And in labels
-		Expect(fetchedEA.Labels["kubernaut.ai/correlation-id"]).To(Equal(correlationID))
 	})
 
 	// ========================================

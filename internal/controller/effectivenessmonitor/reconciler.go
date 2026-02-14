@@ -324,9 +324,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					metav1.ConditionTrue, conditions.ReasonSpecDrift,
 					"Assessment invalidated: target resource spec was modified (spec drift detected)")
 
-				r.Recorder.Event(ea, corev1.EventTypeWarning, "SpecDriftDetected",
-					fmt.Sprintf("Target resource spec modified during assessment (correlation: %s)", ea.Spec.CorrelationID))
-				r.Metrics.RecordK8sEvent("Warning", "SpecDriftDetected")
+			r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonSpecDriftDetected,
+				fmt.Sprintf("Target resource spec modified during assessment (correlation: %s)", ea.Spec.CorrelationID))
+			r.Metrics.RecordK8sEvent("Warning", events.EventReasonSpecDriftDetected)
 
 				// Complete with spec_drift reason — do NOT assess metrics/alerts
 				return r.completeAssessmentWithReason(ctx, ea, startTime, eav1.AssessmentReasonSpecDrift)
@@ -437,7 +437,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // SetupWithManager registers the controller with the manager.
+// Creates a field index on spec.correlationID for O(1) lookups and kubectl
+// field-selector support (e.g., kubectl get ea --field-selector spec.correlationID=rr-xxx).
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Field index on spec.correlationID for efficient lookups and kubectl UX
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&eav1.EffectivenessAssessment{},
+		"spec.correlationID",
+		func(obj client.Object) []string {
+			ea := obj.(*eav1.EffectivenessAssessment)
+			if ea.Spec.CorrelationID == "" {
+				return nil
+			}
+			return []string{ea.Spec.CorrelationID}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to create correlationID field index: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&eav1.EffectivenessAssessment{}).
 		Complete(r)

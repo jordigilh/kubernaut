@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED  
 **Decision Date**: 2026-02-09  
-**Version**: 1.3  
+**Version**: 1.4  
 **Authority Level**: FOUNDATIONAL  
 **Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, EM)
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-09 | AI Assistant | Initial registry: 11 implemented events, migration pattern |
 | 1.1 | 2026-02-05 | AI Assistant | Full coverage: P1-P4 gap analysis, 9 new constants, per-controller BRs (BR-*-095) |
+| 1.4 | 2026-02-14 | AI Assistant | Added SpecDriftDetected (P2 Warning) to EM registry; inline string replaced with constant |
 | 1.3 | 2026-02-13 | AI Assistant | Removed EventReasonRemediationIneffective; EffectivenessAssessed always Normal (no threshold); DS computes score on demand |
 | 1.2 | 2026-02-12 | AI Assistant | Added EM controller: 5 events (3 P1, 1 P2), inline string compliance, BR-EM-095 |
 
@@ -39,7 +40,7 @@ A comprehensive triage of all 5 controllers revealed:
 | **Notification** | 2 | ~16 | ~12% |
 | **SignalProcessing** | 1 | ~14 | ~7% |
 | **AIAnalysis** | 1 | ~18 | ~6% |
-| **EffectivenessMonitor** | 5 | ~10 | ~50% |
+| **EffectivenessMonitor** | 6 | ~10 | ~60% |
 | **RemediationOrchestrator** | 0 | ~25+ | 0% |
 
 Gaps were classified into 4 priority tiers:
@@ -190,6 +191,7 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonEffectivenessAssessed` | `EffectivenessAssessed` | Normal | P1 | Assessment completed; always Normal (no threshold comparison; DS computes score on demand) | Implemented (v1.2) |
 | `EventReasonAssessmentExpired` | `AssessmentExpired` | Warning | P1 | Validity window expired (ADR-EM-001) | Implemented (v1.2) |
 | `EventReasonComponentAssessed` | `ComponentAssessed` | Normal/Warning | P2 | Individual component (health/alert/metrics/hash) assessed; component name in message | Implemented (v1.2) |
+| `EventReasonSpecDriftDetected` | `SpecDriftDetected` | Warning | P2 | Target resource spec changed during assessment (DD-EM-002 v1.1) | Implemented (v1.2) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned |
 
 ### Shared Events (used by multiple controllers)
@@ -292,6 +294,7 @@ const (
     EventReasonEffectivenessAssessed         = "EffectivenessAssessed"
     EventReasonAssessmentExpired             = "AssessmentExpired"
     EventReasonComponentAssessed             = "ComponentAssessed"
+    EventReasonSpecDriftDetected             = "SpecDriftDetected"
 )
 
 // ============================================================
@@ -350,7 +353,7 @@ Per-controller issues with TDD methodology (RED-GREEN-REFACTOR):
 | SP | TBD | 5 | BR-SP-095 | Current team |
 | NT | TBD | 6 | BR-NT-095 | Current team |
 | RO | TBD | 14 (+ FakeRecorder infra) | BR-ORCH-095 | Current team |
-| EM | N/A | 5 (all implemented v1.2) | BR-EM-095 | Current team |
+| EM | N/A | 6 (all implemented v1.2) | BR-EM-095 | Current team |
 
 ### Test Strategy: Defense-in-Depth
 

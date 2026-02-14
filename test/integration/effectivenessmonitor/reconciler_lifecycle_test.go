@@ -200,16 +200,16 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	})
 
 	// ========================================
-	// IT-EM-RC-007: EA with ownerRef labels -> correlation tracking works
+	// IT-EM-RC-007: EA with spec fields -> correlation tracking works
 	// ========================================
 	It("IT-EM-RC-007: should support correlation via labels", func() {
 		ns := createTestNamespace("em-rc-007")
 		defer deleteTestNamespace(ns)
 
-		By("Creating an EA with owner reference labels")
+		By("Creating an EA with correlation spec fields")
 		ea := createEffectivenessAssessment(ns, "ea-rc-007", "rr-rc-007")
 
-		By("Verifying the EA is processed and labels are preserved")
+		By("Verifying the EA is processed and spec fields are preserved")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -219,7 +219,8 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// Verify labels are preserved after reconciliation
-		Expect(fetchedEA.Labels).To(HaveKeyWithValue("kubernaut.ai/correlation-id", "rr-rc-007"))
+		// Verify spec fields are preserved after reconciliation
+		Expect(fetchedEA.Spec.CorrelationID).To(Equal("rr-rc-007"))
+		Expect(fetchedEA.Spec.RemediationRequestPhase).To(Equal("Completed"))
 	})
 })

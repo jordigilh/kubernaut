@@ -189,10 +189,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"Stabilization window should be set from RO config")
 
-		By("11. Validating EA labels")
-		Expect(ea.Labels["kubernaut.ai/correlation-id"]).To(Equal(rrName))
-		Expect(ea.Labels["kubernaut.ai/rr-phase"]).To(Equal("Completed"))
-		Expect(ea.Labels["kubernaut.ai/component"]).To(Equal("remediation-orchestrator"))
+		By("11. Validating EA spec fields")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 
 		By("12. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(ea.OwnerReferences).To(HaveLen(1))
