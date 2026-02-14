@@ -68,7 +68,7 @@
 | **Recovery Analysis** | BR-HAPI-RECOVERY-001 to 006 | 6 | ✅ 100% |
 | **Post-Execution Analysis** | BR-HAPI-POSTEXEC-001 to 005 | 5 | ✅ 100% |
 | **SDK Integration** | BR-HAPI-026 to 030 | 5 | ✅ 100% |
-| **Health & Status** | BR-HAPI-016 to 017 | 2 | ✅ 100% |
+| **Health & Status** | BR-HAPI-018 to 019 | 2 | ✅ 100% |
 | **Basic Authentication** | BR-HAPI-066 to 067 | 2 | ✅ 100% |
 | **HTTP Server** | BR-HAPI-036 to 045 | 10 | ✅ 100% |
 

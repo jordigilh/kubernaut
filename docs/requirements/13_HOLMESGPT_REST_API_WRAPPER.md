@@ -139,8 +139,8 @@ graph TB
 ### 2.2 Management Endpoints
 
 #### 2.2.1 Health & Status
-- **BR-HAPI-016**: MUST provide `/health` endpoint with comprehensive health checks
-- **BR-HAPI-017**: MUST provide `/ready` endpoint for Kubernetes readiness probes
+- **BR-HAPI-018**: MUST provide `/health` endpoint with comprehensive health checks
+- **BR-HAPI-019**: MUST provide `/ready` endpoint for Kubernetes readiness probes
 - **BR-HAPI-018**: MUST provide `/metrics` endpoint with Prometheus-compatible metrics
 - **BR-HAPI-019**: MUST monitor SDK health, LLM connectivity, and resource usage
 - **BR-HAPI-020**: MUST provide `/status` endpoint with service information and capabilities

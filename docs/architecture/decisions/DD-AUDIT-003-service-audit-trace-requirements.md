@@ -297,7 +297,8 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
     "selected_workflow_ref": {
       "name": "restart-pod-workflow",
       "version": "v1.2.3",
-      "namespace": "kubernaut-system"
+      "namespace": "kubernaut-system",
+      "action_type": "RestartPod"
     },
     "selection_reason": "Best match for OOMKill incident",
     "alternatives_considered": 3

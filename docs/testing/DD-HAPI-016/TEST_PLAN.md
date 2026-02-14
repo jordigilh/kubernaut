@@ -1,6 +1,6 @@
 # DD-HAPI-016 Test Plan: Remediation History Context
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Created**: 2026-02-14
 **Updated**: 2026-02-14
 **Status**: Active
@@ -13,7 +13,7 @@
 
 This test plan defines the integration and E2E test scenarios for the remediation
 history feature across DataStorage (DS) and HolmesGPT API (HAPI). Unit tests are
-already in place (21 Ginkgo DS + 28 pytest HAPI). This plan targets the remaining
+in place (24 Ginkgo DS + 28 pytest HAPI). This plan targets the remaining
 integration and E2E tiers to reach >=80% per-tier coverage.
 
 **Anti-Pattern Compliance** (TESTING_GUIDELINES.md v2.7.0):
@@ -34,8 +34,9 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 ## Test Scenario Naming Convention
 
-**Format**: `{TIER}-{SERVICE}-016-{SEQUENCE}`
+**Format**: `{TIER}-{SERVICE}-016-{SEQUENCE}` or `UT-RH-LOGIC-{SEQUENCE}`
 
+- `UT-RH-LOGIC-NNN` -- DataStorage unit tests (pure logic, no I/O)
 - `IT-DS-016-NNN` -- DataStorage integration tests (real PostgreSQL, direct business logic)
 - `E2E-DS-016-NNN` -- DataStorage E2E tests (Kind cluster, HTTP)
 - `IT-HAPI-016-NNN` -- HolmesGPT API integration tests (direct function calls)
@@ -48,7 +49,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 | Tier | Files | LOC | Coverage Before | Target |
 |------|-------|-----|-----------------|--------|
-| Unit | `remediation_history_logic.go`, `effectiveness_handler.go` | ~380 | ~95% (21 tests) | >=80% MET |
+| Unit | `remediation_history_logic.go`, `effectiveness_handler.go` | ~395 | ~97% (24 tests) | >=80% MET |
 | Integration | `remediation_history_repository.go`, `remediation_history_adapter.go`, correlation pipeline | ~340 | 0% | >=80% |
 | E2E | Full stack (server wiring, routing, PostgreSQL, HTTP) | ~230 handler + wiring | 0% | >=80% |
 
@@ -58,6 +59,20 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 |------|-------|-----------|-----------------|--------|
 | Unit | `remediation_history_prompt.py`, prompt builders | 13 | ~95% (28 tests) | >=80% MET |
 | Integration | `remediation_history_client.py`, incident/recovery wiring | 5 | ~40% | >=80% |
+
+---
+
+## 0. DS Unit Tests -- DetectRegressionFromTier2 (GAP-DS-1)
+
+**File**: `test/unit/datastorage/remediation_history_logic_test.go`
+**Function**: `DetectRegressionFromTier2(summaries []api.RemediationHistorySummary) bool`
+**Context**: GAP-DS-1 added `DetectRegressionFromTier2` to detect regression from Tier 2 summaries when Tier 1 is empty. The existing `DetectRegression` (Tier 1) has dedicated tests (UT-RH-LOGIC-014/015/016); the Tier 2 variant needs equivalent coverage.
+
+| ID | Scenario | Expected | Business Outcome |
+|----|----------|----------|------------------|
+| UT-RH-LOGIC-022 | Summaries contain one entry with `hashMatch=preRemediation` | `true` | Regression detected from historical Tier 2 data alone |
+| UT-RH-LOGIC-023 | Summaries contain entries with `hashMatch=postRemediation` and `hashMatch=none` only | `false` | No false positive regression from non-matching summaries |
+| UT-RH-LOGIC-024 | Empty slice and nil input | `false` | Graceful empty handling (no panic, no false regression) |
 
 ---
 
@@ -146,7 +161,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 | Tier | Service | Tests | Est. Coverage | Target | Status |
 |------|---------|-------|---------------|--------|--------|
-| Unit | DS | 21 Ginkgo | ~95% | >=80% | PASS |
+| Unit | DS | 24 Ginkgo | ~97% | >=80% | PASS |
 | Unit | HAPI | 28 pytest | ~95% | >=80% | PASS |
 | Integration | DS | 8 Ginkgo | ~91% | >=80% | IMPLEMENTED |
 | Integration | HAPI | 7 pytest | ~100% | >=80% | IMPLEMENTED |

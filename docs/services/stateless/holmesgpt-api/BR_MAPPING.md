@@ -141,7 +141,7 @@ This document maps high-level business requirements to their detailed sub-requir
 
 ---
 
-### BR-HAPI-016 to 017: Health & Status
+### BR-HAPI-018 to 019: Health & Status
 **Category**: Infrastructure
 **Priority**: P0 (CRITICAL)
 **Description**: Kubernetes health probes and configuration endpoint

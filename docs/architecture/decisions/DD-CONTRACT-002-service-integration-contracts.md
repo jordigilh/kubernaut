@@ -150,6 +150,7 @@ status:
       DEPLOYMENT_NAME: string
       # ... other workflow-specific params
     rationale: string        # Why this workflow was selected
+    actionType: string       # DD-WORKFLOW-016 taxonomy (e.g., "ScaleReplicas", "RestartPod")
 
   # REQUIRED: Approval signal (from AIAnalysis Rego policies)
   # Set by AIAnalysis when policy requires approval for high-risk remediation
@@ -184,6 +185,7 @@ status:
 | `status.selectedWorkflow.containerDigest` | string | ✅ (when Completed) | Image digest (from HolmesGPT-API) |
 | `status.selectedWorkflow.confidence` | float64 | ✅ (when Completed) | 0.0 to 1.0 |
 | `status.selectedWorkflow.parameters` | map[string]string | ✅ (when Completed) | UPPER_SNAKE_CASE keys |
+| `status.selectedWorkflow.actionType` | string | ✅ (when Completed) | DD-WORKFLOW-016 taxonomy (e.g., "ScaleReplicas") |
 | `status.approvalRequired` | bool | ✅ | Rego decision: Policy requires approval for high-risk remediation |
 | `status.rootCauseAnalysis.targetResource` | object | ✅ (when Completed) | RCA-determined target (BR-HAPI-212, DD-HAPI-006) |
 
@@ -478,7 +480,7 @@ spec:
 | 4 | Data Storage API | HolmesGPT-API | workflows (incl. containerImage, containerDigest) |
 | 5 | HolmesGPT-API | LLM | prompt with workflow options |
 | 6 | LLM | HolmesGPT-API | selected workflow_id + parameters |
-| 7 | HolmesGPT-API | AIAnalysis.status | selectedWorkflow (workflowId, containerImage, params, confidence) |
+| 7 | HolmesGPT-API | AIAnalysis.status | selectedWorkflow (workflowId, actionType, containerImage, params, confidence) |
 | 8 | RO | WorkflowExecution.spec | workflowRef (PASS THROUGH), parameters |
 | 9 | WorkflowExecution | PipelineRun.spec | bundle, params |
 | 10 | Tekton | PipelineRun.status | Succeeded/Failed |
