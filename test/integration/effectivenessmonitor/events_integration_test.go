@@ -259,19 +259,19 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		By("Recording initial event count")
-		time.Sleep(2 * time.Second) // Allow events to propagate
-		initialEvents := listEventsForObject(ctx, k8sClient, ea.Name, ns)
-		initialCount := len(initialEvents)
+		By("Waiting for events to propagate and recording initial count")
+		var initialCount int
+		Eventually(func() int {
+			evts := listEventsForObject(ctx, k8sClient, ea.Name, ns)
+			initialCount = len(evts)
+			return initialCount
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+			"at least one event should exist for the completed EA")
 
-		By("Waiting additional time for any spurious reconciles")
-		time.Sleep(5 * time.Second)
-
-		By("Verifying no additional events were emitted")
-		finalEvents := listEventsForObject(ctx, k8sClient, ea.Name, ns)
-		finalCount := len(finalEvents)
-
-		Expect(finalCount).To(Equal(initialCount),
+		By("Verifying no additional events are emitted (idempotency)")
+		Consistently(func() int {
+			return len(listEventsForObject(ctx, k8sClient, ea.Name, ns))
+		}, 5*time.Second, 500*time.Millisecond).Should(Equal(initialCount),
 			"no additional events should be emitted for already-completed EA")
 	})
 })
