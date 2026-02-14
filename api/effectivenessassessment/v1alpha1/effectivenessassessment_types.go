@@ -62,6 +62,9 @@ const (
 	AssessmentReasonMetricsTimedOut = "metrics_timed_out"
 	// AssessmentReasonExpired indicates the validity window expired with no data collected.
 	AssessmentReasonExpired = "expired"
+	// AssessmentReasonSpecDrift indicates the target resource spec was modified during assessment.
+	// The remediation is considered unsuccessful — DS score = 0.0 (DD-EM-002 v1.1).
+	AssessmentReasonSpecDrift = "spec_drift"
 )
 
 // EffectivenessAssessmentSpec defines the desired state of an EffectivenessAssessment.
@@ -150,7 +153,7 @@ type EffectivenessAssessmentStatus struct {
 	Components EAComponents `json:"components,omitempty"`
 
 	// AssessmentReason describes why the assessment completed with this outcome.
-	// +kubebuilder:validation:Enum=full;partial;no_execution;metrics_timed_out;expired
+	// +kubebuilder:validation:Enum=full;partial;no_execution;metrics_timed_out;expired;spec_drift
 	AssessmentReason string `json:"assessmentReason,omitempty"`
 
 	// CompletedAt is the timestamp when the assessment finished.
@@ -178,6 +181,10 @@ type EAComponents struct {
 	HashComputed bool `json:"hashComputed,omitempty"`
 	// PostRemediationSpecHash is the hash of the target resource spec after remediation.
 	PostRemediationSpecHash string `json:"postRemediationSpecHash,omitempty"`
+	// CurrentSpecHash is the most recent hash of the target resource spec,
+	// re-computed on each reconcile after HashComputed is true (DD-EM-002 v1.1).
+	// If it differs from PostRemediationSpecHash, spec drift was detected.
+	CurrentSpecHash string `json:"currentSpecHash,omitempty"`
 
 	// AlertAssessed indicates whether the alert resolution check has been completed.
 	AlertAssessed bool `json:"alertAssessed,omitempty"`
