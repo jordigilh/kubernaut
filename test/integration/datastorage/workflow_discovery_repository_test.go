@@ -59,13 +59,14 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", func() {
 
 		// Seed action_type_taxonomy (may already exist from migration 025)
 		// Use ON CONFLICT DO NOTHING for idempotency
+		// DD-WORKFLOW-016 V1.0: Use DD types (IncreaseMemoryLimits, RestartDeployment, RollbackDeployment)
 		seedSQL := `
 			INSERT INTO action_type_taxonomy (action_type, description) VALUES
-				('ScaleReplicas', '{"what": "Horizontally scale a workload", "when_to_use": "OOMKilled, high memory pressure", "when_not_to_use": "Code bug", "preconditions": "HPA not managing"}'),
-				('RestartPod', '{"what": "Delete and recreate a pod", "when_to_use": "CrashLoopBackOff", "when_not_to_use": "Persistent code bug", "preconditions": "Pod managed by controller"}'),
-				('RollbackDeployment', '{"what": "Roll back deployment", "when_to_use": "Post-deploy failures", "when_not_to_use": "Previous version same issue", "preconditions": "Previous revision exists"}'),
-				('AdjustResources', '{"what": "Modify resource requests/limits", "when_to_use": "OOMKilled, CPU throttling", "when_not_to_use": "Memory leak", "preconditions": "VPA not managing"}'),
-				('ReconfigureService', '{"what": "Update ConfigMap or Secret", "when_to_use": "Configuration failures", "when_not_to_use": "Downstream unavailable", "preconditions": "ConfigMap exists"}')
+				('ScaleReplicas', '{"what": "Horizontally scale a workload", "when_to_use": "Insufficient capacity", "preconditions": "Evidence of increased load"}'),
+				('RestartPod', '{"what": "Kill and recreate pods", "when_to_use": "Transient runtime state issue", "preconditions": "Evidence issue is transient"}'),
+				('IncreaseMemoryLimits', '{"what": "Increase memory limits on containers", "when_to_use": "OOM kills from low limits", "preconditions": "Stable memory pattern"}'),
+				('RestartDeployment', '{"what": "Rolling restart of workload", "when_to_use": "Workload-wide state issue", "preconditions": "Multiple pods affected"}'),
+				('RollbackDeployment', '{"what": "Revert to previous revision", "when_to_use": "Recent deployment regression", "preconditions": "Previous healthy revision exists"}')
 			ON CONFLICT (action_type) DO NOTHING
 		`
 		_, err = db.ExecContext(ctx, seedSQL)
@@ -144,16 +145,39 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", func() {
 		})
 
 		// ========================================
+		// GAP-WF-3: ListActions -- returns only latest version counts
+		// ========================================
+		Context("GAP-WF-3: ListActions returns only latest version counts", func() {
+			It("should count only workflows with is_latest_version=true", func() {
+				// Arrange: Two versions of same workflow - only latest should be counted
+				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "active")
+				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "pod", "production", "P0", "active")
+
+				filters := &models.WorkflowDiscoveryFilters{}
+
+				// Act
+				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
+
+				// Assert: ScaleReplicas should have workflow_count=1 (latest only), not 2
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1))
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].ActionType).To(Equal("ScaleReplicas"))
+				Expect(result[0].WorkflowCount).To(Equal(1), "Should count only latest version")
+			})
+		})
+
+		// ========================================
 		// IT-DS-017-001-002: ListActions -- pagination
 		// ========================================
 		Context("IT-DS-017-001-002: pagination returns correct slice", func() {
 			It("should paginate action types correctly", func() {
-				// Arrange: Create workflows spanning 5 action types (all active)
+				// Arrange: Create workflows spanning 5 action types (all active) - DD-WORKFLOW-016 V1.0
 				createTestWorkflow("scale-wf", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "active")
 				createTestWorkflow("restart-wf", "v1.0.0", "RestartPod", "critical", "pod", "production", "P0", "active")
 				createTestWorkflow("rollback-wf", "v1.0.0", "RollbackDeployment", "critical", "pod", "production", "P0", "active")
-				createTestWorkflow("adjust-wf", "v1.0.0", "AdjustResources", "critical", "pod", "production", "P0", "active")
-				createTestWorkflow("reconfig-wf", "v1.0.0", "ReconfigureService", "critical", "pod", "production", "P0", "active")
+				createTestWorkflow("memory-wf", "v1.0.0", "IncreaseMemoryLimits", "critical", "pod", "production", "P0", "active")
+				createTestWorkflow("restart-deploy-wf", "v1.0.0", "RestartDeployment", "critical", "pod", "production", "P0", "active")
 
 				filters := &models.WorkflowDiscoveryFilters{}
 
@@ -206,6 +230,34 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", func() {
 				Expect(totalCount).To(Equal(1))
 				Expect(results).To(HaveLen(1))
 				Expect(results[0].Name).To(Equal("scale-conservative"))
+			})
+		})
+
+		// ========================================
+		// GAP-WF-3: ListWorkflowsByActionType -- returns only latest versions
+		// ========================================
+		Context("GAP-WF-3: returns only latest workflow versions", func() {
+			It("should return only workflows with is_latest_version=true", func() {
+				// Arrange: Create two versions of same workflow (v1.0.0, v1.1.0)
+				// Create() sets v1.0.0 is_latest_version=true, then v1.1.0 creation flips v1.0.0 to false
+				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "active")
+				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "pod", "production", "P0", "active")
+
+				// Act
+				filters := &models.WorkflowDiscoveryFilters{
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P0",
+				}
+				results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, "ScaleReplicas", filters, 0, 10)
+
+				// Assert: Only one workflow (latest v1.1.0), not two
+				Expect(err).ToNot(HaveOccurred())
+				Expect(totalCount).To(Equal(1), "Discovery should return only latest version")
+				Expect(results).To(HaveLen(1))
+				Expect(results[0].Version).To(Equal("v1.1.0"))
+				Expect(results[0].IsLatestVersion).To(BeTrue())
 			})
 		})
 

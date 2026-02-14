@@ -82,13 +82,14 @@ func setCorrelationIDFromFilters(event *ogenclient.AuditEventRequest, filters *m
 // NewActionsListedAuditEvent creates an audit event for Step 1: list available actions.
 // Emitted when DS returns action types matching signal context.
 // BR-AUDIT-023: Per-step audit event for three-step discovery
-func NewActionsListedAuditEvent(filters *models.WorkflowDiscoveryFilters, totalCount int) (*ogenclient.AuditEventRequest, error) {
+// GAP-WF-6: durationMs reflects actual query duration (DD-WORKFLOW-014 v3.0)
+func NewActionsListedAuditEvent(filters *models.WorkflowDiscoveryFilters, totalCount int, durationMs int64) (*ogenclient.AuditEventRequest, error) {
 	event := newBaseDiscoveryEvent(EventTypeActionsListed, ActionDiscovery)
 	setCorrelationIDFromFilters(event, filters, "")
 
 	payload := buildDiscoveryPayload(
 		ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
-		filters, totalCount, "",
+		filters, totalCount, "", durationMs,
 	)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(payload)
 
@@ -97,13 +98,14 @@ func NewActionsListedAuditEvent(filters *models.WorkflowDiscoveryFilters, totalC
 
 // NewWorkflowsListedAuditEvent creates an audit event for Step 2: list workflows by action type.
 // Emitted when DS returns workflows for a specific action type.
-func NewWorkflowsListedAuditEvent(actionType string, filters *models.WorkflowDiscoveryFilters, totalCount int) (*ogenclient.AuditEventRequest, error) {
+// GAP-WF-6: durationMs reflects actual query duration (DD-WORKFLOW-014 v3.0)
+func NewWorkflowsListedAuditEvent(actionType string, filters *models.WorkflowDiscoveryFilters, totalCount int, durationMs int64) (*ogenclient.AuditEventRequest, error) {
 	event := newBaseDiscoveryEvent(EventTypeWorkflowsListed, ActionDiscovery)
 	setCorrelationIDFromFilters(event, filters, "")
 
 	payload := buildDiscoveryPayload(
 		ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed,
-		filters, totalCount, actionType,
+		filters, totalCount, actionType, durationMs,
 	)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData(payload)
 
@@ -112,14 +114,15 @@ func NewWorkflowsListedAuditEvent(actionType string, filters *models.WorkflowDis
 
 // NewWorkflowRetrievedAuditEvent creates an audit event for Step 3: get workflow with context filters.
 // Emitted when DS returns a specific workflow (security gate passed).
-func NewWorkflowRetrievedAuditEvent(workflowID string, filters *models.WorkflowDiscoveryFilters) (*ogenclient.AuditEventRequest, error) {
+// GAP-WF-6: durationMs reflects actual query duration (DD-WORKFLOW-014 v3.0)
+func NewWorkflowRetrievedAuditEvent(workflowID string, filters *models.WorkflowDiscoveryFilters, durationMs int64) (*ogenclient.AuditEventRequest, error) {
 	event := newBaseDiscoveryEvent(EventTypeWorkflowRetrieved, ActionRetrieve)
 	pkgaudit.SetResource(event, "Workflow", workflowID)
 	setCorrelationIDFromFilters(event, filters, workflowID)
 
 	payload := buildDiscoveryPayload(
 		ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved,
-		filters, 1, "",
+		filters, 1, "", durationMs,
 	)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData(payload)
 
@@ -128,7 +131,8 @@ func NewWorkflowRetrievedAuditEvent(workflowID string, filters *models.WorkflowD
 
 // NewSelectionValidatedAuditEvent creates an audit event for post-selection validation.
 // Emitted when DS validates a HAPI-selected workflow against context filters.
-func NewSelectionValidatedAuditEvent(workflowID string, filters *models.WorkflowDiscoveryFilters, valid bool) (*ogenclient.AuditEventRequest, error) {
+// GAP-WF-6: durationMs reflects actual query duration (DD-WORKFLOW-014 v3.0)
+func NewSelectionValidatedAuditEvent(workflowID string, filters *models.WorkflowDiscoveryFilters, valid bool, durationMs int64) (*ogenclient.AuditEventRequest, error) {
 	event := newBaseDiscoveryEvent(EventTypeSelectionValidated, ActionValidate)
 	if !valid {
 		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeFailure)
@@ -142,16 +146,16 @@ func NewSelectionValidatedAuditEvent(workflowID string, filters *models.Workflow
 	}
 	payload := buildDiscoveryPayload(
 		ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated,
-		filters, resultCount, "",
+		filters, resultCount, "", durationMs,
 	)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData(payload)
 
 	return event, nil
 }
 
-// buildDiscoveryPayload creates a WorkflowDiscoveryAuditPayload encoding context filters
-// and result counts for the audit trail.
-func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEventType, filters *models.WorkflowDiscoveryFilters, totalCount int, actionType string) ogenclient.WorkflowDiscoveryAuditPayload {
+// buildDiscoveryPayload creates a WorkflowDiscoveryAuditPayload encoding context filters,
+// result counts, and query duration for the audit trail (DD-WORKFLOW-014 v3.0).
+func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEventType, filters *models.WorkflowDiscoveryFilters, totalCount int, actionType string, durationMs int64) ogenclient.WorkflowDiscoveryAuditPayload {
 	var searchFilters ogenclient.OptWorkflowSearchFilters
 	if filters != nil {
 		wsf := ogenclient.WorkflowSearchFilters{
@@ -179,7 +183,7 @@ func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEve
 			Returned:   int32(totalCount),
 		},
 		SearchMetadata: ogenclient.SearchExecutionMetadata{
-			DurationMs: 0,
+			DurationMs: durationMs,
 		},
 	}
 }

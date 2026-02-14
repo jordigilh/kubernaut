@@ -440,11 +440,14 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	var wf *models.RemediationWorkflow
 
 	// DD-WORKFLOW-016: Use context-filtered query when filters are present (security gate)
+	// GAP-WF-6: Measure query duration for audit payload (DD-WORKFLOW-014 v3.0)
+	startGet := time.Now()
 	if filters.HasContextFilters() {
 		wf, err = h.workflowRepo.GetWorkflowWithContextFilters(r.Context(), workflowID, filters)
 	} else {
 		wf, err = h.workflowRepo.GetByID(r.Context(), workflowID)
 	}
+	durationMs := time.Since(startGet).Milliseconds()
 
 	if err != nil {
 		// Check if workflow not found
@@ -478,11 +481,11 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	// DD-WORKFLOW-014 v3.0: Context filters indicate HAPI is validating its selection,
 	// so we emit both workflow_retrieved and selection_validated.
 	if filters.HasContextFilters() && h.auditStore != nil {
-		retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters)
+		retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters, durationMs)
 		if err != nil {
 			h.logger.Error(err, "Failed to create workflow_retrieved audit event", "workflow_id", workflowID)
 		}
-		validatedEvent, err := dsaudit.NewSelectionValidatedAuditEvent(workflowID, filters, true)
+		validatedEvent, err := dsaudit.NewSelectionValidatedAuditEvent(workflowID, filters, true, durationMs)
 		if err != nil {
 			h.logger.Error(err, "Failed to create selection_validated audit event", "workflow_id", workflowID)
 		}
@@ -655,6 +658,246 @@ func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...i
 	}()
 }
 
+// getWorkflowLifecycleRepo returns the workflow lifecycle repository for enable/disable/deprecate.
+// Uses workflowLifecycleRepo when set (tests), otherwise workflowRepo.
+func (h *Handler) getWorkflowLifecycleRepo() WorkflowLifecycleRepository {
+	if h.workflowLifecycleRepo != nil {
+		return h.workflowLifecycleRepo
+	}
+	return h.workflowRepo
+}
+
+// HandleEnableWorkflow handles PATCH /api/v1/workflows/{workflowID}/enable
+// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Convenience endpoint for re-enabling workflows
+func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"workflow_id is required", h.logger)
+		return
+	}
+
+	// Parse request body
+	var req models.WorkflowDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error(err, "Failed to decode workflow enable request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if req.Reason == nil || strings.TrimSpace(*req.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
+	// Get existing workflow
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for enable",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// Update the workflow status to active
+	reason := ""
+	if req.Reason != nil {
+		reason = *req.Reason
+	}
+	updatedBy := ""
+	if req.UpdatedBy != nil {
+		updatedBy = *req.UpdatedBy
+	}
+
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "active", reason, updatedBy); err != nil {
+		h.logger.Error(err, "Failed to enable workflow",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to enable workflow", h.logger)
+		return
+	}
+
+	// Update workflow object for response
+	workflow.Status = "active"
+	workflow.DisabledAt = nil
+	workflow.DisabledBy = nil
+	workflow.DisabledReason = nil
+
+	// BR-STORAGE-183: Audit workflow enable (business logic operation)
+	if h.auditStore != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo("active")
+
+			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
+			if err != nil {
+				h.logger.Error(err, "Failed to create workflow enable audit event",
+					"workflow_id", workflowID,
+				)
+				return
+			}
+
+			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+				h.logger.Error(err, "Failed to audit workflow enable",
+					"workflow_id", workflowID,
+				)
+			}
+		}()
+	}
+
+	// Log success
+	h.logger.Info("Workflow enabled",
+		"workflow_id", workflowID,
+		"reason", reason,
+		"updated_by", updatedBy,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
+// HandleDeprecateWorkflow handles PATCH /api/v1/workflows/{workflowID}/deprecate
+// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Convenience endpoint for deprecating workflows
+func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"workflow_id is required", h.logger)
+		return
+	}
+
+	// Parse request body
+	var req models.WorkflowDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error(err, "Failed to decode workflow deprecate request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if req.Reason == nil || strings.TrimSpace(*req.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
+	// Get existing workflow
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for deprecate",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// Update the workflow status to deprecated
+	reason := ""
+	if req.Reason != nil {
+		reason = *req.Reason
+	}
+	updatedBy := ""
+	if req.UpdatedBy != nil {
+		updatedBy = *req.UpdatedBy
+	}
+
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "deprecated", reason, updatedBy); err != nil {
+		h.logger.Error(err, "Failed to deprecate workflow",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to deprecate workflow", h.logger)
+		return
+	}
+
+	// Update workflow object for response
+	workflow.Status = "deprecated"
+
+	// BR-STORAGE-183: Audit workflow deprecate (business logic operation)
+	if h.auditStore != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo("deprecated")
+
+			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
+			if err != nil {
+				h.logger.Error(err, "Failed to create workflow deprecate audit event",
+					"workflow_id", workflowID,
+				)
+				return
+			}
+
+			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+				h.logger.Error(err, "Failed to audit workflow deprecate",
+					"workflow_id", workflowID,
+				)
+			}
+		}()
+	}
+
+	// Log success
+	h.logger.Info("Workflow deprecated",
+		"workflow_id", workflowID,
+		"reason", reason,
+		"updated_by", updatedBy,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
 // HandleDisableWorkflow handles PATCH /api/v1/workflows/{workflowID}/disable
 // DD-WORKFLOW-012: Convenience endpoint for disabling workflows (soft delete)
 func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -676,12 +919,32 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if disableReq.Reason == nil || strings.TrimSpace(*disableReq.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
 	// Get existing workflow
-	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
 	if err != nil {
 		h.logger.Error(err, "Failed to get workflow for disable",
 			"workflow_id", workflowID,
 		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 		return
@@ -697,7 +960,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		updatedBy = *disableReq.UpdatedBy
 	}
 
-	if err := h.workflowRepo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to disable workflow",
 			"workflow_id", workflowID,
 		)
@@ -785,8 +1048,10 @@ func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Requ
 	// Parse pagination
 	offset, limit := ParsePagination(r)
 
-	// Execute query
+	// Execute query (GAP-WF-6: measure duration for audit payload)
+	startList := time.Now()
 	entries, totalCount, err := h.workflowRepo.ListActions(r.Context(), filters, offset, limit)
+	durationMs := time.Since(startList).Milliseconds()
 	if err != nil {
 		h.logger.Error(err, "Failed to list available actions",
 			"filters", filters)
@@ -808,7 +1073,7 @@ func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Requ
 
 	// BR-AUDIT-023: Emit workflow.catalog.actions_listed audit event
 	if h.auditStore != nil {
-		if event, err := dsaudit.NewActionsListedAuditEvent(filters, totalCount); err != nil {
+		if event, err := dsaudit.NewActionsListedAuditEvent(filters, totalCount, durationMs); err != nil {
 			h.logger.Error(err, "Failed to create actions_listed audit event")
 		} else {
 			h.emitAuditEventsAsync([]*api.AuditEventRequest{event})
@@ -853,8 +1118,10 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	// Parse pagination
 	offset, limit := ParsePagination(r)
 
-	// Execute query
+	// Execute query (GAP-WF-6: measure duration for audit payload)
+	startList := time.Now()
 	workflows, totalCount, err := h.workflowRepo.ListWorkflowsByActionType(r.Context(), actionType, filters, offset, limit)
+	durationMs := time.Since(startList).Milliseconds()
 	if err != nil {
 		h.logger.Error(err, "Failed to list workflows by action type",
 			"action_type", actionType)
@@ -898,7 +1165,7 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 
 	// BR-AUDIT-023: Emit workflow.catalog.workflows_listed audit event
 	if h.auditStore != nil {
-		if event, err := dsaudit.NewWorkflowsListedAuditEvent(actionType, filters, totalCount); err != nil {
+		if event, err := dsaudit.NewWorkflowsListedAuditEvent(actionType, filters, totalCount, durationMs); err != nil {
 			h.logger.Error(err, "Failed to create workflows_listed audit event", "action_type", actionType)
 		} else {
 			h.emitAuditEventsAsync([]*api.AuditEventRequest{event}, "action_type", actionType)

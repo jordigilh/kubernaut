@@ -190,8 +190,11 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			Expect(ok).To(BeTrue())
 			disabledUUID := disabledWorkflow.WorkflowID.Value
 
-			// Disable the workflow via PATCH endpoint
-			_, err = DSClient.DisableWorkflow(testCtx, dsgen.OptWorkflowDisableRequest{}, dsgen.DisableWorkflowParams{
+			// Disable the workflow via PATCH endpoint (GAP-WF-5: reason mandatory)
+			disableReq := &dsgen.WorkflowLifecycleRequest{
+				Reason: "E2E test: exclude disabled from discovery",
+			}
+			_, err = DSClient.DisableWorkflow(testCtx, disableReq, dsgen.DisableWorkflowParams{
 				WorkflowID: disabledUUID,
 			})
 			Expect(err).ToNot(HaveOccurred())

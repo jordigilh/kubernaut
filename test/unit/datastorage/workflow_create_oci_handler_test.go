@@ -50,12 +50,12 @@ const validOCIRegistrationSchemaYAML = `metadata:
     whenToUse: When pods are OOMKilled due to insufficient memory
     whenNotToUse: When OOM is caused by a memory leak
     preconditions: Pod managed by a Deployment or StatefulSet
-actionType: AdjustResources
+actionType: IncreaseMemoryLimits
 labels:
   signalType: OOMKilled
   severity: critical
   component: pod
-  environment: production
+  environment: [production]
   priority: P0
 parameters:
   - name: MEMORY_INCREASE_PERCENT

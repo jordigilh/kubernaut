@@ -297,10 +297,12 @@ func NewServer(
 	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
 	// V1.0: Embedding service removed (label-only search)
 	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
+	// GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
+		WithWorkflowLifecycleRepository(workflowRepo),
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),
@@ -511,6 +513,9 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
 		// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
 		r.Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
+		// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
+		r.Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
+		r.Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")
