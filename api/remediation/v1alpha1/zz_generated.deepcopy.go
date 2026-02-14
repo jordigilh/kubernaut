@@ -417,6 +417,11 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 		*out = make([]corev1.ObjectReference, len(*in))
 		copy(*out, *in)
 	}
+	if in.EffectivenessAssessmentRef != nil {
+		in, out := &in.EffectivenessAssessmentRef, &out.EffectivenessAssessmentRef
+		*out = new(corev1.ObjectReference)
+		**out = **in
+	}
 	if in.DuplicateRefs != nil {
 		in, out := &in.DuplicateRefs, &out.DuplicateRefs
 		*out = make([]string, len(*in))

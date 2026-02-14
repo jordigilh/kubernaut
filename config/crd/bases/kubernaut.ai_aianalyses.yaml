@@ -608,6 +608,10 @@ spec:
                     selectedWorkflow:
                       description: Selected workflow that was executed and failed
                       properties:
+                        actionType:
+                          description: Action type from DD-WORKFLOW-016 taxonomy (e.g.,
+                            ScaleReplicas, RestartPod)
+                          type: string
                         containerImage:
                           description: Container image used
                           type: string
@@ -1146,6 +1150,11 @@ spec:
                   ========================================
                   Selected workflow for execution (populated when phase=Completed)
                 properties:
+                  actionType:
+                    description: |-
+                      Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+                      Propagated from HAPI three-step discovery protocol to RO audit events.
+                    type: string
                   confidence:
                     description: Confidence score (0.0-1.0)
                     maximum: 1
