@@ -553,8 +553,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-intentional-failure",
 				Version:    "v1.0.0",
-				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
-				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/failing:v1.0.0",
+				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
+				ContainerImage: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 			},
 				TargetResource: targetResource,
 				Parameters: map[string]string{
