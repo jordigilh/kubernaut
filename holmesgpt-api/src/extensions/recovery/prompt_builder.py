@@ -992,4 +992,5 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 
 {history_section}
 
-"""    return prompt
+"""
+    return prompt
