@@ -309,8 +309,11 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		// (kube-controller-manager), which is not available in envtest. The owner
 		// reference verification above (lines 301-306) validates BR-ORCH-031.
 		// Cascade deletion is verified in E2E tests where a full Kind cluster runs.
+		// ADR-EM-001 Section 8: blockOwnerDeletion must be false so RR deletion
+		// does not block on EA finalizers; GC still deletes EA when RR is removed.
 		By("Verifying owner reference is set correctly for cascade deletion (BR-ORCH-031)")
 		Expect(ownerRef.BlockOwnerDeletion).ToNot(BeNil())
-		Expect(*ownerRef.BlockOwnerDeletion).To(BeTrue(), "EA should block owner deletion for proper cascade")
+		Expect(*ownerRef.BlockOwnerDeletion).To(BeFalse(),
+			"ADR-EM-001 Section 8: blockOwnerDeletion must be false to prevent RR deletion blocking on EA finalizers")
 	})
 })

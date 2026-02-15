@@ -170,21 +170,26 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			wfeSuccess := createUniqueWFE("metrics-duration-success", targetResourceSuccess)
 			Expect(k8sClient.Create(ctx, wfeSuccess)).To(Succeed())
 
-			// Wait for Running state
+			// Wait for Running state — controller sets StartTime
 			wfeRunning, err := waitForWFEPhase(wfeSuccess.Name, wfeSuccess.Namespace,
 				string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			startTime := wfeRunning.Status.StartTime
-			Expect(startTime).ToNot(BeNil())
+			Expect(wfeRunning.Status.StartTime).ToNot(BeNil())
 
-			By("Simulating measurable execution time")
-			time.Sleep(2 * time.Second)
-
-			By("Marking workflow as completed")
-			now := metav1.Now()
-			wfeRunning.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-			wfeRunning.Status.CompletionTime = &now
-			Expect(k8sClient.Status().Update(ctx, wfeRunning)).To(Succeed())
+			By("Marking workflow as completed (refetch to avoid 409 Conflict)")
+			// No time.Sleep — duration is measured by the controller from
+			// StartTime to CompletionTime; any non-zero delta is valid.
+			// Refetch latest to pick up controller's resourceVersion changes.
+			Eventually(func() error {
+				latest, err := getWFE(wfeSuccess.Name, wfeSuccess.Namespace)
+				if err != nil {
+					return err
+				}
+				now := metav1.Now()
+				latest.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+				latest.Status.CompletionTime = &now
+				return k8sClient.Status().Update(ctx, latest)
+			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			By("Verifying successful completion and duration recording")
 			Eventually(func() string {
@@ -203,9 +208,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, wfeFailed.Namespace, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Simulating PipelineRun failure after execution time")
-			time.Sleep(1 * time.Second)
-
+			By("Simulating PipelineRun failure")
 			prFailed.Status.Conditions = duckv1.Conditions{
 				{
 					Type:    apis.ConditionSucceeded,
@@ -224,9 +227,9 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for failed execution")
 
-			// Note: Integration tests validate metrics recording without panic/error
-			// E2E tests validate actual histogram bucket distribution and percentiles
-			// This test confirms controller successfully records durations for both outcomes
+			// Note: Integration tests validate metrics recording without panic/error.
+			// E2E tests validate actual histogram bucket distribution and percentiles.
+			// This test confirms controller successfully records durations for both outcomes.
 		})
 	})
 

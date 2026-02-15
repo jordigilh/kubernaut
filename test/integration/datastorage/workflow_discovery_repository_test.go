@@ -43,7 +43,9 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Discovery Repository Integration Tests", func() {
+// Serial: These tests TRUNCATE remediation_workflow_catalog and assert exact counts.
+// Must not run concurrently with other tests that write to the workflow catalog.
+var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string

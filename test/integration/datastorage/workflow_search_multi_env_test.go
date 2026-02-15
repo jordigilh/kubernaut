@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -65,8 +66,9 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 
 	AfterEach(func() {
 		By("Cleaning up test workflows")
-		// Clean up workflows created in this test
-		_, err := db.ExecContext(ctx, "DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1", "multi-env-v2-test-%")
+		// Clean up only this test's workflows (scoped by testID for parallel safety)
+		_, err := db.ExecContext(ctx, "DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
+			fmt.Sprintf("multi-env-v2-test-%%-%s", testID))
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -87,7 +89,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc123",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"staging", "production"}, // Workflow stored with array
@@ -105,7 +107,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with single environment: 'production'")
 			searchReq := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "production", // Search: single string from Signal Processing
@@ -139,7 +141,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc124",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"staging"}, // Only staging
@@ -156,7 +158,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with environment: 'production'")
 			searchReq := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "production", // Search for production (NOT in array)
@@ -189,7 +191,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc125",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"*"}, // Wildcard: matches ALL
@@ -206,7 +208,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with environment: 'production'")
 			searchReq1 := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "production",
@@ -224,7 +226,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with environment: 'staging' (different environment)")
 			searchReq2 := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "staging",
@@ -246,7 +248,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Creating search request with empty environment string")
 			searchReq := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "", // Empty string (INVALID)
@@ -280,7 +282,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc126",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"production"},
@@ -307,7 +309,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc127",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"staging"},
@@ -334,7 +336,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc128",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"staging", "production"},
@@ -351,7 +353,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with environment: 'production'")
 			searchReq := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "production", // Single value
@@ -388,7 +390,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ContentHash:     "abc129",
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: []string{"development"}, // Single value in array
@@ -405,7 +407,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Querying with environment: 'development'")
 			searchReq := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "TestSignal",
+					SignalType:  "TestSignal-" + testID,
 					Severity:    "high",
 					Component:   "pod",
 					Environment: "development",

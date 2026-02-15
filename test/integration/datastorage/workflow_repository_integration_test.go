@@ -67,8 +67,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	)
 
 	BeforeEach(func() {
-		// Create repository with real database
-		// Repository uses process-specific schema (test_process_N) for test isolation
+		// Create repository with real database (shared public schema)
 		workflowRepo = workflow.NewRepository(db, logger)
 
 		// Generate unique test ID for isolation
@@ -100,9 +99,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	// CREATE METHOD TESTS - COMPOSITE PK VALIDATION
 	// ========================================
 	Describe("Create", func() {
-		// Note: No need for usePublicSchema() - remediation_workflow_catalog IS schema-isolated
-		// Repository creates workflows in test_process_N schema for parallel test isolation
-
 		Context("with valid workflow and all required fields", func() {
 			It("should persist workflow with structured labels and composite PK", func() {
 				// ARRANGE: Create test workflow per DD-STORAGE-008 schema
@@ -343,27 +339,17 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	// LIST METHOD TESTS - FILTERING & PAGINATION
 	// ========================================
 	// ARCHITECTURAL NOTE: Serial Execution Required for List tests
-	// remediation_workflow_catalog is a global table shared by ALL test processes.
-	// List tests verify exact workflow counts (e.g., Expect(len).To(Equal(3)))
-	// Parallel execution causes data contamination:
-	// - Process 1: TRUNCATE → Create 3 workflows → List (expect 3)
-	// - Process 2: Create 200 bulk workflows (during P1's test) → P1 finds 203 ❌
-	// Decision: Serial execution prevents cross-process data contamination for count tests
+	// List tests with nil filters verify exact workflow counts.
+	// Serial execution ensures no concurrent test creates/deletes workflows.
 	Describe("List", Serial, func() {
 		var createdWorkflowNames []string
 
 		BeforeEach(func() {
-			// CRITICAL: Use public schema for workflow catalog tests
-			// remediation_workflow_catalog is NOT schema-isolated - all parallel processes
-			// share the same table. Without usePublicSchema(), each process sees different
-			// data, causing cleanup to be ineffective and tests to see contaminated data.
-			usePublicSchema()
-
 			createdWorkflowNames = []string{} // Reset for each test
 
-			// Cleanup any leftover test workflows from previous runs (data pollution fix)
-			// V1.0 FIX: Correct SQL LIKE pattern - use single % for wildcard
-			_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1`, "wf-repo-%-list-%")
+			// Clean slate: delete ALL workflows so List(nil) returns exact counts.
+			// Safe because Serial guarantees no concurrent access.
+			_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog`)
 
 			// Insert multiple test workflows with different statuses
 			workflows := []struct {
