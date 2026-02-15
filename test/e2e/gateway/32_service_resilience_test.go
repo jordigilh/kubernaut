@@ -83,28 +83,47 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				},
 			})
 
-			req, _ := http.NewRequest("POST",
-				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
-				bytes.NewBuffer(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			// BR-SCOPE-002: The Gateway's scope checker uses a K8s informer cache.
+			// After namespace creation, the informer may not have synced yet, causing
+			// the Gateway to return HTTP 200 (scope rejection = "unmanaged namespace").
+			// Use Eventually to retry until the informer catches up and the signal is
+			// either accepted (201) or rejected by K8s API (503).
+			// Pattern: sendWebhookExpectCreated in deduplication_helpers.go
+			var resp *http.Response
+			Eventually(func() bool {
+				req, _ := http.NewRequest("POST",
+					fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
+					bytes.NewBuffer(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
-			// Note: This test requires simulating K8s API failure
-			// For now, we validate the error handling path exists
-			resp, err := http.DefaultClient.Do(req)
-			_ = err
+				var err error
+				resp, err = http.DefaultClient.Do(req)
+				if err != nil {
+					return false
+				}
+				// HTTP 200 = scope rejection (informer cache hasn't synced namespace yet)
+				// Retry until we get a non-200 response (201 created or 503 K8s API down)
+				if resp.StatusCode == http.StatusOK {
+					_ = resp.Body.Close()
+					return false
+				}
+				return true
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"Webhook should eventually be accepted (retries handle scope informer cache delay per BR-SCOPE-002)")
+
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should handle gracefully
 			// Either:
 			// - HTTP 503 Service Unavailable with Retry-After header (K8s API down)
-			// - HTTP 200 OK (K8s API available, normal processing)
-			// Both are acceptable - this tests the happy path exists
+			// - HTTP 201 Created (K8s API available, CRD created)
 
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				// Validate RFC 7807 error response
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
+				err := json.NewDecoder(resp.Body).Decode(&errorResp)
+				_ = err
 
 				// Validate Retry-After header present
 				retryAfter := resp.Header.Get("Retry-After")
