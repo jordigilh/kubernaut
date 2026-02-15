@@ -535,6 +535,11 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-022",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			incident, err := sessionClient.Investigate(ctx, incidentReq)
