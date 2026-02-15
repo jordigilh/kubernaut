@@ -42,7 +42,10 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	BeforeEach(func() {
 
 		// Clean up test data before each test
-		_, err := db.Exec("DELETE FROM audit_events WHERE correlation_id LIKE 'test-%'")
+		// IMPORTANT: Use file-specific prefix 'test-aes-%' (Audit Events Schema) to avoid
+		// deleting data from other parallel tests. The previous broad 'test-%' pattern
+		// caused race conditions where this cleanup wiped data from reconstruction tests.
+		_, err := db.Exec("DELETE FROM audit_events WHERE correlation_id LIKE 'test-aes-%'")
 		if err != nil {
 			GinkgoWriter.Printf("Note: cleanup skipped (table may not exist): %v\n", err)
 		}
@@ -54,7 +57,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should store audit events with all required fields", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-store-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-store-%s", uuid.New().String()[:8])
 		eventID := uuid.New().String()
 		eventTimestamp := time.Now().UTC()
 		eventDate := eventTimestamp.Truncate(24 * time.Hour)
@@ -84,7 +87,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should accept audit events for current month", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-current-month-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-current-month-%s", uuid.New().String()[:8])
 		eventID := uuid.New().String()
 		now := time.Now().UTC()
 
@@ -115,7 +118,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 					) VALUES ($1, $2, $3, 'test.future.month', 'test', $4,
 						'test', 'test-001', 'test', 'success', 'service', 'test', '{}'::jsonb)
 				`, eventID, eventDate, eventDate.Truncate(24*time.Hour),
-					fmt.Sprintf("test-future-month-%d", i))
+					fmt.Sprintf("test-aes-future-month-%d", i))
 
 				Expect(err).ToNot(HaveOccurred(),
 					fmt.Sprintf("Should accept audit events for %s (+%d months)",
@@ -128,7 +131,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should retrieve events by correlation_id efficiently", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-correlation-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-correlation-%s", uuid.New().String()[:8])
 
 		// Insert multiple events with same correlation ID
 		for i := 0; i < 3; i++ {
@@ -168,7 +171,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should support JSONB queries on event_data", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-jsonb-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-jsonb-%s", uuid.New().String()[:8])
 		eventID := uuid.New().String()
 		now := time.Now().UTC()
 
@@ -198,7 +201,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should prevent deletion of parent events with children (immutability)", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-immutability-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-immutability-%s", uuid.New().String()[:8])
 		parentID := uuid.New().String()
 		childID := uuid.New().String()
 		now := time.Now().UTC()
@@ -243,7 +246,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should maintain parent-child relationships", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-parent-child-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-parent-child-%s", uuid.New().String()[:8])
 		parentID := uuid.New().String()
 		childID := uuid.New().String()
 		now := time.Now().UTC()
@@ -283,7 +286,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 	// ================================================================
 	It("should store and retrieve event_date correctly", func() {
 		// Use unique correlation ID per test run for parallel execution safety
-		correlationID := fmt.Sprintf("test-date-check-%s", uuid.New().String()[:8])
+		correlationID := fmt.Sprintf("test-aes-date-check-%s", uuid.New().String()[:8])
 		eventID := uuid.New().String()
 		testTimestamp := time.Date(2025, 11, 15, 10, 30, 0, 0, time.UTC)
 		testDate := testTimestamp.Truncate(24 * time.Hour)
