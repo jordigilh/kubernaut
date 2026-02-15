@@ -100,7 +100,7 @@ Each test creates a unique namespace (e.g., `datastorage-e2e-test-1`) to ensure 
 # Install Kind
 brew install kind  # macOS
 # OR
-curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 
