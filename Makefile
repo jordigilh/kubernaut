@@ -390,7 +390,7 @@ build-test-workflows: ## Build all test workflow OCI images (local, current arch
 	@echo "✅ All test workflow images built"
 
 .PHONY: push-test-workflows
-push-test-workflows: build-test-workflows ## Build and push test workflow images to registry
+push-test-workflows: ## Push test workflow images to registry (run build-test-workflows first)
 	@echo "📦 Pushing test workflow OCI images..."
 	@echo "  Registry: $(WORKFLOW_REGISTRY)"
 	@echo "  Version:  $(WORKFLOW_VERSION)"
