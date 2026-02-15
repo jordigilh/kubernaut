@@ -251,6 +251,9 @@ coverage-e2e/
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/
+# Must-gather diagnostic archives (downloaded during CI triage)
+must-gather-*.tar.gz
+
 # Cursor Swarm Extension (development)
 .cursor-swarm-dev/
 *.vsix
