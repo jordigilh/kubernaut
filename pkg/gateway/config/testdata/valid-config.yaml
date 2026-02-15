@@ -11,14 +11,8 @@ middleware:
   # Rate limiting removed (ADR-048) - delegated to Ingress/Route proxy
 
 infrastructure:
-  redis:
-    addr: "redis-gateway:6379"
-    db: 0
-    dialTimeout: "5s"
-    readTimeout: "3s"
-    writeTimeout: "3s"
-    poolSize: 10
-    minIdleConns: 2
+  # DD-GATEWAY-012: Redis REMOVED - Gateway is now 100% Kubernetes-native
+  dataStorageUrl: "http://data-storage-service:8080"
 
 processing:
   deduplication:
