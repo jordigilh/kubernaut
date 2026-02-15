@@ -529,15 +529,21 @@ func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAss
 }
 
 // assessHash computes the spec hash of the target resource and compares
-// with the pre-remediation hash from DataStorage (BR-EM-004, DD-EM-002).
+// with the pre-remediation hash (BR-EM-004, DD-EM-002).
 func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
 	logger := log.FromContext(ctx)
 
 	// Step 1: Fetch target spec from K8s API
 	spec := r.getTargetSpec(ctx, ea)
 
-	// Step 2: Query DataStorage for pre-remediation hash
-	preHash := r.queryPreRemediationHash(ctx, ea.Spec.CorrelationID)
+	// Step 2: Read pre-remediation hash from EA spec (set by RO via RR status).
+	// Falls back to DataStorage query for backward compatibility with EAs created
+	// before the RO started populating PreRemediationSpecHash.
+	preHash := ea.Spec.PreRemediationSpecHash
+	if preHash == "" {
+		logger.V(1).Info("PreRemediationSpecHash not in EA spec, falling back to DataStorage query")
+		preHash = r.queryPreRemediationHash(ctx, ea.Spec.CorrelationID)
+	}
 
 	// Step 3: Compute post-hash and compare with pre-hash
 	result := r.hashComputer.Compute(hash.SpecHashInput{

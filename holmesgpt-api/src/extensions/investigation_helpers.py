@@ -197,8 +197,22 @@ def handle_validation_exhaustion(
 
     last_errors = validation_errors_history[-1]
     human_review_reason = determine_human_review_reason(last_errors)
-    result["needs_human_review"] = True
-    result["human_review_reason"] = human_review_reason
+
+    # BR-HAPI-197: Respect the LLM's explicit needs_human_review=false.
+    # If the LLM explicitly returned needs_human_review=false, the validation
+    # failure is logged as a warning but does NOT escalate to human review.
+    # This prevents workflow parameter mismatches from overriding the LLM's
+    # confidence-based decision about whether human intervention is needed.
+    if result.get("needs_human_review") is False:
+        logger.warning(
+            "Validation exhausted but LLM explicitly set needs_human_review=false — "
+            "preserving LLM decision (BR-HAPI-197)",
+            extra={"incident_id": incident_id, "remediation_id": remediation_id,
+                   "workflow_id": workflow_id, "validation_errors": last_errors},
+        )
+    else:
+        result["needs_human_review"] = True
+        result["human_review_reason"] = human_review_reason
 
     # Build detailed error summary from ALL attempts
     all_errors_summary = []

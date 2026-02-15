@@ -118,8 +118,9 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
 			},
-			RemediationCreatedAt: rrCreatedAt,
-			SignalName:           rr.Spec.SignalName, // OBS-1: Propagate actual alert name for audit
+			RemediationCreatedAt:   rrCreatedAt,
+			SignalName:             rr.Spec.SignalName,             // OBS-1: Propagate actual alert name for audit
+			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash, // DD-EM-002: Propagate from RR status
 		},
 	}
 
