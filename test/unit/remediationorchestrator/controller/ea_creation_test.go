@@ -407,6 +407,98 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// EffectivenessAssessed=False / Reason: AssessmentInProgress so operators
 	// can distinguish "no EA yet" from "EA in progress."
 	// ========================================
+	// ========================================
+	// UT-RO-EA-009: EA creator propagates PreRemediationSpecHash from RR status to EA spec
+	// ========================================
+	It("UT-RO-EA-009: should copy PreRemediationSpecHash from RR status to EA spec", func() {
+		rrName := "rr-ea-009"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		// Simulate RO having stored the pre-remediation hash on RR status
+		rr.Status.PreRemediationSpecHash = "sha256:abc123def456pre"
+
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify EA was created with PreRemediationSpecHash from RR status
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
+		Expect(ea.Spec.PreRemediationSpecHash).To(Equal("sha256:abc123def456pre"),
+			"EA spec should contain PreRemediationSpecHash copied from RR status (DD-EM-002 v2.0)")
+	})
+
+	// ========================================
+	// UT-RO-EA-010: EA creator handles empty PreRemediationSpecHash gracefully
+	// ========================================
+	It("UT-RO-EA-010: should create EA with empty PreRemediationSpecHash when RR has none", func() {
+		rrName := "rr-ea-010"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		// RR has no PreRemediationSpecHash (backward compatibility)
+
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
+		Expect(ea.Spec.PreRemediationSpecHash).To(BeEmpty(),
+			"EA spec PreRemediationSpecHash should be empty when RR has none (backward compat)")
+	})
+
 	It("UT-RO-EA-008: should set EffectivenessAssessed=False/AssessmentInProgress on EA creation", func() {
 		rrName := "rr-ea-008"
 		namespace := "test-ns"
