@@ -121,7 +121,10 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	ctx context.Context,
 	correlationIDs []string,
 ) (map[string][]*EffectivenessEventRow, error) {
-	query := `SELECT correlation_id, event_data
+	// Include event_type column so BuildEffectivenessResponse can route events correctly.
+	// The event_data JSONB may not contain event_type (E2E tests insert it only as a column),
+	// so we merge the column value into EventData to ensure downstream consumers always see it.
+	query := `SELECT correlation_id, event_type, event_data
 		FROM audit_events
 		WHERE correlation_id = ANY($1)
 		AND event_category = 'effectiveness'
@@ -138,8 +141,9 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	results := make(map[string][]*EffectivenessEventRow)
 	for rows.Next() {
 		var correlationID string
+		var eventType string
 		var eventDataJSON []byte
-		if err := rows.Scan(&correlationID, &eventDataJSON); err != nil {
+		if err := rows.Scan(&correlationID, &eventType, &eventDataJSON); err != nil {
 			return nil, err
 		}
 		var eventData map[string]interface{}
@@ -147,6 +151,9 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 			r.logger.Error(err, "Failed to unmarshal EM event data", "correlation_id", correlationID)
 			continue
 		}
+		// Merge event_type column into EventData for BuildEffectivenessResponse routing.
+		// Column value takes precedence (authoritative source).
+		eventData["event_type"] = eventType
 		results[correlationID] = append(results[correlationID], &EffectivenessEventRow{
 			EventData: eventData,
 		})

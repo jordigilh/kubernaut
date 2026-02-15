@@ -193,21 +193,21 @@ var _ = Describe("RemediationHistoryRepository", func() {
 					"details":    "Pod running, readiness passing",
 				})
 				eventData2, _ := json.Marshal(map[string]interface{}{
-					"event_type":                  "effectiveness.hash.computed",
-					"pre_remediation_spec_hash":   "sha256:aabb1122",
-					"post_remediation_spec_hash":  "sha256:ccdd3344",
-					"hash_match":                  false,
+					"event_type":                 "effectiveness.hash.computed",
+					"pre_remediation_spec_hash":  "sha256:aabb1122",
+					"post_remediation_spec_hash": "sha256:ccdd3344",
+					"hash_match":                 false,
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"correlation_id", "event_data",
+					"correlation_id", "event_type", "event_data",
 				}).AddRow(
-					"rr-abc-123", eventData1,
+					"rr-abc-123", "effectiveness.health.assessed", eventData1,
 				).AddRow(
-					"rr-abc-123", eventData2,
+					"rr-abc-123", "effectiveness.hash.computed", eventData2,
 				)
 
-				sqlMock.ExpectQuery(`SELECT correlation_id, event_data FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
 					WithArgs(sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -234,14 +234,14 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				rows := sqlmock.NewRows([]string{
-					"correlation_id", "event_data",
+					"correlation_id", "event_type", "event_data",
 				}).AddRow(
-					"rr-abc-123", eventDataA,
+					"rr-abc-123", "effectiveness.health.assessed", eventDataA,
 				).AddRow(
-					"rr-def-456", eventDataB,
+					"rr-def-456", "effectiveness.alert.assessed", eventDataB,
 				)
 
-				sqlMock.ExpectQuery(`SELECT correlation_id, event_data FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
 					WithArgs(sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -256,13 +256,46 @@ var _ = Describe("RemediationHistoryRepository", func() {
 			})
 		})
 
+		Context("when event_data JSONB does not contain event_type", func() {
+			It("UT-RH-013: should merge event_type column into EventData for downstream routing", func() {
+				// RC-2 FIX: The audit_events table stores event_type as a column, not inside event_data JSONB.
+				// BuildEffectivenessResponse (effectiveness_handler.go) routes on eventData["event_type"].
+				// E2E tests (and potentially production) insert events where event_data omits event_type.
+				// The repository MUST merge the column value into EventData for correct routing.
+				eventDataWithoutType, _ := json.Marshal(map[string]interface{}{
+					"assessed": true,
+					"score":    0.85,
+				})
+
+				rows := sqlmock.NewRows([]string{
+					"correlation_id", "event_type", "event_data",
+				}).AddRow(
+					"rr-rc2-test", "effectiveness.health.assessed", eventDataWithoutType,
+				)
+
+				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				correlationIDs := []string{"rr-rc2-test"}
+				results, err := repo.QueryEffectivenessEventsBatch(ctx, correlationIDs)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(HaveKey("rr-rc2-test"))
+				Expect(results["rr-rc2-test"]).To(HaveLen(1))
+				// Key assertion: event_type from column must be present in EventData
+				Expect(results["rr-rc2-test"][0].EventData).To(HaveKeyWithValue("event_type", "effectiveness.health.assessed"),
+					"event_type column must be merged into EventData for BuildEffectivenessResponse routing")
+			})
+		})
+
 		Context("when no events exist for correlation IDs", func() {
 			It("UT-RH-007: should return empty map", func() {
 				rows := sqlmock.NewRows([]string{
-					"correlation_id", "event_data",
+					"correlation_id", "event_type", "event_data",
 				})
 
-				sqlMock.ExpectQuery(`SELECT correlation_id, event_data FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
 					WithArgs(sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
@@ -276,7 +309,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 		Context("when database returns an error", func() {
 			It("UT-RH-008: should propagate the error", func() {
-				sqlMock.ExpectQuery(`SELECT correlation_id, event_data FROM audit_events`).
+				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
 					WithArgs(sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
