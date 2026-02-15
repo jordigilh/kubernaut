@@ -701,10 +701,16 @@ data:
       input.signal.severity == "p0"
     } else := "critical" if {
       input.signal.severity == "p1"
+    } else := "critical" if {
+      # K8s event type "Error" maps to critical
+      input.signal.severity == "Error"
     } else := "high" if {
       input.signal.severity == "sev2"
     } else := "high" if {
       input.signal.severity == "p2"
+    } else := "high" if {
+      # K8s event type "Warning" maps to high
+      input.signal.severity == "Warning"
     } else := "medium" if {
       input.signal.severity == "sev3"
     } else := "low" if {
