@@ -119,7 +119,7 @@ jobs:
       - name: Lint Go code
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1
+          version: v2.9.0
           args: cmd/... pkg/... internal/... test/...
           only-new-issues: true
         continue-on-error: true  # Don't block CI for lint warnings in V1.0

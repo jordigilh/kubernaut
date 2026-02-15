@@ -288,20 +288,24 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
     # per DD-HAPI-017
     try:
         # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
-        # Graceful degradation: if DS unavailable, context is None and prompt is unchanged
-        from src.clients.remediation_history_client import (
-            create_remediation_history_api,
-            fetch_remediation_history_for_request,
-        )
-        rh_api = create_remediation_history_api(app_config)
-        current_spec_hash = ""
-        if isinstance(enrichment_results, dict):
-            current_spec_hash = enrichment_results.get("currentSpecHash", "")
-        remediation_history_context = fetch_remediation_history_for_request(
-            api=rh_api,
-            request_data=request_data,
-            current_spec_hash=current_spec_hash,
-        )
+        # Graceful degradation: if DS unavailable or module not yet deployed, context is None
+        remediation_history_context = None
+        try:
+            from src.clients.remediation_history_client import (
+                create_remediation_history_api,
+                fetch_remediation_history_for_request,
+            )
+            rh_api = create_remediation_history_api(app_config)
+            current_spec_hash = ""
+            if isinstance(enrichment_results, dict):
+                current_spec_hash = enrichment_results.get("currentSpecHash", "")
+            remediation_history_context = fetch_remediation_history_for_request(
+                api=rh_api,
+                request_data=request_data,
+                current_spec_hash=current_spec_hash,
+            )
+        except (ImportError, Exception) as rh_err:
+            logger.warning({"event": "remediation_history_unavailable", "error": str(rh_err)})
 
         # Build base investigation prompt (before validation loop)
         # DD-RECOVERY-003: Use recovery-specific prompt for recovery attempts
