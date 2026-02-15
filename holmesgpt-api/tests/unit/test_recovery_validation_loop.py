@@ -237,6 +237,42 @@ class TestRecoveryValidationLoop:
         After 3 failed validation attempts, recovery marks result as
         needs_human_review=True with human_review_reason containing
         validation failure details.
+
+        Note: needs_human_review must NOT be explicitly False in the parsed
+        result, otherwise BR-HAPI-197 preserves the LLM's decision. Setting
+        it to None simulates the LLM not expressing an opinion.
+        """
+        mocks = mock_recovery_env
+        mocks["parse"].side_effect = lambda *args, **kwargs: _make_parsed_result(
+            workflow_id="wf-bad", needs_human_review=None
+        )
+        mocks["feedback"].return_value = "\n## Error\n"
+
+        # Validator always fails
+        mock_validator = Mock()
+        mock_validator.validate.return_value = ValidationResult(
+            is_valid=False, errors=["unknown workflow_id"]
+        )
+        mocks["validator_cls"].return_value = mock_validator
+
+        from src.extensions.recovery.llm_integration import analyze_recovery
+
+        result = await analyze_recovery(_make_request_data())
+
+        # After exhausting all attempts, needs_human_review must be True
+        assert result["needs_human_review"] is True
+        assert result.get("human_review_reason") is not None
+
+    @pytest.mark.asyncio
+    async def test_preserves_llm_decision_when_explicitly_false_ut_004_005(self, mock_recovery_env):
+        """
+        UT-HAPI-017-004-005: BR-HAPI-197 — LLM explicit needs_human_review=False is preserved.
+
+        BR: BR-HAPI-197
+        Type: Unit / Policy
+        When the LLM explicitly sets needs_human_review=False, the validation
+        exhaustion handler must NOT override it. The LLM's confidence-based
+        decision takes precedence over parameter validation failures.
         """
         mocks = mock_recovery_env
         mocks["parse"].side_effect = lambda *args, **kwargs: _make_parsed_result(
@@ -255,9 +291,8 @@ class TestRecoveryValidationLoop:
 
         result = await analyze_recovery(_make_request_data())
 
-        # After exhausting all attempts, needs_human_review must be True
-        assert result["needs_human_review"] is True
-        assert result.get("human_review_reason") is not None
+        # BR-HAPI-197: LLM explicitly said no human review — must be preserved
+        assert result["needs_human_review"] is False
 
     @pytest.mark.asyncio
     async def test_succeeds_on_retry_ut_004_004(self, mock_recovery_env):
