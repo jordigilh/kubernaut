@@ -66,26 +66,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 	)
 
 	BeforeEach(func() {
-		// NOTE: remediation_workflow_catalog IS schema-isolated per process (test_process_N)
-		// No need to call usePublicSchema() - each parallel process has its own copy
-
-		// Create repository with real database
+		// Create repository with real database (shared public schema)
 		workflowRepo = workflow.NewRepository(db, logger)
 
 		// Generate unique test ID for isolation
+		// All test data uses testID-scoped names, so parallel processes don't collide
 		testID = generateTestID()
-
-		// This ensures no leftover data from previous test runs
-		var countBefore int
-		_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-scoring%'").Scan(&countBefore)
-		GinkgoWriter.Printf("🧹 Cleaning up scoring workflows: found %d workflows\n", countBefore)
-
-		result, err := db.ExecContext(ctx,
-			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-scoring%'")
-		Expect(err).ToNot(HaveOccurred(), "Global cleanup should succeed")
-
-		rowsDeleted, _ := result.RowsAffected()
-		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in scoring cleanup\n", rowsDeleted)
 	})
 
 	AfterEach(func() {

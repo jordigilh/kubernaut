@@ -58,10 +58,8 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 		targetResource = fmt.Sprintf("default/Deployment/nginx-%s", testID)
 		currentSpecHash = "sha256:current_" + testID
 
-		// Use public schema for cross-process queries
-		usePublicSchema()
-
 		// Create repository backed by the real PostgreSQL instance from suite_test.go
+		// All processes share the public schema; test isolation is via unique testID
 		rhRepo = repository.NewRemediationHistoryRepository(db.DB, logger)
 	})
 

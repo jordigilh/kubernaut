@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
+	"strings" // Used by cleanupContainers and migration processing
 	"testing"
 	"time"
 
@@ -75,14 +75,13 @@ var (
 	// Per-process resources (each parallel process has its own instance)
 	// These are created in SynchronizedBeforeSuite Phase 2 (runs on ALL processes)
 	// and closed in SynchronizedAfterSuite Phase 1 (runs on ALL processes)
-	db          *sqlx.DB      // Per-process DB connection with process-specific schema
+	db          *sqlx.DB      // Per-process DB connection (shared public schema)
 	redisClient *redis.Client // Per-process Redis client
 	repo        *repository.NotificationAuditRepository
 	dlqClient   *dlq.Client
 	logger      logr.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
-	schemaName  string // Schema name for this parallel process (test_process_N)
 )
 
 // This enables parallel test execution by ensuring each test has unique data
@@ -96,288 +95,6 @@ func generateTestID() string { //nolint:unused
 // Used for audit events and other UUID-based records
 func generateTestUUID() uuid.UUID { //nolint:unused
 	return uuid.New()
-}
-
-// usePublicSchema sets the search_path to public schema
-// (e.g., schema validation tests, tests that check partitions, etc.)
-func usePublicSchema() { //nolint:unused
-	if db != nil {
-		// CRITICAL: Force ALL connections in pool to reconnect with search_path=public
-		// This prevents inconsistent search_path across connection pool which causes
-		// workflows to be split across schemas (DS-FLAKY-006 fix)
-		//
-		// Problem: Connection pool can retain old connections with stale search_path
-		// (e.g., test_process_X from schema isolation before usePublicSchema() was added)
-		// Solution: Aggressively close ALL connections and force reconnection
-		//
-		// Connection string already sets search_path=public for NEW connections
-		// (see connectPostgreSQL() - options='-c search_path=public')
-		// This function ensures OLD pooled connections are closed and replaced
-
-		// Close ALL idle connections immediately
-		db.SetMaxIdleConns(0)
-
-		// Force existing connections to close after current use
-		// This ensures active connections don't linger with stale search_path
-		db.SetConnMaxLifetime(0)
-
-		// Set search_path for current session (in case this connection is reused)
-		_, err := db.Exec("SET search_path TO public")
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
-		}
-
-		// Restore normal pool settings after forcing reconnection
-		// Future connections will come from pool with search_path=public (from connection string)
-		db.SetMaxIdleConns(10)
-		db.SetConnMaxLifetime(5 * time.Minute)
-
-		// Verify search_path is set correctly for debugging
-		var currentPath string
-		_ = db.QueryRow("SHOW search_path").Scan(&currentPath)
-		GinkgoWriter.Printf("🔄 Set search_path to public (current: %s)\n", currentPath)
-	}
-}
-
-// createProcessSchema creates a process-specific PostgreSQL schema for test isolation
-// This enables parallel test execution without data interference between processes
-// Each parallel process gets its own schema (e.g., test_process_1, test_process_2)
-//
-// Strategy:
-// 1. Create empty schema
-// 2. Copy table structure from public schema (without data)
-// 3. Set search_path to use this schema
-//
-// Note: Extensions (uuid-ossp) are database-wide and already created in public schema
-func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
-	schemaName := fmt.Sprintf("test_process_%d", processNum)
-
-	GinkgoWriter.Printf("🏗️  [Process %d] Creating schema: %s\n", processNum, schemaName)
-
-	// Drop schema if it exists (cleanup from previous failed runs)
-	_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-	if err != nil {
-		return "", fmt.Errorf("failed to drop existing schema: %w", err)
-	}
-
-	// Create new schema
-	_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName))
-	if err != nil {
-		return "", fmt.Errorf("failed to create schema: %w", err)
-	}
-
-	// Copy all table structures from public schema to this schema (without data)
-	// This includes: audit_events, remediation_workflow_catalog, action_trace, etc.
-	GinkgoWriter.Printf("📋 [Process %d] Copying table structures from public schema...\n", processNum)
-
-	// Get list of all tables in public schema
-	rows, err := db.Query(`
-		SELECT tablename
-		FROM pg_tables
-		WHERE schemaname = 'public'
-		AND tablename NOT LIKE 'pg_%'
-		AND tablename NOT LIKE 'sql_%'
-		ORDER BY tablename
-	`)
-	if err != nil {
-		return "", fmt.Errorf("failed to list tables: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var tables []string
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			return "", fmt.Errorf("failed to scan table name: %w", err)
-		}
-		tables = append(tables, tableName)
-	}
-
-	// Copy each table structure (CREATE TABLE LIKE)
-	for _, tableName := range tables {
-		// Use CREATE TABLE ... (LIKE ...) to copy structure including indexes
-		query := fmt.Sprintf(
-			"CREATE TABLE %s.%s (LIKE public.%s INCLUDING ALL)",
-			schemaName, tableName, tableName,
-		)
-		_, err = db.Exec(query)
-		if err != nil {
-			return "", fmt.Errorf("failed to copy table %s: %w", tableName, err)
-		}
-		GinkgoWriter.Printf("  ✅ [Process %d] Copied table: %s\n", processNum, tableName)
-	}
-
-	// ========================================
-	// CRITICAL: Recreate Foreign Key Constraints
-	// ========================================
-	// PostgreSQL's "LIKE ... INCLUDING ALL" copies table structure, indexes, constraints,
-	// BUT it does NOT copy foreign key constraints! We must recreate them manually.
-	//
-	// Reference: Migration 013 (fk_audit_events_parent constraint)
-	// BR-STORAGE-032: Event sourcing immutability enforcement
-	GinkgoWriter.Printf("🔗 [Process %d] Recreating foreign key constraints...\n", processNum)
-
-	// FK constraint: audit_events parent-child relationship (ADR-034)
-	// Prevents deletion of parent events with children (event sourcing immutability)
-	fkConstraintSQL := fmt.Sprintf(`
-		ALTER TABLE %s.audit_events
-		ADD CONSTRAINT fk_audit_events_parent
-		FOREIGN KEY (parent_event_id, parent_event_date)
-		REFERENCES %s.audit_events(event_id, event_date)
-		ON DELETE RESTRICT
-	`, schemaName, schemaName)
-
-	_, err = db.Exec(fkConstraintSQL)
-	if err != nil {
-		return "", fmt.Errorf("failed to create FK constraint fk_audit_events_parent: %w", err)
-	}
-	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
-
-	// UNIQUE constraint: remediation_workflow_catalog (workflow_name, version)
-	// Prevents duplicate workflows with same name and version (Migration 019)
-	// DD-WORKFLOW-012: Workflow immutability enforcement
-	uniqueConstraintSQL := fmt.Sprintf(`
-		ALTER TABLE %s.remediation_workflow_catalog
-		ADD CONSTRAINT uq_workflow_name_version UNIQUE (workflow_name, version)
-	`, schemaName)
-
-	_, err = db.Exec(uniqueConstraintSQL)
-	if err != nil {
-		return "", fmt.Errorf("failed to create UNIQUE constraint uq_workflow_name_version: %w", err)
-	}
-	GinkgoWriter.Printf("  ✅ [Process %d] Created UNIQUE constraint: uq_workflow_name_version\n", processNum)
-
-	// ========================================
-	// SOC2 Gap #8: Copy Trigger Functions
-	// ========================================
-	// PostgreSQL's "LIKE ... INCLUDING ALL" does NOT copy trigger functions or triggers.
-	// We must recreate them manually for legal hold enforcement.
-	//
-	// Reference: Migration 024 (prevent_legal_hold_deletion function, enforce_legal_hold trigger)
-	// BR-AUDIT-006: Legal hold enforcement to prevent deletion during litigation
-	GinkgoWriter.Printf("⚙️  [Process %d] Copying trigger functions from public schema...\n", processNum)
-
-	// Query to get all functions in public schema
-	funcRows, err := db.Query(`
-		SELECT
-			p.proname AS function_name,
-			pg_get_functiondef(p.oid) AS function_def
-		FROM pg_proc p
-		JOIN pg_namespace n ON p.pronamespace = n.oid
-		WHERE n.nspname = 'public'
-		AND p.proname NOT LIKE 'pg_%'
-		AND p.proname NOT LIKE 'uuid_%'
-		ORDER BY p.proname
-	`)
-	if err != nil {
-		return "", fmt.Errorf("failed to list trigger functions: %w", err)
-	}
-	defer func() { _ = funcRows.Close() }()
-
-	var functions []struct {
-		name string
-		def  string
-	}
-	for funcRows.Next() {
-		var funcName, funcDef string
-		if err := funcRows.Scan(&funcName, &funcDef); err != nil {
-			return "", fmt.Errorf("failed to scan function: %w", err)
-		}
-		functions = append(functions, struct {
-			name string
-			def  string
-		}{funcName, funcDef})
-	}
-
-	// Create each function in the test schema
-	for _, fn := range functions {
-		// Replace "public." with test schema name in function definition
-		funcDef := strings.ReplaceAll(fn.def, "public.", schemaName+".")
-
-		// Drop function if exists (idempotent)
-		dropFuncSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s.%s CASCADE", schemaName, fn.name)
-		_, err = db.Exec(dropFuncSQL)
-		if err != nil {
-			return "", fmt.Errorf("failed to drop existing function %s: %w", fn.name, err)
-		}
-
-		// Create function in test schema
-		_, err = db.Exec(funcDef)
-		if err != nil {
-			return "", fmt.Errorf("failed to create function %s: %w", fn.name, err)
-		}
-		GinkgoWriter.Printf("  ✅ [Process %d] Copied function: %s\n", processNum, fn.name)
-	}
-
-	// ========================================
-	// SOC2 Gap #8: Copy Triggers
-	// ========================================
-	GinkgoWriter.Printf("⚙️  [Process %d] Copying triggers from public schema...\n", processNum)
-
-	// Query to get all triggers in public schema
-	triggerRows, err := db.Query(`
-		SELECT
-			t.tgname AS trigger_name,
-			c.relname AS table_name,
-			pg_get_triggerdef(t.oid) AS trigger_def
-		FROM pg_trigger t
-		JOIN pg_class c ON t.tgrelid = c.oid
-		JOIN pg_namespace n ON c.relnamespace = n.oid
-		WHERE n.nspname = 'public'
-		AND NOT t.tgisinternal
-		ORDER BY c.relname, t.tgname
-	`)
-	if err != nil {
-		return "", fmt.Errorf("failed to list triggers: %w", err)
-	}
-	defer func() { _ = triggerRows.Close() }()
-
-	var triggers []struct {
-		name      string
-		tableName string
-		def       string
-	}
-	for triggerRows.Next() {
-		var triggerName, tableName, triggerDef string
-		if err := triggerRows.Scan(&triggerName, &tableName, &triggerDef); err != nil {
-			return "", fmt.Errorf("failed to scan trigger: %w", err)
-		}
-		triggers = append(triggers, struct {
-			name      string
-			tableName string
-			def       string
-		}{triggerName, tableName, triggerDef})
-	}
-
-	// Create each trigger in the test schema
-	for _, trig := range triggers {
-		// Replace "public." with test schema name in trigger definition
-		triggerDef := strings.ReplaceAll(trig.def, "public.", schemaName+".")
-
-		// Drop trigger if exists (idempotent)
-		dropTrigSQL := fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s.%s CASCADE", trig.name, schemaName, trig.tableName)
-		_, err = db.Exec(dropTrigSQL)
-		if err != nil {
-			return "", fmt.Errorf("failed to drop existing trigger %s: %w", trig.name, err)
-		}
-
-		// Create trigger in test schema
-		_, err = db.Exec(triggerDef)
-		if err != nil {
-			return "", fmt.Errorf("failed to create trigger %s on %s: %w", trig.name, trig.tableName, err)
-		}
-		GinkgoWriter.Printf("  ✅ [Process %d] Copied trigger: %s on %s\n", processNum, trig.name, trig.tableName)
-	}
-
-	// Set search_path to use this schema, with public as fallback for extensions
-	// This allows per-process schema isolation while still accessing shared extensions (pgcrypto, uuid-ossp)
-	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
-	if err != nil {
-		return "", fmt.Errorf("failed to set search_path: %w", err)
-	}
-
-	GinkgoWriter.Printf("✅ [Process %d] Schema created with %d tables, search_path set: %s\n", processNum, len(tables), schemaName)
-	return schemaName, nil
 }
 
 // preflightCheck validates the test environment before running tests
@@ -595,20 +312,13 @@ var _ = SynchronizedBeforeSuite(
 			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
 		}
 
-		// Connect to PostgreSQL
+		// Connect to PostgreSQL (all processes share the public schema)
+		// Test isolation is achieved through unique testIDs in fixture data,
+		// not per-process schemas. This eliminates search_path race conditions
+		// that caused IT-DS-016-005/006 failures (partitioned audit_events
+		// cannot be correctly copied with CREATE TABLE LIKE).
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", processNum)
 		connectPostgreSQL()
-
-		// ========================================
-		// SCHEMA-LEVEL ISOLATION FOR PARALLEL EXECUTION
-		// ========================================
-		// Create process-specific schema for complete test isolation
-		// This prevents search query collisions between parallel processes
-		// Each process gets its own schema: test_process_1, test_process_2, etc.
-		// The schema is a copy of the public schema structure (tables, indexes, etc.)
-		GinkgoWriter.Printf("🏗️  [Process %d] Setting up schema-level isolation...\n", processNum)
-		schemaName, err = createProcessSchema(db, processNum)
-		Expect(err).ToNot(HaveOccurred(), "Schema creation should succeed")
 
 		// Connect to Redis
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", processNum)
@@ -620,7 +330,7 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
-		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)
+		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests (shared public schema)\n", processNum)
 	},
 )
 
@@ -628,11 +338,6 @@ var _ = SynchronizedAfterSuite(func() {
 	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("🧹 [Process %d] Per-process cleanup...\n", processNum)
-
-	// Clean up process-specific schema
-	if db != nil && schemaName != "" {
-		GinkgoWriter.Printf("🗑️  [Process %d] Dropping schema: %s\n", processNum, schemaName)
-	}
 
 	// NOTE: Do NOT close db/redisClient here!
 	// Ginkgo may interrupt tests (for timeouts/failures) and run cleanup while
