@@ -163,19 +163,10 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	}
 
 	// Build labels map from label fields (camelCase keys)
+	// DD-WORKFLOW-001 v2.7: severity always stored as JSONB array. No wildcard.
 	// DD-WORKFLOW-016: signalType is optional, environment/severity are []string for JSONB array storage
-	// Severity stored as-is (StringOrSlice): single-value → string, multi-value → array.
-	// DB discovery query handles both via jsonb_typeof() + '?' operator.
 	labels := map[string]interface{}{
-		"severity": schema.Labels.Severity,
-	}
-	// Normalize: if severity has a single value, store as scalar string for backward compat.
-	// If multiple values, store as array. This matches the DB query pattern in discovery.go
-	// which handles both scalar and array JSONB values.
-	if len(schema.Labels.Severity) == 1 {
-		labels["severity"] = schema.Labels.Severity[0]
-	} else {
-		labels["severity"] = []string(schema.Labels.Severity)
+		"severity": []string(schema.Labels.Severity),
 	}
 
 	// DD-WORKFLOW-016: signalType is optional metadata -- only include when non-empty

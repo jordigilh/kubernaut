@@ -253,14 +253,14 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 			builder.Where("labels->>'signalType' = ?", filters.SignalType)
 		}
 		if filters.Severity != "" {
-			builder.Where("labels->>'severity' = ?", filters.Severity)
+			// Severity is JSONB array (e.g. ["critical","high"]), use ? operator
+			builder.WhereRaw(fmt.Sprintf("labels->'severity' ? $%d", builder.CurrentArgIndex()), filters.Severity)
 		}
 		if filters.Component != "" {
 			builder.Where("labels->>'component' = ?", filters.Component)
 		}
-		// DD-WORKFLOW-001 v2.5: JSONB array containment (workflows store array, filter with single value)
+		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
 		if filters.Environment != "" {
-			// SQL: labels->'environment' ? 'production' OR labels->'environment' ? '*'
 			builder.WhereRaw(fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", builder.CurrentArgIndex()), filters.Environment)
 		}
 		if filters.Priority != "" {

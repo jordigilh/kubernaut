@@ -235,14 +235,9 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	argIdx := 1
 
 	// Mandatory label filters (JSONB queries on labels column)
-	// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
+	// Severity is always JSONB array (e.g. ["critical","high"]), use ? operator
 	if filters.Severity != "" {
-		conditions = append(conditions, fmt.Sprintf(`(
-			CASE WHEN jsonb_typeof(labels->'severity') = 'array'
-				THEN labels->'severity' ? $%d
-				ELSE labels->>'severity' = $%d OR labels->>'severity' = '*'
-			END
-		)`, argIdx, argIdx))
+		conditions = append(conditions, fmt.Sprintf("labels->'severity' ? $%d", argIdx))
 		args = append(args, filters.Severity)
 		argIdx++
 	}
@@ -258,9 +253,8 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	}
 
 	if filters.Environment != "" {
-		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator
-		conditions = append(conditions, fmt.Sprintf(
-			"(labels->'environment' ? $%d OR labels->'environment' ? '*')", argIdx))
+		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
+		conditions = append(conditions, fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", argIdx))
 		args = append(args, filters.Environment)
 		argIdx++
 	}

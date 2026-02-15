@@ -2482,8 +2482,33 @@ func (s *MandatoryLabels) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if err := s.Severity.Validate(); err != nil {
-			return err
+		if s.Severity == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Severity)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Severity {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
 		}
 		return nil
 	}(); err != nil {
@@ -2579,7 +2604,7 @@ func (s MandatoryLabelsPriority) Validate() error {
 	}
 }
 
-func (s MandatoryLabelsSeverity) Validate() error {
+func (s MandatoryLabelsSeverityItem) Validate() error {
 	switch s {
 	case "critical":
 		return nil
@@ -2588,8 +2613,6 @@ func (s MandatoryLabelsSeverity) Validate() error {
 	case "medium":
 		return nil
 	case "low":
-		return nil
-	case "*":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5466,62 +5489,6 @@ func (s *WorkflowDiscoveryEntry) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "executionEngine",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.ActualSuccessRate.Get(); ok {
-			if err := func() error {
-				if err := (validate.Float{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        true,
-					Max:           1,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    nil,
-					Pattern:       nil,
-				}).Validate(float64(value)); err != nil {
-					return errors.Wrap(err, "float")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "actualSuccessRate",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.TotalExecutions.Get(); ok {
-			if err := func() error {
-				if err := (validate.Int{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        false,
-					Max:           0,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    0,
-					Pattern:       nil,
-				}).Validate(int64(value)); err != nil {
-					return errors.Wrap(err, "int")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "totalExecutions",
 			Error: err,
 		})
 	}

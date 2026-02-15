@@ -14,7 +14,7 @@ actionType: ScaleReplicas
 
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   environment: [production]
   component: pod
   priority: P0

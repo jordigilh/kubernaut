@@ -13,7 +13,7 @@ actionType: IncreaseMemoryLimits
 
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   environment: [production, staging, test]
   component: deployment
   priority: P1

@@ -114,7 +114,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "prometheus",
-					Severity:    models.StringOrSlice{"critical"},
+					Severity:    []string{"critical"},
 					Component:   "kube-apiserver",
 					Priority:    "P0",
 					Environment: []string{"production"},
@@ -216,7 +216,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    models.StringOrSlice{"low"},
+					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -282,7 +282,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    models.StringOrSlice{"low"},
+				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},
@@ -331,7 +331,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// CRITICAL: Verify structured labels deserialized correctly
 			Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
-			Expect(retrievedWorkflow.Labels.Severity).To(Equal(models.StringOrSlice{"low"}))
+			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
 			// DD-WORKFLOW-001 v2.5: Environment is now []string
@@ -374,7 +374,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    models.StringOrSlice{"low"},
+					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -513,7 +513,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    models.StringOrSlice{"low"},
+				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},

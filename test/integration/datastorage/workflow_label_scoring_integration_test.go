@@ -106,7 +106,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
 						SignalType:  "OOMKilled",
-						Severity:    models.StringOrSlice{"critical"},
+						Severity:    []string{"critical"},
 						Component:   "pod",
 						Environment: []string{"production"},
 						Priority:    "P0",
@@ -130,7 +130,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
 						SignalType:  "OOMKilled",
-						Severity:    models.StringOrSlice{"critical"},
+						Severity:    []string{"critical"},
 						Component:   "pod",
 						Environment: []string{"production"},
 						Priority:    "P0",
@@ -237,7 +237,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
-						Severity:    models.StringOrSlice{"high"},
+						Severity:    []string{"high"},
 						Component:   "deployment",
 						Environment: []string{"production"},
 						Priority:    "P1",
@@ -263,7 +263,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
-						Severity:    models.StringOrSlice{"high"},
+						Severity:    []string{"high"},
 						Component:   "deployment",
 						Environment: []string{"production"},
 						Priority:    "P1",
@@ -366,7 +366,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "DatabaseConnectionLeak",
-						Severity:    models.StringOrSlice{"critical"},
+						Severity:    []string{"critical"},
 						Component:   "deployment",
 						Environment: []string{"production"},
 						Priority:    "P0",
@@ -465,7 +465,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
 						SignalType:  "CPUThrottling",
-						Severity:    models.StringOrSlice{"medium"},
+						Severity:    []string{"medium"},
 						Component:   "pod",
 						Environment: []string{"staging"},
 						Priority:    "P2",
@@ -489,7 +489,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
 						SignalType:  "CPUThrottling",
-						Severity:    models.StringOrSlice{"medium"},
+						Severity:    []string{"medium"},
 						Component:   "pod",
 						Environment: []string{"staging"},
 						Priority:    "P2",
@@ -589,7 +589,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
-						Severity:    models.StringOrSlice{"high"},
+						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
 						Priority:    "P1",
@@ -615,7 +615,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
-						Severity:    models.StringOrSlice{"high"},
+						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
 						Priority:    "P1",
@@ -712,7 +712,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
-						Severity:    models.StringOrSlice{"high"},
+						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
 						Priority:    "P1",

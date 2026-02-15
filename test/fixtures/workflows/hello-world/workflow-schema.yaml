@@ -13,7 +13,7 @@ actionType: RestartPod
 
 labels:
   signalType: test
-  severity: low
+  severity: [low]
   environment: [test]
   component: deployment
   priority: P3
