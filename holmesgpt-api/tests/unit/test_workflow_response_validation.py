@@ -68,7 +68,7 @@ class TestDataStorageClientGetWorkflowByUUID:
             "description": "Restarts a failing pod",
             "content": "apiVersion: tekton.dev/v1beta1...",
             "content_hash": "sha256:abc123",
-            "labels": {"signal_type": "OOMKilled", "severity": "critical"},
+            "labels": {"signal_type": "OOMKilled", "severity": ["critical"]},
             "container_image": "ghcr.io/kubernaut/restart-pod:v1.0.0",
             "container_digest": "sha256:def456",
             "status": "active",
