@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.1 | 2026-02-15 | Architecture Team | **Two-phase hash model**: Phase 1 (hash component check): capture current spec as `PostRemediationSpecHash`, compare `pre != post` (workflow changed spec?), set `CurrentSpecHash = PostRemediationSpecHash` as baseline. Phase 2 (drift guard, subsequent reconciles): re-capture current hash, compare `post != current` (spec drift?), abort if drifted. Fixes single-pass completion bug where `CurrentSpecHash` was never set. |
 | 2.0 | 2026-02-15 | Architecture Team | **Pre-remediation hash on CRD path**: RO now computes `PreRemediationSpecHash` before WFE creation and stores it on `RR.Status.PreRemediationSpecHash` (immutable via CEL). EA creator copies it to `EA.Spec.PreRemediationSpecHash`. EM reads from EA spec with DataStorage fallback for backward compatibility. Eliminates EM→DS round-trip for hash comparison. Principle 1 updated. |
 | 1.9 | 2026-02-14 | Architecture Team | **Batch 2 implementation**: `remediation.workflow_created` wired at both WFE creation sites (GAP-RO-1). `workflow_type` (DD-WORKFLOW-016 action_type) added end-to-end HAPI→AA→RO (GAP-RO-4). `blockOwnerDeletion` overridden to `false`. `EACreated` K8s event emitted. `no_execution` guard implemented in EM reconciler (Section 5). StabilizationWindow default corrected to 5m. Section 13.1 gap table updated with resolution status. |
 | 1.8 | 2026-02-14 | Architecture Team | **Cross-service audit integration**: Added `blockOwnerDeletion` mismatch and `EventReasonEffectivenessAssessmentCreated` never emitted to Section 13.1 RO prerequisite gaps (from HAPI team audit). |
@@ -755,12 +756,21 @@ Emitted immediately after stabilization window.
 
 Emitted immediately after stabilization window. Not scored — metadata for configuration regression detection.
 
+**Two-Phase Hash Model (v2.1)**:
+
+| Phase | Comparison | Question Answered | Action on Mismatch |
+|-------|-----------|-------------------|-------------------|
+| **Phase 1** (hash component check) | `pre != post` | Did the workflow modify the target spec? | Informational — logged but does not abort |
+| **Phase 2** (drift guard, subsequent reconciles) | `post != current` | Has something else modified the spec since our workflow? | Abort — Prometheus/AlertManager data is unreliable |
+
+The `pre` hash comes from `ea.Spec.PreRemediationSpecHash` (set by RO via RR status). The `post` hash is captured by the EM after stabilization. The `current` hash is re-captured on each subsequent reconcile. `CurrentSpecHash` is set to `PostRemediationSpecHash` on first capture, ensuring it's always populated even on single-pass completions.
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `event_type` | string | `"effectiveness.hash.computed"` |
-| `pre_remediation_spec_hash` | string | SHA-256 from `remediation.workflow_created` event (or empty if unavailable) |
-| `post_remediation_spec_hash` | string | SHA-256 of current target resource `.spec` |
-| `hash_match` | boolean | `true` if pre == post (spec unchanged after remediation); `false` confirms workflow modified the resource |
+| `pre_remediation_spec_hash` | string | SHA-256 from `ea.Spec.PreRemediationSpecHash` (CRD path, v2.0) or `remediation.workflow_created` audit event (fallback) |
+| `post_remediation_spec_hash` | string | SHA-256 of target resource `.spec` after stabilization |
+| `hash_match` | boolean | `true` if pre == post (spec unchanged after remediation — operational workflow like restart); `false` confirms workflow modified the resource |
 
 #### 9.2.3 `effectiveness.alert.assessed`
 

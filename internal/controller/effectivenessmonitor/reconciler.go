@@ -358,6 +358,54 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Step 7: Run component checks (skip already-completed)
 	componentsChanged := false
 
+	// Hash check — Two-Phase Model (BR-EM-004, DD-EM-002 v2.1)
+	//
+	// MUST run FIRST after stabilization window expires. The post-remediation
+	// hash establishes the baseline for spec drift detection. All subsequent
+	// observability checks (health, alert, metrics) are only trustworthy if
+	// the resource is still in the state the workflow left it.
+	//
+	// Phase 1 (here): Capture current spec hash as PostRemediationSpecHash.
+	// Compare pre vs post to determine if the workflow changed the spec.
+	// Set CurrentSpecHash = PostRemediationSpecHash as initial baseline.
+	//
+	// Phase 2 (Step 6.5 above): On subsequent reconciles, re-capture current
+	// hash and compare against PostRemediationSpecHash. If different, spec
+	// drift detected — abort observability collection.
+	if !ea.Status.Components.HashComputed {
+		result := r.assessHash(ctx, ea)
+		ea.Status.Components.HashComputed = result.Component.Assessed
+		ea.Status.Components.PostRemediationSpecHash = result.Hash
+		// Set CurrentSpecHash to match PostRemediationSpecHash on first capture.
+		// This ensures CurrentSpecHash is always populated when the EA completes
+		// (even on single-pass completions where Step 6.5 never runs).
+		ea.Status.Components.CurrentSpecHash = result.Hash
+		componentsChanged = true
+		r.Metrics.RecordComponentAssessment("hash", resultStatus(result.Component), time.Since(startTime).Seconds(), nil)
+		r.emitHashEvent(ctx, ea, result)
+
+		// Log pre vs post comparison (informational — Phase 1 of two-phase model)
+		if result.Component.Assessed && ea.Spec.PreRemediationSpecHash != "" && result.Hash != "" {
+			if ea.Spec.PreRemediationSpecHash != result.Hash {
+				logger.Info("Workflow modified target spec (pre != post)",
+					"preHash", ea.Spec.PreRemediationSpecHash,
+					"postHash", result.Hash[:min(23, len(result.Hash))]+"...",
+				)
+			} else {
+				logger.Info("Workflow did not modify target spec (pre == post, operational workflow)",
+					"hash", result.Hash[:min(23, len(result.Hash))]+"...",
+				)
+			}
+		}
+
+		// Set initial SpecIntegrity=True baseline (DD-CRD-002).
+		if result.Component.Assessed {
+			conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
+				metav1.ConditionTrue, conditions.ReasonSpecUnchanged,
+				"Post-remediation spec hash computed; baseline established")
+		}
+	}
+
 	// Health check (BR-EM-001)
 	if !ea.Status.Components.HealthAssessed {
 		healthResult := r.assessHealth(ctx, ea)
@@ -366,27 +414,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		componentsChanged = true
 		r.Metrics.RecordComponentAssessment("health", resultStatus(healthResult.Component), time.Since(startTime).Seconds(), healthResult.Component.Score)
 		r.emitHealthEvent(ctx, ea, healthResult)
-	}
-
-	// Hash check (BR-EM-004, DD-EM-002)
-	if !ea.Status.Components.HashComputed {
-		result := r.assessHash(ctx, ea)
-		ea.Status.Components.HashComputed = result.Component.Assessed
-		ea.Status.Components.PostRemediationSpecHash = result.Hash
-		componentsChanged = true
-		r.Metrics.RecordComponentAssessment("hash", resultStatus(result.Component), time.Since(startTime).Seconds(), nil)
-		r.emitHashEvent(ctx, ea, result)
-
-		// Set initial SpecIntegrity=True baseline (DD-CRD-002).
-		// The spec drift guard (Step 6.5) only runs when HashComputed=true, which
-		// is set above. On single-pass completions the guard never executes, so we
-		// set the baseline condition here. Subsequent reconciles update it via Step 6.5
-		// if the target spec changes.
-		if result.Component.Assessed {
-			conditions.SetCondition(ea, conditions.ConditionSpecIntegrity,
-				metav1.ConditionTrue, conditions.ReasonSpecUnchanged,
-				"Post-remediation spec hash computed; baseline established")
-		}
 	}
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable
