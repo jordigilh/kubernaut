@@ -241,7 +241,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						Environment:      "staging", // Even staging requires approval for 3+ recovery attempts
 						BusinessPriority: "P1",      // Matches crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "critical-app",
 								Namespace: "staging",
 							},
