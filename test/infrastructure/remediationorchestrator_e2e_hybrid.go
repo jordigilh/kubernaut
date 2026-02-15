@@ -501,7 +501,7 @@ data:
       leaderElection: false
       leaderElectionId: remediationorchestrator.kubernaut.ai
     effectivenessAssessment:
-      stabilizationWindow: 5s  # E2E: Short window for fast test cycles (ADR-EM-001)
+      stabilizationWindow: 10s  # E2E: Allow OOMKill-restarted pods to recover before EM assesses health
 ---
 apiVersion: apps/v1
 kind: Deployment

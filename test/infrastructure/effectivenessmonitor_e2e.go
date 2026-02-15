@@ -341,7 +341,7 @@ data:
   effectivenessmonitor.yaml: |
     assessment:
       stabilizationWindow: 30s
-      validityWindow: 90s
+      validityWindow: 120s
     audit:
       dataStorageUrl: http://data-storage-service:8080
       timeout: 10s
