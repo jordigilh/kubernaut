@@ -1151,6 +1151,8 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	}
 
 	// Convert to discovery entries
+	// DD-HAPI-017 v1.1: ActualSuccessRate and TotalExecutions excluded from
+	// LLM-facing response — global aggregates are misleading for per-incident selection.
 	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
 	for _, wf := range workflows {
 		entry := models.WorkflowDiscoveryEntry{
@@ -1160,13 +1162,9 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 			Description:     wf.Description,
 			Version:         wf.Version,
 			ExecutionEngine: string(wf.ExecutionEngine),
-			TotalExecutions: wf.TotalExecutions,
 		}
 		if wf.ContainerImage != nil {
 			entry.ContainerImage = *wf.ContainerImage
-		}
-		if wf.ActualSuccessRate != nil {
-			entry.ActualSuccessRate = wf.ActualSuccessRate
 		}
 		discoveryEntries = append(discoveryEntries, entry)
 	}

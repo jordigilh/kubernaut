@@ -57,17 +57,22 @@ type ActionTypeEntry struct {
 }
 
 // WorkflowDiscoveryEntry represents a workflow summary in the discovery response (Step 2)
-// Contains enough information for the LLM to compare workflows without the full parameter schema
+// Contains enough information for the LLM to compare workflows without the full parameter schema.
+//
+// DD-HAPI-017 v1.1: ActualSuccessRate and TotalExecutions REMOVED from this LLM-facing struct.
+// Global aggregate metrics are misleading for per-incident workflow selection — the conditions
+// under which they were collected (different signals, targets, environments) are not applicable
+// to the current case. The LLM should rely on contextual remediation history via spec-hash
+// matching (DD-HAPI-016) and the StructuredDescription for workflow comparison.
+// These fields remain on the full RemediationWorkflow model for operator dashboards.
 type WorkflowDiscoveryEntry struct {
-	WorkflowID      string   `json:"workflowId"`
-	WorkflowName    string   `json:"workflowName"`
-	Name            string   `json:"name"`
+	WorkflowID      string                `json:"workflowId"`
+	WorkflowName    string                `json:"workflowName"`
+	Name            string                `json:"name"`
 	Description     StructuredDescription `json:"description"`
-	Version         string   `json:"version"`
-	ContainerImage  string   `json:"containerImage,omitempty"`
-	ExecutionEngine string   `json:"executionEngine,omitempty"`
-	ActualSuccessRate *float64 `json:"actualSuccessRate,omitempty"`
-	TotalExecutions int      `json:"totalExecutions"`
+	Version         string                `json:"version"`
+	ContainerImage  string                `json:"containerImage,omitempty"`
+	ExecutionEngine string                `json:"executionEngine,omitempty"`
 }
 
 // PaginationMetadata represents pagination information for discovery responses

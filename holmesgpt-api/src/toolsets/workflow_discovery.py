@@ -543,8 +543,7 @@ class ListWorkflowsTool(_DiscoveryToolBase):
             name="list_workflows",
             description=(
                 "List workflows available for a specific action type. "
-                "Returns workflow summaries including name, description, version, "
-                "success rate, and execution count. "
+                "Returns workflow summaries including name, description, and version. "
                 "Use this AFTER selecting an action type from list_available_actions."
             ),
             parameters={
@@ -570,9 +569,9 @@ class ListWorkflowsTool(_DiscoveryToolBase):
             additional_instructions=(
                 "IMPORTANT: You MUST review ALL pages of workflows before making a selection. "
                 "If hasMore is true, call this tool again with increased offset until all workflows "
-                "are reviewed. Compare workflows by success rate, execution count, and description "
-                "to select the most appropriate one. Do NOT pick the first workflow without "
-                "reviewing all available options."
+                "are reviewed. Compare workflow descriptions, version notes, and suitability "
+                "for your RCA findings to select the most appropriate one. Do NOT pick the first "
+                "workflow without reviewing all available options."
             ),
             data_storage_url=data_storage_url,
             remediation_id=remediation_id,

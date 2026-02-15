@@ -522,8 +522,8 @@ best matches your RCA findings.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
 **CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to
-review ALL workflows. Compare success rates, execution history, and descriptions
-across ALL workflows before selecting.
+review ALL workflows. Compare workflow descriptions, version notes, and suitability
+for your RCA findings across ALL workflows before selecting.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to
 retrieve its full parameter schema. If you get "not found", go back to Step 2
@@ -734,7 +734,7 @@ You have three workflow discovery tools available. Use them in order:
 
 2. **`list_workflows`** with `action_type` — List specific workflows for your chosen action.
    Review ALL pages (if `hasMore=true`, call again with increased `offset`).
-   Compare workflows by success rate and execution history.
+   Compare workflow descriptions and suitability for your RCA findings.
 
 3. **`get_workflow`** with `workflow_id` — Get the full workflow with parameter schema.
    If "not found", the workflow doesn't match your signal context — choose another.
