@@ -372,12 +372,23 @@ docker-push-%: docker-build-% ## Push service container image
 WORKFLOW_REGISTRY ?= quay.io/kubernaut-cicd/test-workflows
 WORKFLOW_VERSION ?= v1.0.0
 WORKFLOW_FIXTURES_DIR := test/fixtures/workflows
+# Platforms to build workflow images for (multi-arch manifest)
+WORKFLOW_PLATFORMS ?= linux/amd64,linux/arm64
+
+# _build_workflow_manifest builds a multi-arch manifest for one workflow.
+# Usage: $(call _build_workflow_manifest,<ref>,<dockerfile>,<context-dir>)
+define _build_workflow_manifest
+	@$(CONTAINER_TOOL) rmi "$(1)" 2>/dev/null || true
+	@$(CONTAINER_TOOL) manifest rm "$(1)" 2>/dev/null || true
+	@$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$(1)" -f "$(2)" "$(3)"
+endef
 
 .PHONY: build-test-workflows
-build-test-workflows: ## Build all test workflow OCI images (local, current arch)
-	@echo "📦 Building test workflow OCI images..."
-	@echo "  Registry: $(WORKFLOW_REGISTRY)"
-	@echo "  Version:  $(WORKFLOW_VERSION)"
+build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 + arm64)
+	@echo "📦 Building test workflow OCI images (multi-arch)..."
+	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
+	@echo "  Version:   $(WORKFLOW_VERSION)"
+	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
@@ -387,21 +398,24 @@ build-test-workflows: ## Build all test workflow OCI images (local, current arch
 		dockerfile="$(WORKFLOW_FIXTURES_DIR)/Dockerfile"; \
 		if [ -f "$$dir/Dockerfile" ]; then dockerfile="$$dir/Dockerfile"; fi; \
 		echo "  Building $$name -> $$ref"; \
-		$(CONTAINER_TOOL) build -t "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
+		$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
+		$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
+		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
 	done
 	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
 	@echo "  Building oom-recovery:v1.1.0 (version variant)"
-	@$(CONTAINER_TOOL) build -t "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile $(WORKFLOW_FIXTURES_DIR)/oom-recovery-v1.1/
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0,$(WORKFLOW_FIXTURES_DIR)/Dockerfile,$(WORKFLOW_FIXTURES_DIR)/oom-recovery-v1.1/)
 	@echo "  Building oom-recovery:v2.0.0 (version variant)"
-	@$(CONTAINER_TOOL) build -t "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile $(WORKFLOW_FIXTURES_DIR)/oom-recovery-v2.0/
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0,$(WORKFLOW_FIXTURES_DIR)/Dockerfile,$(WORKFLOW_FIXTURES_DIR)/oom-recovery-v2.0/)
 	@echo ""
-	@echo "✅ All test workflow images built"
+	@echo "✅ All test workflow images built ($(WORKFLOW_PLATFORMS))"
 
 .PHONY: push-test-workflows
-push-test-workflows: ## Push test workflow images to registry (run build-test-workflows first)
-	@echo "📦 Pushing test workflow OCI images..."
-	@echo "  Registry: $(WORKFLOW_REGISTRY)"
-	@echo "  Version:  $(WORKFLOW_VERSION)"
+push-test-workflows: ## Push test workflow multi-arch manifests to registry
+	@echo "📦 Pushing test workflow OCI images (multi-arch)..."
+	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
+	@echo "  Version:   $(WORKFLOW_VERSION)"
+	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
@@ -409,16 +423,16 @@ push-test-workflows: ## Push test workflow images to registry (run build-test-wo
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
 		echo "  Pushing $$name -> $$ref"; \
-		$(CONTAINER_TOOL) push "$$ref" || exit 1; \
+		$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
 		echo "  ✅ Pushed $$ref"; \
 	done
 	@# Multi-version variants for version management E2E tests
 	@echo "  Pushing oom-recovery:v1.1.0 (version variant)"
-	@$(CONTAINER_TOOL) push "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0" "docker://$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0"
 	@echo "  Pushing oom-recovery:v2.0.0 (version variant)"
-	@$(CONTAINER_TOOL) push "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0" "docker://$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0"
 	@echo ""
-	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY)"
+	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY) ($(WORKFLOW_PLATFORMS))"
 
 ##@ Tekton Bundle Image Targets
 
