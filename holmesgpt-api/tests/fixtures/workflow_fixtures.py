@@ -49,7 +49,7 @@ class WorkflowFixture:
     description: str
     action_type: str  # DD-WORKFLOW-016: FK to action_type_taxonomy
     signal_type: str
-    severity: str
+    severity: List[str]  # DD-WORKFLOW-001 v1.4: always an array
     component: str
     environment: str
     priority: str
@@ -71,7 +71,7 @@ metadata:
   description: {self.description}
 labels:
   signal_type: {self.signal_type}
-  severity: {self.severity}
+  severity: {self.severity[0] if self.severity else 'unknown'}
   component: {self.component}
   environment: {self.primary_environment}
   priority: {self.priority}
@@ -155,7 +155,7 @@ TEST_WORKFLOWS = [
         description="Increases memory limits for pods experiencing OOMKilled events",
         action_type="IncreaseMemoryLimits",  # DD-WORKFLOW-016 V1.0: Increase memory limits
         signal_type="OOMKilled",
-        severity="critical",
+        severity=["critical"],
         component="pod",
         environment=["production"],
         priority="P0",
@@ -169,7 +169,7 @@ TEST_WORKFLOWS = [
         description="Reduces replica count for deployments experiencing OOMKilled",
         action_type="ScaleReplicas",  # DD-WORKFLOW-016: Horizontally scale workload
         signal_type="OOMKilled",
-        severity="high",
+        severity=["high"],
         component="deployment",
         environment=["staging"],
         priority="P1",
@@ -183,7 +183,7 @@ TEST_WORKFLOWS = [
         description="Identifies and fixes configuration issues causing CrashLoopBackOff",
         action_type="RestartDeployment",  # DD-WORKFLOW-016 V1.0: Rolling restart for config fix
         signal_type="CrashLoopBackOff",
-        severity="high",
+        severity=["high"],
         component="pod",
         environment=["production"],
         priority="P1",
@@ -197,7 +197,7 @@ TEST_WORKFLOWS = [
         description="Safely drains and reboots nodes in NotReady state",
         action_type="RestartPod",  # DD-WORKFLOW-016: Delete and recreate to recover
         signal_type="NodeNotReady",
-        severity="critical",
+        severity=["critical"],
         component="node",
         environment=["production"],
         priority="P0",
@@ -211,7 +211,7 @@ TEST_WORKFLOWS = [
         description="Fixes ImagePullBackOff errors by updating registry credentials",
         action_type="RollbackDeployment",  # DD-WORKFLOW-016 V1.0: Revert to previous revision
         signal_type="ImagePullBackOff",
-        severity="high",
+        severity=["high"],
         component="pod",
         environment=["production"],
         priority="P1",

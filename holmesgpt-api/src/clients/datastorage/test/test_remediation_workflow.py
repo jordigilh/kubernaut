@@ -56,7 +56,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 container_digest = 'sha256:abc123...',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
                     signal_type = 'OOMKilled', 
-                    severity = 'critical', 
+                    severity = ['critical'], 
                     component = 'pod', 
                     environment = ["staging","production"], 
                     priority = 'P0', ),
@@ -108,7 +108,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 execution_engine = '',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
                     signal_type = 'OOMKilled', 
-                    severity = 'critical', 
+                    severity = ['critical'], 
                     component = 'pod', 
                     environment = ["staging","production"], 
                     priority = 'P0', ),
