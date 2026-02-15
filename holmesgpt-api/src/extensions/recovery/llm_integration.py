@@ -339,6 +339,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         data_storage_client = create_data_storage_client(app_config)
 
         # DD-HAPI-017: Create validator once before the loop (avoids re-creation per attempt)
+        # request_data uses model_dump(mode="json") so all values are plain strings.
         validator = None
         if data_storage_client:
             validator = WorkflowResponseValidator(
