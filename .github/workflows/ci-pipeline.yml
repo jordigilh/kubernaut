@@ -2,7 +2,7 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~2 min
+# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~1-2 min
 # Stage 2: Build & Push Images (parallel matrix: 10 images) ~5 min
 # Stage 3: Integration Tests (parallel matrix: 9 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 8 services, when enabled) ~30 min each
@@ -117,10 +117,11 @@ jobs:
           make generate
 
       - name: Lint Go code
-        run: |
-          echo "🔍 Linting Go code (targeted directories only)..."
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          timeout 7m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1
+          args: cmd/... pkg/... internal/... test/...
+          only-new-issues: true
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   lint-python:
