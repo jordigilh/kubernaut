@@ -446,7 +446,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"effectiveness.health.assessed",       // pkg/effectivenessmonitor/audit: RecordHealthAssessed
 			"effectiveness.hash.computed",          // pkg/effectivenessmonitor/audit: RecordHashComputed
 			"effectiveness.alert.assessed",         // pkg/effectivenessmonitor/audit: RecordAlertAssessed
-			"effectiveness.metrics.assessed",       // pkg/effectivenessmonitor/audit: RecordMetricsAssessed
+			"effectiveness.metrics.assessed",       // pkg/effectivenessmonitor/audit: RecordMetricsAssessed (cAdvisor data from Prometheus)
 			"effectiveness.assessment.completed",   // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
 		}
 
