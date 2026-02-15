@@ -92,11 +92,21 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		By("Waiting for controller to initialize the RR (assign a phase)")
+		By("Waiting for controller to fully process the RR (reach Processing phase)")
+		// RC-11 FIX: Wait for Processing phase with ObservedGeneration matching Generation.
+		// Previously we waited only for OverallPhase != "" (catches Pending), but the
+		// controller was still mid-reconciliation (handlePendingPhase). When we then
+		// manually set Completed, the controller's requeued handlePendingPhase would
+		// overwrite it back to Processing, causing a phase regression.
 		Eventually(func() bool {
 			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return err == nil && rr.Status.OverallPhase != ""
-		}, timeout, interval).Should(BeTrue())
+			if err != nil {
+				return false
+			}
+			return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
+				rr.Status.ObservedGeneration == rr.Generation
+		}, timeout, interval).Should(BeTrue(),
+			"RR should reach Processing phase with ObservedGeneration matching Generation")
 
 		By("Manually transitioning RR to Completed phase (simulating end of lifecycle)")
 		Eventually(func() error {
@@ -105,7 +115,6 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 			}
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.ObservedGeneration = rr.Generation
-			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			return k8sClient.Status().Update(ctx, rr)
 		}, timeout, interval).Should(Succeed())
 
@@ -214,11 +223,17 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		By("Waiting for controller to initialize the RR")
+		By("Waiting for controller to fully process the RR (reach Processing phase)")
+		// RC-11 FIX: Same as IT-RO-088-001 - wait for Processing phase to avoid race condition
 		Eventually(func() bool {
 			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return err == nil && rr.Status.OverallPhase != ""
-		}, timeout, interval).Should(BeTrue())
+			if err != nil {
+				return false
+			}
+			return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
+				rr.Status.ObservedGeneration == rr.Generation
+		}, timeout, interval).Should(BeTrue(),
+			"RR should reach Processing phase with ObservedGeneration matching Generation")
 
 		By("Manually transitioning RR to Failed phase")
 		Eventually(func() error {
@@ -227,7 +242,6 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 			}
 			rr.Status.OverallPhase = remediationv1.PhaseFailed
 			rr.Status.ObservedGeneration = rr.Generation
-			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			return k8sClient.Status().Update(ctx, rr)
 		}, timeout, interval).Should(Succeed())
 
