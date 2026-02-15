@@ -384,8 +384,10 @@ build-test-workflows: ## Build all test workflow OCI images (local, current arch
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
+		dockerfile="$(WORKFLOW_FIXTURES_DIR)/Dockerfile"; \
+		if [ -f "$$dir/Dockerfile" ]; then dockerfile="$$dir/Dockerfile"; fi; \
 		echo "  Building $$name -> $$ref"; \
-		$(CONTAINER_TOOL) build -t "$$ref" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile "$$dir" || exit 1; \
+		$(CONTAINER_TOOL) build -t "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
 	done
 	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
 	@echo "  Building oom-recovery:v1.1.0 (version variant)"
