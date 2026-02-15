@@ -291,13 +291,14 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint: helpers.UniqueTestName("fp-recovery-normal"),
-							Severity:    "critical",
-							// Normal signal type (not an edge case)
-							// HAPI returns needs_human_review=false and provides workflow
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "production",
-							BusinessPriority: "P2",
+						Fingerprint: helpers.UniqueTestName("fp-recovery-normal"),
+						Severity:    "high",
+						// Normal signal type (not an edge case)
+						// HAPI returns needs_human_review=false and provides workflow
+						// Severity=high matches crashloop-config-fix-v1 workflow catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "production",
+						BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "app-pod",
