@@ -251,6 +251,8 @@ coverage-e2e/
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/
+# Generated mock LLM scenario configs (workflow UUIDs from test seeding)
+test/integration/aianalysis/mock-llm-config.yaml
 # Must-gather diagnostic archives (downloaded during CI triage)
 must-gather-*.tar.gz
 
