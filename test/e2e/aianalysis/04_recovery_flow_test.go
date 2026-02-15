@@ -65,11 +65,11 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-001",
-							Severity:         "critical",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P1",
+						Fingerprint:      "e2e-recovery-fp-001",
+						Severity:         "critical",
+						SignalType:       "OOMKilled",
+						Environment:      "staging",
+						BusinessPriority: "P0", // Must match memory-optimize-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "oom-service-abc123",
@@ -167,11 +167,11 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-002",
-							Severity:         "critical",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P1",
+						Fingerprint:      "e2e-recovery-fp-002",
+						Severity:         "critical",
+						SignalType:       "OOMKilled",
+						Environment:      "staging",
+						BusinessPriority: "P0", // Must match memory-optimize-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "memory-hungry-app",
@@ -242,11 +242,11 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-003",
-							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "development",
-							BusinessPriority: "P2",
+						Fingerprint:      "e2e-recovery-fp-003",
+						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "staging", // Must be in [staging,production,test]
+						BusinessPriority: "P1",      // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "dev-app",
@@ -441,11 +441,11 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-005",
-							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "staging",
-							BusinessPriority: "P2",
+						Fingerprint:      "e2e-recovery-fp-005",
+						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "staging",
+						BusinessPriority: "P1", // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "test-app",

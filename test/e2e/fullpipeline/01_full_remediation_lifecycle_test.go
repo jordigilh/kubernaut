@@ -19,7 +19,10 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -951,9 +954,31 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		Expect(injectErr).ToNot(HaveOccurred(), "Failed to inject alert into AlertManager")
 		GinkgoWriter.Println("  ✅ MemoryExceedsLimit alert injected into AlertManager")
 
+		// Verify AlertManager received and activated the alert before waiting for Gateway
+		By("AM Step 3a-verify: Confirming alert is active in AlertManager")
+		Eventually(func() bool {
+			resp, err := http.Get(alertManagerURL + "/api/v2/alerts")
+			if err != nil {
+				GinkgoWriter.Printf("  ⚠️  AlertManager API unreachable: %v\n", err)
+				return false
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			alertActive := strings.Contains(string(body), "MemoryExceedsLimit")
+			if !alertActive {
+				GinkgoWriter.Printf("  ⏳ Alert not yet active in AlertManager (response length: %d)\n", len(body))
+			} else {
+				GinkgoWriter.Println("  ✅ MemoryExceedsLimit alert confirmed active in AlertManager")
+			}
+			return alertActive
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"MemoryExceedsLimit alert must be active in AlertManager after injection")
+
 		By("AM Step 3b: Waiting for RemediationRequest from AlertManager webhook to Gateway")
 		var remediationRequest *remediationv1.RemediationRequest
+		pollCount := 0
 		Eventually(func() bool {
+			pollCount++
 			rrList := &remediationv1.RemediationRequestList{}
 			if err := apiReader.List(ctx, rrList, client.InNamespace(testNamespaceAM)); err != nil {
 				return false
@@ -963,6 +988,16 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s\n", rr.Name)
 				return true
+			}
+			// Periodic diagnostic output every 10 polls (~30s)
+			if pollCount%10 == 0 {
+				GinkgoWriter.Printf("  ⏳ Still waiting for RR from AlertManager webhook (poll #%d)...\n", pollCount)
+				// Check AlertManager alerts state for diagnostics
+				if resp, err := http.Get(alertManagerURL + "/api/v2/alerts"); err == nil {
+					defer resp.Body.Close()
+					body, _ := io.ReadAll(resp.Body)
+					GinkgoWriter.Printf("  📊 AlertManager /api/v2/alerts response (%d bytes): %.500s\n", len(body), string(body))
+				}
 			}
 			return false
 		}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
