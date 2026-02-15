@@ -19,6 +19,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -180,7 +181,10 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		labels["component"] = schema.Labels.Component
 	}
 	if schema.Labels.Priority != "" {
-		labels["priority"] = schema.Labels.Priority
+		// Normalize priority to uppercase to comply with OpenAPI enum [P0, P1, P2, P3, "*"]
+		// OCI images may contain lowercase values (e.g., "p1") in workflow-schema.yaml
+		// Authority: MandatoryLabels.priority enum in data-storage-v1.yaml
+		labels["priority"] = strings.ToUpper(schema.Labels.Priority)
 	}
 
 	// Add custom labels

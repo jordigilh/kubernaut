@@ -16,7 +16,7 @@ labels:
   severity: low
   environment: [test]
   component: pod
-  priority: p3
+  priority: P3
 
 execution:
   engine: tekton

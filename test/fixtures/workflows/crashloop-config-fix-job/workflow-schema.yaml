@@ -16,7 +16,7 @@ labels:
   severity: high
   environment: [production, staging, test]
   component: deployment
-  priority: p1
+  priority: P1
 
 execution:
   engine: job
