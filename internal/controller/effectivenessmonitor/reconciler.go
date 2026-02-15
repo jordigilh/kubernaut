@@ -411,7 +411,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			ea.Status.Components.MetricsAssessed = metricsResult.Component.Assessed
 			ea.Status.Components.MetricsScore = metricsResult.Component.Score
 			r.Metrics.RecordComponentAssessment("metrics", resultStatus(metricsResult.Component), time.Since(startTime).Seconds(), metricsResult.Component.Score)
-			r.emitMetricsEvent(ctx, ea, metricsResult)
+			// Only emit the audit event when the metrics assessment succeeds.
+			// If Prometheus returns no data, Assessed=false and we silently retry
+			// on the next reconcile. Emitting on every retry would create duplicate
+			// audit events. The completion event captures metrics_timed_out if needed.
+			if metricsResult.Component.Assessed {
+				r.emitMetricsEvent(ctx, ea, metricsResult)
+			}
 		} else {
 			ea.Status.Components.MetricsAssessed = true
 			r.Metrics.RecordComponentAssessment("metrics", "skipped", time.Since(startTime).Seconds(), nil)
