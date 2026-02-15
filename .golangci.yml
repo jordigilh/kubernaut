@@ -1,13 +1,11 @@
-# GolangCI-Lint Configuration for Kubernaut
+# GolangCI-Lint v2 Configuration for Kubernaut
 # Enforces anti-pattern detection per TESTING_GUIDELINES.md
 
-version: 2
+version: "2"
 
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - vendor
 
 linters:
   enable:
@@ -17,36 +15,37 @@ linters:
     - unused
     - govet
 
-linters-settings:
-  forbidigo:
-    # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
-    forbid:
-      # NULL-TESTING Anti-Pattern (Per TESTING_GUIDELINES.md)
-      - p: '\bExpect\([^)]+\)\.ToNot\(BeNil\(\)\)'
-        msg: "NULL-TESTING anti-pattern: Validate business outcomes, not just nil checks. See TESTING_GUIDELINES.md"
-      - p: '\bExpect\([^)]+\)\.ToNot\(BeEmpty\(\)\)'
-        msg: "NULL-TESTING anti-pattern: Validate specific values or counts, not just empty checks. See TESTING_GUIDELINES.md"
-      - p: '\.ShouldNot\(BeEmpty\(\)\)'
-        msg: "NULL-TESTING anti-pattern: Validate terminal states like NotificationPhaseSent/Failed, not just empty checks"
-      - p: '\.ShouldNot\(BeNil\(\)\)'
-        msg: "NULL-TESTING anti-pattern: Validate actual pointer values after checking non-nil"
+  settings:
+    forbidigo:
+      # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
+      forbid:
+        # NULL-TESTING Anti-Pattern (Per TESTING_GUIDELINES.md)
+        - pattern: '\bExpect\([^)]+\)\.ToNot\(BeNil\(\)\)'
+          msg: "NULL-TESTING anti-pattern: Validate business outcomes, not just nil checks. See TESTING_GUIDELINES.md"
+        - pattern: '\bExpect\([^)]+\)\.ToNot\(BeEmpty\(\)\)'
+          msg: "NULL-TESTING anti-pattern: Validate specific values or counts, not just empty checks. See TESTING_GUIDELINES.md"
+        - pattern: '\.ShouldNot\(BeEmpty\(\)\)'
+          msg: "NULL-TESTING anti-pattern: Validate terminal states like NotificationPhaseSent/Failed, not just empty checks"
+        - pattern: '\.ShouldNot\(BeNil\(\)\)'
+          msg: "NULL-TESTING anti-pattern: Validate actual pointer values after checking non-nil"
 
-      # Skip() Anti-Pattern (Per TESTING_GUIDELINES.md: Integration tests must Fail() when required infra unavailable)
-      - p: '\bSkip\('
-        msg: "Skip() forbidden in integration tests when required infrastructure unavailable (DD-AUDIT-003). Use Fail() instead."
+        # Skip() Anti-Pattern (Per TESTING_GUIDELINES.md: Integration tests must Fail() when required infra unavailable)
+        - pattern: '\bSkip\('
+          msg: "Skip() forbidden in integration tests when required infrastructure unavailable (DD-AUDIT-003). Use Fail() instead."
 
-      # time.Sleep() Anti-Pattern (Per TESTING_GUIDELINES.md v2.0.0: ABSOLUTELY FORBIDDEN)
-      - p: 'time\.Sleep\('
-        msg: "time.Sleep() ABSOLUTELY FORBIDDEN per TESTING_GUIDELINES.md v2.0.0. Use Eventually/Consistently for async validation."
+        # time.Sleep() Anti-Pattern (Per TESTING_GUIDELINES.md v2.0.0: ABSOLUTELY FORBIDDEN)
+        - pattern: 'time\.Sleep\('
+          msg: "time.Sleep() ABSOLUTELY FORBIDDEN per TESTING_GUIDELINES.md v2.0.0. Use Eventually/Consistently for async validation."
+
+  exclusions:
+    rules:
+      # Exclude test setup/teardown code from some checks
+      - path: _test\.go
+        linters:
+          - errcheck
+        text: "Error return value of.*Close.*is not checked"
 
 issues:
-  exclude-rules:
-    # Exclude test setup/teardown code from some checks
-    - path: _test\.go
-      linters:
-        - errcheck
-      text: "Error return value of.*Close.*is not checked"
-
   max-issues-per-linter: 0
   max-same-issues: 0
 
@@ -56,4 +55,3 @@ issues:
 # - time.Sleep(): ABSOLUTELY FORBIDDEN per v2.0.0 - Use Eventually/Consistently
 #
 # NO EXCEPTIONS ALLOWED: All violations must be remediated per TESTING_GUIDELINES.md v2.0.0
-
