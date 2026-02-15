@@ -807,6 +807,11 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
+        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
+            # AlertManager E2E test: MemoryExceedsLimit Prometheus alert → same oomkilled workflow
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
         elif "nodenotready" in content or "node not ready" in content:
             matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
