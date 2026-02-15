@@ -705,7 +705,9 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
+				Environment:           hapiclient.NewOptString("production"),
+			}
 
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -759,7 +761,9 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
+				Environment:           hapiclient.NewOptString("production"),
+			}
 
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)

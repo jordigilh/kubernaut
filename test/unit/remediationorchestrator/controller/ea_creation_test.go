@@ -407,17 +407,22 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// EffectivenessAssessed=False / Reason: AssessmentInProgress so operators
 	// can distinguish "no EA yet" from "EA in progress."
 	// ========================================
+	// UT-RO-EA-009: RO produces a fully assessable EA with pre-remediation baseline
+	// BR: BR-EM-004 (Spec Hash Comparison), DD-EM-002 v2.0 (CRD-first path)
+	//
+	// Business outcome: When the RO captures a pre-remediation hash, the EA it
+	// creates must carry that baseline so the EM can compare pre vs post hashes
+	// and detect whether the remediation workflow actually modified the target.
+	// Without this, spec drift detection is blind to the "before" state.
 	// ========================================
-	// UT-RO-EA-009: EA creator propagates PreRemediationSpecHash from RR status to EA spec
-	// ========================================
-	It("UT-RO-EA-009: should copy PreRemediationSpecHash from RR status to EA spec", func() {
+	It("UT-RO-EA-009: should produce EA that enables EM spec drift detection with pre-remediation baseline", func() {
 		rrName := "rr-ea-009"
 		namespace := "test-ns"
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
-		// Simulate RO having stored the pre-remediation hash on RR status
-		rr.Status.PreRemediationSpecHash = "sha256:abc123def456pre"
+		// RO captured the target spec hash before the workflow ran
+		rr.Status.PreRemediationSpecHash = "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
 
 		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
@@ -443,27 +448,51 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify EA was created with PreRemediationSpecHash from RR status
+		// Verify EA was created
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
 		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
-		Expect(ea.Spec.PreRemediationSpecHash).To(Equal("sha256:abc123def456pre"),
-			"EA spec should contain PreRemediationSpecHash copied from RR status (DD-EM-002 v2.0)")
+
+		// Business outcome: The EA carries the pre-remediation baseline from the RR,
+		// enabling the EM to compare pre vs post hashes without querying DataStorage.
+		Expect(ea.Spec.PreRemediationSpecHash).To(Equal(rr.Status.PreRemediationSpecHash),
+			"EA must carry the same pre-remediation baseline the RO captured, so the EM "+
+				"can detect whether the workflow changed the target resource")
+
+		// The EA must also carry the identity of the remediation it's assessing
+		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
+			"EA must correlate to the RR so assessment results map to the right remediation")
+		Expect(ea.Spec.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind),
+			"EA must target the same resource the RR remediated")
+		Expect(ea.Spec.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name),
+			"EA must target the same resource the RR remediated")
+		Expect(ea.Spec.TargetResource.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
+			"EA must target the same resource the RR remediated")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
+			"EA must record the RR terminal phase for assessment branching")
+		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow),
+			"EA must carry the stabilization window so EM waits before measuring")
 	})
 
 	// ========================================
-	// UT-RO-EA-010: EA creator handles empty PreRemediationSpecHash gracefully
+	// UT-RO-EA-010: RO produces a valid EA even without pre-remediation hash
+	// BR: BR-EM-004 (Spec Hash Comparison), DD-EM-002 v2.0 (backward compatibility)
+	//
+	// Business outcome: Legacy RRs (or RRs where hash capture failed) must still
+	// produce valid EAs. The EM falls back to DataStorage for the pre-hash.
+	// The assessment must not fail or degrade — the EM simply skips pre/post
+	// comparison and proceeds with post-only hash capture + drift detection.
 	// ========================================
-	It("UT-RO-EA-010: should create EA with empty PreRemediationSpecHash when RR has none", func() {
+	It("UT-RO-EA-010: should produce fully assessable EA when pre-remediation hash is unavailable", func() {
 		rrName := "rr-ea-010"
 		namespace := "test-ns"
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
-		// RR has no PreRemediationSpecHash (backward compatibility)
+		// No PreRemediationSpecHash — simulates legacy RR or hash capture failure
 
 		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
 
@@ -487,7 +516,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
 		})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred(),
+			"EA creation must succeed even without a pre-remediation hash")
 
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
@@ -495,8 +525,21 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Namespace: namespace,
 		}, ea)
 		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
+
+		// Business outcome: The EA is fully assessable — all required fields are present.
+		// The EM will fall back to DataStorage for the pre-hash (or proceed without it).
 		Expect(ea.Spec.PreRemediationSpecHash).To(BeEmpty(),
-			"EA spec PreRemediationSpecHash should be empty when RR has none (backward compat)")
+			"EA should not fabricate a pre-hash when RR has none")
+		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
+			"EA must still correlate to the RR for audit trail continuity")
+		Expect(ea.Spec.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind),
+			"EA must still identify the remediated resource")
+		Expect(ea.Spec.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name),
+			"EA must still identify the remediated resource")
+		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow),
+			"EA must carry the stabilization window even without pre-hash")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
+			"EA must record the terminal phase for assessment branching")
 	})
 
 	It("UT-RO-EA-008: should set EffectivenessAssessed=False/AssessmentInProgress on EA creation", func() {
