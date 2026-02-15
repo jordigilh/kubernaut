@@ -669,15 +669,19 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	step := 1 * time.Second
 
 	// Define all 4 metric queries (DD-017 v2.5 Phase B)
+	// CPU and memory use sum() to aggregate across all containers/pods in the namespace
+	// into a single time series. Without sum(), Prometheus returns multiple series
+	// (one per container label combination) and Samples[0]/Samples[len-1] may come
+	// from different series, causing non-deterministic pre/post comparisons.
 	queries := []metricQuerySpec{
 		{
 			Name:          "container_cpu_usage_seconds_total",
-			Query:         fmt.Sprintf(`container_cpu_usage_seconds_total{namespace="%s"}`, ns),
+			Query:         fmt.Sprintf(`sum(container_cpu_usage_seconds_total{namespace="%s"})`, ns),
 			LowerIsBetter: true,
 		},
 		{
 			Name:          "container_memory_working_set_bytes",
-			Query:         fmt.Sprintf(`container_memory_working_set_bytes{namespace="%s"}`, ns),
+			Query:         fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace="%s"})`, ns),
 			LowerIsBetter: true,
 		},
 		{
