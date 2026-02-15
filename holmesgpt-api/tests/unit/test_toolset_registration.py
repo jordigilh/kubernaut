@@ -29,12 +29,14 @@ TDD Phase: RED — these tests define the contract for Phase 3e.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 # Patch target for WorkflowDiscoveryToolset (source module)
 DISCOVERY_TOOLSET_CLASS = "src.toolsets.workflow_discovery.WorkflowDiscoveryToolset"
 # Patch target for sanitization wrapper (avoid real tool wrapping in tests)
 SANITIZATION_WRAPPER = "src.extensions.llm_config._wrap_tool_results_with_sanitization"
+# Patch target for session factory (avoid filesystem access in unit tests)
+SESSION_FACTORY = "src.extensions.llm_config.create_workflow_discovery_session"
 
 
 def _make_mock_discovery_toolset():
@@ -89,12 +91,16 @@ class TestRegisterWorkflowDiscoveryToolset:
         Type: Unit / Happy Path
         Signal context filters (severity, component, environment, priority) and
         remediation_id must be forwarded to the WorkflowDiscoveryToolset constructor.
+        DD-AUTH-005: http_session (ServiceAccountAuthSession) must be provided.
         """
         with (
             patch(DISCOVERY_TOOLSET_CLASS) as mock_cls,
             patch(SANITIZATION_WRAPPER),
+            patch(SESSION_FACTORY) as mock_session_factory,
         ):
             mock_cls.return_value = _make_mock_discovery_toolset()
+            mock_session = Mock()
+            mock_session_factory.return_value = mock_session
 
             from src.extensions.llm_config import register_workflow_discovery_toolset
 
@@ -109,6 +115,9 @@ class TestRegisterWorkflowDiscoveryToolset:
                 priority="P0",
             )
 
+            # Assert session factory was called (DD-AUTH-005)
+            mock_session_factory.assert_called_once()
+
             # Assert WorkflowDiscoveryToolset was created with correct params
             mock_cls.assert_called_once_with(
                 enabled=True,
@@ -119,6 +128,7 @@ class TestRegisterWorkflowDiscoveryToolset:
                 priority="P0",
                 custom_labels={"team": ["payments"]},
                 detected_labels=None,
+                http_session=mock_session,
             )
 
     def test_injects_via_list_server_toolsets_ut_reg_003(self):
@@ -133,6 +143,7 @@ class TestRegisterWorkflowDiscoveryToolset:
         with (
             patch(DISCOVERY_TOOLSET_CLASS) as mock_cls,
             patch(SANITIZATION_WRAPPER),
+            patch(SESSION_FACTORY),
         ):
             mock_cls.return_value = _make_mock_discovery_toolset()
             config = _make_mock_config()
@@ -167,6 +178,7 @@ class TestRegisterWorkflowDiscoveryToolset:
         with (
             patch(DISCOVERY_TOOLSET_CLASS) as mock_cls,
             patch(SANITIZATION_WRAPPER),
+            patch(SESSION_FACTORY),
         ):
             mock_discovery = _make_mock_discovery_toolset()
             mock_cls.return_value = mock_discovery
@@ -200,6 +212,7 @@ class TestRegisterWorkflowDiscoveryToolset:
         with (
             patch(DISCOVERY_TOOLSET_CLASS) as mock_cls,
             patch(SANITIZATION_WRAPPER),
+            patch(SESSION_FACTORY),
         ):
             mock_cls.return_value = _make_mock_discovery_toolset()
             config = _make_mock_config()
