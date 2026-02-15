@@ -22,7 +22,6 @@ from datastorage.models.ai_analysis_holmes_gpt_call_payload import AIAnalysisHol
 from datastorage.models.ai_analysis_phase_transition_payload import AIAnalysisPhaseTransitionPayload
 from datastorage.models.ai_analysis_rego_evaluation_payload import AIAnalysisRegoEvaluationPayload
 from datastorage.models.action_type_entry import ActionTypeEntry
-from datastorage.models.action_type_entry_description import ActionTypeEntryDescription
 from datastorage.models.action_type_list_response import ActionTypeListResponse
 from datastorage.models.async_acceptance_response import AsyncAcceptanceResponse
 from datastorage.models.audit_event import AuditEvent
@@ -93,6 +92,7 @@ from datastorage.models.results_metadata import ResultsMetadata
 from datastorage.models.scoring_v1_audit import ScoringV1Audit
 from datastorage.models.search_execution_metadata import SearchExecutionMetadata
 from datastorage.models.signal_processing_audit_payload import SignalProcessingAuditPayload
+from datastorage.models.structured_description import StructuredDescription
 from datastorage.models.timeout_config import TimeoutConfig
 from datastorage.models.validation_result import ValidationResult
 from datastorage.models.workflow_catalog_created_payload import WorkflowCatalogCreatedPayload

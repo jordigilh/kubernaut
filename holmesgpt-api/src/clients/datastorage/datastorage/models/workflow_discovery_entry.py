@@ -22,6 +22,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Union
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
+from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
@@ -34,7 +35,7 @@ class WorkflowDiscoveryEntry(BaseModel):
     workflow_id: StrictStr = Field(description="UUID primary key", alias="workflowId")
     workflow_name: StrictStr = Field(description="Human-readable workflow identifier (e.g., scale-conservative-v1)", alias="workflowName")
     name: StrictStr = Field(description="Display name")
-    description: StrictStr = Field(description="Workflow description for LLM comparison")
+    description: StructuredDescription
     version: StrictStr = Field(description="Semantic version")
     container_image: StrictStr = Field(description="OCI image reference", alias="containerImage")
     execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
@@ -89,6 +90,9 @@ class WorkflowDiscoveryEntry(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of description
+        if self.description:
+            _dict['description'] = self.description.to_dict()
         return _dict
 
     @classmethod
@@ -104,7 +108,7 @@ class WorkflowDiscoveryEntry(BaseModel):
             "workflowId": obj.get("workflowId"),
             "workflowName": obj.get("workflowName"),
             "name": obj.get("name"),
-            "description": obj.get("description"),
+            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "version": obj.get("version"),
             "containerImage": obj.get("containerImage"),
             "executionEngine": obj.get("executionEngine"),

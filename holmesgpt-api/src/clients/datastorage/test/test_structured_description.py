@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.action_type_entry_description import ActionTypeEntryDescription
+from datastorage.models.structured_description import StructuredDescription
 
-class TestActionTypeEntryDescription(unittest.TestCase):
-    """ActionTypeEntryDescription unit test stubs"""
+class TestStructuredDescription(unittest.TestCase):
+    """StructuredDescription unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,28 +26,30 @@ class TestActionTypeEntryDescription(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> ActionTypeEntryDescription:
-        """Test ActionTypeEntryDescription
+    def make_instance(self, include_optional) -> StructuredDescription:
+        """Test StructuredDescription
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `ActionTypeEntryDescription`
+        # uncomment below to create an instance of `StructuredDescription`
         """
-        model = ActionTypeEntryDescription()
+        model = StructuredDescription()
         if include_optional:
-            return ActionTypeEntryDescription(
+            return StructuredDescription(
                 what = '',
                 when_to_use = '',
                 when_not_to_use = '',
                 preconditions = ''
             )
         else:
-            return ActionTypeEntryDescription(
+            return StructuredDescription(
+                what = '',
+                when_to_use = '',
         )
         """
 
-    def testActionTypeEntryDescription(self):
-        """Test ActionTypeEntryDescription"""
+    def testStructuredDescription(self):
+        """Test StructuredDescription"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

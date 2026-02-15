@@ -2486,21 +2486,7 @@ components:
           description: "Action type identifier (e.g., ScaleReplicas, RestartPod)"
           example: "ScaleReplicas"
         description:
-          type: object
-          description: "Curated description with what, when_to_use, when_not_to_use, preconditions"
-          properties:
-            what:
-              type: string
-              description: "What this action type does"
-            when_to_use:
-              type: string
-              description: "When to use this action type"
-            when_not_to_use:
-              type: string
-              description: "When NOT to use this action type"
-            preconditions:
-              type: string
-              description: "Preconditions that must be met"
+          $ref: '#/components/schemas/StructuredDescription'
         workflowCount:
           type: integer
           description: "Number of active workflows matching this action type and context filters"
@@ -2546,8 +2532,7 @@ components:
           type: string
           description: "Display name"
         description:
-          type: string
-          description: "Workflow description for LLM comparison"
+          $ref: '#/components/schemas/StructuredDescription'
         version:
           type: string
           description: "Semantic version"
@@ -2568,6 +2553,26 @@ components:
           type: integer
           description: "Total times this workflow has been executed"
           minimum: 0
+
+    StructuredDescription:
+      type: object
+      description: "Structured workflow description for LLM comparison and operator guidance (BR-WORKFLOW-004)"
+      required:
+        - what
+        - whenToUse
+      properties:
+        what:
+          type: string
+          description: "What this workflow concretely does. One sentence."
+        whenToUse:
+          type: string
+          description: "Root cause conditions under which this workflow is appropriate."
+        whenNotToUse:
+          type: string
+          description: "Specific exclusion conditions."
+        preconditions:
+          type: string
+          description: "Conditions that must be verified through investigation."
 
     PaginationMetadata:
       type: object
@@ -2887,8 +2892,7 @@ components:
           maxLength: 255
           description: "Human-readable workflow title"
         description:
-          type: string
-          description: "Workflow description"
+          $ref: '#/components/schemas/StructuredDescription'
         owner:
           type: string
           maxLength: 255

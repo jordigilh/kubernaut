@@ -43,7 +43,11 @@ class TestWorkflowListResponse(unittest.TestCase):
                         action_type = 'ScaleReplicas', 
                         version = '', 
                         name = '', 
-                        description = '', 
+                        description = datastorage.models.structured_description.StructuredDescription(
+                            what = '', 
+                            when_to_use = '', 
+                            when_not_to_use = '', 
+                            preconditions = '', ), 
                         owner = '', 
                         maintainer = '', 
                         content = '', 
