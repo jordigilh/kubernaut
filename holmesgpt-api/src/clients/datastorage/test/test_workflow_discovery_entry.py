@@ -39,7 +39,11 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                 workflow_id = '',
                 workflow_name = '',
                 name = '',
-                description = '',
+                description = datastorage.models.structured_description.StructuredDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
                 version = '',
                 container_image = '',
                 execution_engine = 'tekton',
@@ -51,7 +55,11 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                 workflow_id = '',
                 workflow_name = '',
                 name = '',
-                description = '',
+                description = datastorage.models.structured_description.StructuredDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
                 version = '',
                 container_image = '',
         )

@@ -37,7 +37,7 @@ class TestActionTypeEntry(unittest.TestCase):
         if include_optional:
             return ActionTypeEntry(
                 action_type = 'ScaleReplicas',
-                description = datastorage.models.action_type_entry_description.ActionTypeEntry_description(
+                description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 
                     when_to_use = '', 
                     when_not_to_use = '', 
@@ -47,7 +47,7 @@ class TestActionTypeEntry(unittest.TestCase):
         else:
             return ActionTypeEntry(
                 action_type = 'ScaleReplicas',
-                description = datastorage.models.action_type_entry_description.ActionTypeEntry_description(
+                description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 
                     when_to_use = '', 
                     when_not_to_use = '', 

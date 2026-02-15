@@ -24,6 +24,7 @@ from pydantic import Field
 from typing_extensions import Annotated
 from datastorage.models.detected_labels import DetectedLabels
 from datastorage.models.mandatory_labels import MandatoryLabels
+from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
@@ -38,7 +39,7 @@ class RemediationWorkflow(BaseModel):
     action_type: StrictStr = Field(description="Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.")
     version: Annotated[str, Field(strict=True, max_length=50)] = Field(description="Semantic version (e.g., v1.0.0)")
     name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Human-readable workflow title")
-    description: StrictStr = Field(description="Workflow description")
+    description: StructuredDescription
     owner: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow owner")
     maintainer: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow maintainer email")
     content: StrictStr = Field(description="YAML workflow definition")
@@ -116,6 +117,9 @@ class RemediationWorkflow(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of description
+        if self.description:
+            _dict['description'] = self.description.to_dict()
         # override the default output from pydantic by calling `to_dict()` of labels
         if self.labels:
             _dict['labels'] = self.labels.to_dict()
@@ -139,7 +143,7 @@ class RemediationWorkflow(BaseModel):
             "action_type": obj.get("action_type"),
             "version": obj.get("version"),
             "name": obj.get("name"),
-            "description": obj.get("description"),
+            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "owner": obj.get("owner"),
             "maintainer": obj.get("maintainer"),
             "content": obj.get("content"),

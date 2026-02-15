@@ -22,7 +22,7 @@ from typing import Any, ClassVar, Dict, List
 from pydantic import BaseModel, StrictStr
 from pydantic import Field
 from typing_extensions import Annotated
-from datastorage.models.action_type_entry_description import ActionTypeEntryDescription
+from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
@@ -33,7 +33,7 @@ class ActionTypeEntry(BaseModel):
     Single action type with description and workflow count
     """ # noqa: E501
     action_type: StrictStr = Field(description="Action type identifier (e.g., ScaleReplicas, RestartPod)", alias="actionType")
-    description: ActionTypeEntryDescription
+    description: StructuredDescription
     workflow_count: Annotated[int, Field(strict=True, ge=0)] = Field(description="Number of active workflows matching this action type and context filters", alias="workflowCount")
     __properties: ClassVar[List[str]] = ["actionType", "description", "workflowCount"]
 
@@ -90,7 +90,7 @@ class ActionTypeEntry(BaseModel):
 
         _obj = cls.model_validate({
             "actionType": obj.get("actionType"),
-            "description": ActionTypeEntryDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
+            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "workflowCount": obj.get("workflowCount")
         })
         return _obj

@@ -39,7 +39,7 @@ class TestActionTypeListResponse(unittest.TestCase):
                 action_types = [
                     datastorage.models.action_type_entry.ActionTypeEntry(
                         action_type = 'ScaleReplicas', 
-                        description = datastorage.models.action_type_entry_description.ActionTypeEntry_description(
+                        description = datastorage.models.structured_description.StructuredDescription(
                             what = '', 
                             when_to_use = '', 
                             when_not_to_use = '', 
@@ -57,7 +57,7 @@ class TestActionTypeListResponse(unittest.TestCase):
                 action_types = [
                     datastorage.models.action_type_entry.ActionTypeEntry(
                         action_type = 'ScaleReplicas', 
-                        description = datastorage.models.action_type_entry_description.ActionTypeEntry_description(
+                        description = datastorage.models.structured_description.StructuredDescription(
                             what = '', 
                             when_to_use = '', 
                             when_not_to_use = '', 

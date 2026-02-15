@@ -26,15 +26,15 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class ActionTypeEntryDescription(BaseModel):
+class StructuredDescription(BaseModel):
     """
-    Curated description with what, when_to_use, when_not_to_use, preconditions
+    Structured workflow description for LLM comparison and operator guidance (BR-WORKFLOW-004)
     """ # noqa: E501
-    what: Optional[StrictStr] = Field(default=None, description="What this action type does")
-    when_to_use: Optional[StrictStr] = Field(default=None, description="When to use this action type")
-    when_not_to_use: Optional[StrictStr] = Field(default=None, description="When NOT to use this action type")
-    preconditions: Optional[StrictStr] = Field(default=None, description="Preconditions that must be met")
-    __properties: ClassVar[List[str]] = ["what", "when_to_use", "when_not_to_use", "preconditions"]
+    what: StrictStr = Field(description="What this workflow concretely does. One sentence.")
+    when_to_use: StrictStr = Field(description="Root cause conditions under which this workflow is appropriate.", alias="whenToUse")
+    when_not_to_use: Optional[StrictStr] = Field(default=None, description="Specific exclusion conditions.", alias="whenNotToUse")
+    preconditions: Optional[StrictStr] = Field(default=None, description="Conditions that must be verified through investigation.")
+    __properties: ClassVar[List[str]] = ["what", "whenToUse", "whenNotToUse", "preconditions"]
 
     model_config = {
         "populate_by_name": True,
@@ -54,7 +54,7 @@ class ActionTypeEntryDescription(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of ActionTypeEntryDescription from a JSON string"""
+        """Create an instance of StructuredDescription from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,7 +77,7 @@ class ActionTypeEntryDescription(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of ActionTypeEntryDescription from a dict"""
+        """Create an instance of StructuredDescription from a dict"""
         if obj is None:
             return None
 
@@ -86,8 +86,8 @@ class ActionTypeEntryDescription(BaseModel):
 
         _obj = cls.model_validate({
             "what": obj.get("what"),
-            "when_to_use": obj.get("when_to_use"),
-            "when_not_to_use": obj.get("when_not_to_use"),
+            "whenToUse": obj.get("whenToUse"),
+            "whenNotToUse": obj.get("whenNotToUse"),
             "preconditions": obj.get("preconditions")
         })
         return _obj

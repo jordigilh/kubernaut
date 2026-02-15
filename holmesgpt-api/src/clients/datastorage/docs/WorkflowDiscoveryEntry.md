@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **workflow_id** | **str** | UUID primary key | 
 **workflow_name** | **str** | Human-readable workflow identifier (e.g., scale-conservative-v1) | 
 **name** | **str** | Display name | 
-**description** | **str** | Workflow description for LLM comparison | 
+**description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **version** | **str** | Semantic version | 
 **container_image** | **str** | OCI image reference | 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 

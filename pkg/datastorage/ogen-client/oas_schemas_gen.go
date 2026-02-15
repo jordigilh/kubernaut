@@ -639,9 +639,8 @@ func (s *AIAnalysisRegoEvaluationPayload) SetReason(val string) {
 // Ref: #/components/schemas/ActionTypeEntry
 type ActionTypeEntry struct {
 	// Action type identifier (e.g., ScaleReplicas, RestartPod).
-	ActionType string `json:"actionType"`
-	// Curated description with what, when_to_use, when_not_to_use, preconditions.
-	Description ActionTypeEntryDescription `json:"description"`
+	ActionType  string                `json:"actionType"`
+	Description StructuredDescription `json:"description"`
 	// Number of active workflows matching this action type and context filters.
 	WorkflowCount int `json:"workflowCount"`
 }
@@ -652,7 +651,7 @@ func (s *ActionTypeEntry) GetActionType() string {
 }
 
 // GetDescription returns the value of Description.
-func (s *ActionTypeEntry) GetDescription() ActionTypeEntryDescription {
+func (s *ActionTypeEntry) GetDescription() StructuredDescription {
 	return s.Description
 }
 
@@ -667,65 +666,13 @@ func (s *ActionTypeEntry) SetActionType(val string) {
 }
 
 // SetDescription sets the value of Description.
-func (s *ActionTypeEntry) SetDescription(val ActionTypeEntryDescription) {
+func (s *ActionTypeEntry) SetDescription(val StructuredDescription) {
 	s.Description = val
 }
 
 // SetWorkflowCount sets the value of WorkflowCount.
 func (s *ActionTypeEntry) SetWorkflowCount(val int) {
 	s.WorkflowCount = val
-}
-
-// Curated description with what, when_to_use, when_not_to_use, preconditions.
-type ActionTypeEntryDescription struct {
-	// What this action type does.
-	What OptString `json:"what"`
-	// When to use this action type.
-	WhenToUse OptString `json:"when_to_use"`
-	// When NOT to use this action type.
-	WhenNotToUse OptString `json:"when_not_to_use"`
-	// Preconditions that must be met.
-	Preconditions OptString `json:"preconditions"`
-}
-
-// GetWhat returns the value of What.
-func (s *ActionTypeEntryDescription) GetWhat() OptString {
-	return s.What
-}
-
-// GetWhenToUse returns the value of WhenToUse.
-func (s *ActionTypeEntryDescription) GetWhenToUse() OptString {
-	return s.WhenToUse
-}
-
-// GetWhenNotToUse returns the value of WhenNotToUse.
-func (s *ActionTypeEntryDescription) GetWhenNotToUse() OptString {
-	return s.WhenNotToUse
-}
-
-// GetPreconditions returns the value of Preconditions.
-func (s *ActionTypeEntryDescription) GetPreconditions() OptString {
-	return s.Preconditions
-}
-
-// SetWhat sets the value of What.
-func (s *ActionTypeEntryDescription) SetWhat(val OptString) {
-	s.What = val
-}
-
-// SetWhenToUse sets the value of WhenToUse.
-func (s *ActionTypeEntryDescription) SetWhenToUse(val OptString) {
-	s.WhenToUse = val
-}
-
-// SetWhenNotToUse sets the value of WhenNotToUse.
-func (s *ActionTypeEntryDescription) SetWhenNotToUse(val OptString) {
-	s.WhenNotToUse = val
-}
-
-// SetPreconditions sets the value of Preconditions.
-func (s *ActionTypeEntryDescription) SetPreconditions(val OptString) {
-	s.Preconditions = val
 }
 
 // Response for Step 1: list available action types (DD-WORKFLOW-016).
@@ -16244,9 +16191,8 @@ type RemediationWorkflow struct {
 	// Semantic version (e.g., v1.0.0).
 	Version string `json:"version"`
 	// Human-readable workflow title.
-	Name string `json:"name"`
-	// Workflow description.
-	Description string `json:"description"`
+	Name        string                `json:"name"`
+	Description StructuredDescription `json:"description"`
 	// Workflow owner.
 	Owner OptString `json:"owner"`
 	// Workflow maintainer email.
@@ -16330,7 +16276,7 @@ func (s *RemediationWorkflow) GetName() string {
 }
 
 // GetDescription returns the value of Description.
-func (s *RemediationWorkflow) GetDescription() string {
+func (s *RemediationWorkflow) GetDescription() StructuredDescription {
 	return s.Description
 }
 
@@ -16515,7 +16461,7 @@ func (s *RemediationWorkflow) SetName(val string) {
 }
 
 // SetDescription sets the value of Description.
-func (s *RemediationWorkflow) SetDescription(val string) {
+func (s *RemediationWorkflow) SetDescription(val StructuredDescription) {
 	s.Description = val
 }
 
@@ -17804,6 +17750,59 @@ func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalText(data []byte) erro
 	}
 }
 
+// Structured workflow description for LLM comparison and operator guidance (BR-WORKFLOW-004).
+// Ref: #/components/schemas/StructuredDescription
+type StructuredDescription struct {
+	// What this workflow concretely does. One sentence.
+	What string `json:"what"`
+	// Root cause conditions under which this workflow is appropriate.
+	WhenToUse string `json:"whenToUse"`
+	// Specific exclusion conditions.
+	WhenNotToUse OptString `json:"whenNotToUse"`
+	// Conditions that must be verified through investigation.
+	Preconditions OptString `json:"preconditions"`
+}
+
+// GetWhat returns the value of What.
+func (s *StructuredDescription) GetWhat() string {
+	return s.What
+}
+
+// GetWhenToUse returns the value of WhenToUse.
+func (s *StructuredDescription) GetWhenToUse() string {
+	return s.WhenToUse
+}
+
+// GetWhenNotToUse returns the value of WhenNotToUse.
+func (s *StructuredDescription) GetWhenNotToUse() OptString {
+	return s.WhenNotToUse
+}
+
+// GetPreconditions returns the value of Preconditions.
+func (s *StructuredDescription) GetPreconditions() OptString {
+	return s.Preconditions
+}
+
+// SetWhat sets the value of What.
+func (s *StructuredDescription) SetWhat(val string) {
+	s.What = val
+}
+
+// SetWhenToUse sets the value of WhenToUse.
+func (s *StructuredDescription) SetWhenToUse(val string) {
+	s.WhenToUse = val
+}
+
+// SetWhenNotToUse sets the value of WhenNotToUse.
+func (s *StructuredDescription) SetWhenNotToUse(val OptString) {
+	s.WhenNotToUse = val
+}
+
+// SetPreconditions sets the value of Preconditions.
+func (s *StructuredDescription) SetPreconditions(val OptString) {
+	s.Preconditions = val
+}
+
 // Timeout configuration for RemediationRequest (BR-ORCH-027/028, Gap.
 // Ref: #/components/schemas/TimeoutConfig
 type TimeoutConfig struct {
@@ -18309,9 +18308,8 @@ type WorkflowDiscoveryEntry struct {
 	// Human-readable workflow identifier (e.g., scale-conservative-v1).
 	WorkflowName string `json:"workflowName"`
 	// Display name.
-	Name string `json:"name"`
-	// Workflow description for LLM comparison.
-	Description string `json:"description"`
+	Name        string                `json:"name"`
+	Description StructuredDescription `json:"description"`
 	// Semantic version.
 	Version string `json:"version"`
 	// OCI image reference.
@@ -18340,7 +18338,7 @@ func (s *WorkflowDiscoveryEntry) GetName() string {
 }
 
 // GetDescription returns the value of Description.
-func (s *WorkflowDiscoveryEntry) GetDescription() string {
+func (s *WorkflowDiscoveryEntry) GetDescription() StructuredDescription {
 	return s.Description
 }
 
@@ -18385,7 +18383,7 @@ func (s *WorkflowDiscoveryEntry) SetName(val string) {
 }
 
 // SetDescription sets the value of Description.
-func (s *WorkflowDiscoveryEntry) SetDescription(val string) {
+func (s *WorkflowDiscoveryEntry) SetDescription(val StructuredDescription) {
 	s.Description = val
 }
 

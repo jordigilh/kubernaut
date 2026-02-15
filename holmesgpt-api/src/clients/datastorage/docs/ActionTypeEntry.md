@@ -7,7 +7,7 @@ Single action type with description and workflow count
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **action_type** | **str** | Action type identifier (e.g., ScaleReplicas, RestartPod) | 
-**description** | [**ActionTypeEntryDescription**](ActionTypeEntryDescription.md) |  | 
+**description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **workflow_count** | **int** | Number of active workflows matching this action type and context filters | 
 
 ## Example
