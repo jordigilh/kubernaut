@@ -56,9 +56,10 @@ jobs:
         run: |
           # Install Kind v0.30.0 (required by E2E test infrastructure)
           # Authority: test/infrastructure/kind_cluster_helpers.go (version validation)
+          # Uses GitHub releases URL (kind.sigs.k8s.io/dl/ returns HTML, not binary)
           KIND_VERSION="v0.30.0"
           echo "Installing Kind version: ${KIND_VERSION}"
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
