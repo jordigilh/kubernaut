@@ -88,19 +88,26 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Priority:        "*",
 			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
 			ExecutionEngine: "job",
-			// BR-HAPI-191: Parameter schema for LLM guidance and HAPI validation
+			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
+			// Actual schema comes from OCI image via pullspec-only registration.
 			SchemaParameters: []models.WorkflowParameter{
 				{
-					Name:        "CONFIG_MAP",
+					Name:        "NAMESPACE",
 					Type:        "string",
 					Required:    true,
-					Description: "Name of the ConfigMap to fix",
+					Description: "Target namespace",
 				},
 				{
-					Name:        "TARGET_NAMESPACE",
+					Name:        "DEPLOYMENT_NAME",
 					Type:        "string",
 					Required:    true,
-					Description: "Namespace of the target resource",
+					Description: "Name of the deployment to restart",
+				},
+				{
+					Name:        "GRACE_PERIOD_SECONDS",
+					Type:        "integer",
+					Required:    false,
+					Description: "Graceful shutdown period in seconds",
 				},
 			},
 		},
@@ -115,32 +122,26 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Priority:        "*",
 			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
 			ExecutionEngine: "job",
-			// BR-HAPI-191: Parameter schema matching oomkill-increase-memory.sh expectations
+			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
+			// Actual schema comes from OCI image via pullspec-only registration.
 			SchemaParameters: []models.WorkflowParameter{
 				{
-					Name:        "MEMORY_LIMIT_NEW",
+					Name:        "NAMESPACE",
 					Type:        "string",
 					Required:    true,
-					Description: "New memory limit to apply (e.g., 256Mi, 1Gi)",
+					Description: "Target namespace containing the affected deployment",
 				},
 				{
-					Name:        "TARGET_RESOURCE_KIND",
+					Name:        "DEPLOYMENT_NAME",
 					Type:        "string",
 					Required:    true,
-					Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
-					Enum:        []string{"Deployment", "StatefulSet", "DaemonSet"},
+					Description: "Name of the deployment to update memory limits",
 				},
 				{
-					Name:        "TARGET_RESOURCE_NAME",
-					Type:        "string",
-					Required:    true,
-					Description: "Name of the resource to patch",
-				},
-				{
-					Name:        "TARGET_NAMESPACE",
-					Type:        "string",
-					Required:    true,
-					Description: "Namespace of the target resource",
+					Name:        "MEMORY_INCREASE_PERCENT",
+					Type:        "integer",
+					Required:    false,
+					Description: "Percentage to increase memory limits by",
 				},
 			},
 		},
