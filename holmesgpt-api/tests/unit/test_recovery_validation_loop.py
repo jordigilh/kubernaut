@@ -230,57 +230,32 @@ class TestRecoveryValidationLoop:
     @pytest.mark.asyncio
     async def test_sets_needs_human_review_after_exhausting_ut_004_003(self, mock_recovery_env):
         """
-        UT-HAPI-017-004-003: Recovery sets needs_human_review after exhausting attempts.
+        UT-HAPI-017-004-003: Validation exhaustion unconditionally escalates to human review.
 
-        BR: BR-HAPI-017-004
+        BR: BR-HAPI-197.2 (MUST), BR-HAPI-017-004
         Type: Unit / Error Handling
-        After 3 failed validation attempts, recovery marks result as
-        needs_human_review=True with human_review_reason containing
-        validation failure details.
 
-        Note: needs_human_review must NOT be explicitly False in the parsed
-        result, otherwise BR-HAPI-197 preserves the LLM's decision. Setting
-        it to None simulates the LLM not expressing an opinion.
+        Business outcome: When the LLM cannot produce a valid workflow selection
+        after all retry attempts, the system MUST escalate to a human operator
+        regardless of what the LLM says about needs_human_review. Per BR-HAPI-197.2,
+        "needs_human_review SHALL be true when Parameter Validation Failed" —
+        there is no exception for LLM self-assessment. An LLM that can't produce
+        a valid workflow cannot be trusted to assess whether human review is needed.
+
+        The operator must receive:
+        1. A clear reason explaining what validation failed
+        2. The LLM's original recommendation for context (BR-HAPI-197.4)
+        3. A valid recovery response structure for manual action
         """
         mocks = mock_recovery_env
-        mocks["parse"].side_effect = lambda *args, **kwargs: _make_parsed_result(
-            workflow_id="wf-bad", needs_human_review=None
-        )
-        mocks["feedback"].return_value = "\n## Error\n"
-
-        # Validator always fails
-        mock_validator = Mock()
-        mock_validator.validate.return_value = ValidationResult(
-            is_valid=False, errors=["unknown workflow_id"]
-        )
-        mocks["validator_cls"].return_value = mock_validator
-
-        from src.extensions.recovery.llm_integration import analyze_recovery
-
-        result = await analyze_recovery(_make_request_data())
-
-        # After exhausting all attempts, needs_human_review must be True
-        assert result["needs_human_review"] is True
-        assert result.get("human_review_reason") is not None
-
-    @pytest.mark.asyncio
-    async def test_preserves_llm_decision_when_explicitly_false_ut_004_005(self, mock_recovery_env):
-        """
-        UT-HAPI-017-004-005: BR-HAPI-197 — LLM explicit needs_human_review=False is preserved.
-
-        BR: BR-HAPI-197
-        Type: Unit / Policy
-        When the LLM explicitly sets needs_human_review=False, the validation
-        exhaustion handler must NOT override it. The LLM's confidence-based
-        decision takes precedence over parameter validation failures.
-        """
-        mocks = mock_recovery_env
+        # LLM explicitly says "no human review" — but validation still fails.
+        # BR-HAPI-197.2 mandates override: validation failure = human review.
         mocks["parse"].side_effect = lambda *args, **kwargs: _make_parsed_result(
             workflow_id="wf-bad", needs_human_review=False
         )
         mocks["feedback"].return_value = "\n## Error\n"
 
-        # Validator always fails
+        # Validator always fails — LLM cannot self-correct after 3 attempts
         mock_validator = Mock()
         mock_validator.validate.return_value = ValidationResult(
             is_valid=False, errors=["unknown workflow_id"]
@@ -291,8 +266,30 @@ class TestRecoveryValidationLoop:
 
         result = await analyze_recovery(_make_request_data())
 
-        # BR-HAPI-197: LLM explicitly said no human review — must be preserved
-        assert result["needs_human_review"] is False
+        # Business outcome 1: Safety gate — validation failure ALWAYS escalates,
+        # even when the LLM explicitly said needs_human_review=False.
+        # BR-HAPI-197.2: "needs_human_review SHALL be true when Parameter Validation Failed"
+        assert result["needs_human_review"] is True, (
+            "BR-HAPI-197.2: Validation failure MUST escalate to human review — "
+            "the LLM's self-assessment cannot override this safety gate"
+        )
+
+        # Business outcome 2: Operator gets actionable escalation reason,
+        # not just a boolean — they need to understand what went wrong.
+        assert result.get("human_review_reason") is not None, (
+            "Human review reason must explain why automated remediation was blocked"
+        )
+        assert "workflow" in result["human_review_reason"].lower() or \
+               "validation" in result["human_review_reason"].lower(), (
+            "Human review reason must reference the validation failure for operator context"
+        )
+
+        # Business outcome 3: The result is still a valid recovery response
+        # so the operator can review the LLM's recommendation and take manual action
+        # (BR-HAPI-197.4: preserve selected_workflow for operator context).
+        assert result.get("is_recovery_attempt") is True, (
+            "Result must still be a valid recovery response for operator review"
+        )
 
     @pytest.mark.asyncio
     async def test_succeeds_on_retry_ut_004_004(self, mock_recovery_env):
