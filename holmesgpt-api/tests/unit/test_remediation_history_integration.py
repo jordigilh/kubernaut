@@ -34,7 +34,7 @@ from extensions.recovery.prompt_builder import (
     _create_recovery_investigation_prompt,
     _create_investigation_prompt,
 )
-from clients.remediation_history_client import (
+from src.clients.remediation_history_client import (
     query_remediation_history,
     create_remediation_history_api,
 )
@@ -219,7 +219,7 @@ class TestRemediationHistoryWiring:
 
     def test_fetch_remediation_history_queries_ds(self):
         """UT-RH-WIRING-001: fetch_remediation_history_for_request queries DS with correct args."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
 
         mock_api = MagicMock()
         mock_context = MagicMock()
@@ -243,7 +243,7 @@ class TestRemediationHistoryWiring:
 
     def test_fetch_returns_none_when_api_none(self):
         """UT-RH-WIRING-002: fetch returns None when API not configured (graceful degradation)."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
 
         result = fetch_remediation_history_for_request(
             api=None,
@@ -255,7 +255,7 @@ class TestRemediationHistoryWiring:
 
     def test_fetch_returns_none_when_no_spec_hash(self):
         """UT-RH-WIRING-003: fetch returns None when spec hash is empty (no enrichment data)."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
 
         mock_api = MagicMock()
 
@@ -271,7 +271,7 @@ class TestRemediationHistoryWiring:
     def test_fetch_returns_none_on_ds_error(self):
         """UT-RH-WIRING-004: fetch returns None on DS error (graceful degradation)."""
         from datastorage.exceptions import ServiceException
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
 
         mock_api = MagicMock()
         mock_api.get_remediation_history_context.side_effect = ServiceException(
@@ -288,7 +288,7 @@ class TestRemediationHistoryWiring:
 
     def test_incident_prompt_enriched_via_wiring(self):
         """UT-RH-WIRING-005: Full wiring test - fetch context then enrich incident prompt."""
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
 
         mock_api = MagicMock()
         mock_context = MagicMock()

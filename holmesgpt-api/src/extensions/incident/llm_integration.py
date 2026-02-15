@@ -226,7 +226,7 @@ async def analyze_incident(
     try:
         # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
         # Graceful degradation: if DS unavailable, context is None and prompt is unchanged
-        from clients.remediation_history_client import (
+        from src.clients.remediation_history_client import (
             create_remediation_history_api,
             fetch_remediation_history_for_request,
         )
