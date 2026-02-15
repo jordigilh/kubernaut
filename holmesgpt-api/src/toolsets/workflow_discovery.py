@@ -335,16 +335,19 @@ class _DiscoveryToolBase(Tool):
         BR-HAPI-017-005: remediation_id propagated for audit correlation.
         DD-HAPI-017: detected_labels propagated when present (DD-WORKFLOW-001 v2.1:
         strip_failed_detections applied before sending).
+
+        NOTE: severity, component, environment, and priority are ALWAYS included
+        because the DS OpenAPI spec declares them as required: true. Omitting any
+        of them causes a 400 Bad Request from the ogen request validator.
+        The `or ""` guard converts None to empty string to prevent "None" literals
+        in query params.
         """
         params: Dict[str, Any] = {}
-        if self._severity:
-            params["severity"] = self._severity
-        if self._component:
-            params["component"] = self._component
-        if self._environment:
-            params["environment"] = self._environment
-        if self._priority:
-            params["priority"] = self._priority
+        # DS OpenAPI: these 4 parameters are required: true — always include them
+        params["severity"] = self._severity or ""
+        params["component"] = self._component or ""
+        params["environment"] = self._environment or ""
+        params["priority"] = self._priority or ""
         if self._remediation_id:
             params["remediation_id"] = self._remediation_id
         if self._custom_labels:
