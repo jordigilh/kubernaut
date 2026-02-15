@@ -331,7 +331,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// CRITICAL: Verify structured labels deserialized correctly
 			Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
-			Expect(retrievedWorkflow.Labels.Severity).To(Equal("low"))
+			Expect(retrievedWorkflow.Labels.Severity).To(Equal(models.StringOrSlice{"low"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
 			// DD-WORKFLOW-001 v2.5: Environment is now []string
