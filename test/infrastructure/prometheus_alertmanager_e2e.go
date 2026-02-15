@@ -59,8 +59,9 @@ const (
 //   - --storage.tsdb.min-block-duration=5m: Fast compaction for testing
 //
 // The deployment includes:
-//   - ConfigMap with minimal scrape config (no scrape targets needed)
-//   - Deployment with single replica
+//   - ServiceAccount + ClusterRole + ClusterRoleBinding (for kubelet/cAdvisor scraping)
+//   - ConfigMap with cAdvisor scrape job (kubernetes_sd_configs: role: node)
+//   - Deployment with single replica (serviceAccountName: prometheus)
 //   - NodePort Service for test runner access
 //
 // Parameters:
@@ -73,6 +74,36 @@ func DeployPrometheus(ctx context.Context, namespace, kubeconfigPath string, wri
 
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: %[1]s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "nodes/metrics", "pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: %[1]s
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
@@ -82,7 +113,26 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
-    # No scrape targets needed - metrics injected via remote write API
+    scrape_configs:
+    - job_name: 'kubelet-cadvisor'
+      scrape_interval: 10s
+      kubernetes_sd_configs:
+      - role: node
+      scheme: https
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabel_configs:
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+      metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes)'
+        action: keep
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -101,6 +151,7 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
       - name: prometheus
         image: %[2]s
