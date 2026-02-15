@@ -255,14 +255,26 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		By("Waiting for events to propagate and recording initial count")
+		By("Waiting for events to propagate and stabilize (K8s EventRecorder is async)")
 		var initialCount int
+		// First, wait for at least one event
 		Eventually(func() int {
-			evts := listEventsForObject(ctx, k8sClient, ea.Name, ns)
-			initialCount = len(evts)
-			return initialCount
+			return len(listEventsForObject(ctx, k8sClient, ea.Name, ns))
 		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"at least one event should exist for the completed EA")
+
+		// Then wait for the event count to stabilize (no change for 2 consecutive polls)
+		stableCount := 0
+		Eventually(func() bool {
+			count := len(listEventsForObject(ctx, k8sClient, ea.Name, ns))
+			if count == stableCount {
+				return true // count unchanged since last poll — stable
+			}
+			stableCount = count
+			return false
+		}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"event count should stabilize before idempotency check")
+		initialCount = stableCount
 
 		By("Verifying no additional events are emitted (idempotency)")
 		Consistently(func() int {
