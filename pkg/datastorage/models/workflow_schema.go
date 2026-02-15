@@ -18,6 +18,8 @@ package models
 
 import (
 	"fmt"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ========================================
@@ -143,6 +145,50 @@ type WorkflowSchemaLabels struct {
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
 	// Note: ExtractLabels normalizes to uppercase per OpenAPI enum [P0, P1, P2, P3, "*"]
 	Priority string `yaml:"priority" json:"priority" validate:"required"`
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler for WorkflowSchemaLabels.
+// Normalizes scalar severity values to []string for backward compatibility
+// with existing OCI images that declare severity: "critical" (string)
+// instead of severity: [critical] (array per DD-WORKFLOW-001 v2.7).
+func (l *WorkflowSchemaLabels) UnmarshalYAML(value *yaml.Node) error {
+	// Intermediate type with severity as yaml.Node for flexible handling.
+	// Uses a plain struct (not an alias of WorkflowSchemaLabels) to avoid
+	// infinite recursion since the custom UnmarshalYAML is on the pointer.
+	var aux struct {
+		SignalType  string    `yaml:"signalType,omitempty"`
+		Severity    yaml.Node `yaml:"severity"`
+		Environment []string  `yaml:"environment"`
+		Component   string    `yaml:"component"`
+		Priority    string    `yaml:"priority"`
+	}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+
+	l.SignalType = aux.SignalType
+	l.Environment = aux.Environment
+	l.Component = aux.Component
+	l.Priority = aux.Priority
+
+	// Handle severity as either scalar string or array of strings.
+	// Existing OCI images may contain either format.
+	switch aux.Severity.Kind {
+	case yaml.ScalarNode:
+		// severity: "critical" → []string{"critical"}
+		l.Severity = []string{aux.Severity.Value}
+	case yaml.SequenceNode:
+		// severity: [critical, high] → []string{"critical", "high"}
+		var slice []string
+		if err := aux.Severity.Decode(&slice); err != nil {
+			return fmt.Errorf("failed to decode severity array: %w", err)
+		}
+		l.Severity = slice
+	default:
+		return fmt.Errorf("severity must be a string or array, got YAML node kind %d", aux.Severity.Kind)
+	}
+
+	return nil
 }
 
 // WorkflowExecution contains execution engine configuration

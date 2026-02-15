@@ -198,7 +198,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			err = json.Unmarshal(dbLabels, &persistedLabels)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(persistedLabels).To(HaveKeyWithValue("signalType", "prometheus"))
-			Expect(persistedLabels).To(HaveKeyWithValue("severity", "critical"))
+			// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
+			Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
 			// Verify environment is an array
 			Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
 			envArray := persistedLabels["environment"].([]interface{})
