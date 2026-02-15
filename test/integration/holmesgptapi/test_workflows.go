@@ -73,6 +73,7 @@ execution:
 
 // GetHAPITestWorkflows returns test workflows for HAPI integration tests
 // Pattern: Matches holmesgpt-api/tests/fixtures/workflow_fixtures.py TEST_WORKFLOWS
+// DD-WORKFLOW-017: ContainerImage references real OCI images at quay.io/kubernaut-cicd/test-workflows (same as E2E)
 func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 	workflows := []HAPIWorkflowFixture{
 		{
@@ -86,8 +87,8 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P0",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory:v1.0.0",
+			ContainerDigest: "", // Tag-based ref; digest not required for pull
 		},
 		{
 			WorkflowName:    "memory-optimize-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
@@ -100,8 +101,8 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "deployment",
 			Environment:     "staging",
 			Priority:        "P1",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/memory-optimize:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "crashloop-config-fix-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
@@ -114,8 +115,8 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "node-drain-reboot-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
@@ -128,8 +129,8 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "node",
 			Environment:     "production",
 			Priority:        "P0",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/node-drain-reboot:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "image-pull-backoff-fix-credentials",
@@ -142,8 +143,8 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/imagepull-fix-creds:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 	}
 
