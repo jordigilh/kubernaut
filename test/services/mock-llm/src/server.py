@@ -1233,6 +1233,10 @@ The problem has self-resolved. No remediation workflow is needed.
                 }
             ]
             analysis_json["alternative_workflows"] = alternatives_list
+            # BR-HAPI-197: HAPI does NOT enforce confidence thresholds — that's AIAnalysis's job.
+            # Explicitly set needs_human_review=false so HAPI's parser doesn't infer true.
+            analysis_json["needs_human_review"] = False
+            analysis_json["human_review_reason"] = None
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 # root_cause_analysis
@@ -1246,6 +1250,12 @@ The problem has self-resolved. No remediation workflow is needed.
 
 # alternative_workflows
 {json.dumps(alternatives_list)}
+
+# needs_human_review
+false
+
+# human_review_reason
+null
 """
         # Handle no workflow found case
         elif not scenario.workflow_id:
@@ -1346,6 +1356,10 @@ No suitable alternative workflow found. Human review required.
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
+            # BR-HAPI-197: Explicitly set needs_human_review=false for valid workflow selections.
+            # Without this, HAPI's parser may infer needs_human_review=true from missing field.
+            analysis_json["needs_human_review"] = False
+            analysis_json["human_review_reason"] = None
             # Format as markdown with JSON block (like real LLM would)
             # Use recovery format if this is a recovery attempt
             if is_recovery:

@@ -732,21 +732,41 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		ea := eaList.Items[0]
 		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
 
-		// 13b: Verify EA spec fields (from 02_ assertions)
+		// 13b: Verify EA spec fields — all RO-populated fields must be present
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
 		Expect(ea.Spec.TargetResource.Kind).ToNot(BeEmpty(),
 			"EA targetResource.kind should be set")
 		Expect(ea.Spec.TargetResource.Name).ToNot(BeEmpty(),
 			"EA targetResource.name should be set")
+		Expect(ea.Spec.TargetResource.Namespace).ToNot(BeEmpty(),
+			"EA targetResource.namespace should be set (RO must populate)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"EA stabilizationWindow should be positive (set by RO config)")
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
 			"EA remediationRequestPhase should be Completed")
+		Expect(ea.Spec.RemediationCreatedAt).ToNot(BeNil(),
+			"EA remediationCreatedAt should be set (RO copies from RR.CreationTimestamp)")
+		Expect(ea.Spec.SignalName).ToNot(BeEmpty(),
+			"EA signalName should be set (OBS-1: RO copies from RR.Spec.SignalName)")
 
-		GinkgoWriter.Printf("  EA spec: correlationID=%s, target=%s/%s, stabilizationWindow=%v\n",
+		// Verify owner reference points to the parent RemediationRequest
+		ownerRefs := ea.GetOwnerReferences()
+		Expect(ownerRefs).ToNot(BeEmpty(), "EA should have an owner reference to the parent RR")
+		foundOwnerRef := false
+		for _, ref := range ownerRefs {
+			if ref.Name == remediationRequest.Name {
+				foundOwnerRef = true
+				break
+			}
+		}
+		Expect(foundOwnerRef).To(BeTrue(),
+			"EA owner reference should point to the parent RemediationRequest")
+
+		GinkgoWriter.Printf("  EA spec: correlationID=%s, target=%s/%s/%s, stabilizationWindow=%v, signalName=%s\n",
 			ea.Spec.CorrelationID, ea.Spec.TargetResource.Kind, ea.Spec.TargetResource.Name,
-			ea.Spec.Config.StabilizationWindow.Duration)
+			ea.Spec.TargetResource.Namespace, ea.Spec.Config.StabilizationWindow.Duration,
+			ea.Spec.SignalName)
 
 		// 13c: Verify EA reached terminal phase (from 02_ and 03_ assertions)
 		Eventually(func() string {
@@ -774,6 +794,28 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"Hash component should be computed")
 		Expect(finalEA.Status.Components.PostRemediationSpecHash).ToNot(BeEmpty(),
 			"Post-remediation spec hash should be set")
+
+		// 13e: Verify status fields populated after assessment
+		Expect(finalEA.Status.Components.CurrentSpecHash).ToNot(BeEmpty(),
+			"Current spec hash should be set after assessment (catches empty hash issues)")
+		if finalEA.Status.Components.HealthAssessed {
+			Expect(finalEA.Status.Components.HealthScore).ToNot(BeNil(),
+				"HealthScore should not be nil when HealthAssessed=true")
+		}
+		// With the increased stabilization window (10s), the pod should have recovered
+		// from OOMKill by the time EM assesses health, yielding a positive score.
+		if finalEA.Status.Components.HealthScore != nil && *finalEA.Status.Components.HealthScore > 0 {
+			GinkgoWriter.Printf("  ✅ Health > 0 (%.2f): pod recovered after remediation\n", *finalEA.Status.Components.HealthScore)
+		} else {
+			GinkgoWriter.Printf("  ⚠️  Health = 0: pod may not have recovered yet (check stabilization window)\n")
+		}
+
+		// Log hash comparison diagnostics for spec drift detection
+		if finalEA.Status.Components.PostRemediationSpecHash != "" && finalEA.Status.Components.CurrentSpecHash != "" {
+			GinkgoWriter.Printf("  ✅ Hash comparison available: post=%s, current=%s\n",
+				finalEA.Status.Components.PostRemediationSpecHash[:16]+"...",
+				finalEA.Status.Components.CurrentSpecHash[:16]+"...")
+		}
 
 		GinkgoWriter.Println("  ┌─────────────────────────────────────────────────────────")
 		GinkgoWriter.Println("  │ EFFECTIVENESS ASSESSMENT RESULTS")
@@ -860,6 +902,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 
 		// Wait for pod to be running (not OOMKill — it stays alive at 92% memory)
 		By("AM Step 2b: Waiting for memory-eater pod to be running...")
+		var memoryEaterPodName string
 		Eventually(func() bool {
 			pods := &corev1.PodList{}
 			if err := apiReader.List(ctx, pods, client.InNamespace(testNamespaceAM),
@@ -869,7 +912,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			for _, pod := range pods.Items {
 				for _, cs := range pod.Status.ContainerStatuses {
 					if cs.Ready && cs.State.Running != nil {
-						GinkgoWriter.Println("  ✅ memory-eater pod is running (high memory usage)")
+						memoryEaterPodName = pod.Name
+						GinkgoWriter.Printf("  ✅ memory-eater pod is running: %s\n", pod.Name)
 						return true
 					}
 				}
@@ -878,13 +922,36 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should be running at high memory usage")
 
 		// ================================================================
-		// AM Step 3: Wait for RemediationRequest (from AlertManager webhook)
+		// AM Step 3: Inject alert into AlertManager and wait for RR
 		// ================================================================
-		// The Prometheus alert rule fires when container_memory_working_set_bytes /
-		// container_spec_memory_limit_bytes >= 0.90 for 10s. AlertManager then sends
-		// the MemoryExceedsLimit alert to Gateway via webhook. Gateway creates a
-		// RemediationRequest from the Prometheus alert payload.
-		By("AM Step 3: Waiting for RemediationRequest from AlertManager webhook to Gateway")
+		// Instead of waiting for Prometheus to scrape cAdvisor metrics and fire
+		// the alert (which is unreliable in K8s 1.34+ due to CRI metrics migration
+		// affecting container_spec_memory_limit_bytes availability), we inject the
+		// MemoryExceedsLimit alert directly into AlertManager via its API.
+		// This still exercises the full AlertManager → Gateway webhook → RR path.
+		By("AM Step 3a: Injecting MemoryExceedsLimit alert into AlertManager")
+		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
+		injectErr := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
+			{
+				Name: "MemoryExceedsLimit",
+				Labels: map[string]string{
+					"severity":  "critical",
+					"namespace": testNamespaceAM,
+					"pod":       memoryEaterPodName,
+					"container": "memory-eater",
+				},
+				Annotations: map[string]string{
+					"summary":     "Container memory exceeds limit",
+					"description": fmt.Sprintf("Pod %s using >90%% of memory limit", memoryEaterPodName),
+				},
+				Status:   "firing",
+				StartsAt: time.Now(),
+			},
+		})
+		Expect(injectErr).ToNot(HaveOccurred(), "Failed to inject alert into AlertManager")
+		GinkgoWriter.Println("  ✅ MemoryExceedsLimit alert injected into AlertManager")
+
+		By("AM Step 3b: Waiting for RemediationRequest from AlertManager webhook to Gateway")
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
 			rrList := &remediationv1.RemediationRequestList{}
@@ -898,7 +965,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 				return true
 			}
 			return false
-		}, 3*time.Minute, 3*time.Second).Should(BeTrue(),
+		}, 2*time.Minute, 3*time.Second).Should(BeTrue(),
 			"RemediationRequest should be created by Gateway from AlertManager webhook")
 
 		// ================================================================
