@@ -69,9 +69,9 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						Severity:         "critical",
 						SignalType:       "OOMKilled",
 						Environment:      "staging",
-						BusinessPriority: "P0", // Must match memory-optimize-v1 catalog entry
+						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "oom-service-abc123",
 								Namespace: "staging",
 							},
@@ -171,9 +171,9 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						Severity:         "critical",
 						SignalType:       "OOMKilled",
 						Environment:      "staging",
-						BusinessPriority: "P0", // Must match memory-optimize-v1 catalog entry
+						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "memory-hungry-app",
 								Namespace: "staging",
 							},
@@ -248,7 +248,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						Environment:      "staging", // Must be in [staging,production,test]
 						BusinessPriority: "P1",      // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "dev-app",
 								Namespace: "development",
 							},
@@ -370,9 +370,9 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							Severity:         "critical",
 							SignalType:       "OOMKilled",
 							Environment:      "staging", // Even staging requires approval for 3+ attempts
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",      // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "critical-service",
 								Namespace: "staging",
 							},
@@ -447,7 +447,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						Environment:      "staging",
 						BusinessPriority: "P1", // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "test-app",
 								Namespace: "staging",
 							},

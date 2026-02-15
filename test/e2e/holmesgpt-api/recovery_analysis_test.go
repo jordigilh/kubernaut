@@ -764,7 +764,7 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
 				Environment:           hapiclient.NewOptString("production"),
 				Priority:              hapiclient.NewOptString("P1"),            // Must match crashloop-config-fix-v1 catalog entry
-				ResourceKind:          hapiclient.NewOptNilString("Pod"),        // Must match crashloop-config-fix-v1 component=pod
+				ResourceKind:          hapiclient.NewOptNilString("Deployment"), // Must match crashloop-config-fix-v1 component=deployment
 			}
 
 			// ========================================
