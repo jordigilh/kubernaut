@@ -83,35 +83,42 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Create RR that will be blocked
 			rr := createRemediationRequestWithFingerprint(ns, "rr-cooldown-expired", fingerprint)
 
-			// Wait for RR to be initialized (controller assigns a phase)
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).ShouldNot(BeEmpty())
+		// Wait for controller to fully process the RR (reach Processing phase)
+		// RC-11 pattern: Wait for Processing + ObservedGeneration to prevent race
+		// where controller overwrites our manually set Blocked phase
+		Eventually(func() bool {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+				return false
+			}
+			return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
+				rr.Status.ObservedGeneration == rr.Generation
+		}, timeout, interval).Should(BeTrue(),
+			"RR should reach Processing phase with ObservedGeneration matching Generation")
 
-			// Manually set RR to Blocked state with BlockedUntil in the PAST
-			// This simulates a cooldown that has already expired
-			pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
-			Eventually(func() error {
-				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
-					return err
-				}
+		// Manually set RR to Blocked state with BlockedUntil in the PAST
+		// This simulates a cooldown that has already expired
+		pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
+		Eventually(func() error {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+				return err
+			}
 
-				rr.Status.OverallPhase = remediationv1.PhaseBlocked
-				rr.Status.BlockedUntil = &pastTime
-				rr.Status.BlockReason = string(remediationv1.BlockReasonConsecutiveFailures)
-				rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
+			rr.Status.OverallPhase = remediationv1.PhaseBlocked
+			rr.Status.BlockedUntil = &pastTime
+			rr.Status.BlockReason = string(remediationv1.BlockReasonConsecutiveFailures)
+			rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
+			rr.Status.ObservedGeneration = rr.Generation
 
-				return k8sClient.Status().Update(ctx, rr)
-			}, timeout, interval).Should(Succeed())
+			return k8sClient.Status().Update(ctx, rr)
+		}, timeout, interval).Should(Succeed())
 
-			// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
-			// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
-				return rr.Status.OverallPhase
-			}, "10s", interval).Should(Equal(remediationv1.PhaseFailed),
-				"RR should transition to Failed when BlockedUntil is in the past")
+		// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
+		// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed),
+			"RR should transition to Failed when BlockedUntil is in the past")
 
 			// Refresh RR to get latest status
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
