@@ -153,6 +153,15 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			analysis.Spec.IsRecoveryAttempt = true
 			analysis.Spec.RecoveryAttemptNumber = 3
 
+			// DD-HAPI-017: Recovery path uses security gate context filters.
+			// CrashLoopBackOff → crashloop-config-fix-v1 (OCI labels):
+			//   severity=high, component=deployment, environment=[production,staging,test], priority=P1
+			// Override BeforeEach defaults to match the workflow labels so the
+			// security gate validation passes.
+			analysis.Spec.AnalysisRequest.SignalContext.Severity = "high"
+			analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P1"
+			analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind = "Deployment"
+
 			By("Creating recovery attempt AIAnalysis")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 

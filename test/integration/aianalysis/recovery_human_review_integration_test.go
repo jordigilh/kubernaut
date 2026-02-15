@@ -192,16 +192,20 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint: helpers.UniqueTestName("fp-recovery-hr-low-conf"),
-							Severity:    "critical",
+							// DD-HAPI-017: Signal context must match generic-restart-v1 OCI labels
+							// for the security gate to pass and the low_confidence path to be exercised.
+							// generic-restart-v1 labels: severity=[low,medium], component=pod,
+							// environment=[production,staging,test], priority=[P1,P2,P3]
+							Severity: "medium",
 							// Special signal type triggers HAPI mock edge case:
-							// - needs_human_review=true
+							// - needs_human_review=true (from low confidence)
 							// - human_review_reason="low_confidence"
 							SignalType:       "MOCK_LOW_CONFIDENCE",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Deployment",
-								Name:      "unstable-deployment",
+								Kind:      "Pod",
+								Name:      "unstable-pod",
 								Namespace: testNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
