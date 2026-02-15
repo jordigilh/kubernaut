@@ -136,24 +136,12 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-
-      - name: Install Python dependencies
-        working-directory: holmesgpt-api
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
-
       - name: Lint Python code (HAPI)
-        run: |
-          echo "🔍 Linting Python code..."
-          make lint-holmesgpt-api
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.8.4"
+          args: "check"
+          src: "holmesgpt-api/src/ holmesgpt-api/tests/"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   unit-tests:
