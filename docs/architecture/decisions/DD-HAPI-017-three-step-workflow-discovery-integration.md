@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: replace `search_workflow_catalog` with three-step discovery tools for both incident and recovery flows. No migration -- pre-release greenfield replacement. |
+| 1.1 | 2026-02-15 | Architecture Team | Remove `actualSuccessRate` and `totalExecutions` from `list_workflows` LLM-facing response. These global aggregate metrics are misleading for per-incident workflow selection (Section 7). Clarify that contextual remediation history via spec-hash matching (DD-HAPI-016) is the correct mechanism for outcome-aware decisions. |
 
 ---
 
@@ -214,6 +215,44 @@ The DS endpoint changes required by this design are documented here for blast ra
 
 **Dead code**: `HandleListWorkflowVersions` handler and `GetVersionsByName` repository function have no consumers and no OpenAPI definition. They should be removed.
 
+### 7. LLM-Facing Data Boundaries: No Aggregate Success Metrics (v1.1)
+
+**Decision**: The `list_workflows` response (Step 2) MUST NOT include `actualSuccessRate` or `totalExecutions` in the LLM-facing discovery flow. These fields are removed from the `WorkflowDiscoveryEntry` schema used by HAPI tools and the corresponding prompt instructions.
+
+**Rationale**:
+
+`actualSuccessRate` and `totalExecutions` are **global aggregate metrics** computed across all past executions of a workflow — across different signals, different target resources, different environments, and different root causes. Exposing them to the LLM during per-incident workflow selection creates several problems:
+
+1. **Contextual irrelevance**: An 85% success rate measured against OOM signals in staging has no predictive value when the LLM is evaluating the workflow for a CrashLoopBackOff on a different Deployment in production. The conditions under which these figures were collected are not applicable to the current case.
+
+2. **Selection bias**: The LLM will favor high-execution, high-success-rate workflows even when those stats are irrelevant to the current incident context. A workflow that is a perfect match for the current case but is newly registered (0 executions, no success rate) would be unfairly penalized.
+
+3. **False confidence**: Aggregate success rates can mask important context — a workflow might have 95% success on simple cases but 20% success on the specific class of failure the LLM is currently investigating. The aggregate hides this distinction.
+
+**These metrics remain available for operators** via the full `RemediationWorkflow` schema (e.g., `GET /api/v1/workflows/{id}` admin endpoints, dashboard views). They are valuable for operational monitoring and catalog curation — just not for per-incident LLM selection.
+
+**The correct mechanism for outcome-aware LLM decisions** is the **Remediation History Context** (DD-HAPI-016), which provides contextual history scoped to the specific target resource via spec-hash matching:
+
+- **Three-way hash comparison** (`ComputeHashMatch` in `pkg/datastorage/server/remediation_history_logic.go`):
+  - `currentSpecHash == preRemediationSpecHash` → **Configuration regression detected** — the resource has reverted to a pre-remediation state, indicating the previous remediation was undone
+  - `currentSpecHash == postRemediationSpecHash` → **Configuration unchanged** — the resource spec is the same as after the previous remediation
+  - No match → **Spec has drifted** — the resource has been modified by other means since the last remediation
+
+- **Tier 1 (recent history)**: Detailed remediation chain for the same `targetResource` (kind, name, namespace) within a recent time window. Includes: `workflowType`, `outcome` (success/failure/partial), `effectivenessScore`, `signalResolved`, `healthChecks`, `metricDeltas`, `assessmentReason`, `preRemediationSpecHash`, `postRemediationSpecHash`.
+
+- **Tier 2 (wider history)**: Summary entries for the same `preRemediationSpecHash` across a broader time window, catching cases where the same configuration state has been seen before on different resource instances.
+
+- **Causal chain detection** (`_detect_spec_drift_causal_chains` in `holmesgpt-api/src/extensions/remediation_history_prompt.py`): Detects when a `spec_drift` entry's `postRemediationSpecHash` matches a subsequent entry's `preRemediationSpecHash`, proving the drift led to a follow-up remediation.
+
+- **Declining effectiveness trend detection**: Identifies patterns where successive remediations on the same target show decreasing effectiveness scores.
+
+This contextual history is injected into the LLM prompt as the `## Remediation History Context (AUTO-DETECTED)` section before the workflow discovery phase, giving the LLM directly comparable, target-specific evidence to inform its selection rather than misleading global aggregates.
+
+**Prompt changes (v1.1)**:
+- Step 2 instruction changed from "Compare success rates, execution history, and descriptions" to "Compare workflow descriptions, version notes, and suitability for your RCA findings"
+- Workflow Discovery Guidance updated to remove success rate references
+- `ListWorkflowsTool` description and `additional_instructions` updated to remove success rate/execution count references
+
 ---
 
 ## Blast Radius
@@ -375,8 +414,8 @@ The DS endpoint changes required by this design are documented here for blast ra
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: February 5, 2026
+**Document Version**: 1.1
+**Last Updated**: February 15, 2026
 **Status**: ✅ APPROVED
 **Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol)
 **Confidence**: 92%
