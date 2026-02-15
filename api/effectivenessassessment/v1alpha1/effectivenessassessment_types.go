@@ -108,6 +108,14 @@ type EffectivenessAssessmentSpec struct {
 	// events (OBS-1: distinct from CorrelationID which is the RR name).
 	// +optional
 	SignalName string `json:"signalName,omitempty"`
+
+	// PreRemediationSpecHash is the canonical spec hash of the target resource BEFORE
+	// remediation was applied. Copied from rr.Status.PreRemediationSpecHash by the RO
+	// at EA creation time. The EM uses this to compare pre vs post-remediation state
+	// for spec drift detection, eliminating the need to query DataStorage audit events.
+	// Reference: ADR-EM-001, DD-EM-002
+	// +optional
+	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.

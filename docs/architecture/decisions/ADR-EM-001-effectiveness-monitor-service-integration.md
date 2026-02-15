@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.0 | 2026-02-15 | Architecture Team | **Pre-remediation hash on CRD path**: RO now computes `PreRemediationSpecHash` before WFE creation and stores it on `RR.Status.PreRemediationSpecHash` (immutable via CEL). EA creator copies it to `EA.Spec.PreRemediationSpecHash`. EM reads from EA spec with DataStorage fallback for backward compatibility. Eliminates EM→DS round-trip for hash comparison. Principle 1 updated. |
 | 1.9 | 2026-02-14 | Architecture Team | **Batch 2 implementation**: `remediation.workflow_created` wired at both WFE creation sites (GAP-RO-1). `workflow_type` (DD-WORKFLOW-016 action_type) added end-to-end HAPI→AA→RO (GAP-RO-4). `blockOwnerDeletion` overridden to `false`. `EACreated` K8s event emitted. `no_execution` guard implemented in EM reconciler (Section 5). StabilizationWindow default corrected to 5m. Section 13.1 gap table updated with resolution status. |
 | 1.8 | 2026-02-14 | Architecture Team | **Cross-service audit integration**: Added `blockOwnerDeletion` mismatch and `EventReasonEffectivenessAssessmentCreated` never emitted to Section 13.1 RO prerequisite gaps (from HAPI team audit). |
 | 1.7 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Health scoring updated from weighted sub-check formula to decision-tree algorithm (reflects `pkg/effectivenessmonitor/health/health.go`). Metrics Phase B (memory, latency, error rate) marked as implemented (was incorrectly listed as deferred). `spec_changed` renamed to `hash_match` (inverse semantics, matches OpenAPI). Added `total_replicas`, `ready_replicas`, `pending_count` to health payload. Added `resolution_time_seconds` to alert payload. Annotated v1.0 gaps: `alert_name`, `throughput_*`, `components_assessed`, `completed_at` not yet in OpenAPI payloads. Annotated `no_execution` and `metrics_timed_out` reconciler paths as not yet implemented. |
@@ -62,7 +63,7 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 
 ### Design Principles
 
-1. **Audit-trace-only data source**: EM reads all remediation context from DataStorage audit events, never from the RemediationRequest CRD directly (DD-017 v2.1). The RR is transient and may be deleted or tampered. **Clarification (v1.5)**: The EM is a Kubernetes CRD controller that watches `EffectivenessAssessment` CRDs (not a stateless service that polls for RR completions). "Reads from DS audit events" means the EM **queries** DS during reconciliation to obtain context needed for assessment (e.g., `pre_remediation_spec_hash` from the `remediation.workflow_created` event, signal metadata from `gateway.signal.received`). This is a point-in-time query, not polling. The EM's reconciliation is triggered by EA CRD creation/updates via the standard controller-runtime watch mechanism.
+1. **CRD-first data source with audit fallback**: The EM reads assessment context primarily from the `EffectivenessAssessment` CRD spec (set immutably by the RO at creation time). **Update (v2.0)**: The pre-remediation spec hash is now propagated via the CRD path: `RR.Status.PreRemediationSpecHash` → `EA.Spec.PreRemediationSpecHash`. The EM reads it directly from `ea.Spec.PreRemediationSpecHash`, falling back to a DataStorage query of the `remediation.workflow_created` audit event only for backward compatibility with EAs created before this change. This eliminates the EM→DS round-trip for hash comparison in the common case. **Clarification (v1.5)**: The EM is a Kubernetes CRD controller that watches `EffectivenessAssessment` CRDs (not a stateless service that polls for RR completions). The EM's reconciliation is triggered by EA CRD creation/updates via the standard controller-runtime watch mechanism.
 2. **RO-managed lifecycle**: The Remediation Orchestrator creates the `EffectivenessAssessment` CRD — the same pattern used for AIAnalysis, WorkflowExecution, and NotificationRequest. The RO is the single lifecycle owner for all remediation sub-resources. The EA spec contains only `stabilizationWindow` (the desired wait time before assessment); the RO sets this when creating the EA. As with the other CRDs, the spec is **immutable after creation** via CEL validation (`self == oldSelf`), enforced by the Kubernetes API server. This prevents tampering — any attempt to modify the EA spec after creation is rejected by the API server, guaranteeing the EM always operates on the original spec set by the RO.
 3. **Deterministic outcomes**: No graceful degradation for Prometheus or AlertManager. If configured as enabled but unreachable, EM fails to start (DD-017 v2.1).
 4. **Idempotent assessment**: The EA CRD spec is immutable (CEL: `self == oldSelf`), and the EA status tracks assessment progress. Duplicate EM reconciles check `status.phase` and `status.components` before proceeding. DS deduplicates component audit events by correlation ID + event type.
@@ -179,6 +180,7 @@ sequenceDiagram
     Note over RO,WFE: Phase 5 — Execution
     RO->>K8s: GET target resource .spec (uncached, direct API)
     RO->>RO: Compute SHA-256 pre-remediation hash
+    RO->>K8s: Store hash on RR.Status.PreRemediationSpecHash (immutable CEL)
     RO->>DS: audit: remediation.workflow_created (with pre_remediation_spec_hash)
     RO->>WFE: Create WorkflowExecution CRD
     WFE->>K8s: Create Job or PipelineRun
@@ -282,9 +284,12 @@ sequenceDiagram
     Ctrl->>DS: GET /api/v1/audit/events?correlation_id={ea.spec.correlationID}
     DS-->>Ctrl: AuditEvent[] (all events for this remediation)
 
-    Note over Ctrl: Step 2 — Extract data from audit trail
+    Note over Ctrl: Step 2 — Extract assessment context
+    Ctrl->>Ctrl: Read ea.Spec.PreRemediationSpecHash (CRD path, v2.0)
+    alt PreRemediationSpecHash empty (backward compat)
+        Ctrl->>Ctrl: Parse remediation.workflow_created from audit trail (DataStorage fallback)
+    end
     Ctrl->>Ctrl: Parse gateway.signal.received (signal metadata, fingerprint)
-    Ctrl->>Ctrl: Parse remediation.workflow_created (pre_remediation_spec_hash, target_resource)
     Ctrl->>Ctrl: Parse workflowexecution.workflow.started (workflow_id, version, parameters)
     Ctrl->>Ctrl: Parse workflowexecution.workflow.completed/failed (outcome, duration)
 
@@ -985,7 +990,7 @@ No graceful degradation at runtime. If a dependency becomes unreachable after st
 | **Multiple RRs for same target overlapping** | Each RR has its own EA CRD, assessed independently by correlation_id. EM does not deduplicate across RRs. | Each RR is a separate remediation attempt with its own audit trail and EA CRD. |
 | **EM pod restart during assessment** | On restart, controller-runtime re-lists all EA CRDs. EA CRDs with `phase != Completed` trigger reconcile. The `status.components` fields indicate which checks have already been performed — EM skips completed components and continues. Stabilization time is computed from `EA.creationTimestamp`. | EA CRD status provides restart recovery. No state is lost. |
 | **Duplicate reconciles for same EA** | EM checks `EA.status.phase`. If already `Completed`, reconcile is a no-op. EM checks `status.components.*Assessed` flags before each check — already-assessed components are skipped. DS deduplicates component events by correlation_id + event_type. | Idempotency via EA CRD status (primary) and DS dedup (secondary). |
-| **No `remediation.workflow_created` event** | Skip hash comparison. Assessment proceeds with health checks, metrics, and alert resolution only. | Pre-remediation hash is a new event; older remediations won't have it. |
+| **No pre-remediation hash available** | EM reads `ea.Spec.PreRemediationSpecHash`. If empty, falls back to DataStorage query for `remediation.workflow_created` event. If still empty, skip hash comparison. Assessment proceeds with health checks, metrics, and alert resolution only. | Pre-remediation hash is propagated via CRD path (v2.0). DataStorage fallback supports EAs created before this change. |
 | **WFE completed but RO marked RR as Failed** | RO still creates EA CRD (for all terminal phases). EM performs full assessment. The WFE did execute; the failure may be in a subsequent phase (e.g., notification). | EM assesses execution effectiveness, independent of the RR's overall outcome. |
 | **RO fails to create EA CRD** | Standard controller-runtime error handling. RO requeues the RR reconcile. EA creation is part of the RR terminal-phase handling. | Same pattern as NR creation failure. |
 | **Target resource spec modified during assessment (spec drift)** | EM detects hash mismatch on each reconcile (Step 6.5, DD-EM-002 v1.1). EA completed immediately with `assessment_reason` = `"spec_drift"`. DS short-circuits score to **0.0** — component scores are unreliable because the spec changed (likely another remediation). `SpecIntegrity` condition set to `False/SpecDrifted`. | Prevents misleading scores when a subsequent remediation modifies the target before the assessment completes. |
@@ -996,6 +1001,8 @@ No graceful degradation at runtime. If a dependency becomes unreachable after st
 ---
 
 ## 12. EM Reads from Audit Trail — Event Extraction Map
+
+**v2.0 Update**: The pre-remediation spec hash is now read directly from `ea.Spec.PreRemediationSpecHash` (CRD path). The DataStorage query for `remediation.workflow_created` is a backward-compatibility fallback only. All other audit event queries remain unchanged.
 
 When the EM queries DataStorage for the audit trail of a given `correlation_id` (from `ea.spec.correlationID`, which is the `RR.Name`), it extracts specific fields from specific event types:
 

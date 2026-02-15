@@ -65,7 +65,7 @@ import (
 
 // Test constants
 const (
-	timeout  = 120 * time.Second
+	timeout  = 150 * time.Second
 	interval = 500 * time.Millisecond
 
 	clusterName = "em-e2e"

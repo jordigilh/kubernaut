@@ -916,8 +916,31 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Routing checks passed - create WorkflowExecution
 		logger.Info("Routing checks passed, creating WorkflowExecution")
 
-		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created BEFORE WFE creation
-		// Captures pre-remediation spec hash for EM comparison (DD-EM-002)
+		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
+		// Stored on RR status so the EA creator can copy it into the EA spec,
+		// eliminating the EM's dependency on DataStorage audit events for hash comparison.
+		preHash, hashErr := CapturePreRemediationHash(
+			ctx, r.apiReader, r.restMapper,
+			rr.Spec.TargetResource.Kind,
+			rr.Spec.TargetResource.Name,
+			rr.Spec.TargetResource.Namespace,
+		)
+		if hashErr != nil {
+			logger.Error(hashErr, "Failed to capture pre-remediation hash (non-fatal)")
+		}
+		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			} else {
+				logger.Info("Pre-remediation spec hash stored on RR status",
+					"hash", preHash[:min(23, len(preHash))]+"...")
+			}
+		}
+
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
 		r.emitWorkflowCreatedAudit(ctx, rr, ai)
 
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
@@ -1076,7 +1099,26 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
 
-		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created BEFORE WFE creation
+		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
+		preHash, hashErr := CapturePreRemediationHash(
+			ctx, r.apiReader, r.restMapper,
+			rr.Spec.TargetResource.Kind,
+			rr.Spec.TargetResource.Name,
+			rr.Spec.TargetResource.Namespace,
+		)
+		if hashErr != nil {
+			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
+		}
+		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			}
+		}
+
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
 		r.emitWorkflowCreatedAudit(ctx, rr, ai)
 
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
