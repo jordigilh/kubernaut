@@ -134,11 +134,23 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 	insertEMEvents := func(correlationID, reason string, score float64, preHash, postHash string, ts time.Time) {
 		GinkgoHelper()
 		insertAuditEvent("effectiveness.health.assessed", "effectiveness", correlationID,
-			map[string]interface{}{"assessed": true, "score": 0.85, "pod_running": true, "readiness_pass": true}, ts.Add(1*time.Minute))
+			map[string]interface{}{
+				"assessed": true, "score": 0.85,
+				"health_checks": map[string]interface{}{
+					"pod_running":    true,
+					"readiness_pass": true,
+				},
+			}, ts.Add(1*time.Minute))
 		insertAuditEvent("effectiveness.alert.assessed", "effectiveness", correlationID,
 			map[string]interface{}{"assessed": true, "score": 0.9, "signal_resolved": true}, ts.Add(2*time.Minute))
 		insertAuditEvent("effectiveness.metrics.assessed", "effectiveness", correlationID,
-			map[string]interface{}{"assessed": true, "score": 0.8, "cpu_before": 0.85, "cpu_after": 0.45}, ts.Add(3*time.Minute))
+			map[string]interface{}{
+				"assessed": true, "score": 0.8,
+				"metric_deltas": map[string]interface{}{
+					"cpu_before": 0.85,
+					"cpu_after":  0.45,
+				},
+			}, ts.Add(3*time.Minute))
 		insertAuditEvent("effectiveness.hash.computed", "effectiveness", correlationID,
 			map[string]interface{}{"pre_remediation_spec_hash": preHash, "post_remediation_spec_hash": postHash}, ts.Add(4*time.Minute))
 		insertAuditEvent("effectiveness.assessment.completed", "effectiveness", correlationID,
