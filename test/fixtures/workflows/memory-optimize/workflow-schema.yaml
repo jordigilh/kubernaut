@@ -13,7 +13,7 @@ actionType: ScaleReplicas
 
 labels:
   signalType: OOMKilled
-  severity: high
+  severity: [high]
   environment: [production, staging, test]
   component: deployment
   priority: P1

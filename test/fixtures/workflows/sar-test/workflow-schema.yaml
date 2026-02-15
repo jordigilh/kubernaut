@@ -13,7 +13,7 @@ actionType: RestartPod
 
 labels:
   signalType: CrashLoopBackOff
-  severity: high
+  severity: [high]
   environment: [test]
   component: deployment
   priority: P2

@@ -14589,7 +14589,11 @@ func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("severity")
-		s.Severity.Encode(e)
+		e.ArrStart()
+		for _, elem := range s.Severity {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
 	}
 	{
 		e.FieldStart("component")
@@ -14639,7 +14643,15 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				if err := s.Severity.Decode(d); err != nil {
+				s.Severity = make([]MandatoryLabelsSeverityItem, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem MandatoryLabelsSeverityItem
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Severity = append(s.Severity, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
@@ -14834,48 +14846,46 @@ func (s *MandatoryLabelsPriority) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes MandatoryLabelsSeverity as json.
-func (s MandatoryLabelsSeverity) Encode(e *jx.Encoder) {
+// Encode encodes MandatoryLabelsSeverityItem as json.
+func (s MandatoryLabelsSeverityItem) Encode(e *jx.Encoder) {
 	e.Str(string(s))
 }
 
-// Decode decodes MandatoryLabelsSeverity from json.
-func (s *MandatoryLabelsSeverity) Decode(d *jx.Decoder) error {
+// Decode decodes MandatoryLabelsSeverityItem from json.
+func (s *MandatoryLabelsSeverityItem) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode MandatoryLabelsSeverity to nil")
+		return errors.New("invalid: unable to decode MandatoryLabelsSeverityItem to nil")
 	}
 	v, err := d.StrBytes()
 	if err != nil {
 		return err
 	}
 	// Try to use constant string.
-	switch MandatoryLabelsSeverity(v) {
-	case MandatoryLabelsSeverity_critical:
-		*s = MandatoryLabelsSeverity_critical
-	case MandatoryLabelsSeverity_high:
-		*s = MandatoryLabelsSeverity_high
-	case MandatoryLabelsSeverity_medium:
-		*s = MandatoryLabelsSeverity_medium
-	case MandatoryLabelsSeverity_low:
-		*s = MandatoryLabelsSeverity_low
-	case MandatoryLabelsSeverity_:
-		*s = MandatoryLabelsSeverity_
+	switch MandatoryLabelsSeverityItem(v) {
+	case MandatoryLabelsSeverityItemCritical:
+		*s = MandatoryLabelsSeverityItemCritical
+	case MandatoryLabelsSeverityItemHigh:
+		*s = MandatoryLabelsSeverityItemHigh
+	case MandatoryLabelsSeverityItemMedium:
+		*s = MandatoryLabelsSeverityItemMedium
+	case MandatoryLabelsSeverityItemLow:
+		*s = MandatoryLabelsSeverityItemLow
 	default:
-		*s = MandatoryLabelsSeverity(v)
+		*s = MandatoryLabelsSeverityItem(v)
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s MandatoryLabelsSeverity) MarshalJSON() ([]byte, error) {
+func (s MandatoryLabelsSeverityItem) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *MandatoryLabelsSeverity) UnmarshalJSON(data []byte) error {
+func (s *MandatoryLabelsSeverityItem) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -28267,21 +28277,9 @@ func (s *WorkflowDiscoveryEntry) encodeFields(e *jx.Encoder) {
 			s.ExecutionEngine.Encode(e)
 		}
 	}
-	{
-		if s.ActualSuccessRate.Set {
-			e.FieldStart("actualSuccessRate")
-			s.ActualSuccessRate.Encode(e)
-		}
-	}
-	{
-		if s.TotalExecutions.Set {
-			e.FieldStart("totalExecutions")
-			s.TotalExecutions.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfWorkflowDiscoveryEntry = [9]string{
+var jsonFieldsNameOfWorkflowDiscoveryEntry = [7]string{
 	0: "workflowId",
 	1: "workflowName",
 	2: "name",
@@ -28289,8 +28287,6 @@ var jsonFieldsNameOfWorkflowDiscoveryEntry = [9]string{
 	4: "version",
 	5: "containerImage",
 	6: "executionEngine",
-	7: "actualSuccessRate",
-	8: "totalExecutions",
 }
 
 // Decode decodes WorkflowDiscoveryEntry from json.
@@ -28298,7 +28294,7 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkflowDiscoveryEntry to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -28382,26 +28378,6 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"executionEngine\"")
 			}
-		case "actualSuccessRate":
-			if err := func() error {
-				s.ActualSuccessRate.Reset()
-				if err := s.ActualSuccessRate.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"actualSuccessRate\"")
-			}
-		case "totalExecutions":
-			if err := func() error {
-				s.TotalExecutions.Reset()
-				if err := s.TotalExecutions.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"totalExecutions\"")
-			}
 		default:
 			return d.Skip()
 		}
@@ -28411,9 +28387,8 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [1]uint8{
 		0b00111111,
-		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

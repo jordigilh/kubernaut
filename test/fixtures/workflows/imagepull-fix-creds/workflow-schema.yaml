@@ -13,7 +13,7 @@ actionType: RollbackDeployment
 
 labels:
   signalType: ImagePullBackOff
-  severity: high
+  severity: [high]
   environment: [production, staging]
   component: deployment
   priority: P1

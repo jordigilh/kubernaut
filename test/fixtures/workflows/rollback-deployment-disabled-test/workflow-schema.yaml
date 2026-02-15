@@ -14,7 +14,7 @@ actionType: RollbackDeployment
 
 labels:
   signalType: DeploymentFailed
-  severity: high
+  severity: [high]
   environment: [production, staging, test]
   component: deployment
   priority: P1

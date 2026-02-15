@@ -13,7 +13,7 @@ actionType: DrainNode
 
 labels:
   signalType: NodeNotReady
-  severity: critical
+  severity: [critical]
   environment: [production, staging, test]
   component: node
   priority: P0

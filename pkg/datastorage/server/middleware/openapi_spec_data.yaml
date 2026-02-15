@@ -2689,10 +2689,13 @@ components:
           description: "Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)"
           example: "OOMKilled"
         severity:
-          type: string
-          description: "Severity level this workflow is designed for ('*' matches any severity)"
-          enum: [critical, high, medium, low, "*"]
-          example: "critical"
+          type: array
+          items:
+            type: string
+            enum: [critical, high, medium, low]
+          minItems: 1
+          description: "Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels."
+          example: [critical]
         component:
           type: string
           description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"

@@ -7994,8 +7994,9 @@ type LivenessCheckOK struct{}
 type MandatoryLabels struct {
 	// Signal type this workflow handles (optional metadata per DD-WORKFLOW-016).
 	SignalType OptString `json:"signal_type"`
-	// Severity level this workflow is designed for ('*' matches any severity).
-	Severity MandatoryLabelsSeverity `json:"severity"`
+	// Severity level(s) this workflow is designed for. Always an array. To match any severity, list all
+	// levels.
+	Severity []MandatoryLabelsSeverityItem `json:"severity"`
 	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
 	Component string `json:"component"`
 	// Target environments (workflow can declare multiple, '*' matches all).
@@ -8010,7 +8011,7 @@ func (s *MandatoryLabels) GetSignalType() OptString {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *MandatoryLabels) GetSeverity() MandatoryLabelsSeverity {
+func (s *MandatoryLabels) GetSeverity() []MandatoryLabelsSeverityItem {
 	return s.Severity
 }
 
@@ -8035,7 +8036,7 @@ func (s *MandatoryLabels) SetSignalType(val OptString) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *MandatoryLabels) SetSeverity(val MandatoryLabelsSeverity) {
+func (s *MandatoryLabels) SetSeverity(val []MandatoryLabelsSeverityItem) {
 	s.Severity = val
 }
 
@@ -8179,40 +8180,35 @@ func (s *MandatoryLabelsPriority) UnmarshalText(data []byte) error {
 	}
 }
 
-// Severity level this workflow is designed for ('*' matches any severity).
-type MandatoryLabelsSeverity string
+type MandatoryLabelsSeverityItem string
 
 const (
-	MandatoryLabelsSeverity_critical MandatoryLabelsSeverity = "critical"
-	MandatoryLabelsSeverity_high     MandatoryLabelsSeverity = "high"
-	MandatoryLabelsSeverity_medium   MandatoryLabelsSeverity = "medium"
-	MandatoryLabelsSeverity_low      MandatoryLabelsSeverity = "low"
-	MandatoryLabelsSeverity_         MandatoryLabelsSeverity = "*"
+	MandatoryLabelsSeverityItemCritical MandatoryLabelsSeverityItem = "critical"
+	MandatoryLabelsSeverityItemHigh     MandatoryLabelsSeverityItem = "high"
+	MandatoryLabelsSeverityItemMedium   MandatoryLabelsSeverityItem = "medium"
+	MandatoryLabelsSeverityItemLow      MandatoryLabelsSeverityItem = "low"
 )
 
-// AllValues returns all MandatoryLabelsSeverity values.
-func (MandatoryLabelsSeverity) AllValues() []MandatoryLabelsSeverity {
-	return []MandatoryLabelsSeverity{
-		MandatoryLabelsSeverity_critical,
-		MandatoryLabelsSeverity_high,
-		MandatoryLabelsSeverity_medium,
-		MandatoryLabelsSeverity_low,
-		MandatoryLabelsSeverity_,
+// AllValues returns all MandatoryLabelsSeverityItem values.
+func (MandatoryLabelsSeverityItem) AllValues() []MandatoryLabelsSeverityItem {
+	return []MandatoryLabelsSeverityItem{
+		MandatoryLabelsSeverityItemCritical,
+		MandatoryLabelsSeverityItemHigh,
+		MandatoryLabelsSeverityItemMedium,
+		MandatoryLabelsSeverityItemLow,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (s MandatoryLabelsSeverity) MarshalText() ([]byte, error) {
+func (s MandatoryLabelsSeverityItem) MarshalText() ([]byte, error) {
 	switch s {
-	case MandatoryLabelsSeverity_critical:
+	case MandatoryLabelsSeverityItemCritical:
 		return []byte(s), nil
-	case MandatoryLabelsSeverity_high:
+	case MandatoryLabelsSeverityItemHigh:
 		return []byte(s), nil
-	case MandatoryLabelsSeverity_medium:
+	case MandatoryLabelsSeverityItemMedium:
 		return []byte(s), nil
-	case MandatoryLabelsSeverity_low:
-		return []byte(s), nil
-	case MandatoryLabelsSeverity_:
+	case MandatoryLabelsSeverityItemLow:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -8220,22 +8216,19 @@ func (s MandatoryLabelsSeverity) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (s *MandatoryLabelsSeverity) UnmarshalText(data []byte) error {
-	switch MandatoryLabelsSeverity(data) {
-	case MandatoryLabelsSeverity_critical:
-		*s = MandatoryLabelsSeverity_critical
+func (s *MandatoryLabelsSeverityItem) UnmarshalText(data []byte) error {
+	switch MandatoryLabelsSeverityItem(data) {
+	case MandatoryLabelsSeverityItemCritical:
+		*s = MandatoryLabelsSeverityItemCritical
 		return nil
-	case MandatoryLabelsSeverity_high:
-		*s = MandatoryLabelsSeverity_high
+	case MandatoryLabelsSeverityItemHigh:
+		*s = MandatoryLabelsSeverityItemHigh
 		return nil
-	case MandatoryLabelsSeverity_medium:
-		*s = MandatoryLabelsSeverity_medium
+	case MandatoryLabelsSeverityItemMedium:
+		*s = MandatoryLabelsSeverityItemMedium
 		return nil
-	case MandatoryLabelsSeverity_low:
-		*s = MandatoryLabelsSeverity_low
-		return nil
-	case MandatoryLabelsSeverity_:
-		*s = MandatoryLabelsSeverity_
+	case MandatoryLabelsSeverityItemLow:
+		*s = MandatoryLabelsSeverityItemLow
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -18316,10 +18309,6 @@ type WorkflowDiscoveryEntry struct {
 	ContainerImage string `json:"containerImage"`
 	// Execution engine (tekton, job).
 	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
-	// Historical success rate (0.0-1.0).
-	ActualSuccessRate OptFloat32 `json:"actualSuccessRate"`
-	// Total times this workflow has been executed.
-	TotalExecutions OptInt `json:"totalExecutions"`
 }
 
 // GetWorkflowId returns the value of WorkflowId.
@@ -18357,16 +18346,6 @@ func (s *WorkflowDiscoveryEntry) GetExecutionEngine() OptWorkflowDiscoveryEntryE
 	return s.ExecutionEngine
 }
 
-// GetActualSuccessRate returns the value of ActualSuccessRate.
-func (s *WorkflowDiscoveryEntry) GetActualSuccessRate() OptFloat32 {
-	return s.ActualSuccessRate
-}
-
-// GetTotalExecutions returns the value of TotalExecutions.
-func (s *WorkflowDiscoveryEntry) GetTotalExecutions() OptInt {
-	return s.TotalExecutions
-}
-
 // SetWorkflowId sets the value of WorkflowId.
 func (s *WorkflowDiscoveryEntry) SetWorkflowId(val uuid.UUID) {
 	s.WorkflowId = val
@@ -18400,16 +18379,6 @@ func (s *WorkflowDiscoveryEntry) SetContainerImage(val string) {
 // SetExecutionEngine sets the value of ExecutionEngine.
 func (s *WorkflowDiscoveryEntry) SetExecutionEngine(val OptWorkflowDiscoveryEntryExecutionEngine) {
 	s.ExecutionEngine = val
-}
-
-// SetActualSuccessRate sets the value of ActualSuccessRate.
-func (s *WorkflowDiscoveryEntry) SetActualSuccessRate(val OptFloat32) {
-	s.ActualSuccessRate = val
-}
-
-// SetTotalExecutions sets the value of TotalExecutions.
-func (s *WorkflowDiscoveryEntry) SetTotalExecutions(val OptInt) {
-	s.TotalExecutions = val
 }
 
 // Execution engine (tekton, job).

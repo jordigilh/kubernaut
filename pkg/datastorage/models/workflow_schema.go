@@ -17,86 +17,8 @@ limitations under the License.
 package models
 
 import (
-	"encoding/json"
 	"fmt"
-
-	"gopkg.in/yaml.v3"
 )
-
-// ========================================
-// FLEXIBLE LABEL TYPES
-// ========================================
-// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
-// DD-WORKFLOW-016: Label fields like severity and environment support both
-// single-value and multi-value declarations in workflow-schema.yaml.
-//
-// StringOrSlice handles both formats transparently:
-//   YAML: severity: "critical"         → ["critical"]
-//   YAML: severity: [low, medium, high] → ["low", "medium", "high"]
-//   JSON: "severity": "critical"        → ["critical"]
-//   JSON: "severity": ["low","medium"]  → ["low", "medium"]
-//
-// MarshalJSON preserves backward compatibility:
-//   len==1 → marshals as string (e.g., "critical")
-//   len>1  → marshals as array  (e.g., ["low","medium","high"])
-// ========================================
-
-// StringOrSlice is a []string that unmarshals from both a single string and an
-// array of strings in YAML and JSON. This enables workflow authors to declare
-// label fields as either scalar ("critical") or array ([low, medium, high]).
-type StringOrSlice []string
-
-// UnmarshalYAML implements yaml.Unmarshaler for gopkg.in/yaml.v3.
-// Accepts both scalar string nodes and sequence nodes.
-func (s *StringOrSlice) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.ScalarNode:
-		// Single string: severity: "critical"
-		*s = StringOrSlice{value.Value}
-		return nil
-	case yaml.SequenceNode:
-		// Array: severity: [low, medium, high]
-		var slice []string
-		if err := value.Decode(&slice); err != nil {
-			return fmt.Errorf("failed to decode string array: %w", err)
-		}
-		*s = StringOrSlice(slice)
-		return nil
-	default:
-		return fmt.Errorf("expected string or array, got YAML node kind %d", value.Kind)
-	}
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-// Accepts both a JSON string and a JSON array of strings.
-// Needed for reading JSONB columns that may contain either format.
-func (s *StringOrSlice) UnmarshalJSON(data []byte) error {
-	// Try single string first (most common for existing data)
-	var single string
-	if err := json.Unmarshal(data, &single); err == nil {
-		*s = StringOrSlice{single}
-		return nil
-	}
-	// Try array of strings
-	var slice []string
-	if err := json.Unmarshal(data, &slice); err != nil {
-		return fmt.Errorf("severity must be a string or array of strings: %w", err)
-	}
-	*s = StringOrSlice(slice)
-	return nil
-}
-
-// MarshalJSON implements json.Marshaler.
-// Preserves backward compatibility: single-element slices marshal as a plain
-// string, multi-element slices marshal as a JSON array. This ensures existing
-// API consumers and ogen client decoders continue to work for single-severity
-// workflows while correctly representing multi-severity workflows.
-func (s StringOrSlice) MarshalJSON() ([]byte, error) {
-	if len(s) == 1 {
-		return json.Marshal(s[0])
-	}
-	return json.Marshal([]string(s))
-}
 
 // ========================================
 // WORKFLOW SCHEMA MODELS
@@ -204,10 +126,9 @@ type WorkflowSchemaLabels struct {
 
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
-	// Accepts both single string and array in workflow-schema.yaml:
-	//   severity: "critical"           → StringOrSlice{"critical"}
-	//   severity: [low, medium, high]  → StringOrSlice{"low", "medium", "high"}
-	Severity StringOrSlice `yaml:"severity" json:"severity" validate:"required,min=1"`
+	// DD-WORKFLOW-001 v2.7: Always an array in workflow-schema.yaml.
+	// Examples: severity: [critical] or severity: [low, medium, high]
+	Severity []string `yaml:"severity" json:"severity" validate:"required,min=1"`
 
 	// Environment is the target environment(s) (REQUIRED)
 	// DD-WORKFLOW-016: Stored as JSONB array in remediation_workflow_catalog
