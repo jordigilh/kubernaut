@@ -73,17 +73,22 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		// Generate unique test ID for isolation
 		testID = generateTestID()
 
-		// This ensures no leftover data from previous test runs
-		// Clean up ALL test workflows including:
-		// - wf-repo-% (workflow repository tests)
-		// - wf-scoring-% (scoring tests)
-		// - bulk-import-test-% (bulk import tests)
-		// Use TRUNCATE for complete cleanup to avoid LIKE pattern mismatches
-		result, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
-		Expect(err).ToNot(HaveOccurred(), "Global cleanup should succeed")
+		// DS-FLAKY-007: Process-scoped cleanup instead of global TRUNCATE.
+		// TRUNCATE is a global DDL operation that wipes ALL rows from the table,
+		// including rows created by OTHER parallel ginkgo processes sharing the
+		// same database. This causes race conditions:
+		//   - Process A creates a workflow, Process B's BeforeEach TRUNCATEs → A's SELECT finds nothing
+		//   - Process A inserts row #1, Process B TRUNCATEs, Process A inserts row #2 → no unique violation
+		// Fix: Use process-scoped DELETE to only clean up rows created by THIS process.
+		processPrefix := fmt.Sprintf("wf-repo-test-%d-%%", GinkgoParallelProcess())
+		result, err := db.ExecContext(ctx,
+			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
+			processPrefix)
+		Expect(err).ToNot(HaveOccurred(), "Process-scoped cleanup should succeed")
 
 		rowsDeleted, _ := result.RowsAffected()
-		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup (TRUNCATE)\n", rowsDeleted)
+		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in process-scoped cleanup (process %d)\n",
+			rowsDeleted, GinkgoParallelProcess())
 	})
 
 	AfterEach(func() {
