@@ -219,6 +219,12 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 // The SQL uses positional parameters ($1, $2, ...) starting from $1.
 //
 // Shared across all three discovery methods (REFACTOR: extracted per TDD methodology).
+//
+// DD-WORKFLOW-016 v2.1: Label values in OCI workflow schemas can be either
+// scalar strings (e.g., "high") or JSON arrays (e.g., ["low", "medium"]).
+// The SQL must handle both types using CASE WHEN jsonb_typeof() checks.
+// Component comparison is case-insensitive (Kubernetes Kind is PascalCase,
+// but OCI labels store lowercase).
 func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []interface{}) {
 	if filters == nil {
 		return "", nil
@@ -229,16 +235,24 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	argIdx := 1
 
 	// Mandatory label filters (JSONB queries on labels column)
+	// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
 	if filters.Severity != "" {
-		conditions = append(conditions, fmt.Sprintf(
-			"(labels->>'severity' = $%d OR labels->>'severity' = '*')", argIdx))
+		conditions = append(conditions, fmt.Sprintf(`(
+			CASE WHEN jsonb_typeof(labels->'severity') = 'array'
+				THEN labels->'severity' ? $%d
+				ELSE labels->>'severity' = $%d OR labels->>'severity' = '*'
+			END
+		)`, argIdx, argIdx))
 		args = append(args, filters.Severity)
 		argIdx++
 	}
 
 	if filters.Component != "" {
+		// DD-WORKFLOW-016 v2.1: Case-insensitive component matching.
+		// Kubernetes resource Kind is PascalCase (e.g., "Deployment"),
+		// but OCI workflow labels store lowercase (e.g., "deployment").
 		conditions = append(conditions, fmt.Sprintf(
-			"(labels->>'component' = $%d OR labels->>'component' = '*')", argIdx))
+			"(LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*')", argIdx))
 		args = append(args, filters.Component)
 		argIdx++
 	}
@@ -252,8 +266,13 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	}
 
 	if filters.Priority != "" {
-		conditions = append(conditions, fmt.Sprintf(
-			"(labels->>'priority' = $%d OR labels->>'priority' = '*')", argIdx))
+		// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
+		conditions = append(conditions, fmt.Sprintf(`(
+			CASE WHEN jsonb_typeof(labels->'priority') = 'array'
+				THEN labels->'priority' ? $%d
+				ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
+			END
+		)`, argIdx, argIdx))
 		args = append(args, filters.Priority)
 		argIdx++
 	}
