@@ -12,7 +12,7 @@ metadata:
 actionType: RestartPod
 
 labels:
-  severity: medium
+  severity: [low, medium, high]
   environment: [production, staging, test]
   component: pod
   priority: P2

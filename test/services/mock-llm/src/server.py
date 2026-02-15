@@ -1151,6 +1151,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                     "current_signal_type": scenario.signal_type
                 }
             }
+            # All recovery scenarios with a workflow selected can recover
+            analysis_json["can_recover"] = bool(scenario.workflow_id)
             
             # Category F: Advanced Recovery Scenarios (E2E-HAPI-049 to E2E-HAPI-054)
             # Return structured recovery format with multiple strategies
@@ -1158,7 +1160,6 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                                   "noisy_neighbor", "network_partition", "recovery_basic"]:
                 logger.info(f"✅ CATEGORY F SCENARIO DETECTED: {scenario.name} - Returning structured recovery format")
                 analysis_json["strategies"] = self._get_category_f_strategies(scenario)
-                analysis_json["can_recover"] = True
                 analysis_json["confidence"] = scenario.confidence
         else:
             logger.info(f"⚠️  NO RECOVERY detected in _final_analysis_response - is_recovery={is_recovery}")
