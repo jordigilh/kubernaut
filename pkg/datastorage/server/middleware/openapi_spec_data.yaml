@@ -2543,16 +2543,13 @@ components:
           type: string
           description: "Execution engine (tekton, job)"
           enum: [tekton, job]
-        actualSuccessRate:
-          type: number
-          format: float
-          description: "Historical success rate (0.0-1.0)"
-          minimum: 0.0
-          maximum: 1.0
-        totalExecutions:
-          type: integer
-          description: "Total times this workflow has been executed"
-          minimum: 0
+        # DD-HAPI-017 v1.1: actualSuccessRate and totalExecutions REMOVED from
+        # LLM-facing discovery response. These global aggregate metrics are
+        # misleading for per-incident workflow selection — the conditions under
+        # which they were collected (different signals, targets, environments)
+        # are not applicable to the current case. Contextual remediation history
+        # via spec-hash matching (DD-HAPI-016) is the correct mechanism.
+        # These fields remain on the full RemediationWorkflow schema for operators.
 
     StructuredDescription:
       type: object
