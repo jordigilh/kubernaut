@@ -20,17 +20,6 @@ data:
         burst: 10
 
     infrastructure:
-      redis:
-        # Use Redis master service (simple master-replica, no Sentinel)
-        addr: "redis-master.kubernaut-system.svc.cluster.local:6379"
-        db: 0
-        password: ""
-        dialTimeout: 5s
-        readTimeout: 3s
-        writeTimeout: 3s
-        poolSize: 10
-        minIdleConns: 5
-
       # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
       # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
       # Service name: data-storage-service (matches production, required for SAR)
