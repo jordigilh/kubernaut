@@ -66,7 +66,7 @@ const validOCIRegistrationSchemaYAML = `metadata:
 actionType: IncreaseMemoryLimits
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   component: pod
   environment: [production]
   priority: P0
@@ -264,7 +264,7 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 actionType: NonExistentAction
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   component: pod
   environment: [production]
   priority: P0
