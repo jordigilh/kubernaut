@@ -56,7 +56,7 @@ const validWorkflowSchemaYAML = `metadata:
 actionType: RestartPod
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   environment: [production]
   component: pod
   priority: p1
@@ -103,7 +103,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
 			Expect(labels).To(HaveKeyWithValue("signalType", "OOMKilled"))
-			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
+			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
 			Expect(labels).To(HaveKeyWithValue("priority", "P1"))
@@ -143,7 +143,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 actionType: RestartPod
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   environment: [staging, production]
   component: pod
   priority: p1
@@ -180,7 +180,7 @@ parameters:
     whenToUse: When signalType is optional
 actionType: RestartPod
 labels:
-  severity: critical
+  severity: [critical]
   environment: [production]
   component: pod
   priority: p1
@@ -204,7 +204,7 @@ execution:
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
 			Expect(labels).ToNot(HaveKey("signalType"),
 				"signalType should be omitted from labels JSONB when empty")
-			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
+			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 		})
 
 		It("UT-DS-017-009: should extract structured description as JSON", func() {
@@ -278,7 +278,7 @@ execution:
     whenToUse: Testing validation
 labels:
   signalType: OOMKilled
-  severity: critical
+  severity: [critical]
   environment: [production]
   component: pod
   priority: p1
