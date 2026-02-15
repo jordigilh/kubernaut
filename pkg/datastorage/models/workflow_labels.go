@@ -38,10 +38,11 @@ type MandatoryLabels struct {
 	// Source: K8s Event Reason (auto-populated by Signal Processing)
 	SignalType string `json:"signalType" validate:"required"`
 
-	// Severity is the severity level this workflow is designed for (REQUIRED)
+	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
 	// Source: Alert/Event (auto-populated by Signal Processing)
-	Severity string `json:"severity" validate:"required,oneof=critical high medium low"`
+	// Supports both single string and array in JSONB (backward compatible via StringOrSlice).
+	Severity StringOrSlice `json:"severity" validate:"required,min=1"`
 
 	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
 	// Examples: "pod", "deployment", "node", "service", "pvc"
@@ -272,7 +273,8 @@ func (d StructuredDescription) String() string {
 
 // NewMandatoryLabels creates a new MandatoryLabels instance
 // DD-WORKFLOW-001 v2.5: environment is []string (workflow declares target environments)
-func NewMandatoryLabels(signalType, severity, component string, environment []string, priority string) *MandatoryLabels {
+// severity accepts StringOrSlice (single string or array of strings)
+func NewMandatoryLabels(signalType string, severity StringOrSlice, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
 		SignalType:  signalType,
 		Severity:    severity,

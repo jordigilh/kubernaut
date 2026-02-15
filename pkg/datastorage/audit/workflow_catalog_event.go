@@ -75,7 +75,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	if workflow.Labels.SignalType != "" {
 		labelsMap["signal_type"] = workflow.Labels.SignalType
 	}
-	if workflow.Labels.Severity != "" {
+	if len(workflow.Labels.Severity) > 0 {
 		labelsMap["severity"] = workflow.Labels.Severity
 	}
 	if workflow.Labels.Component != "" {

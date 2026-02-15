@@ -114,7 +114,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "prometheus",
-					Severity:    "critical",
+					Severity:    models.StringOrSlice{"critical"},
 					Component:   "kube-apiserver",
 					Priority:    "P0",
 					Environment: []string{"production"},
@@ -216,7 +216,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    "low",
+					Severity:    models.StringOrSlice{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -282,7 +282,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    "low",
+				Severity:    models.StringOrSlice{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},
@@ -374,7 +374,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    "low",
+					Severity:    models.StringOrSlice{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -513,7 +513,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    "low",
+				Severity:    models.StringOrSlice{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},
