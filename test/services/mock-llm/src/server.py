@@ -102,7 +102,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        parameters={"MEMORY_LIMIT_NEW": "128Mi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "memory-eater", "TARGET_NAMESPACE": "default"},
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
+        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -120,7 +121,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="staging",
         rca_resource_name="worker",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        parameters={"CONFIG_MAP": "app-config", "TARGET_NAMESPACE": "staging"}
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), GRACE_PERIOD_SECONDS (optional)
+        parameters={"NAMESPACE": "staging", "DEPLOYMENT_NAME": "worker"}
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
@@ -134,7 +136,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Node",
         rca_resource_namespace="",  # Cluster-scoped
         rca_resource_name="worker-node-1",
-        parameters={"NODE_NAME": "worker-node-1", "GRACE_PERIOD": "300"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NODE_NAME (required), DRAIN_TIMEOUT_SECONDS (optional)
+        parameters={"NODE_NAME": "worker-node-1"}
     ),
     "recovery": MockScenario(
         name="recovery",
@@ -148,7 +152,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="production",
         rca_resource_name="api-server-abc123",
-        parameters={"OPTIMIZATION_LEVEL": "aggressive", "MEMORY_TARGET": "512Mi"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), REPLICA_COUNT (optional)
+        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server"}
     ),
     "test_signal": MockScenario(
         name="test_signal",
@@ -162,7 +168,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="test",
         rca_resource_name="test-pod",
-        parameters={"TEST_MODE": "true", "ACTION": "validate"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "test", "POD_NAME": "test-pod"}
     ),
     "no_workflow_found": MockScenario(
         name="no_workflow_found",
@@ -189,7 +197,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
-        parameters={"ACTION": "restart"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
     ),
     "problem_resolved": MockScenario(
         name="problem_resolved",
@@ -234,7 +244,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
         include_affected_resource=False,  # BR-HAPI-212: Trigger missing affectedResource scenario
-        parameters={"ACTION": "restart"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
     ),
     # ========================================
     # BR-AI-084 / ADR-054: Predictive Signal Mode Scenarios
@@ -253,7 +265,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"},
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
+        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server", "MEMORY_INCREASE_PERCENT": "50"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -375,7 +388,9 @@ DEFAULT_SCENARIO = MockScenario(
     workflow_title="Generic Pod Restart",
     confidence=0.75,
     root_cause="Unable to determine specific root cause",
-    parameters={"ACTION": "restart"}
+    # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+    # Schema: NAMESPACE (required), POD_NAME (required)
+    parameters={"NAMESPACE": "default", "POD_NAME": "unknown-pod"}
 )
 
 # ========================================
