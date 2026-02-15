@@ -78,6 +78,11 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 				ResourceKind:      "Pod",
 				ResourceName:      "api-server-abc123",
 				ErrorMessage:      "Container memory limit exceeded - testing three-step discovery",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -135,6 +140,11 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 				ResourceKind:      "Pod",
 				ResourceName:      "worker-pod-xyz",
 				ErrorMessage:      "Container failing due to config error - testing three-step variant",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
