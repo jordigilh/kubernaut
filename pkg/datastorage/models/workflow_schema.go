@@ -134,7 +134,8 @@ type WorkflowSchemaLabels struct {
 	Component string `yaml:"component" json:"component" validate:"required"`
 
 	// Priority is the business priority level (REQUIRED)
-	// Values: "p0", "p1", "p2", "p3", "p4", "*" (wildcard for all)
+	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
+	// Note: ExtractLabels normalizes to uppercase per OpenAPI enum [P0, P1, P2, P3, "*"]
 	Priority string `yaml:"priority" json:"priority" validate:"required"`
 }
 

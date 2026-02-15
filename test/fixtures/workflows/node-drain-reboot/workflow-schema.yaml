@@ -16,7 +16,7 @@ labels:
   severity: critical
   environment: [production, staging, test]
   component: node
-  priority: p0
+  priority: P0
 
 execution:
   engine: tekton

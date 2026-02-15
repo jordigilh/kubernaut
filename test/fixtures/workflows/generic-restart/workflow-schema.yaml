@@ -15,7 +15,7 @@ labels:
   severity: medium
   environment: [production, staging, test]
   component: pod
-  priority: p2
+  priority: P2
 
 execution:
   engine: tekton

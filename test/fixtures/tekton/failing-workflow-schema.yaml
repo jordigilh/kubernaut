@@ -17,7 +17,7 @@ labels:
   severity: low
   environment: [test]
   component: deployment
-  priority: p3
+  priority: P3
 
 customLabels:
   test-category: e2e

@@ -106,7 +106,25 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(labels).To(HaveKeyWithValue("severity", "critical"))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
-			Expect(labels).To(HaveKeyWithValue("priority", "p1"))
+			Expect(labels).To(HaveKeyWithValue("priority", "P1"))
+		})
+
+		It("UT-DS-017-010: should normalize lowercase priority to uppercase (OpenAPI enum compliance)", func() {
+			// BR-WORKFLOW-004 + OpenAPI spec: MandatoryLabels.priority enum is [P0, P1, P2, P3, "*"]
+			// OCI images may contain lowercase priority in workflow-schema.yaml
+			// ExtractLabels MUST normalize to uppercase to pass ogen response validation
+			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			Expect(err).ToNot(HaveOccurred())
+			// validWorkflowSchemaYAML contains "priority: p1" (lowercase)
+			Expect(parsedSchema.Labels.Priority).To(Equal("p1"), "raw parsed value should be lowercase")
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels).To(HaveKeyWithValue("priority", "P1"),
+				"ExtractLabels must normalize priority to uppercase per OpenAPI enum [P0, P1, P2, P3]")
 		})
 
 		It("UT-DS-017-002b: should parse environment as []string (array format)", func() {
