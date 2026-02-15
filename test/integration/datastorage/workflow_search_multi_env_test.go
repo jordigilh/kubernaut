@@ -75,11 +75,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Seeding workflow with environment=['staging', 'production'] (array)")
 			owner := "test-team"
 			maintainer := "test@example.com"
-			workflow := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-match-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Multi-Env Workflow (Match)",
-				Description:     models.StructuredDescription{What: "Workflow works in staging AND production", WhenToUse: "Testing"},
+		workflow := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-match-v1-" + testID,
+			ActionType:      "ScaleReplicas", // Required: fk_workflow_action_type (migration 025)
+			Version:         "1.0.0",
+			Name:            "Multi-Env Workflow (Match)",
+			Description:     models.StructuredDescription{What: "Workflow works in staging AND production", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'test'",
@@ -126,11 +127,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Seeding workflow with environment=['staging'] (array)")
 			owner := "test-team"
 			maintainer := "test@example.com"
-			workflow := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-nomatch-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Staging-Only Workflow",
-				Description:     models.StructuredDescription{What: "Workflow only for staging", WhenToUse: "Testing"},
+		workflow := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-nomatch-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Staging-Only Workflow",
+			Description:     models.StructuredDescription{What: "Workflow only for staging", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'test'",
@@ -175,11 +177,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Seeding workflow with environment=['*'] (wildcard)")
 			owner := "test-team"
 			maintainer := "test@example.com"
-			workflow := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-wildcard-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Universal Workflow",
-				Description:     models.StructuredDescription{What: "Workflow works in ALL environments", WhenToUse: "Testing"},
+		workflow := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-wildcard-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Universal Workflow",
+			Description:     models.StructuredDescription{What: "Workflow works in ALL environments", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'wildcard'",
@@ -265,11 +268,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Seeding workflow 1 with environment=['production']")
 			owner := "test-team"
 			maintainer := "test@example.com"
-			workflow1 := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-prod-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Production Workflow",
-				Description:     models.StructuredDescription{What: "Production environment only", WhenToUse: "Testing"},
+		workflow1 := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-prod-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Production Workflow",
+			Description:     models.StructuredDescription{What: "Production environment only", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'prod'",
@@ -291,11 +295,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Seeding workflow 2 with environment=['staging']")
-			workflow2 := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-staging-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Staging Workflow",
-				Description:     models.StructuredDescription{What: "Staging environment only", WhenToUse: "Testing"},
+		workflow2 := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-staging-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Staging Workflow",
+			Description:     models.StructuredDescription{What: "Staging environment only", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'staging'",
@@ -317,11 +322,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Seeding workflow 3 with environment=['staging', 'production']")
-			workflow3 := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-both-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Multi-Environment Workflow",
-				Description:     models.StructuredDescription{What: "Works in both staging AND production", WhenToUse: "Testing"},
+		workflow3 := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-both-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Multi-Environment Workflow",
+			Description:     models.StructuredDescription{What: "Works in both staging AND production", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'both'",
@@ -370,11 +376,12 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 			By("Seeding workflow with environment=['development'] (single value in array)")
 			owner := "test-team"
 			maintainer := "test@example.com"
-			workflow := &models.RemediationWorkflow{
-				WorkflowName:    "multi-env-v2-test-dev-v1-" + testID,
-				Version:         "1.0.0",
-				Name:            "Development Workflow",
-				Description:     models.StructuredDescription{What: "Development environment only", WhenToUse: "Testing"},
+		workflow := &models.RemediationWorkflow{
+			WorkflowName:    "multi-env-v2-test-dev-v1-" + testID,
+			ActionType:      "ScaleReplicas",
+			Version:         "1.0.0",
+			Name:            "Development Workflow",
+			Description:     models.StructuredDescription{What: "Development environment only", WhenToUse: "Testing"},
 				Owner:           &owner,
 				Maintainer:      &maintainer,
 				Content:         "echo 'dev'",

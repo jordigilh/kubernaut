@@ -20,11 +20,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
+
+
+// workflowIDToImageName maps WorkflowID to OCI image name.
+// WorkflowIDs include version suffix (e.g., oomkill-increase-memory-v1) but fixture
+// directories and built images use base names (oomkill-increase-memory). Makefile
+// build-test-workflows uses basename of fixture dir, so we strip -vN suffix.
+var workflowVersionSuffix = regexp.MustCompile(`-v\d+$`)
+
+func workflowIDToImageName(workflowID string) string {
+	return workflowVersionSuffix.ReplaceAllString(workflowID, "")
+}
 
 // TestWorkflow represents a workflow for test seeding in DataStorage
 // Pattern: Shared data structure for AIAnalysis integration tests and HAPI E2E tests
@@ -110,7 +122,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	containerImage := wf.ContainerImage
 	if containerImage == "" {
 		// Default pattern for tests that don't specify a container image
-		containerImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", wf.WorkflowID)
+		containerImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", workflowIDToImageName(wf.WorkflowID))
 	}
 
 	// DD-WORKFLOW-017: Pullspec-only registration request

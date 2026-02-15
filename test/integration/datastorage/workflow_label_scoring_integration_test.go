@@ -110,11 +110,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-				gitopsWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-gitops", testID),
-					Version:      "v1.0",
-					Name:         "GitOps Workflow",
-					Description:  models.StructuredDescription{What: "Workflow managed by GitOps", WhenToUse: "Testing"},
+			gitopsWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-gitops", testID),
+				ActionType:   "ScaleReplicas", // Required: fk_workflow_action_type (migration 025)
+				Version:      "v1.0",
+				Name:         "GitOps Workflow",
+				Description:  models.StructuredDescription{What: "Workflow managed by GitOps", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -133,11 +134,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					IsLatestVersion: true,
 				}
 
-				manualWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-manual", testID),
-					Version:      "v1.0",
-					Name:         "Manual Workflow",
-					Description:  models.StructuredDescription{What: "Workflow without GitOps", WhenToUse: "Testing"},
+			manualWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-manual", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Manual Workflow",
+				Description:  models.StructuredDescription{What: "Workflow without GitOps", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -241,11 +243,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ARRANGE: Create 2 workflows - one with PDB, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				pdbWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-pdb", testID),
-					Version:      "v1.0",
-					Name:         "PDB-Protected Workflow",
-					Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
+			pdbWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-pdb", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "PDB-Protected Workflow",
+				Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
@@ -266,11 +269,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					IsLatestVersion: true,
 				}
 
-				noPdbWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-nopdb", testID),
-					Version:      "v1.0",
-					Name:         "No PDB Workflow",
-					Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
+			noPdbWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-nopdb", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "No PDB Workflow",
+				Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "HighMemoryUsage",
 						Severity:    "high",
@@ -368,11 +372,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ARRANGE: Create manual workflow
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				manualWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-manual-penalty", testID),
-					Version:      "v1.0",
-					Name:         "Manual Workflow (GitOps Required)",
-					Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
+			manualWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-manual-penalty", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Manual Workflow (GitOps Required)",
+				Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "DatabaseConnectionLeak",
 						Severity:    "critical",
@@ -464,11 +469,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ARRANGE: Create workflows with different custom labels
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				twoLabelsWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-custom2", testID),
-					Version:      "v1.0",
-					Name:         "Workflow with 2 Custom Labels",
-					Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
+			twoLabelsWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-custom2", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Workflow with 2 Custom Labels",
+				Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -487,11 +493,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					IsLatestVersion: true,
 				}
 
-				oneLabelsWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-custom1", testID),
-					Version:      "v1.0",
-					Name:         "Workflow with 1 Custom Label",
-					Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
+			oneLabelsWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-custom1", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Workflow with 1 Custom Label",
+				Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
@@ -588,11 +595,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ARRANGE: Create 2 workflows - one with specific mesh, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				istioWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-istio", testID),
-					Version:      "v1.0",
-					Name:         "Istio Service Mesh Workflow",
-					Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
+			istioWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-istio", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Istio Service Mesh Workflow",
+				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
@@ -613,11 +621,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					IsLatestVersion: true,
 				}
 
-				noMeshWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-nomesh", testID),
-					Version:      "v1.0",
-					Name:         "No Service Mesh Workflow",
-					Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
+			noMeshWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-nomesh", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "No Service Mesh Workflow",
+				Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",
@@ -709,11 +718,12 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ARRANGE: Reuse workflows from wildcard test
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				istioWorkflow := &models.RemediationWorkflow{
-					WorkflowName: fmt.Sprintf("wf-scoring-%s-istio-exact", testID),
-					Version:      "v1.0",
-					Name:         "Istio Service Mesh Workflow",
-					Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
+			istioWorkflow := &models.RemediationWorkflow{
+				WorkflowName: fmt.Sprintf("wf-scoring-%s-istio-exact", testID),
+				ActionType:   "ScaleReplicas",
+				Version:      "v1.0",
+				Name:         "Istio Service Mesh Workflow",
+				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
 						SignalType:  "NetworkLatency",
 						Severity:    "high",

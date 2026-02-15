@@ -305,13 +305,12 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		Expect(ownerRef.UID).To(Equal(rr.UID))
 		Expect(*ownerRef.Controller).To(BeTrue(), "EA should be controller-owned by RR")
 
-		By("Verifying cascade deletion works")
-		Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
-
-		// EA should be garbage collected (cascade deletion)
-		Eventually(func() bool {
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
-			return err != nil // true when EA is deleted
-		}, 30*time.Second, interval).Should(BeTrue(), "EA should be cascade deleted when RR is deleted")
+		// NOTE: Cascade deletion via owner references requires the garbage collector
+		// (kube-controller-manager), which is not available in envtest. The owner
+		// reference verification above (lines 301-306) validates BR-ORCH-031.
+		// Cascade deletion is verified in E2E tests where a full Kind cluster runs.
+		By("Verifying owner reference is set correctly for cascade deletion (BR-ORCH-031)")
+		Expect(ownerRef.BlockOwnerDeletion).ToNot(BeNil())
+		Expect(*ownerRef.BlockOwnerDeletion).To(BeTrue(), "EA should block owner deletion for proper cascade")
 	})
 })
