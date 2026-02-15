@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -63,11 +64,30 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 
 		resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
 		Expect(err).ToNot(HaveOccurred())
-		workflow, ok := resp.(*dsgen.RemediationWorkflow)
-		Expect(ok).To(BeTrue())
-		auditWorkflowID = workflow.WorkflowID.Value.String()
-		auditWorkflowUUID = workflow.WorkflowID.Value
-		logger.Info("✅ Audit test workflow created", "uuid", auditWorkflowID, "remediation_id", remediationID)
+
+		switch r := resp.(type) {
+		case *dsgen.RemediationWorkflow:
+			auditWorkflowID = r.WorkflowID.Value.String()
+			auditWorkflowUUID = r.WorkflowID.Value
+		case *dsgen.CreateWorkflowConflict:
+			// DD-WORKFLOW-002 v3.0: Workflow already exists (409 Conflict).
+			// Query by name to retrieve existing UUID (idempotent test setup).
+			listResp, listErr := DSClient.ListWorkflows(testCtx, dsgen.ListWorkflowsParams{
+				WorkflowName: dsgen.NewOptString("audit-test-v1"),
+				Limit:        dsgen.NewOptInt(1),
+			})
+			listErr = ogenx.ToError(listResp, listErr)
+			Expect(listErr).ToNot(HaveOccurred(), "ListWorkflows should succeed for existing workflow")
+			listResult, listOk := listResp.(*dsgen.WorkflowListResponse)
+			Expect(listOk).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
+			Expect(listResult.Workflows).ToNot(BeEmpty(), "Workflow exists (409) but query returned no results")
+			auditWorkflowID = listResult.Workflows[0].WorkflowID.Value.String()
+			auditWorkflowUUID = listResult.Workflows[0].WorkflowID.Value
+		default:
+			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
+		}
+
+		logger.Info("✅ Audit test workflow ready", "uuid", auditWorkflowID, "remediation_id", remediationID)
 	})
 
 	// ========================================
