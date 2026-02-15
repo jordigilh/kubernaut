@@ -57,8 +57,8 @@ actionType: RestartPod
 
 labels:
   signalType: OOMKilled
-  severity: critical
-  environment: production
+  severity: [critical]
+  environment: [production]
   component: pod
   priority: p1
 
@@ -136,10 +136,10 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
-| `signalType` | string | Yes | Any (e.g., `OOMKilled`, `CrashLoopBackOff`, `NodeNotReady`) | The signal type this workflow handles |
-| `severity` | string | Yes | `critical`, `high`, `medium`, `low` | Severity level this workflow is designed for |
+| `signalType` | string | No | Any (e.g., `OOMKilled`, `CrashLoopBackOff`, `NodeNotReady`) | The signal type this workflow handles |
+| `severity` | string[] | Yes | `[critical, high, medium, low]` | Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels. |
 | `component` | string | Yes | Any (e.g., `pod`, `deployment`, `node`, `service`) | Kubernetes resource type this workflow remediates |
-| `environment` | string | Yes | Any (e.g., `production`, `staging`, `*` for all) | Target environment |
+| `environment` | string[] | Yes | Any (e.g., `[production, staging]`, `[*]` for all) | Target environment(s). Always an array. Use `*` to match any environment. |
 | `priority` | string | Yes | `p0`, `p1`, `p2`, `p3`, `p4`, `*` for all | Business priority level |
 
 ### `execution` Fields
@@ -194,6 +194,7 @@ When a workflow is registered via `POST /api/v1/workflows` (OCI pullspec-only), 
 - `metadata.description.whenNotToUse` and `metadata.description.preconditions` are optional
 - At least one parameter is required in `parameters`
 - Each parameter must have `name`, `type`, and `description`
+- Labels are validated: severity must be a non-empty array of values from [critical, high, medium, low]; environment must be a non-empty array; component and priority must be non-empty strings
 
 ### Action Type Validation
 

@@ -493,7 +493,7 @@ FROM (
     INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
     WHERE w.status = 'active'
       AND w.is_latest_version = true
-      AND (w.labels->>'severity' = $1 OR w.labels->>'severity' = '*')
+      AND w.labels->'severity' ? $1
       AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
       AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
       AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
@@ -511,7 +511,7 @@ INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
 WHERE w.status = 'active'
   AND w.is_latest_version = true
   -- Context filters (same filters applied to all three endpoints)
-  AND (w.labels->>'severity' = $1 OR w.labels->>'severity' = '*')
+  AND w.labels->'severity' ? $1
   AND (w.labels->>'component' = $2 OR w.labels->>'component' = '*')
   AND (w.labels->'environment' ? $3 OR w.labels->'environment' ? '*')
   AND (w.labels->>'priority' = $4 OR w.labels->>'priority' = '*')
@@ -629,7 +629,7 @@ FROM remediation_workflow_catalog
 WHERE action_type = $1
   AND status = 'active'
   AND is_latest_version = true
-  AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
+  AND labels->'severity' ? $2
   AND (labels->>'component' = $3 OR labels->>'component' = '*')
   AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
   AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
@@ -645,7 +645,7 @@ WHERE action_type = $1    -- Selected action type from Step 1
   AND status = 'active'
   AND is_latest_version = true
   -- Same context filters as list_available_actions
-  AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
+  AND labels->'severity' ? $2
   AND (labels->>'component' = $3 OR labels->>'component' = '*')
   AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
   AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
@@ -725,7 +725,7 @@ WHERE workflow_id = $1    -- Exact match by ID (selected from list_available_act
   AND is_latest_version = true
   -- Security: same context filters as list_available_actions
   -- Prevents LLM from using a workflow outside the allowed signal context
-  AND (labels->>'severity' = $2 OR labels->>'severity' = '*')
+  AND labels->'severity' ? $2
   AND (labels->>'component' = $3 OR labels->>'component' = '*')
   AND (labels->'environment' ? $4 OR labels->'environment' ? '*')
   AND (labels->>'priority' = $5 OR labels->>'priority' = '*')
