@@ -322,6 +322,12 @@ def register_workflow_discovery_toolset(
         The same Config instance with workflow discovery registered via monkey-patch
     """
     from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+    from src.clients.datastorage_auth_session import create_workflow_discovery_session
+
+    # DD-AUTH-005: Create authenticated requests.Session for workflow discovery.
+    # This injects the ServiceAccount token so all three discovery tools
+    # authenticate with DataStorage (fixes 401 Unauthorized on /api/v1/workflows/*).
+    http_session = create_workflow_discovery_session()
 
     # Create the three-step discovery toolset instance
     discovery_toolset = WorkflowDiscoveryToolset(
@@ -333,6 +339,7 @@ def register_workflow_discovery_toolset(
         priority=priority,
         custom_labels=custom_labels,
         detected_labels=detected_labels,
+        http_session=http_session,
     )
 
     # Initialize toolset manager if needed

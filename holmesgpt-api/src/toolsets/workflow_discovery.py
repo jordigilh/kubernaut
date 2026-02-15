@@ -313,10 +313,9 @@ class _DiscoveryToolBase(Tool):
             int(os.getenv("DATA_STORAGE_TIMEOUT", "60")),
         )
 
-        # Optional requests.Session for authentication (DD-AUTH-014).
-        # In production, HAPI runs inside K8s where DS auth is handled via
-        # ServiceAccount token injection. For integration tests, an
-        # authenticated Session can be provided.
+        # Authenticated requests.Session for DataStorage calls (DD-AUTH-005).
+        # In production, ServiceAccountAuthSession injects the SA token.
+        # For integration tests, StaticTokenAuthSession can be provided.
         object.__setattr__(self, "_http_session", http_session)
 
         # Signal context filters (set once, propagated to all steps)
@@ -361,8 +360,8 @@ class _DiscoveryToolBase(Tool):
         """
         Execute GET request to Data Storage with context filters.
 
-        Uses self._http_session if provided (DD-AUTH-014 integration tests),
-        otherwise falls back to requests.get().
+        Uses self._http_session if provided (DD-AUTH-005 ServiceAccount auth),
+        otherwise falls back to unauthenticated requests.get().
 
         Raises on HTTP errors (non-2xx).
         Returns parsed JSON response dict.
@@ -789,6 +788,7 @@ class WorkflowDiscoveryToolset(Toolset):
         priority: str = "",
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
+        http_session: Optional[Any] = None,
     ):
         """
         Initialize the three-step discovery toolset.
@@ -802,6 +802,9 @@ class WorkflowDiscoveryToolset(Toolset):
             priority: Severity-mapped priority (P0/P1/P2/P3)
             custom_labels: Custom labels for filtering (DD-HAPI-001)
             detected_labels: Auto-detected infrastructure labels (DD-HAPI-017, DD-WORKFLOW-001 v2.1)
+            http_session: Optional authenticated requests.Session for DataStorage
+                         calls (DD-AUTH-005). If None, falls back to unauthenticated
+                         requests.get().
         """
         # Shared constructor kwargs for all three tools
         shared_kwargs = dict(
@@ -812,6 +815,7 @@ class WorkflowDiscoveryToolset(Toolset):
             priority=priority,
             custom_labels=custom_labels,
             detected_labels=detected_labels,
+            http_session=http_session,
         )
 
         super().__init__(
