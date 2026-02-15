@@ -8,13 +8,11 @@ It configures the Python path to include the OpenAPI-generated DataStorage clien
 import sys
 from pathlib import Path
 
-# Add src/ to PYTHONPATH so bare imports like 'from clients.xxx' resolve correctly.
-# Also add the OpenAPI-generated DataStorage client sub-package.
+# Add datastorage client to PYTHONPATH for OpenAPI-generated types
+# This allows imports like: from datastorage.models.llm_request_payload import LLMRequestPayload
 project_root = Path(__file__).parent
-src_path = project_root / "src"
-datastorage_client_path = src_path / "clients" / "datastorage"
+datastorage_client_path = project_root / "src" / "clients" / "datastorage"
 
-for p in (str(src_path), str(datastorage_client_path)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if str(datastorage_client_path) not in sys.path:
+    sys.path.insert(0, str(datastorage_client_path))
 

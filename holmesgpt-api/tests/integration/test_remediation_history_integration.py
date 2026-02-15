@@ -154,7 +154,7 @@ class TestClientFactory:
         ):
             # Need to reimport to pick up env changes
             from importlib import reload
-            import clients.remediation_history_client as client_mod
+            import src.clients.remediation_history_client as client_mod
             reload(client_mod)
 
             result = client_mod.create_remediation_history_api()
@@ -167,7 +167,7 @@ class TestClientFactory:
         """IT-HAPI-016-002: create_remediation_history_api returns None when no DS URL."""
         monkeypatch.delenv("DATA_STORAGE_URL", raising=False)
 
-        from clients.remediation_history_client import create_remediation_history_api
+        from src.clients.remediation_history_client import create_remediation_history_api
 
         result = create_remediation_history_api(app_config={})
 
@@ -183,7 +183,7 @@ class TestClientFactory:
             create=True,
         ):
             from importlib import reload
-            import clients.remediation_history_client as client_mod
+            import src.clients.remediation_history_client as client_mod
             reload(client_mod)
 
             result = client_mod.create_remediation_history_api()
@@ -214,7 +214,7 @@ class TestEndToEndWiring:
         (fetch -> build_remediation_history_section -> prompt) marks it as
         INCONCLUSIVE so the LLM does not interpret 0.0 score as failure.
         """
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
         from extensions.incident.prompt_builder import create_incident_investigation_prompt
 
         # Step 1: Simulate fetch (mock API returns spec_drift context)
@@ -254,7 +254,7 @@ class TestEndToEndWiring:
         Business outcome: LLM analysis continues even if DataStorage is down.
         The prompt is constructed without the remediation history section.
         """
-        from clients.remediation_history_client import fetch_remediation_history_for_request
+        from src.clients.remediation_history_client import fetch_remediation_history_for_request
         from extensions.incident.prompt_builder import create_incident_investigation_prompt
 
         # Step 1: DS returns None (connection refused)

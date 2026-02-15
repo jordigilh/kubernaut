@@ -33,7 +33,7 @@ from unittest.mock import MagicMock, patch
 
 from datastorage.exceptions import ApiException, ServiceException
 
-from clients.remediation_history_client import query_remediation_history
+from src.clients.remediation_history_client import query_remediation_history
 
 
 class TestQueryRemediationHistory:
