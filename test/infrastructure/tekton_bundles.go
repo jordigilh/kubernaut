@@ -45,19 +45,21 @@ const (
 	TestBundleVersion = "e2e-test"
 )
 
-// getTestBundleRegistry returns the registry to use for test bundle builds.
-// In CI/CD: Uses IMAGE_REGISTRY env var (e.g., ghcr.io/jordigilh/kubernaut)
-// Local dev: Uses ghcr.io as fallback (tkn bundle push rejects "localhost/")
+// getTestBundleRegistry returns the registry to use for test Tekton bundle builds.
+// In CI/CD: Uses TEKTON_BUNDLE_REGISTRY env var if set.
+// Default: Uses quay.io/kubernaut-cicd/tekton-bundles (consistent with Makefile and workflow_bundles.go)
 //
-// Pattern: Consistent with workflow_bundles.go registry selection
+// Note: Tekton bundles are separate from schema images (test-workflows/).
+// Schema images contain only /workflow-schema.yaml for DataStorage registration.
+// Tekton bundles contain Tekton Pipeline resources for WFE execution.
 func getTestBundleRegistry() string {
-	// Check if IMAGE_REGISTRY is set (CI/CD mode)
-	if registry := os.Getenv("IMAGE_REGISTRY"); registry != "" {
-		return registry + "/test-workflows"
+	// Check if TEKTON_BUNDLE_REGISTRY is set (CI/CD mode override)
+	if registry := os.Getenv("TEKTON_BUNDLE_REGISTRY"); registry != "" {
+		return registry
 	}
 
-	// Local dev fallback: Use ghcr.io (requires authentication)
-	return "ghcr.io/jordigilh/kubernaut/test-workflows"
+	// Default: quay.io/kubernaut-cicd/tekton-bundles (matches Makefile TEKTON_BUNDLE_REGISTRY)
+	return "quay.io/kubernaut-cicd/tekton-bundles"
 }
 
 // BuildAndLoadTestBundles builds Tekton Pipeline bundles and loads them into Kind cluster

@@ -40,9 +40,17 @@ import (
 // - WorkflowExecution controller resolves bundles via Tekton bundle resolver
 
 const (
-	// TestWorkflowBundleRegistry is the OCI registry for test workflow bundles
+	// TestWorkflowBundleRegistry is the OCI registry for test workflow schema images.
+	// Schema images contain only /workflow-schema.yaml (FROM scratch) and are used
+	// by DataStorage for OCI-based workflow registration (DD-WORKFLOW-017).
 	// Uses quay.io/kubernaut-cicd namespace (multi-arch support: amd64 + arm64)
 	TestWorkflowBundleRegistry = "quay.io/kubernaut-cicd/test-workflows"
+
+	// TestTektonBundleRegistry is the OCI registry for Tekton Pipeline bundles.
+	// Tekton bundles are built with `tkn bundle push` and contain Tekton Pipeline
+	// resources with required annotations (dev.tekton.image.apiVersion, etc.).
+	// Used by WorkflowExecution controller via Tekton's bundle resolver.
+	TestTektonBundleRegistry = "quay.io/kubernaut-cicd/tekton-bundles"
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"

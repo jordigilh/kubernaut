@@ -382,10 +382,16 @@ build-test-workflows: ## Build all test workflow OCI images (local, current arch
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
 		echo "  Building $$name -> $$ref"; \
 		$(CONTAINER_TOOL) build -t "$$ref" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile "$$dir" || exit 1; \
 	done
+	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
+	@echo "  Building oom-recovery:v1.1.0 (version variant)"
+	@$(CONTAINER_TOOL) build -t "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile $(WORKFLOW_FIXTURES_DIR)/oom-recovery-v1.1/
+	@echo "  Building oom-recovery:v2.0.0 (version variant)"
+	@$(CONTAINER_TOOL) build -t "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0" -f $(WORKFLOW_FIXTURES_DIR)/Dockerfile $(WORKFLOW_FIXTURES_DIR)/oom-recovery-v2.0/
 	@echo ""
 	@echo "✅ All test workflow images built"
 
@@ -398,13 +404,46 @@ push-test-workflows: ## Push test workflow images to registry (run build-test-wo
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
 		echo "  Pushing $$name -> $$ref"; \
 		$(CONTAINER_TOOL) push "$$ref" || exit 1; \
 		echo "  ✅ Pushed $$ref"; \
 	done
+	@# Multi-version variants for version management E2E tests
+	@echo "  Pushing oom-recovery:v1.1.0 (version variant)"
+	@$(CONTAINER_TOOL) push "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0"
+	@echo "  Pushing oom-recovery:v2.0.0 (version variant)"
+	@$(CONTAINER_TOOL) push "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0"
 	@echo ""
 	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY)"
+
+##@ Tekton Bundle Image Targets
+
+# Registry for Tekton Pipeline bundle images (separate from schema-only workflow images)
+# Tekton bundles are built with `tkn bundle push` and contain Tekton Pipeline resources
+# with required annotations (dev.tekton.image.apiVersion, dev.tekton.image.kind, etc.)
+# Schema images (test-workflows/) are for DataStorage registration; bundles (tekton-bundles/) are for WFE execution.
+TEKTON_BUNDLE_REGISTRY ?= quay.io/kubernaut-cicd/tekton-bundles
+TEKTON_FIXTURES_DIR := test/fixtures/tekton
+
+.PHONY: push-tekton-bundles
+push-tekton-bundles: ## Build and push Tekton Pipeline bundle images (tkn bundle push builds+pushes in one step)
+	@echo "📦 Building and pushing Tekton Pipeline bundles..."
+	@echo "  Registry: $(TEKTON_BUNDLE_REGISTRY)"
+	@echo "  Version:  $(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "  Building+pushing hello-world Tekton bundle..."
+	tkn bundle push "$(TEKTON_BUNDLE_REGISTRY)/hello-world:$(WORKFLOW_VERSION)" \
+		-f $(TEKTON_FIXTURES_DIR)/hello-world-pipeline.yaml
+	@echo "  ✅ Pushed $(TEKTON_BUNDLE_REGISTRY)/hello-world:$(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "  Building+pushing failing Tekton bundle..."
+	tkn bundle push "$(TEKTON_BUNDLE_REGISTRY)/failing:$(WORKFLOW_VERSION)" \
+		-f $(TEKTON_FIXTURES_DIR)/failing-pipeline.yaml
+	@echo "  ✅ Pushed $(TEKTON_BUNDLE_REGISTRY)/failing:$(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "✅ All Tekton bundles pushed to $(TEKTON_BUNDLE_REGISTRY)"
 
 ##@ Cleanup Pattern Targets
 
