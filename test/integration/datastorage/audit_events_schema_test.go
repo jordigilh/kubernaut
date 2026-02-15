@@ -39,17 +39,10 @@ import (
 // - Focus on business outcomes, not PostgreSQL internals
 
 var _ = Describe("Audit Events Schema Integration Tests", func() {
-	BeforeEach(func() {
-
-		// Clean up test data before each test
-		// IMPORTANT: Use file-specific prefix 'test-aes-%' (Audit Events Schema) to avoid
-		// deleting data from other parallel tests. The previous broad 'test-%' pattern
-		// caused race conditions where this cleanup wiped data from reconstruction tests.
-		_, err := db.Exec("DELETE FROM audit_events WHERE correlation_id LIKE 'test-aes-%'")
-		if err != nil {
-			GinkgoWriter.Printf("Note: cleanup skipped (table may not exist): %v\n", err)
-		}
-	})
+	// NOTE: No BeforeEach cleanup needed. Each test uses a unique correlation ID
+	// with a UUID suffix (e.g., test-aes-store-<uuid>), so there is no cross-test
+	// contamination. A broad DELETE in BeforeEach causes race conditions in parallel
+	// execution: process N's BeforeEach deletes data that process M just inserted.
 
 	Context("BR-STORAGE-032: Audit Event Storage", func() {
 	// ================================================================
