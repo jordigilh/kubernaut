@@ -35,8 +35,9 @@ from unittest.mock import ANY, Mock, patch
 DISCOVERY_TOOLSET_CLASS = "src.toolsets.workflow_discovery.WorkflowDiscoveryToolset"
 # Patch target for sanitization wrapper (avoid real tool wrapping in tests)
 SANITIZATION_WRAPPER = "src.extensions.llm_config._wrap_tool_results_with_sanitization"
-# Patch target for session factory (avoid filesystem access in unit tests)
-SESSION_FACTORY = "src.extensions.llm_config.create_workflow_discovery_session"
+# Patch target for session factory (avoid filesystem access in unit tests).
+# Patched at the source module so it works before llm_config imports it.
+SESSION_FACTORY = "src.clients.datastorage_auth_session.create_workflow_discovery_session"
 
 
 def _make_mock_discovery_toolset():
