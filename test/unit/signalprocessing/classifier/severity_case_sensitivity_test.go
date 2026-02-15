@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package classifier: REFACTOR Phase - Case Sensitivity Tests (DD-SEVERITY-001 Gap 4)
+// Package classifier: Case Sensitivity Tests - Rego Policy Authoring Patterns
 package classifier
 
 import (
@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 )
 
-var _ = Describe("Severity Classifier - Case Sensitivity (REFACTOR Phase)", func() {
+var _ = Describe("Severity Classifier - Case Sensitivity", func() {
 	var (
 		severityClassifier *classifier.SeverityClassifier
 		ctx                context.Context
@@ -44,51 +44,42 @@ var _ = Describe("Severity Classifier - Case Sensitivity (REFACTOR Phase)", func
 		ctx = context.Background()
 	})
 
-	// ========================================
-	// DD-SEVERITY-001: REFACTOR PHASE - Case Sensitivity (Gap 4)
-	// ========================================
+	Context("Rego Policy Receives Original Casing", func() {
+		It("should pass severity values to the Rego policy without modification", func() {
+			// BUSINESS CONTEXT: The Rego policy is the authoritative mapping layer.
+			// The classifier must not mutate severity values before the policy evaluates them.
+			// VALUE: Policy authors have full control over casing semantics.
+			// OUTCOME: Exact-match policies work correctly with original casing.
 
-	Context("External Severity Case Sensitivity", func() {
-		It("should handle case-insensitive external severity values", func() {
-			// BUSINESS CONTEXT: External monitoring systems may send severity in different cases
-			// VALUE: Prevents duplicate policy entries for "SEV1", "Sev1", "sev1"
-			// OUTCOME: Single policy entry handles all case variations
-
-			// Load policy with lowercase severity matching
-			policyWithLowercase := `
+			policyWithOriginalCasing := `
 package signalprocessing.severity
 
 determine_severity := "critical" if {
-    input.signal.severity == "sev1"
+    input.signal.severity == "SEV1"
 } else := "high" if {
-    input.signal.severity == "sev2"
+    input.signal.severity == "Warning"
 } else := "low" if {
     true
 }
 `
-			err := severityClassifier.LoadRegoPolicy(policyWithLowercase)
+			err := severityClassifier.LoadRegoPolicy(policyWithOriginalCasing)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Test all case variations
 			testCases := []struct {
 				input    string
 				expected string
 			}{
-				{"SEV1", "critical"},    // All uppercase
-				{"Sev1", "critical"},    // Mixed case
-				{"sev1", "critical"},    // All lowercase
-				{"SEV2", "high"},        // All uppercase
-				{"Sev2", "high"},        // Mixed case
-				{"sev2", "high"},        // All lowercase
-				{"UNMAPPED", "low"},     // Fallback (all uppercase)
-				{"Unmapped", "low"},     // Fallback (mixed case)
-				{"unmapped", "low"},     // Fallback (all lowercase)
+				{"SEV1", "critical"},    // Exact match (uppercase)
+				{"Warning", "high"},     // Exact match (K8s event casing)
+				{"sev1", "low"},         // Does NOT match "SEV1" → fallback
+				{"warning", "low"},      // Does NOT match "Warning" → fallback
+				{"UNMAPPED", "low"},     // Unknown → fallback
 			}
 
 			for _, tc := range testCases {
 				sp := &signalprocessingv1alpha1.SignalProcessing{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-case-sensitivity",
+						Name:      "test-case-passthrough",
 						Namespace: "default",
 						UID:       "test-uid-12345",
 					},
@@ -100,7 +91,7 @@ determine_severity := "critical" if {
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint:  "test-fingerprint-abc123",
 							Name:         "TestAlert",
-							Severity:     tc.input, // Test case-specific input
+							Severity:     tc.input,
 							Type:         "prometheus",
 							Source:       "test-source",
 							TargetType:   "kubernetes",
@@ -119,56 +110,50 @@ determine_severity := "critical" if {
 				Expect(err).ToNot(HaveOccurred(),
 					fmt.Sprintf("Classification should succeed for input %q", tc.input))
 				Expect(result.Severity).To(Equal(tc.expected),
-					fmt.Sprintf("Input %q should map to %q", tc.input, tc.expected))
+					fmt.Sprintf("Input %q should map to %q (original casing preserved)", tc.input, tc.expected))
 				Expect(result.Source).To(Equal("rego-policy"),
 					"Source should be rego-policy for all determinations")
 			}
-
-			// BUSINESS OUTCOME VERIFIED:
-			// ✅ Single policy entry handles all case variations
-			// ✅ Operators don't need to maintain case-specific policy rules
-			// ✅ System is robust against case inconsistencies from external systems
 		})
 
-		It("should normalize severity to lowercase before policy evaluation", func() {
-			// BUSINESS CONTEXT: Rego policies should use consistent lowercase matching
-			// VALUE: Simplifies policy authoring (operators don't need case-insensitive Rego)
-			// OUTCOME: Policy can use simple equality checks instead of regex
+		It("should allow operators to use Rego lower() for case-insensitive matching if desired", func() {
+			// BUSINESS CONTEXT: Operators who want case-insensitive matching can use
+			// Rego's built-in lower() function in their policy. This keeps the Go code
+			// simple and gives full control to the policy author.
+			// VALUE: Flexibility without Go-side mutation.
+			// OUTCOME: Case-insensitive matching is a policy concern, not a runtime concern.
 
-			// Load policy expecting lowercase input
-			policyExpectingLowercase := `
+			policyWithLowerBuiltin := `
 package signalprocessing.severity
 
 determine_severity := "critical" if {
-    input.signal.severity == "p0"
-} else := "critical" if {
-    input.signal.severity == "high"
-} else := "medium" if {
-    input.signal.severity == "medium"
-} else := "low" if {
-    input.signal.severity == "low"
+    lower(input.signal.severity) == "sev1"
+} else := "high" if {
+    lower(input.signal.severity) == "sev2"
 } else := "low" if {
     true
 }
 `
-			err := severityClassifier.LoadRegoPolicy(policyExpectingLowercase)
+			err := severityClassifier.LoadRegoPolicy(policyWithLowerBuiltin)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Test mixed-case inputs
 			testCases := []struct {
 				input    string
 				expected string
 			}{
-				{"P0", "critical"},      // Uppercase priority
-				{"HIGH", "critical"},    // Uppercase severity
-				{"Medium", "medium"},    // Mixed case
-				{"low", "low"},          // Already lowercase
+				{"SEV1", "critical"},    // All uppercase
+				{"Sev1", "critical"},    // Mixed case
+				{"sev1", "critical"},    // All lowercase
+				{"SEV2", "high"},        // All uppercase
+				{"Sev2", "high"},        // Mixed case
+				{"sev2", "high"},        // All lowercase
+				{"UNMAPPED", "low"},     // Fallback
 			}
 
 			for _, tc := range testCases {
 				sp := &signalprocessingv1alpha1.SignalProcessing{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-normalize",
+						Name:      "test-lower-builtin",
 						Namespace: "default",
 						UID:       "test-uid-67890",
 					},
@@ -179,8 +164,8 @@ determine_severity := "critical" if {
 						},
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint:  "test-fingerprint-def456",
-							Name:         "TestNormalizedAlert",
-							Severity:     tc.input, // Test case-specific input
+							Name:         "TestLowerBuiltinAlert",
+							Severity:     tc.input,
 							Type:         "prometheus",
 							Source:       "test-source",
 							TargetType:   "kubernetes",
@@ -199,13 +184,8 @@ determine_severity := "critical" if {
 				Expect(err).ToNot(HaveOccurred(),
 					fmt.Sprintf("Classification should succeed for input %q", tc.input))
 				Expect(result.Severity).To(Equal(tc.expected),
-					fmt.Sprintf("Input %q should map to %q", tc.input, tc.expected))
+					fmt.Sprintf("Input %q should map to %q via Rego lower()", tc.input, tc.expected))
 			}
-
-			// BUSINESS OUTCOME VERIFIED:
-			// ✅ Rego policies can use simple lowercase equality checks
-			// ✅ No need for complex regex or case-insensitive Rego functions
-			// ✅ Policy authoring is simplified for operators
 		})
 	})
 })

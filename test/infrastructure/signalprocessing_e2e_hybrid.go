@@ -693,7 +693,7 @@ data:
     import rego.v1
 
     # BR-SP-105: Severity Determination via Rego Policy
-    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
+    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback (original casing preserved)
     # Maps external severity values to normalized values: critical/high/medium/low/unknown
     determine_severity := "critical" if {
       input.signal.severity == "sev1"
