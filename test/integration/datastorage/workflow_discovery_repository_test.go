@@ -92,7 +92,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 		labels := models.MandatoryLabels{
 			SignalType:  "OOMKilled",
-			Severity:    severity,
+			Severity:    models.StringOrSlice{severity},
 			Component:   component,
 			Environment: []string{environment},
 			Priority:    priority,

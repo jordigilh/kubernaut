@@ -90,7 +90,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"staging", "production"}, // Workflow stored with array
 					Priority:    "P1",
@@ -142,7 +142,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"staging"}, // Only staging
 					Priority:    "P1",
@@ -192,7 +192,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"*"}, // Wildcard: matches ALL
 					Priority:    "P1",
@@ -283,7 +283,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"production"},
 					Priority:    "P1",
@@ -310,7 +310,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"staging"},
 					Priority:    "P1",
@@ -337,7 +337,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"staging", "production"},
 					Priority:    "P1",
@@ -391,7 +391,7 @@ var _ = Describe("Workflow Search - Multi-Environment Support (Model 2)", Label(
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Labels: models.MandatoryLabels{
 					SignalType:  "TestSignal-" + testID,
-					Severity:    "high",
+					Severity:    models.StringOrSlice{"high"},
 					Component:   "pod",
 					Environment: []string{"development"}, // Single value in array
 					Priority:    "P1",
