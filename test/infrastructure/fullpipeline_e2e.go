@@ -715,7 +715,9 @@ subjects:
   name: event-exporter
   namespace: %[1]s
 ---
-# ConfigMap: route Warning events to Gateway
+# ConfigMap: route Warning events from fp-e2e-* namespaces only to Gateway
+# fp-am-* namespaces are intentionally excluded: the AlertManager E2E test uses
+# Prometheus alerts (not K8s events) as signal source to prevent duplication.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -730,8 +732,11 @@ data:
     kubeBurst: 100
     route:
       routes:
+        # Only forward K8s events from fp-e2e-* namespaces (K8s event signal source test)
+        # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test
         - match:
-            - receiver: gateway-webhook
+            - namespace: "fp-e2e-*"
+              receiver: gateway-webhook
           drop:
             - type: "Normal"
     receivers:
@@ -838,6 +843,58 @@ spec:
             memory: "50Mi"
           requests:
             memory: "20Mi"
+`, targetNamespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// DeployMemoryEaterHighUsage deploys a memory-eater pod that runs at high memory
+// usage (>=90% of limit) WITHOUT triggering OOMKill. This is used by the AlertManager
+// E2E test where the signal source is a Prometheus MemoryExceedsLimit alert, not a K8s event.
+//
+// The pod consumes 92Mi with a 100Mi limit (92% usage), staying above the 90% threshold
+// in the Prometheus alert rule while remaining within the OOMKill boundary.
+// Hold duration is 300s, giving Prometheus ample time to scrape and alert to fire.
+func DeployMemoryEaterHighUsage(ctx context.Context, targetNamespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🐛 Deploying memory-eater (high usage, no OOMKill) in namespace %s...\n", targetNamespace)
+
+	manifest := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-eater
+  namespace: %s
+  labels:
+    app: memory-eater
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-eater
+  template:
+    metadata:
+      labels:
+        app: memory-eater
+        kubernaut.ai/managed: "true"
+    spec:
+      containers:
+      - name: memory-eater
+        image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
+        imagePullPolicy: IfNotPresent
+        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
+        # Consumes 50Mi initially for 2s, then grows to 92Mi over 5s, then holds for 300s.
+        # With 100Mi limit, 92Mi = 92%% usage — above the 90%% Prometheus alert threshold
+        # but safely below OOMKill. This gives Prometheus time to scrape and fire the alert.
+        args: ["50Mi", "2", "92Mi", "5", "300"]
+        resources:
+          limits:
+            memory: "100Mi"
+          requests:
+            memory: "50Mi"
 `, targetNamespace)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

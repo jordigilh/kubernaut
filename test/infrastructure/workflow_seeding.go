@@ -41,16 +41,22 @@ func workflowIDToImageName(workflowID string) string {
 // TestWorkflow represents a workflow for test seeding in DataStorage
 // Pattern: Shared data structure for AIAnalysis integration tests and HAPI E2E tests
 // This struct consolidates workflow definitions from both test suites
+//
+// DD-WORKFLOW-017: Registration is pullspec-only — DataStorage pulls the OCI image
+// and extracts /workflow-schema.yaml to populate labels (severity, environment, etc.).
+// The string metadata fields below (Severity, Component, Environment, Priority) are
+// NOT sent to the API; they serve as human-readable documentation and as key
+// components for workflowUUIDs map lookups (key format: "workflowID:environment").
 type TestWorkflow struct {
 	WorkflowID      string // Must match Mock LLM workflow_id or Python fixture workflow_name
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
 	SignalType      string // Must match test scenarios (e.g., "OOMKilled")
-	Severity        string // "critical", "high", "medium", "low"
-	Component       string // "deployment", "pod", "node", etc.
-	Environment     string // "staging", "production", "test"
-	Priority        string // "P0", "P1", "P2", "P3"
+	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from OCI image)
+	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from OCI image)
+	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from OCI image)
+	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from OCI image)
 	ContainerImage  string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)

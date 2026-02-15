@@ -131,8 +131,36 @@ data:
         replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
       metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes)'
+        regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|spec_memory_limit_bytes)'
         action: keep
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets: ['alertmanager-svc.%[1]s.svc.cluster.local:9093']
+    rule_files:
+    - /etc/prometheus/rules/*.yml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: %[1]s
+data:
+  memory-eater.yml: |
+    groups:
+    - name: memory-eater-oom.rules
+      interval: 10s
+      rules:
+      - alert: MemoryExceedsLimit
+        expr: |
+          (container_memory_working_set_bytes{namespace=~"fp-am-.*", pod=~"memory-eater-.*"}
+           / container_spec_memory_limit_bytes{namespace=~"fp-am-.*", pod=~"memory-eater-.*"}) >= 0.90
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container memory exceeds limit"
+          description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -181,6 +209,8 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
+        - name: rules
+          mountPath: /etc/prometheus/rules
         resources:
           requests:
             memory: "128Mi"
@@ -192,6 +222,9 @@ spec:
       - name: config
         configMap:
           name: prometheus-config
+      - name: rules
+        configMap:
+          name: prometheus-rules
 ---
 apiVersion: v1
 kind: Service
@@ -251,8 +284,16 @@ data:
       group_wait: 5s
       group_interval: 5s
       repeat_interval: 1h
+      routes:
+      - match:
+          alertname: MemoryExceedsLimit
+        receiver: gateway-webhook
     receivers:
     - name: 'null'
+    - name: gateway-webhook
+      webhook_configs:
+      - url: 'http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/prometheus'
+        send_resolved: false
 ---
 apiVersion: apps/v1
 kind: Deployment
