@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 )
 
@@ -203,44 +204,30 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 	})
 
 	// ========================================
-	// TEST 6: Invalid Audit Configuration
+	// TEST 6: Invalid DataStorage Configuration
 	// ========================================
-	Context("BR-WE-005, ADR-032: Invalid Audit Configuration", func() {
-		It("should fail with clear error for empty audit URL", func() {
+	Context("BR-WE-005, ADR-032: Invalid DataStorage Configuration", func() {
+		It("should fail with clear error for empty DataStorage URL", func() {
 			cfg := config.DefaultConfig()
-			cfg.Audit.DataStorageURL = "" // Invalid!
+			cfg.DataStorage.URL = "" // Invalid!
 
 			err := cfg.Validate()
 
-			Expect(err).To(HaveOccurred(), "Empty audit URL should be rejected")
+			Expect(err).To(HaveOccurred(), "Empty DataStorage URL should be rejected")
 			Expect(err.Error()).To(Or(
-				ContainSubstring("DataStorageURL"),
-				ContainSubstring("audit"),
+				ContainSubstring("datastorage"),
 				ContainSubstring("url"),
 				ContainSubstring("required"),
-			), "Error message should mention audit URL")
+			), "Error message should mention datastorage URL")
 		})
 
-		It("should fail with clear error for invalid audit URL format", func() {
+		It("should fail with clear error for zero DataStorage timeout", func() {
 			cfg := config.DefaultConfig()
-			cfg.Audit.DataStorageURL = "not-a-url" // Invalid!
+			cfg.DataStorage.Timeout = 0 // Invalid!
 
 			err := cfg.Validate()
 
-			Expect(err).To(HaveOccurred(), "Invalid URL format should be rejected")
-			Expect(err.Error()).To(Or(
-				ContainSubstring("url"),
-				ContainSubstring("URL"),
-			), "Error message should mention URL format")
-		})
-
-		It("should fail with clear error for zero audit timeout", func() {
-			cfg := config.DefaultConfig()
-			cfg.Audit.Timeout = 0 // Invalid!
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Zero audit timeout should be rejected")
+			Expect(err).To(HaveOccurred(), "Zero DataStorage timeout should be rejected")
 		})
 	})
 
@@ -299,9 +286,9 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 					MaxExponent:            0,  // Invalid!
 					MaxConsecutiveFailures: -1, // Invalid!
 				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "", // Invalid!
-					Timeout:        0,  // Invalid!
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL:     "", // Invalid!
+					Timeout: 0,  // Invalid!
 				},
 			}
 

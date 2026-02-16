@@ -118,14 +118,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			}`, testNamespace))
 
 			// Send webhook to Gateway
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer func() { _ = resp.Body.Close() }()
+			// BR-SCOPE-002: Use Eventually() to handle informer cache race
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME 1: HTTP 201 Created
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -133,7 +127,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// Parse response to get fingerprint (for deduplication check while CRD active)
 			var response map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&response)
+			err := json.Unmarshal(resp.Body, &response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
 			fingerprint, ok := response["fingerprint"].(string)
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
@@ -196,17 +190,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// First alert: Creates CRD
-			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-
-			Expect(err).ToNot(HaveOccurred())
-
-			req1.Header.Set("Content-Type", "application/json")
-
-			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-			resp1, err := http.DefaultClient.Do(req1)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp1.Body.Close() }()
+			// BR-SCOPE-002: Use Eventually() to handle informer cache race
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First alert must create CRD")
 
@@ -215,8 +200,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			var crdList1 remediationv1alpha1.RemediationRequestList
 			var firstCRDName string
 			Eventually(func() int {
-				err = k8sClient.List(testCtx, &crdList1, client.InNamespace(testNamespace))
-				Expect(err).NotTo(HaveOccurred())
+				listErr := k8sClient.List(testCtx, &crdList1, client.InNamespace(testNamespace))
+				Expect(listErr).NotTo(HaveOccurred())
 				return len(crdList1.Items)
 			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
 
@@ -296,21 +281,12 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// First alert
-			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-
-			Expect(err).ToNot(HaveOccurred())
-
-			req1.Header.Set("Content-Type", "application/json")
-
-			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-			resp1, err := http.DefaultClient.Do(req1)
-			Expect(err).NotTo(HaveOccurred(), "Should send first alert")
-			defer func() { _ = resp1.Body.Close() }()
+			// BR-SCOPE-002: Use Eventually() to handle informer cache race
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 
 			// Parse response to get full fingerprint
 			var response map[string]interface{}
-			err = json.NewDecoder(resp1.Body).Decode(&response)
+			err := json.Unmarshal(resp1.Body, &response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
 			fingerprint, ok := response["fingerprint"].(string)
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"os"
-	"strconv"
 	"time"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -12,6 +11,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,32 +34,38 @@ func init() {
 }
 
 func main() {
-	var webhookPort int
-	var certDir string
-	var dataStorageURL string
-
-	// CLI flags with production defaults
-	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server binds to.")
-	flag.StringVar(&certDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs", "The directory containing TLS certificates.")
-	flag.StringVar(&dataStorageURL, "data-storage-url", "http://data-storage-service:8080", "Data Storage service URL for audit events (DD-AUTH-011).")
+	// ADR-030: YAML-based configuration via -config flag
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (ADR-030)")
 	flag.Parse()
-
-	// Allow environment variable overrides
-	if envPort := os.Getenv("WEBHOOK_PORT"); envPort != "" {
-		if port, err := strconv.Atoi(envPort); err == nil {
-			webhookPort = port
-		}
-	}
-	if envURL := os.Getenv("DATA_STORAGE_URL"); envURL != "" {
-		dataStorageURL = envURL
-	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
+	// Load configuration: YAML file if provided, defaults otherwise
+	var cfg *awconfig.Config
+	if configPath != "" {
+		var err error
+		cfg, err = awconfig.LoadFromFile(configPath)
+		if err != nil {
+			setupLog.Error(err, "Failed to load configuration file", "path", configPath)
+			os.Exit(1)
+		}
+		setupLog.Info("Configuration loaded from file", "path", configPath)
+	} else {
+		cfg = awconfig.DefaultConfig()
+		setupLog.Info("Using default configuration (no -config flag provided)")
+	}
+
+	// ADR-030: Validate configuration before startup
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
+	}
+
 	setupLog.Info("Webhook server configuration",
-		"webhook_port", webhookPort,
-		"cert_dir", certDir,
-		"data_storage_url", dataStorageURL)
+		"webhook_port", cfg.Webhook.Port,
+		"cert_dir", cfg.Webhook.CertDir,
+		"data_storage_url", cfg.DataStorage.URL)
 
 	// Create manager with health probe server
 	// Note: Metrics disabled (audit traces sufficient per WEBHOOK_METRICS_TRIAGE.md)
@@ -69,10 +75,10 @@ func main() {
 		Metrics: metricsserver.Options{
 			BindAddress: "0", // Disable metrics endpoint
 		},
-		HealthProbeBindAddress: ":8081", // Health probes on separate HTTP port
+		HealthProbeBindAddress: cfg.Webhook.HealthProbeAddr,
 		WebhookServer: webhook.NewServer(webhook.Options{
-			Port:    webhookPort,
-			CertDir: certDir,
+			Port:    cfg.Webhook.Port,
+			CertDir: cfg.Webhook.CertDir,
 		}),
 	})
 	if err != nil {
@@ -81,16 +87,20 @@ func main() {
 	}
 
 	// Create REAL audit store (DD-WEBHOOK-003: Webhooks write complete audit events)
-	setupLog.Info("Initializing audit store", "data_storage_url", dataStorageURL)
-	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 30*time.Second)
+	// ADR-030: Use DataStorage URL and buffer config from YAML ConfigMap
+	setupLog.Info("Initializing audit store", "data_storage_url", cfg.DataStorage.URL)
+	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "failed to create Data Storage client adapter")
 		os.Exit(1)
 	}
 
-	auditConfig := audit.DefaultConfig()
-	auditConfig.FlushInterval = 5 * time.Second // Production flush interval
-	auditConfig.BufferSize = 1000               // Production buffer size
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
 
 	auditStore, err := audit.NewBufferedStore(
 		dsClient,
@@ -174,7 +184,7 @@ func main() {
 	}
 	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
 
-	setupLog.Info("Starting webhook server", "port", webhookPort)
+	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

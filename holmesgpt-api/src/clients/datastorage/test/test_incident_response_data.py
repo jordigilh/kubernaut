@@ -46,6 +46,7 @@ class TestIncidentResponseData(unittest.TestCase):
                         ], ),
                 selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
                     workflow_id = '', 
+                    action_type = 'ScaleReplicas', 
                     container_image = '', 
                     confidence = 0.0, 
                     parameters = { }, ),

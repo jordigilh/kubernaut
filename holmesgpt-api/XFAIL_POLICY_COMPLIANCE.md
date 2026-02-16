@@ -74,7 +74,7 @@ def data_storage_url(self, value: str):
 **Tests**: 8 xfailed tests for PostExec endpoint
 
 **Context**:
-- PostExec endpoint explicitly deferred to V1.1 per DD-017
+- PostExec endpoint explicitly deferred to V1.1 per DD-017. EM Level 1 exists in V1.0 (DD-017 v2.0) but does not use PostExec; Level 2 (V1.1) is the consumer
 - Effectiveness Monitor not available in V1.0
 - Tests have `run=False` (not executing)
 
@@ -94,7 +94,7 @@ Since these tests:
 
 **Rationale**:
 - Tests are not executing (`run=False`)
-- Feature is explicitly deferred to V1.1 (business decision)
+- Feature is explicitly deferred to V1.1 (business decision). EM Level 1 exists in V1.0 (DD-017 v2.0) but does not use PostExec; Level 2 (V1.1) is the consumer
 - No bugs being hidden (feature doesn't exist yet)
 - Removing tests would lose V1.1 preparation work
 

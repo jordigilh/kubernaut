@@ -36,8 +36,11 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,6 +49,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -68,6 +72,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
 // Reconciler reconciles RemediationRequest objects.
@@ -99,6 +104,14 @@ type Reconciler struct {
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
 	Metrics  *metrics.Metrics     // DD-METRICS-001: Dependency-injected metrics for testability
 	Recorder record.EventRecorder // K8s best practice: EventRecorder for debugging
+
+	// ADR-EM-001: EA creator for creating EffectivenessAssessment CRDs on terminal phases
+	eaCreator *creator.EffectivenessAssessmentCreator
+
+	// DD-EM-002: REST mapper for resolving Kind to GVK for pre-remediation hash capture
+	restMapper meta.RESTMapper
+	// DD-EM-002: Uncached API reader for pre-remediation hash capture
+	apiReader client.Reader
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -137,7 +150,7 @@ type TimeoutConfig struct {
 // The timeouts parameter configures all timeout durations (global and per-phase).
 // Zero values use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m.
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch in atomic updates.
-func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
+func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine, eaCreator ...*creator.EffectivenessAssessmentCreator) *Reconciler {
 	// DD-METRICS-001: Metrics are REQUIRED (dependency injection pattern)
 	// Metrics are initialized in main.go via rometrics.NewMetrics()
 	// If nil is passed here, it's a programming error in main.go
@@ -208,6 +221,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		Metrics:             m,
 		Recorder:            recorder,
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+		apiReader:           apiReader,     // DD-EM-002: Uncached reader for pre-remediation hash
+	}
+
+	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
+	if len(eaCreator) > 0 && eaCreator[0] != nil {
+		r.eaCreator = eaCreator[0]
 	}
 
 	// ========================================
@@ -406,18 +425,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// 1. Initial state (OverallPhase == "") → Allow (initialization)
 	// 2. Pending phase → Skip (not yet orchestrating, wasteful)
 	// 3. Processing/Analyzing/Executing → Allow (active orchestration of child CRDs)
-	// 4. Terminal phases (Completed/Failed) → Skip (orchestration complete)
+	// 4. Terminal phases (Completed/Failed) → Allow (owned-resource housekeeping: Issue #88)
+	//    Terminal RRs must still process NT delivery status and EA completion events.
+	//    Guard2 (below) handles terminal phases with a dedicated housekeeping block.
 	//
-	// Tradeoff: Accepts extra reconciles during active phases (~150 vs 301 prevented)
-	// Benefit: Allows critical polling and child status update processing
+	// Tradeoff: Accepts extra reconciles during active and terminal phases
+	// Benefit: Allows critical polling, child status updates, and terminal housekeeping
 	if rr.Status.ObservedGeneration == rr.Generation &&
-		(rr.Status.OverallPhase == phase.Pending ||
-			phase.IsTerminal(phase.Phase(rr.Status.OverallPhase))) {
-		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in this phase",
+		rr.Status.OverallPhase == phase.Pending {
+		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,
 			"observedGeneration", rr.Status.ObservedGeneration,
-			"reason", "ObservedGeneration matches and phase not actively orchestrating")
+			"reason", "ObservedGeneration matches and phase is Pending")
 		return ctrl.Result{}, nil
 	}
 
@@ -434,6 +454,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Initialize phase if empty (new RemediationRequest from Gateway)
 	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
 	if rr.Status.OverallPhase == "" {
+		// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) to confirm the
+		// phase is genuinely empty. The informer cache is eventually consistent — a second
+		// reconcile may start with stale cache showing OverallPhase=="" even after a
+		// previous reconcile already set it to Pending in etcd. Without this check, both
+		// reconciles enter the initialization block and emit duplicate audit events.
+		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			logger.Error(err, "Failed to refetch RemediationRequest via apiReader")
+			return ctrl.Result{}, err
+		}
+		if rr.Status.OverallPhase != "" {
+			// Cache was stale — another reconcile already initialized this RR.
+			// Requeue to proceed with the now-initialized phase.
+			logger.V(1).Info("Skipped duplicate initialization (stale cache)",
+				"name", rr.Name, "phase", rr.Status.OverallPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
+
 		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
 
 		// ========================================
@@ -457,11 +494,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	// RO-AUDIT-IDEMPOTENCY: Emit initialization audit events ONLY after winning the
-	// AtomicStatusUpdate. Concurrent reconciles that both see OverallPhase == "" will
-	// race on the status update; only the winner proceeds here, preventing duplicate
-	// lifecycle.started/created events. Same pattern as RAR (ConditionAuditRecorded),
-	// Notification (NT-BUG-001), and WFE (DD-STATUS-001).
+	// RO-AUDIT-IDEMPOTENCY: Safe to emit — the apiReader refetch above confirmed this
+	// reconcile is the sole initializer. AtomicStatusUpdate handles optimistic locking
+	// conflicts via RetryOnConflict, but the phase transition is guaranteed to have
+	// been performed by this reconcile (not a stale-cache duplicate).
 	r.emitLifecycleStartedAudit(ctx, rr)
 
 	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
@@ -485,9 +521,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	// Skip terminal phases
+	// Terminal-phase housekeeping (Issue #88: process owned-resource completion events)
+	// Terminal RRs still need to track NotificationRequest delivery status and
+	// (future) EffectivenessAssessment completion. Without this block, owned-resource
+	// events arriving after RR reaches terminal state are silently dropped.
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
-		logger.V(1).Info("RemediationRequest in terminal phase, skipping", "phase", rr.Status.OverallPhase)
+		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
+
+		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
+		if err := r.trackNotificationStatus(ctx, rr); err != nil {
+			logger.Error(err, "Failed to track notification status in terminal phase")
+			// Non-fatal: continue to return
+		}
+
+		// ADR-EM-001, GAP-RO-2: Track effectiveness assessment status for terminal RRs
+		if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
+			logger.Error(err, "Failed to track effectiveness assessment status in terminal phase")
+			// Non-fatal: continue to return
+		}
 
 		// BR-ORCH-044: Track routing decision - no action needed
 		r.Metrics.NoActionNeededTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
@@ -881,6 +932,33 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Routing checks passed - create WorkflowExecution
 		logger.Info("Routing checks passed, creating WorkflowExecution")
 
+		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
+		// BR-HAPI-191: Use the AI-identified target (e.g., Deployment) rather than the
+		// signal-sourced target (e.g., Pod) — the hash must match what the workflow modifies.
+		hashKind, hashName, hashNs := resolveEffectivenessTarget(rr, ai)
+		preHash, hashErr := CapturePreRemediationHash(
+			ctx, r.apiReader, r.restMapper,
+			hashKind, hashName, hashNs,
+		)
+		if hashErr != nil {
+			logger.Error(hashErr, "Failed to capture pre-remediation hash (non-fatal)")
+		}
+		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			} else {
+				logger.Info("Pre-remediation spec hash stored on RR status",
+					"hash", preHash[:min(23, len(preHash))]+"...",
+					"target", fmt.Sprintf("%s/%s", hashKind, hashName))
+			}
+		}
+
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
+		r.emitWorkflowCreatedAudit(ctx, rr, ai, preHash)
+
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
 		// DD-CRD-002-RR: Creator sets WorkflowExecutionReady condition in-memory
 		weName, err := r.weCreator.Create(ctx, rr, ai)
@@ -1036,6 +1114,28 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			logger.Error(err, "Failed to fetch AIAnalysis CRD")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
+
+		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
+		// BR-HAPI-191: Use the AI-identified target (same as first capture site).
+		hashKind, hashName, hashNs := resolveEffectivenessTarget(rr, ai)
+		preHash, hashErr := CapturePreRemediationHash(
+			ctx, r.apiReader, r.restMapper,
+			hashKind, hashName, hashNs,
+		)
+		if hashErr != nil {
+			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
+		}
+		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.PreRemediationSpecHash = preHash
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to persist pre-remediation hash on RR status (non-fatal)")
+			}
+		}
+
+		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
+		r.emitWorkflowCreatedAudit(ctx, rr, ai, preHash)
 
 		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
 		weName, err := r.weCreator.Create(ctx, rr, ai)
@@ -1474,6 +1574,21 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 				logger.Error(notifErr, "Failed to create completion notification")
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
+				// Issue #88, BR-ORCH-035 AC-2: Persist completion NT ref to NotificationRequestRefs
+				// Uses helpers.UpdateRemediationRequestStatus to ensure persistence (Batch 3 fix:
+				// previous in-memory-only append was never written to the API server because the
+				// phase status update at line ~1444 had already completed).
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+						Kind:       "NotificationRequest",
+						Name:       notifName,
+						Namespace:  rr.Namespace,
+						APIVersion: "notification.kubernaut.ai/v1alpha1",
+					})
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
+				}
 				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
 				if r.Recorder != nil {
 					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
@@ -1493,6 +1608,9 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 			}
 		}
 	}
+
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
@@ -1600,6 +1718,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 				fmt.Sprintf("Remediation failed during %s: %s", failurePhase, failureReason))
 		}
 	}
+
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
@@ -1761,7 +1882,72 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
 
+	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
 	return ctrl.Result{}, nil
+}
+
+// createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
+// ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
+// even if EA creation fails. Errors are logged but not propagated.
+// BR-HAPI-191: Resolves the target from AIAnalysis.AffectedResource when available,
+// so the EA assesses the resource the workflow actually modified (not the signal Pod).
+// Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
+// so that trackEffectivenessStatus can find the EA for condition tracking.
+func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	if r.eaCreator == nil {
+		return
+	}
+
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// BR-HAPI-191: Resolve the AI-identified target for the EA.
+	// Fetch the AIAnalysis CRD to check for AffectedResource.
+	var resolved *creator.ResolvedTarget
+	if rr.Status.AIAnalysisRef != nil {
+		ai := &aianalysisv1.AIAnalysis{}
+		if err := r.client.Get(ctx, client.ObjectKey{
+			Name:      rr.Status.AIAnalysisRef.Name,
+			Namespace: rr.Status.AIAnalysisRef.Namespace,
+		}, ai); err != nil {
+			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
+				"error", err)
+		} else {
+			kind, name, ns := resolveEffectivenessTarget(rr, ai)
+			resolved = &creator.ResolvedTarget{Kind: kind, Name: name, Namespace: ns}
+		}
+	}
+
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, resolved)
+	if err != nil {
+		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
+		return
+	}
+	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
+
+	// ADR-EM-001, Batch 3: Persist EA ref on RR status for trackEffectivenessStatus.
+	// Uses helpers.UpdateRemediationRequestStatus for atomic persistence (same pattern
+	// as NT ref tracking in handleGlobalTimeout).
+	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
+	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			Kind:       "EffectivenessAssessment",
+			Name:       name,
+			Namespace:  rr.Namespace,
+			APIVersion: eav1.GroupVersion.String(),
+		}
+		meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
+			Type:    ConditionEffectivenessAssessed,
+			Status:  metav1.ConditionFalse,
+			Reason:  "AssessmentInProgress",
+			Message: fmt.Sprintf("EffectivenessAssessment %s created, assessment in progress", name),
+		})
+		return nil
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist EA ref on RR status (non-critical)", "eaName", name)
+	}
 }
 
 // ========================================
@@ -1819,6 +2005,53 @@ func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remedi
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store remediation created audit event")
+	}
+}
+
+// emitWorkflowCreatedAudit emits the remediation.workflow_created audit event
+// before WorkflowExecution creation. Includes the pre-remediation spec hash
+// and selected workflow metadata for the audit trail.
+// ADR-EM-001 Section 9.1, GAP-RO-1, DD-EM-002.
+// Non-blocking — failures are logged but don't affect business logic.
+//
+// The preHash parameter is the hash already captured by the caller (sites 1/2)
+// via CapturePreRemediationHash. This avoids a redundant uncached API read of
+// the same target resource that was just hashed moments before.
+func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, preHash string) {
+	logger := log.FromContext(ctx)
+
+	if r.auditStore == nil {
+		logger.Error(fmt.Errorf("auditStore is nil"),
+			"CRITICAL: Cannot record workflow_created audit event - violates ADR-032 §1",
+			"remediationRequest", rr.Name)
+		return
+	}
+
+	correlationID := rr.Name
+	// BR-HAPI-191: Use AI-identified target for audit trail consistency
+	auditKind, auditName, auditNs := resolveEffectivenessTarget(rr, ai)
+	targetResource := fmt.Sprintf("%s/%s/%s", auditNs, auditKind, auditName)
+
+	// Extract workflow metadata from AIAnalysis status
+	var workflowID, workflowVersion, workflowType string
+	if ai.Status.SelectedWorkflow != nil {
+		workflowID = ai.Status.SelectedWorkflow.WorkflowID
+		workflowVersion = ai.Status.SelectedWorkflow.Version
+		workflowType = ai.Status.SelectedWorkflow.ActionType
+	}
+
+	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
+		correlationID, rr.Namespace, rr.Name,
+		preHash, targetResource,
+		workflowID, workflowVersion, workflowType,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build workflow_created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store workflow_created audit event")
 	}
 }
 
@@ -2289,6 +2522,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&workflowexecutionv1.WorkflowExecution{}).
 		Owns(&remediationv1.RemediationApprovalRequest{}).
 		Owns(&notificationv1.NotificationRequest{}). // BR-ORCH-029/030: Watch notification lifecycle
+		Owns(&eav1.EffectivenessAssessment{}).       // ADR-EM-001, GAP-RO-3: Watch EA for EffectivenessAssessed condition
 		// V1.0 P1 FIX: GenerationChangedPredicate removed to allow child CRD status changes
 		// Previous optimization filtered status updates, breaking integration tests (RO_INTEGRATION_CRITICAL_BUG_JAN_01_2026.md)
 		// Rationale: Correctness > Performance for P0 orchestration service
@@ -2449,6 +2683,11 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 
 	// Create phase-specific timeout notification (non-blocking)
 	r.createPhaseTimeoutNotification(ctx, rr, phase, timeout)
+
+	// ADR-EM-001: Create EffectivenessAssessment CRD for all terminal phases (non-fatal).
+	// Phase timeout is a terminal transition (TimedOut), so EA must be created for
+	// audit completeness. The EM handles "no workflow" via the no_execution path.
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
 	return nil
 }
@@ -2714,4 +2953,128 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 	}
 
 	return nil
+}
+
+// SetRESTMapper sets the REST mapper used by CapturePreRemediationHash to
+// resolve Kind strings to GroupVersionKind for the unstructured client.
+// DD-EM-002: Called from cmd/remediationorchestrator/main.go after manager setup.
+func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
+	r.restMapper = mapper
+}
+
+// resolveEffectivenessTarget determines the Kubernetes resource that the workflow
+// actually modifies for effectiveness assessment purposes.
+//
+// BR-HAPI-191: Prefers the LLM-identified AffectedResource from the AIAnalysis
+// RootCauseAnalysis (e.g., Deployment) over the signal-sourced TargetResource
+// on the RR (e.g., Pod). Pods should never be the assessment target when a parent
+// workload resource (Deployment/ReplicaSet/StatefulSet) exists, because the
+// workflow patches the parent, not the individual pod.
+//
+// Falls back to RR.Spec.TargetResource when:
+//   - ai is nil (EA created before AI analysis, e.g., early failure)
+//   - AffectedResource is not set (LLM did not identify a specific resource)
+func resolveEffectivenessTarget(
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (kind, name, namespace string) {
+	// Prefer AffectedResource from RCA if available
+	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
+		ar := ai.Status.RootCauseAnalysis.AffectedResource
+		if ar.Kind != "" && ar.Name != "" {
+			return ar.Kind, ar.Name, ar.Namespace
+		}
+	}
+	// Fall back to RR's signal-sourced target resource
+	return rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name, rr.Spec.TargetResource.Namespace
+}
+
+// CapturePreRemediationHash fetches the target resource via an uncached reader,
+// extracts its .spec, and computes the canonical SHA-256 hash (DD-EM-002).
+//
+// Returns empty string (no error) when:
+//   - The resource is not found (non-fatal: RO logs and continues)
+//   - The resource has no .spec field
+//   - The REST mapper cannot resolve the Kind
+//
+// This is exported for testability from the test package.
+func CapturePreRemediationHash(
+	ctx context.Context,
+	reader client.Reader,
+	restMapper meta.RESTMapper,
+	targetKind string,
+	targetName string,
+	targetNamespace string,
+) (string, error) {
+	logger := log.FromContext(ctx)
+
+	// Resolve Kind to GVK via REST mapper
+	gvk, err := resolveGVKForKind(restMapper, targetKind)
+	if err != nil {
+		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
+			"kind", targetKind, "error", err)
+		return "", nil
+	}
+
+	// Fetch the resource using unstructured client
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	key := client.ObjectKey{Name: targetName, Namespace: targetNamespace}
+	if err := reader.Get(ctx, key, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("Target resource not found, skipping pre-remediation hash",
+				"kind", targetKind, "name", targetName, "namespace", targetNamespace)
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to fetch target resource %s/%s: %w", targetKind, targetName, err)
+	}
+
+	// Extract .spec from unstructured
+	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	if err != nil {
+		return "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
+	}
+	if !found || spec == nil {
+		logger.V(1).Info("Target resource has no .spec, skipping pre-remediation hash",
+			"kind", targetKind, "name", targetName)
+		return "", nil
+	}
+
+	// Compute canonical hash
+	hash, err := canonicalhash.CanonicalSpecHash(spec)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
+	}
+
+	return hash, nil
+}
+
+// resolveGVKForKind resolves a Kind string to its GroupVersionKind using the
+// REST mapper. Falls back to common Kubernetes kinds if the mapper fails.
+func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
+	// Try well-known kinds first for reliability
+	switch kind {
+	case "Deployment":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, nil
+	case "StatefulSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, nil
+	case "DaemonSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}, nil
+	case "Pod":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, nil
+	case "Service":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
+	case "ConfigMap":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
+	}
+
+	// Fall back to REST mapper for custom resources
+	if mapper != nil {
+		gvk, err := mapper.RESTMapping(schema.GroupKind{Kind: kind})
+		if err == nil {
+			return gvk.GroupVersionKind, nil
+		}
+	}
+
+	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
 }

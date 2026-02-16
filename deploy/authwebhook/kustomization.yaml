@@ -12,6 +12,7 @@ resources:
   - 05-certificate.yaml
   - 06-mutating-webhook.yaml
   - 07-validating-webhook.yaml
+  - 08-configmap.yaml
 
 labels:
   - pairs:

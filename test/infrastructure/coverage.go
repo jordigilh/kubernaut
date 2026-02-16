@@ -91,6 +91,13 @@ func CollectE2EBinaryCoverage(opts E2ECoverageOptions, writer io.Writer) error {
 		return fmt.Errorf("conversion failed: %w", err)
 	}
 
+	// Step 4b: Remap container build paths to host paths
+	// Docker images use WORKDIR /opt/app-root/src; Go embeds these paths at compile time.
+	// go tool cover needs host paths to open source files.
+	if err := remapCoveragePaths(binaryOutFile, projectRoot, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  Coverage path remapping failed (non-fatal): %v\n", err)
+	}
+
 	// Step 5: Log summary percentage
 	logCoveragePercent(coverDir, writer)
 
@@ -221,6 +228,32 @@ func convertCoverageToProfile(coverDir, outputFile string, writer io.Writer) err
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Profile written: %s (%d bytes)\n", outputFile, info.Size())
+	return nil
+}
+
+// remapCoveragePaths rewrites container build paths to host paths in the coverage profile.
+// Docker images use WORKDIR /opt/app-root/src; Go embeds these absolute paths at compile time
+// via -cover. When `go tool cover -func` runs on the host, it cannot find files at the
+// container path. This function rewrites /opt/app-root/src → projectRoot so coverage tools work.
+func remapCoveragePaths(profileFile, projectRoot string, writer io.Writer) error {
+	const containerBuildPath = "/opt/app-root/src"
+
+	content, err := os.ReadFile(profileFile)
+	if err != nil {
+		return fmt.Errorf("read profile: %w", err)
+	}
+
+	if !strings.Contains(string(content), containerBuildPath) {
+		_, _ = fmt.Fprintf(writer, "  ℹ️  No container paths found in profile (no remapping needed)\n")
+		return nil
+	}
+
+	remapped := strings.ReplaceAll(string(content), containerBuildPath, projectRoot)
+	if err := os.WriteFile(profileFile, []byte(remapped), 0644); err != nil {
+		return fmt.Errorf("write remapped profile: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Remapped container paths: %s → %s\n", containerBuildPath, projectRoot)
 	return nil
 }
 

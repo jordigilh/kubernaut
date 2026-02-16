@@ -214,18 +214,29 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			}`, stagingNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-			req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp, err := http.DefaultClient.Do(req)
-			_ = err // Explicitly discard HTTP error - will be checked via status code
-			defer func() { _ = resp.Body.Close() }()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+			// Retry POST until Gateway's informer cache syncs the new namespace.
+			// The scope checker (BR-SCOPE-002) uses a metadata-only informer cache;
+			// freshly created namespaces may not be visible yet, causing HTTP 200
+			// (scope rejection) instead of 201 (created). Retrying handles this lag.
+			var resp *http.Response
+			Eventually(func() int {
+				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				var err error
+				resp, err = http.DefaultClient.Do(req)
+				if err != nil {
+					return 0
+				}
+				defer func() { _ = resp.Body.Close() }()
+				return resp.StatusCode
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"Gateway should return 201 Created once informer cache syncs the managed namespace")
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList, client.InNamespace(stagingNamespace)) //nolint:ineffassign // Test pattern: error reassignment across phases
+			_ = k8sClient.List(testCtx, &crdList, client.InNamespace(stagingNamespace))
 			Expect(crdList.Items).To(HaveLen(1))
 
 			crd := crdList.Items[0]

@@ -604,7 +604,7 @@ Context("BR-AI-011: Investigation metrics", func() {
 |-----------------|------------|--------|
 | BR-AI-002: Multiple analysis types | 60% | Feature deferred to v2.0 per DD-AIANALYSIS-005 |
 | BR-AI-082: Historical context for learning | 50% | No current implementation or BRs |
-| Post-execution analysis tests | 40% | Endpoint not exposed per DD-017 |
+| Post-execution analysis tests | 40% | PostExec endpoint deferred to V1.1 per DD-017 v2.0 — EM Level 1 (V1.0) does not use PostExec |
 | Multi-cluster scenarios | 30% | Out of scope for v1.0 |
 | Performance/load testing with MockLLM | 70% | Requires infrastructure changes |
 

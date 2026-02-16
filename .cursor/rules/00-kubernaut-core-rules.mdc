@@ -196,10 +196,13 @@ grep -r "New.*Optimizer\|New.*Engine\|New.*Builder" cmd/ --include="*.go"
   - **Policy**: `docs/architecture/decisions/DD-TEST-006-test-plan-policy.md`
   - **Benefit**: Methodical TDD execution with pre-defined test scenarios
 
-### Test Pyramid
-- **Unit Tests**: 70%+ coverage (real business logic, external mocks only)
-- **Integration Tests**: <20% coverage (critical interactions)
-- **E2E Tests**: <10% coverage (essential user journeys)
+### Per-Tier Testable Code Coverage (>=80% per tier)
+- **Unit Tests**: >=80% of **unit-testable** code (pure logic: config, validators, scoring, builders)
+- **Integration Tests**: >=80% of **integration-testable** code (I/O: reconciler, K8s clients, HTTP handlers, DB adapters)
+- **E2E Tests**: >=80% of full service code (full stack execution in Kind)
+- **All Tiers**: >=80% merged (line-by-line dedup across all tiers)
+
+**TDD Mandate**: Every business requirement MUST have a corresponding test. If a feature has no test, it risks not being implemented. Coverage is measured per-tier against the tier-specific code subset (see `scripts/coverage/coverage_report.py` and TESTING_GUIDELINES.md).
 
 ### Mock Strategy
 **Mock ONLY External Dependencies**:

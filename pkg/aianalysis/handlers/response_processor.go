@@ -142,6 +142,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		if swMap != nil {
 			sw := &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
 				ContainerImage:  GetStringFromMap(swMap, "container_image"),
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
@@ -261,6 +262,7 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 		if swMap != nil {
 			sw := &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
 				ContainerImage:  GetStringFromMap(swMap, "container_image"),
 				ContainerDigest: GetStringFromMap(swMap, "container_digest"),

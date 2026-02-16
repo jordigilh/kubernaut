@@ -65,10 +65,15 @@ def session_status_response(session_id: str) -> dict:
         dict with status and created_at
     """
     session = get_session_or_404(session_id)
-    return {
+    result = {
         "status": session["status"],
         "created_at": session.get("created_at", "").isoformat() if session.get("created_at") else None,
     }
+    # Expose internal error message when session failed — critical for debugging
+    # Without this, callers see "HAPI session failed: " with no detail
+    if session.get("status") == "failed" and session.get("error"):
+        result["error"] = session["error"]
+    return result
 
 
 def session_result_response(session_id: str) -> Any:

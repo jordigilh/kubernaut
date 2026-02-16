@@ -24,27 +24,34 @@ description: "Testing strategy and patterns for kubernaut's defense-in-depth app
 
 ## 📊 **Defense-in-Depth Testing Pyramid**
 
-### Coverage Targets
+### Coverage Targets: Per-Tier Testable Code Coverage (>=80%)
+
+**TDD Mandate**: Every business requirement MUST have a corresponding test. If a feature has no test, it risks not being implemented. Coverage is measured **per tier against the tier-specific code subset**.
+
+**Per-Tier Code Coverage** (AUTHORITATIVE):
+- **Unit**: >=80% of **unit-testable** code (pure logic: config, validators, scoring, builders, types)
+- **Integration**: >=80% of **integration-testable** code (I/O: reconciler, K8s clients, HTTP handlers, DB adapters)
+- **E2E**: >=80% of full service code (full stack execution)
+- **All Tiers**: >=80% merged (line-by-line dedup across all tiers)
+
+**Code Partitioning**: Each service defines `unit_exclude`/`int_include` patterns in `scripts/coverage/coverage_report.py` that partition code into unit-testable (pure logic) and integration-testable (I/O-dependent) subsets. See TESTING_GUIDELINES.md v2.7.0 "Code Partitioning" section.
+
+**Measurement**: `make coverage-report` (runs `scripts/coverage/coverage_report.py`)
 
 **Business Requirement (BR) Coverage** - OVERLAPPING:
 - **Unit**: 70%+ of ALL BRs (maximum coverage foundation)
 - **Integration**: >50% of ALL BRs (critical interactions)
 - **E2E**: <10% BR coverage (essential user journeys)
 
-**Code Coverage** - CUMULATIVE (~100% combined):
-- **Unit**: 70%+ code coverage (algorithms, edge cases, error handling)
-- **Integration**: 50% code coverage (cross-component flows, CRD operations)
-- **E2E**: 50% code coverage (full stack, deployment wiring, real infrastructure)
+**Key**: Same BRs tested at multiple tiers (e.g., retry logic in unit, integration, AND E2E)
 
-**Key Insight**: With 70%/50%/50% code coverage targets, **50%+ of codebase is tested in ALL 3 tiers** - bugs must slip through multiple defense layers to reach production.
-
-**See**: [Complete Testing Strategy](mdc:docs/testing/PYRAMID_TEST_MIGRATION_GUIDE.md)
+**See**: [TESTING_GUIDELINES.md](mdc:docs/development/business-requirements/TESTING_GUIDELINES.md) for full coverage model
 
 ---
 
 ## 🧪 **Test Tier Specifications**
 
-### Unit Tests (70%+ BRs, 70%+ Code Coverage)
+### Unit Tests (70%+ BRs, >=80% Unit-Testable Code Coverage)
 
 **Location**: `test/unit/`
 **Purpose**: Extensive business logic validation covering ALL unit-testable business requirements
@@ -274,10 +281,11 @@ make lint-tdd-compliance           # Check BDD framework, BR references
 
 ## ⚡ **Quick Reference**
 
-| Test Tier | BR Coverage | Code Coverage | Framework | Mock Strategy |
-|-----------|-------------|---------------|-----------|---------------|
-| **Unit** | 70%+ | 70%+ | Ginkgo/Gomega | External deps only |
-| **Integration** | >50% | 50% | Ginkgo/Gomega + envtest | Zero business mocks |
-| **E2E** | <10% | 50% | Ginkgo/Gomega + KIND | Zero internal mocks |
+| Test Tier | BR Coverage | Code Coverage (per-tier subset) | Framework | Mock Strategy |
+|-----------|-------------|-------------------------------|-----------|---------------|
+| **Unit** | 70%+ | >=80% of unit-testable | Ginkgo/Gomega | External deps only |
+| **Integration** | >50% | >=80% of integration-testable | Ginkgo/Gomega + envtest | Zero business mocks |
+| **E2E** | <10% | >=80% of full service | Ginkgo/Gomega + KIND | Zero internal mocks |
+| **All Tiers** | — | >=80% merged | — | — |
 
-**Remember**: Mock external dependencies, use real business logic, validate business outcomes.
+**Remember**: Mock external dependencies, use real business logic, validate business outcomes. **If a feature has no test, it risks not being implemented.**

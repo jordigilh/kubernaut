@@ -1,8 +1,10 @@
 # DD-WORKFLOW-007: Manual Workflow Registration - FINAL
 
 **Date**: 2025-11-15
-**Status**: ⚠️ **SUPERSEDED BY CRD APPROACH FOR V1.1** - CLI deferred to v1.2
+**Status**: **SUPERSEDED** by [DD-WORKFLOW-017](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) for V1.0 registration and lifecycle; CLI deferred to V1.2
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-006, DD-WORKFLOW-008, DD-WORKFLOW-012 (Workflow Immutability)
+
+> **Note**: This document is superseded by DD-WORKFLOW-017, which defines the authoritative V1.0 workflow lifecycle with `action_type`-based design (DD-WORKFLOW-016). The CLI approach described here remains as historical reference for V1.2 planning.
 
 ---
 

@@ -104,7 +104,8 @@ async def recovery_analyze_endpoint(
                 detail=f"recovery_attempt_number must be >= 1, got {recovery_req.recovery_attempt_number}"
             )
 
-    request_data = recovery_req.model_dump() if hasattr(recovery_req, 'model_dump') else recovery_req.dict()
+    # mode="json" ensures all values are JSON-serializable plain types (str, not Enum)
+    request_data = recovery_req.model_dump(mode="json")
 
     # BR-AA-HAPI-064.9: Create recovery session and return immediately
     sm = get_session_manager()

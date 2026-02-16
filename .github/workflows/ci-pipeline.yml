@@ -2,7 +2,7 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~2 min
+# Stage 1: Lint & Unit Tests (parallel: 2 lint + 10 unit test jobs) ~1-2 min
 # Stage 2: Build & Push Images (parallel matrix: 10 images) ~5 min
 # Stage 3: Integration Tests (parallel matrix: 9 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 8 services, when enabled) ~30 min each
@@ -117,10 +117,11 @@ jobs:
           make generate
 
       - name: Lint Go code
-        run: |
-          echo "🔍 Linting Go code (targeted directories only)..."
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          timeout 7m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.9.0
+          args: cmd/... pkg/... internal/... test/...
+          only-new-issues: true
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   lint-python:
@@ -135,24 +136,12 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-
-      - name: Install Python dependencies
-        working-directory: holmesgpt-api
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
-
       - name: Lint Python code (HAPI)
-        run: |
-          echo "🔍 Linting Python code..."
-          make lint-holmesgpt-api
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.8.4"
+          args: "check"
+          src: "holmesgpt-api/src/ holmesgpt-api/tests/"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   unit-tests:
@@ -168,6 +157,7 @@ jobs:
           - aianalysis
           - authwebhook
           - datastorage
+          - effectivenessmonitor
           - gateway
           - notification
           - remediationorchestrator
@@ -411,6 +401,9 @@ jobs:
           - service: workflowexecution
             dockerfile: docker/workflowexecution-controller.Dockerfile
             image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
+          - service: effectivenessmonitor
+            dockerfile: docker/effectivenessmonitor-controller.Dockerfile
+            image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
           # Python Services (1)
           - service: holmesgpt-api
             dockerfile: holmesgpt-api/Dockerfile.e2e
@@ -519,7 +512,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -545,6 +538,9 @@ jobs:
           - service: datastorage
             service_name: "Data Storage"
             timeout: 10
+          - service: effectivenessmonitor
+            service_name: "Effectiveness Monitor"
+            timeout: 15
           - service: holmesgpt-api
             service_name: "HolmesGPT API"
             timeout: 10
@@ -695,7 +691,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, holmesgpt-api, fullpipeline]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -721,6 +717,9 @@ jobs:
           - service: datastorage
             service_name: "Data Storage"
             timeout: 35
+          - service: effectivenessmonitor
+            service_name: "Effectiveness Monitor"
+            timeout: 40
           - service: holmesgpt-api
             service_name: "HolmesGPT API"
             timeout: 35
@@ -747,8 +746,9 @@ jobs:
         run: |
           # Install Kind v0.30.0 (required by E2E test infrastructure)
           # Authority: test/infrastructure/kind_cluster_helpers.go (version validation)
+          # Uses GitHub releases URL (kind.sigs.k8s.io/dl/ returns HTML, not binary)
           KIND_VERSION="v0.30.0"
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version

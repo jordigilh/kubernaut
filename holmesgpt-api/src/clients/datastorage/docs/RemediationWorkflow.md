@@ -7,9 +7,10 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **workflow_id** | **str** | Unique workflow identifier (UUID, auto-generated) | [optional] 
 **workflow_name** | **str** | Workflow name (identifier for versions) | 
+**action_type** | **str** | Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy. | 
 **version** | **str** | Semantic version (e.g., v1.0.0) | 
 **name** | **str** | Human-readable workflow title | 
-**description** | **str** | Workflow description | 
+**description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **owner** | **str** | Workflow owner | [optional] 
 **maintainer** | **str** | Workflow maintainer email | [optional] 
 **content** | **str** | YAML workflow definition | 

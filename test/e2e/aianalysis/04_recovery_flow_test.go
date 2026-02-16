@@ -63,15 +63,36 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RemediationID:         "e2e-recovery-rem-001",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
+					PreviousExecutions: []aianalysisv1alpha1.PreviousExecution{
+						{
+							WorkflowExecutionRef: "workflow-exec-initial",
+							OriginalRCA: aianalysisv1alpha1.OriginalRCA{
+								Summary:    "Pod OOMKilled due to insufficient memory limits",
+								SignalType: "OOMKilled",
+								Severity:   "critical",
+							},
+							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
+								WorkflowID:     "oomkill-increase-memory-v1",
+								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								Rationale:      "Increase memory limits for OOMKilled pod",
+							},
+							Failure: aianalysisv1alpha1.ExecutionFailure{
+								Reason:        "WorkflowFailed",
+								Message:       "Memory increase insufficient",
+								FailedAt:      metav1.Now(),
+								ExecutionTime: "45s",
+							},
+						},
+					},
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-001",
-							Severity:         "critical",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P1",
+						Fingerprint:      "e2e-recovery-fp-001",
+						Severity:         "critical",
+						SignalType:       "OOMKilled",
+						Environment:      "staging",
+						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "oom-service-abc123",
 								Namespace: "staging",
 							},
@@ -167,13 +188,13 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-002",
-							Severity:         "critical",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P1",
+						Fingerprint:      "e2e-recovery-fp-002",
+						Severity:         "critical",
+						SignalType:       "OOMKilled",
+						Environment:      "staging",
+						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "memory-hungry-app",
 								Namespace: "staging",
 							},
@@ -242,13 +263,13 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-003",
-							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "development",
-							BusinessPriority: "P2",
+						Fingerprint:      "e2e-recovery-fp-003",
+						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "staging", // Must be in [staging,production,test]
+						BusinessPriority: "P1",      // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "dev-app",
 								Namespace: "development",
 							},
@@ -370,9 +391,9 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							Severity:         "critical",
 							SignalType:       "OOMKilled",
 							Environment:      "staging", // Even staging requires approval for 3+ attempts
-							BusinessPriority: "P0",
+							BusinessPriority: "P1",      // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "critical-service",
 								Namespace: "staging",
 							},
@@ -441,13 +462,13 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RecoveryAttemptNumber: 1,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-recovery-fp-005",
-							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "staging",
-							BusinessPriority: "P2",
+						Fingerprint:      "e2e-recovery-fp-005",
+						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "staging",
+						BusinessPriority: "P1", // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "test-app",
 								Namespace: "staging",
 							},

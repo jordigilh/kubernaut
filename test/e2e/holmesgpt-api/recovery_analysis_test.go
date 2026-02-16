@@ -535,6 +535,11 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-022",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			incident, err := sessionClient.Investigate(ctx, incidentReq)
@@ -700,7 +705,9 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
+				Environment:           hapiclient.NewOptString("production"),
+			}
 
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -754,7 +761,11 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
-				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec)}
+				PreviousExecution:     hapiclient.NewOptNilPreviousExecution(prevExec),
+				Environment:           hapiclient.NewOptString("production"),
+				Priority:              hapiclient.NewOptString("P1"),            // Must match crashloop-config-fix-v1 catalog entry
+				ResourceKind:          hapiclient.NewOptNilString("Deployment"), // Must match crashloop-config-fix-v1 component=deployment
+			}
 
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -772,8 +783,8 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				"needs_human_review must be false for confident recovery")
 			Expect(recoveryResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
-			Expect(recoveryResp.AnalysisConfidence).To(BeNumerically("~", 0.85, 0.05),
-				"Mock LLM 'recovery' scenario returns confidence = 0.85 ± 0.05 (server.py:130)")
+			Expect(recoveryResp.AnalysisConfidence).To(BeNumerically("~", 0.88, 0.10),
+				"Mock LLM 'crashloop' scenario returns confidence = 0.88 ± 0.10 (server.py:114)")
 
 			// CORRECTNESS: Recovery workflow appropriate for CrashLoopBackOff
 			// (Verified by workflow catalog logic)

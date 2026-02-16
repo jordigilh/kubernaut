@@ -283,6 +283,57 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					}
 
+				case 'e': // Prefix: "effectiveness/"
+
+					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "correlation_id"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetEffectivenessScoreRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "GET")
+						}
+
+						return
+					}
+
+				case 'r': // Prefix: "remediation-history/context"
+
+					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetRemediationHistoryContextRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "GET")
+						}
+
+						return
+					}
+
 				case 'w': // Prefix: "workflows"
 
 					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
@@ -316,24 +367,56 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							break
 						}
 						switch elem[0] {
-						case 's': // Prefix: "search"
+						case 'a': // Prefix: "actions"
 							origElem := elem
-							if l := len("search"); len(elem) >= l && elem[0:l] == "search" {
+							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
 								switch r.Method {
-								case "POST":
-									s.handleSearchWorkflowsRequest([0]string{}, elemIsEscaped, w, r)
+								case "GET":
+									s.handleListAvailableActionsRequest([0]string{}, elemIsEscaped, w, r)
 								default:
-									s.notAllowed(w, r, "POST")
+									s.notAllowed(w, r, "GET")
 								}
 
 								return
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/"
+
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								// Param: "action_type"
+								// Leaf parameter, slashes are prohibited
+								idx := strings.IndexByte(elem, '/')
+								if idx >= 0 {
+									break
+								}
+								args[0] = elem
+								elem = ""
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "GET":
+										s.handleListWorkflowsByActionTypeRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, "GET")
+									}
+
+									return
+								}
+
 							}
 
 							elem = origElem
@@ -364,26 +447,98 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/disable"
+						case '/': // Prefix: "/"
 
-							if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "PATCH":
-									s.handleDisableWorkflowRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "PATCH")
+								break
+							}
+							switch elem[0] {
+							case 'd': // Prefix: "d"
+
+								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+									elem = elem[l:]
+								} else {
+									break
 								}
 
-								return
+								if len(elem) == 0 {
+									break
+								}
+								switch elem[0] {
+								case 'e': // Prefix: "eprecate"
+
+									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "PATCH":
+											s.handleDeprecateWorkflowRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "PATCH")
+										}
+
+										return
+									}
+
+								case 'i': // Prefix: "isable"
+
+									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "PATCH":
+											s.handleDisableWorkflowRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "PATCH")
+										}
+
+										return
+									}
+
+								}
+
+							case 'e': // Prefix: "enable"
+
+								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "PATCH":
+										s.handleEnableWorkflowRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, "PATCH")
+									}
+
+									return
+								}
+
 							}
 
 						}
@@ -854,6 +1009,65 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					}
 
+				case 'e': // Prefix: "effectiveness/"
+
+					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					// Param: "correlation_id"
+					// Leaf parameter, slashes are prohibited
+					idx := strings.IndexByte(elem, '/')
+					if idx >= 0 {
+						break
+					}
+					args[0] = elem
+					elem = ""
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetEffectivenessScoreOperation
+							r.summary = "Compute weighted effectiveness score on demand"
+							r.operationID = "getEffectivenessScore"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/effectiveness/{correlation_id}"
+							r.args = args
+							r.count = 1
+							return r, true
+						default:
+							return
+						}
+					}
+
+				case 'r': // Prefix: "remediation-history/context"
+
+					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetRemediationHistoryContextOperation
+							r.summary = "Get remediation history context for a target resource"
+							r.operationID = "getRemediationHistoryContext"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/remediation-history/context"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
+						}
+					}
+
 				case 'w': // Prefix: "workflows"
 
 					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
@@ -875,7 +1089,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							return r, true
 						case "POST":
 							r.name = CreateWorkflowOperation
-							r.summary = "Create workflow"
+							r.summary = "Register workflow from OCI image"
 							r.operationID = "createWorkflow"
 							r.operationGroup = ""
 							r.pathPattern = "/api/v1/workflows"
@@ -899,29 +1113,64 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							break
 						}
 						switch elem[0] {
-						case 's': // Prefix: "search"
+						case 'a': // Prefix: "actions"
 							origElem := elem
-							if l := len("search"); len(elem) >= l && elem[0:l] == "search" {
+							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
 								switch method {
-								case "POST":
-									r.name = SearchWorkflowsOperation
-									r.summary = "Label-based workflow search"
-									r.operationID = "searchWorkflows"
+								case "GET":
+									r.name = ListAvailableActionsOperation
+									r.summary = "List available action types"
+									r.operationID = "listAvailableActions"
 									r.operationGroup = ""
-									r.pathPattern = "/api/v1/workflows/search"
+									r.pathPattern = "/api/v1/workflows/actions"
 									r.args = args
 									r.count = 0
 									return r, true
 								default:
 									return
 								}
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/"
+
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								// Param: "action_type"
+								// Leaf parameter, slashes are prohibited
+								idx := strings.IndexByte(elem, '/')
+								if idx >= 0 {
+									break
+								}
+								args[0] = elem
+								elem = ""
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "GET":
+										r.name = ListWorkflowsByActionTypeOperation
+										r.summary = "List workflows for action type"
+										r.operationID = "listWorkflowsByActionType"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/actions/{action_type}"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
 							}
 
 							elem = origElem
@@ -939,7 +1188,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							switch method {
 							case "GET":
 								r.name = GetWorkflowByIDOperation
-								r.summary = "Get workflow by UUID"
+								r.summary = "Get workflow by UUID (with optional security gate)"
 								r.operationID = "getWorkflowByID"
 								r.operationGroup = ""
 								r.pathPattern = "/api/v1/workflows/{workflow_id}"
@@ -960,29 +1209,107 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							}
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/disable"
+						case '/': // Prefix: "/"
 
-							if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "PATCH":
-									r.name = DisableWorkflowOperation
-									r.summary = "Disable workflow"
-									r.operationID = "disableWorkflow"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
+								break
+							}
+							switch elem[0] {
+							case 'd': // Prefix: "d"
+
+								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+									elem = elem[l:]
+								} else {
+									break
 								}
+
+								if len(elem) == 0 {
+									break
+								}
+								switch elem[0] {
+								case 'e': // Prefix: "eprecate"
+
+									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PATCH":
+											r.name = DeprecateWorkflowOperation
+											r.summary = "Deprecate workflow"
+											r.operationID = "deprecateWorkflow"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/workflows/{workflow_id}/deprecate"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
+								case 'i': // Prefix: "isable"
+
+									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PATCH":
+											r.name = DisableWorkflowOperation
+											r.summary = "Disable workflow"
+											r.operationID = "disableWorkflow"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
+								}
+
+							case 'e': // Prefix: "enable"
+
+								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "PATCH":
+										r.name = EnableWorkflowOperation
+										r.summary = "Enable workflow"
+										r.operationID = "enableWorkflow"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/{workflow_id}/enable"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
 							}
 
 						}

@@ -22,7 +22,7 @@ including tool calls for testing the full HolmesGPT workflow.
 
 Features:
 - Deterministic responses for E2E testing
-- Tool call support (search_workflow_catalog, etc.)
+- Tool call support (three-step discovery + legacy search_workflow_catalog)
 - Multi-turn conversation handling
 - Configurable scenarios for different test cases
 - Validation of tool call format
@@ -35,8 +35,15 @@ Usage:
         # Run tests...
 
 Architecture:
-    1. Initial request → Return tool call (search_workflow_catalog)
-    2. Tool result received → Return final analysis with selected workflow
+    Legacy two-phase flow (search_workflow_catalog):
+      1. Initial request → Return tool call (search_workflow_catalog)
+      2. Tool result received → Return final analysis with selected workflow
+
+    DD-HAPI-017 three-step discovery flow:
+      1. Initial request → Return list_available_actions tool call
+      2. After step 1 result → Return list_workflows tool call
+      3. After step 2 result → Return get_workflow tool call
+      4. After step 3 result → Return final analysis with selected workflow
 """
 
 import json
@@ -95,7 +102,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        parameters={"MEMORY_LIMIT_NEW": "128Mi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "memory-eater", "TARGET_NAMESPACE": "default"},
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
+        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -113,7 +121,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="staging",
         rca_resource_name="worker",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        parameters={"CONFIG_MAP": "app-config", "TARGET_NAMESPACE": "staging"}
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), GRACE_PERIOD_SECONDS (optional)
+        parameters={"NAMESPACE": "staging", "DEPLOYMENT_NAME": "worker"}
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
@@ -127,7 +136,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Node",
         rca_resource_namespace="",  # Cluster-scoped
         rca_resource_name="worker-node-1",
-        parameters={"NODE_NAME": "worker-node-1", "GRACE_PERIOD": "300"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NODE_NAME (required), DRAIN_TIMEOUT_SECONDS (optional)
+        parameters={"NODE_NAME": "worker-node-1"}
     ),
     "recovery": MockScenario(
         name="recovery",
@@ -141,7 +152,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="production",
         rca_resource_name="api-server-abc123",
-        parameters={"OPTIMIZATION_LEVEL": "aggressive", "MEMORY_TARGET": "512Mi"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), REPLICA_COUNT (optional)
+        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server"}
     ),
     "test_signal": MockScenario(
         name="test_signal",
@@ -155,7 +168,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="test",
         rca_resource_name="test-pod",
-        parameters={"TEST_MODE": "true", "ACTION": "validate"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "test", "POD_NAME": "test-pod"}
     ),
     "no_workflow_found": MockScenario(
         name="no_workflow_found",
@@ -182,7 +197,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="production",
         rca_resource_name="ambiguous-pod",
-        parameters={"ACTION": "restart"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
     ),
     "problem_resolved": MockScenario(
         name="problem_resolved",
@@ -227,7 +244,9 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="ambiguous-pod",
         rca_resource_api_version="v1",
         include_affected_resource=False,  # BR-HAPI-212: Trigger missing affectedResource scenario
-        parameters={"ACTION": "restart"}
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+        # Schema: NAMESPACE (required), POD_NAME (required)
+        parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
     ),
     # ========================================
     # BR-AI-084 / ADR-054: Predictive Signal Mode Scenarios
@@ -246,7 +265,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        parameters={"MEMORY_LIMIT_NEW": "2Gi", "TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production"},
+        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
+        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server", "MEMORY_INCREASE_PERCENT": "50"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -368,7 +388,9 @@ DEFAULT_SCENARIO = MockScenario(
     workflow_title="Generic Pod Restart",
     confidence=0.75,
     root_cause="Unable to determine specific root cause",
-    parameters={"ACTION": "restart"}
+    # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
+    # Schema: NAMESPACE (required), POD_NAME (required)
+    parameters={"NAMESPACE": "default", "POD_NAME": "unknown-pod"}
 )
 
 # ========================================
@@ -686,7 +708,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if self.force_text_response or not tools:
             # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
-        elif has_tool_result:
+
+        # DD-HAPI-017: Three-step discovery protocol
+        # Detect if the tools list includes the three-step discovery tools
+        if self._has_three_step_tools(tools):
+            tool_result_count = self._count_tool_results(messages)
+            logger.info(f"🔍 Three-step discovery: {tool_result_count} tool results so far")
+            if tool_result_count >= 3:
+                # All 3 tool calls completed → return final analysis
+                return self._final_analysis_response(scenario, request_data)
+            else:
+                # Return the next tool call in the sequence
+                return self._three_step_tool_call_response(scenario, request_data, tool_result_count)
+
+        # Legacy two-phase flow (search_workflow_catalog)
+        if has_tool_result:
             # Phase 2: After tool result → return final analysis
             return self._final_analysis_response(scenario, request_data)
         else:
@@ -771,6 +807,11 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
+        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
+            # AlertManager E2E test: MemoryExceedsLimit Prometheus alert → same oomkilled workflow
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
         elif "nodenotready" in content or "node not ready" in content:
             matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
@@ -821,6 +862,131 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             if "tool_call_id" in str(msg):
                 return True
         return False
+
+    def _count_tool_results(self, messages: List[Dict[str, Any]]) -> int:
+        """
+        Count the number of tool result messages in the conversation.
+
+        DD-HAPI-017: Used by the three-step discovery protocol to determine
+        which step we're on:
+          0 tool results → return list_available_actions (Step 1)
+          1 tool result  → return list_workflows (Step 2)
+          2 tool results → return get_workflow (Step 3)
+          3+ tool results → return final analysis
+        """
+        count = 0
+        for msg in messages:
+            if msg.get("role") == "tool":
+                count += 1
+        return count
+
+    def _has_three_step_tools(self, tools: List[Dict[str, Any]]) -> bool:
+        """
+        Check if the tools list includes three-step discovery tools.
+
+        DD-HAPI-017: When HAPI registers the three-step toolset, the tools
+        list will include 'list_available_actions'. If it only has
+        'search_workflow_catalog', we use the legacy two-phase flow.
+        """
+        for tool in tools:
+            func = tool.get("function", {})
+            if func.get("name") == "list_available_actions":
+                return True
+        return False
+
+    def _three_step_tool_call_response(
+        self, scenario: MockScenario, request_data: Dict[str, Any], step: int
+    ) -> Dict[str, Any]:
+        """
+        Generate the next tool call in the three-step discovery sequence.
+
+        DD-HAPI-017: Three-Step Workflow Discovery Protocol
+          Step 0 (0 tool results): list_available_actions
+          Step 1 (1 tool result):  list_workflows  (with action_type from scenario)
+          Step 2 (2 tool results): get_workflow     (with workflow_id from scenario)
+
+        Args:
+            scenario: The detected MockScenario
+            request_data: Original request data
+            step: Current step index (0, 1, or 2)
+        """
+        call_id = f"call_{uuid.uuid4().hex[:12]}"
+
+        if step == 0:
+            # Step 1: list_available_actions
+            tool_name = "list_available_actions"
+            tool_args = {"limit": 100}
+            logger.info(f"🔧 Three-step Step 1: {tool_name}")
+
+        elif step == 1:
+            # Step 2: list_workflows — use action_type derived from scenario
+            # Map scenario signal types to action types
+            action_type = self._scenario_to_action_type(scenario)
+            tool_name = "list_workflows"
+            tool_args = {"action_type": action_type, "limit": 10}
+            logger.info(f"🔧 Three-step Step 2: {tool_name} (action_type={action_type})")
+
+        else:
+            # Step 3: get_workflow — use workflow_id from scenario
+            tool_name = "get_workflow"
+            tool_args = {"workflow_id": scenario.workflow_id}
+            logger.info(f"🔧 Three-step Step 3: {tool_name} (workflow_id={scenario.workflow_id})")
+
+        # Record for test validation
+        tool_call_tracker.record(tool_name, tool_args, call_id)
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": 1701388800,
+            "model": request_data.get("model", "mock-model"),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": json.dumps(tool_args)
+                                }
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 500,
+                "completion_tokens": 50,
+                "total_tokens": 550
+            }
+        }
+
+    @staticmethod
+    def _scenario_to_action_type(scenario: MockScenario) -> str:
+        """
+        Map a MockScenario to its action_type for three-step discovery.
+
+        DD-WORKFLOW-016: Action types must match values seeded in
+        action_type_taxonomy by migration 025.
+        """
+        # Map by workflow_name (matches Go/Python fixture action_type assignments)
+        action_type_map = {
+            "oomkill-increase-memory-v1": "IncreaseMemoryLimits",
+            "memory-optimize-v1": "ScaleReplicas",
+            "crashloop-config-fix-v1": "RestartDeployment",
+            "node-drain-reboot-v1": "RestartPod",
+            "image-pull-backoff-fix-credentials": "RollbackDeployment",
+            "generic-restart-v1": "RestartPod",
+            "test-signal-handler-v1": "RestartPod",
+        }
+        action_type = action_type_map.get(scenario.workflow_name, "ScaleReplicas")
+        return action_type
 
     def _tool_call_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a response with tool call (Phase 1)."""
@@ -990,6 +1156,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                     "current_signal_type": scenario.signal_type
                 }
             }
+            # All recovery scenarios with a workflow selected can recover
+            analysis_json["can_recover"] = bool(scenario.workflow_id)
             
             # Category F: Advanced Recovery Scenarios (E2E-HAPI-049 to E2E-HAPI-054)
             # Return structured recovery format with multiple strategies
@@ -997,7 +1165,6 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                                   "noisy_neighbor", "network_partition", "recovery_basic"]:
                 logger.info(f"✅ CATEGORY F SCENARIO DETECTED: {scenario.name} - Returning structured recovery format")
                 analysis_json["strategies"] = self._get_category_f_strategies(scenario)
-                analysis_json["can_recover"] = True
                 analysis_json["confidence"] = scenario.confidence
         else:
             logger.info(f"⚠️  NO RECOVERY detected in _final_analysis_response - is_recovery={is_recovery}")
@@ -1066,6 +1233,10 @@ The problem has self-resolved. No remediation workflow is needed.
                 }
             ]
             analysis_json["alternative_workflows"] = alternatives_list
+            # BR-HAPI-197: HAPI does NOT enforce confidence thresholds — that's AIAnalysis's job.
+            # Explicitly set needs_human_review=false so HAPI's parser doesn't infer true.
+            analysis_json["needs_human_review"] = False
+            analysis_json["human_review_reason"] = None
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 # root_cause_analysis
@@ -1079,6 +1250,12 @@ The problem has self-resolved. No remediation workflow is needed.
 
 # alternative_workflows
 {json.dumps(alternatives_list)}
+
+# needs_human_review
+false
+
+# human_review_reason
+null
 """
         # Handle no workflow found case
         elif not scenario.workflow_id:
@@ -1179,6 +1356,10 @@ No suitable alternative workflow found. Human review required.
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
+            # BR-HAPI-197: Explicitly set needs_human_review=false for valid workflow selections.
+            # Without this, HAPI's parser may infer needs_human_review=true from missing field.
+            analysis_json["needs_human_review"] = False
+            analysis_json["human_review_reason"] = None
             # Format as markdown with JSON block (like real LLM would)
             # Use recovery format if this is a recovery attempt
             if is_recovery:

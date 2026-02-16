@@ -27,7 +27,6 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -41,9 +40,9 @@ import (
 // Deploys ALL Kubernaut services in a single Kind cluster to test the complete
 // remediation lifecycle end-to-end:
 //
-//   Event → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification
+//   Event → Gateway → RO → SP → AA → HAPI(MockLLM) → WE(Job) → Notification → EA → EM
 //
-// Services deployed (10):
+// Services deployed (13):
 //   1. PostgreSQL + Redis (infrastructure)
 //   2. DataStorage (audit trail, workflow catalog)
 //   3. AuthWebhook (SOC2 CC8.1 user attribution)
@@ -54,6 +53,9 @@ import (
 //   8. WorkflowExecution (CRD controller, Job engine)
 //   9. Notification (CRD controller, file-based delivery)
 //  10. HolmesGPT API + Mock LLM (AI service)
+//  11. Prometheus (metric comparison for EM, ADR-EM-001)
+//  12. AlertManager (alert resolution for EM, ADR-EM-001)
+//  13. EffectivenessMonitor (CRD controller, watches EA CRDs)
 //
 // Test infrastructure:
 //   - kubernetes-event-exporter: watches K8s Events, POSTs to Gateway webhook
@@ -103,6 +105,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "authwebhook", ImageName: "authwebhook", DockerfilePath: "docker/authwebhook.Dockerfile"},
 	{ServiceName: "holmesgpt-api", ImageName: "kubernaut/holmesgpt-api", DockerfilePath: "holmesgpt-api/Dockerfile"},
 	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/Dockerfile", BuildContextPath: "test/services/mock-llm"},
+	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 }
 
 // SetupFullPipelineInfrastructure deploys the complete Kubernaut service pipeline
@@ -200,6 +203,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"kubernaut.ai_aianalyses.yaml",
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
+		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EM
 	}
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
@@ -239,6 +243,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"authwebhook",
 		"workflowexecution-controller",
 		"holmesgpt-api-sa",
+		"effectivenessmonitor-controller", // ADR-EM-001: EM needs DataStorage audit access
 	}
 	for _, sa := range auditServices {
 		if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, sa, writer); err != nil {
@@ -299,121 +304,163 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6 complete (%s)\n", time.Since(phase6Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 7: Deploy AI services (Mock LLM + HAPI)
+	// PHASE 7: Parallel service deployment (Wave A + Wave B)
+	//
+	// After DataStorage is ready, deploy everything that only depends on DS
+	// in parallel (Wave A). Then deploy services that depend on Wave A outputs
+	// (Wave B: HAPI → MockLLM, EM → Prometheus+AM, event-exporter → Gateway).
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 7: AI services...")
+	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 7: Parallel service deployment (Wave A + Wave B)...")
 	phase7Start := time.Now()
 
-	// 7a: Deploy HAPI RBAC (ServiceAccount + RoleBinding for DataStorage access)
-	if err := deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, fmt.Errorf("HAPI RBAC failed: %w", err)
-	}
+	// Synchronization channels: Wave B services wait on these before deploying.
+	mockLLMReady := make(chan struct{})
+	promAMReady := make(chan struct{})
+	gatewayReady := make(chan struct{})
 
-	// 7b: Mock LLM (skipped when SKIP_MOCK_LLM is set — HAPI uses real LLM instead)
-	if skipMockLLM() {
-		_, _ = fmt.Fprintln(writer, "  ⏭️  Mock LLM skipped (SKIP_MOCK_LLM is set — HAPI will use real LLM)")
-	} else {
-		mockLLMImage := builtImages["mock-llm"]
-		if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer); err != nil {
-			return builtImages, fmt.Errorf("Mock LLM deployment failed: %w", err)
+	// Collect all errors from both waves via a single channel.
+	type waveResult struct {
+		name string
+		err  error
+	}
+	// Wave A: 5 controllers + Gateway + HAPI RBAC + MockLLM + Prometheus + AlertManager = up to 11
+	// Wave B: HAPI + EM + event-exporter = 3
+	// Total capacity = 14 (generous upper bound)
+	allResults := make(chan waveResult, 16)
+
+	// ── Wave A: Deploy in parallel (no inter-dependency beyond DataStorage) ──
+	_, _ = fmt.Fprintln(writer, "  Wave A: deploying services in parallel...")
+
+	// A1: HAPI RBAC (prerequisite for HAPI, fast kubectl apply)
+	go func() {
+		allResults <- waveResult{"HAPI-RBAC", deployHAPIServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
+	}()
+
+	// A2: Mock LLM (HAPI depends on this)
+	go func() {
+		defer close(mockLLMReady)
+		if skipMockLLM() {
+			_, _ = fmt.Fprintln(writer, "  ⏭️  Mock LLM skipped (SKIP_MOCK_LLM is set)")
+			allResults <- waveResult{"MockLLM", nil}
+			return
 		}
-		_, _ = fmt.Fprintln(writer, "  ✅ Mock LLM deployed (ClusterIP)")
+		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], nil, writer)
+		allResults <- waveResult{"MockLLM", err}
+	}()
+
+	// A3: Prometheus + AlertManager (EM depends on these)
+	go func() {
+		defer close(promAMReady)
+		var promErr, amErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			promErr = DeployPrometheus(ctx, namespace, kubeconfigPath, writer)
+		}()
+		go func() {
+			defer wg.Done()
+			amErr = DeployAlertManager(ctx, namespace, kubeconfigPath, writer)
+		}()
+		wg.Wait()
+		if promErr != nil {
+			allResults <- waveResult{"Prometheus", promErr}
+			return
+		}
+		if amErr != nil {
+			allResults <- waveResult{"AlertManager", amErr}
+			return
+		}
+		allResults <- waveResult{"Prometheus+AlertManager", nil}
+	}()
+
+	// A4: 5 CRD controllers (no Prometheus/AM dependency)
+	for _, ctrl := range []struct {
+		name    string
+		deployF func() error
+	}{
+		{"SignalProcessing", func() error {
+			return deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
+		}},
+		{"RemediationOrchestrator", func() error {
+			return DeployROCoverageManifest(kubeconfigPath, builtImages["remediationorchestrator"], writer)
+		}},
+		{"AIAnalysis", func() error {
+			return deployFullPipelineAAController(ctx, namespace, kubeconfigPath, builtImages["aianalysis"], writer)
+		}},
+		{"WorkflowExecution", func() error {
+			return DeployWorkflowExecutionController(ctx, namespace, kubeconfigPath, builtImages["workflowexecution"], writer)
+		}},
+		{"Notification", func() error {
+			return DeployNotificationController(ctx, namespace, kubeconfigPath, builtImages["notification"], writer)
+		}},
+	} {
+		ctrl := ctrl // capture
+		go func() {
+			allResults <- waveResult{ctrl.name, ctrl.deployF()}
+		}()
 	}
 
-	// 7c: HAPI (connects to Mock LLM or real LLM depending on SKIP_MOCK_LLM)
-	// When SKIP_MOCK_LLM is set, HAPI uses user-provided ConfigMap + Secret
-	// (see E2E_HAPI_LLM_CONFIGMAP, E2E_HAPI_LLM_SECRET env vars)
-	hapiImage := builtImages["holmesgpt-api"]
-	if err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer); err != nil {
-		return builtImages, fmt.Errorf("HAPI deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ HAPI deployed")
-
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 8: Deploy CRD controllers
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⚙️  PHASE 8: CRD controllers...")
-	phase8Start := time.Now()
-
-	// Deploy all controllers in parallel — they'll reconcile once CRDs and
-	// dependencies are available (Kubernetes handles dependency ordering)
-	controllerResults := make(chan deployResult, 5)
-
+	// A5: Gateway (event-exporter depends on this)
 	go func() {
-		err := deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
-		controllerResults <- deployResult{"SignalProcessing", err}
-	}()
-	go func() {
-		err := DeployROCoverageManifest(kubeconfigPath, builtImages["remediationorchestrator"], writer)
-		controllerResults <- deployResult{"RemediationOrchestrator", err}
-	}()
-	go func() {
-		err := deployFullPipelineAAController(ctx, namespace, kubeconfigPath, builtImages["aianalysis"], writer)
-		controllerResults <- deployResult{"AIAnalysis", err}
-	}()
-	go func() {
-		err := DeployWorkflowExecutionController(ctx, namespace, kubeconfigPath, builtImages["workflowexecution"], writer)
-		controllerResults <- deployResult{"WorkflowExecution", err}
-	}()
-	go func() {
-		err := DeployNotificationController(ctx, namespace, kubeconfigPath, builtImages["notification"], writer)
-		controllerResults <- deployResult{"Notification", err}
+		defer close(gatewayReady)
+		err := deployFullPipelineGateway(ctx, namespace, kubeconfigPath, builtImages["gateway"], writer)
+		allResults <- waveResult{"Gateway", err}
 	}()
 
-	var ctrlErrors []error
-	for i := 0; i < 5; i++ {
-		r := <-controllerResults
+	// ── Wave B: Deploy after specific Wave A dependencies are ready ──
+
+	// B1: HAPI — wait for Mock LLM
+	go func() {
+		<-mockLLMReady
+		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, builtImages["holmesgpt-api"], writer)
+		allResults <- waveResult{"HAPI", err}
+	}()
+
+	// B2: EM controller — wait for Prometheus + AlertManager
+	go func() {
+		<-promAMReady
+		err := DeployEMController(ctx, namespace, kubeconfigPath, builtImages["effectivenessmonitor"], writer)
+		allResults <- waveResult{"EffectivenessMonitor", err}
+	}()
+
+	// B3: event-exporter — wait for Gateway
+	go func() {
+		<-gatewayReady
+		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, writer)
+		allResults <- waveResult{"event-exporter", err}
+	}()
+
+	// ── Collect all results ──
+	// Wave A: HAPI-RBAC + MockLLM + Prom+AM(1) + 5 controllers + Gateway = 9
+	// Wave B: HAPI + EM + event-exporter = 3
+	expectedResults := 12
+	var deployErrors []error
+	for i := 0; i < expectedResults; i++ {
+		r := <-allResults
 		if r.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
-			ctrlErrors = append(ctrlErrors, fmt.Errorf("%s: %w", r.name, r.err))
+			deployErrors = append(deployErrors, fmt.Errorf("%s: %w", r.name, r.err))
 		} else {
 			_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 		}
 	}
-	if len(ctrlErrors) > 0 {
-		return builtImages, fmt.Errorf("PHASE 8 controller deployments failed: %v", ctrlErrors)
+	if len(deployErrors) > 0 {
+		return builtImages, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 9: Deploy Gateway with NodePort
+	// PHASE 8: Wait for all services ready (parallel readiness checks)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 9: Gateway ingress...")
-	phase9Start := time.Now()
-
-	gwImage := builtImages["gateway"]
-	if err := deployFullPipelineGateway(ctx, namespace, kubeconfigPath, gwImage, writer); err != nil {
-		return builtImages, fmt.Errorf("Gateway deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 9 complete: Gateway ready at NodePort 30080 (%s)\n",
-		time.Since(phase9Start).Round(time.Second))
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 10: Deploy test infrastructure (event-exporter + memory-eater)
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🧪 PHASE 10: Test infrastructure...")
-	phase10Start := time.Now()
-
-	if err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, fmt.Errorf("event-exporter deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ kubernetes-event-exporter deployed")
-
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 10 complete (%s)\n", time.Since(phase10Start).Round(time.Second))
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 11: Wait for all services ready
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 11: Waiting for all services ready...")
-	phase11Start := time.Now()
+	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8: Waiting for all services ready...")
+	phase8Start := time.Now()
 
 	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, fmt.Errorf("PHASE 11 failed: services not ready: %w", err)
+		return builtImages, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 11 complete (%s)\n", time.Since(phase11Start).Round(time.Second))
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// DONE
@@ -668,7 +715,9 @@ subjects:
   name: event-exporter
   namespace: %[1]s
 ---
-# ConfigMap: route Warning events to Gateway
+# ConfigMap: route Warning events from fp-e2e-* namespaces only to Gateway
+# fp-am-* namespaces are intentionally excluded: the AlertManager E2E test uses
+# Prometheus alerts (not K8s events) as signal source to prevent duplication.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -683,8 +732,11 @@ data:
     kubeBurst: 100
     route:
       routes:
+        # Only forward K8s events from fp-e2e-* namespaces (K8s event signal source test)
+        # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test
         - match:
-            - receiver: gateway-webhook
+            - namespace: "fp-e2e-*"
+              receiver: gateway-webhook
           drop:
             - type: "Normal"
     receivers:
@@ -800,11 +852,64 @@ spec:
 	return cmd.Run()
 }
 
+// DeployMemoryEaterHighUsage deploys a memory-eater pod that runs at high memory
+// usage (>=90% of limit) WITHOUT triggering OOMKill. This is used by the AlertManager
+// E2E test where the signal source is a Prometheus MemoryExceedsLimit alert, not a K8s event.
+//
+// The pod consumes 92Mi with a 100Mi limit (92% usage), staying above the 90% threshold
+// in the Prometheus alert rule while remaining within the OOMKill boundary.
+// Hold duration is 300s, giving Prometheus ample time to scrape and alert to fire.
+func DeployMemoryEaterHighUsage(ctx context.Context, targetNamespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🐛 Deploying memory-eater (high usage, no OOMKill) in namespace %s...\n", targetNamespace)
+
+	manifest := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-eater
+  namespace: %s
+  labels:
+    app: memory-eater
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-eater
+  template:
+    metadata:
+      labels:
+        app: memory-eater
+        kubernaut.ai/managed: "true"
+    spec:
+      containers:
+      - name: memory-eater
+        image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
+        imagePullPolicy: IfNotPresent
+        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
+        # Consumes 50Mi initially for 2s, then grows to 92Mi over 5s, then holds for 300s.
+        # With 100Mi limit, 92Mi = 92%% usage — above the 90%% Prometheus alert threshold
+        # but safely below OOMKill. This gives Prometheus time to scrape and fire the alert.
+        args: ["50Mi", "2", "92Mi", "5", "300"]
+        resources:
+          limits:
+            memory: "100Mi"
+          requests:
+            memory: "50Mi"
+`, targetNamespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
 // ============================================================================
 // PHASE 11: Service Readiness Checks
 // ============================================================================
 
 // waitForFullPipelineServicesReady waits for all services to be ready in the cluster.
+// All readiness checks run in parallel for faster convergence.
 func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
@@ -821,57 +926,126 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"holmesgpt-api",
 		"gateway",
 		"event-exporter",
+		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")
 	}
 
-	// Check each deployment
+	// Controller pods checked by label (may have different deployment names)
+	type controllerCheck struct {
+		name     string
+		selector string
+	}
+	controllers := []controllerCheck{
+		{"SignalProcessing", "app=signalprocessing-controller"},
+		{"RemediationOrchestrator", "app=remediationorchestrator-controller"},
+		{"AIAnalysis", "app=aianalysis-controller"},
+		{"WorkflowExecution", "app=workflowexecution-controller"},
+		{"Notification", "app=notification-controller"},
+		{"EffectivenessMonitor", "app=effectivenessmonitor-controller"}, // ADR-EM-001
+	}
+
+	// Run all checks in parallel
+	type readyResult struct {
+		name string
+		err  error
+	}
+	totalChecks := len(deployments) + len(controllers)
+	results := make(chan readyResult, totalChecks)
+
+	// Deployment readiness checks
 	for _, deplName := range deployments {
-		_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
-		Eventually(func() bool {
-			depl, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
-			if err != nil {
-				return false
-			}
-			return depl.Status.ReadyReplicas >= 1
-		}, 3*time.Minute, 5*time.Second).Should(BeTrue(),
-			fmt.Sprintf("%s should become ready", deplName))
-		_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", deplName)
-	}
-
-	// Check controller pods by label (they may have different deployment names)
-	controllerLabels := map[string]string{
-		"SignalProcessing":        "app=signalprocessing-controller",
-		"RemediationOrchestrator": "app=remediationorchestrator-controller",
-		"AIAnalysis":              "app=aianalysis-controller",
-		"WorkflowExecution":       "app=workflowexecution-controller",
-		"Notification":            "app=notification-controller",
-	}
-
-	for name, selector := range controllerLabels {
-		_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", name)
-		Eventually(func() bool {
-			pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: selector,
+		deplName := deplName // capture
+		go func() {
+			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
+			pollErr := pollUntilReady(ctx, 3*time.Minute, 5*time.Second, func() bool {
+				depl, getErr := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
+				if getErr != nil {
+					return false
+				}
+				return depl.Status.ReadyReplicas >= 1
 			})
-			if err != nil || len(pods.Items) == 0 {
-				return false
+			if pollErr != nil {
+				results <- readyResult{deplName, fmt.Errorf("%s not ready after 3m", deplName)}
+			} else {
+				_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", deplName)
+				results <- readyResult{deplName, nil}
 			}
-			for _, pod := range pods.Items {
-				if pod.Status.Phase == corev1.PodRunning {
-					for _, c := range pod.Status.Conditions {
-						if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-							return true
+		}()
+	}
+
+	// Controller readiness checks
+	for _, ctrl := range controllers {
+		ctrl := ctrl // capture
+		go func() {
+			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", ctrl.name)
+			pollErr := pollUntilReady(ctx, 3*time.Minute, 5*time.Second, func() bool {
+				pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+					LabelSelector: ctrl.selector,
+				})
+				if listErr != nil || len(pods.Items) == 0 {
+					return false
+				}
+				for _, pod := range pods.Items {
+					if pod.Status.Phase == corev1.PodRunning {
+						for _, c := range pod.Status.Conditions {
+							if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+								return true
+							}
 						}
 					}
 				}
+				return false
+			})
+			if pollErr != nil {
+				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after 3m", ctrl.name)}
+			} else {
+				_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", ctrl.name)
+				results <- readyResult{ctrl.name, nil}
 			}
-			return false
-		}, 3*time.Minute, 5*time.Second).Should(BeTrue(),
-			fmt.Sprintf("%s controller should become ready", name))
-		_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", name)
+		}()
+	}
+
+	// Collect all results
+	var readyErrors []error
+	for i := 0; i < totalChecks; i++ {
+		r := <-results
+		if r.err != nil {
+			readyErrors = append(readyErrors, r.err)
+		}
+	}
+	if len(readyErrors) > 0 {
+		return fmt.Errorf("services not ready: %v", readyErrors)
 	}
 
 	return nil
+}
+
+// pollUntilReady polls condFn at the given interval until it returns true or
+// the timeout expires. Unlike Gomega Eventually, this can be used outside a
+// Ginkgo test context (e.g., from SynchronizedBeforeSuite Process 1).
+func pollUntilReady(ctx context.Context, timeout, interval time.Duration, condFn func() bool) error {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Check once immediately
+	if condFn() {
+		return nil
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return fmt.Errorf("timed out after %s", timeout)
+		case <-ticker.C:
+			if condFn() {
+				return nil
+			}
+		}
+	}
 }

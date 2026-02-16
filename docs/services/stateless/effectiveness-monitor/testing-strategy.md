@@ -535,7 +535,7 @@ go test ./test/unit/effectiveness/...
 | **Side Effect Detection** | BR-INS-005 | 7 tests | Adverse effects, severity classification |
 | **Pattern Recognition** | BR-INS-006, BR-INS-008 | 6 tests | Temporal patterns, environment correlations |
 
-### **1. Effectiveness Score Calculation Tests**
+### **1. Effectiveness Score Calculation Tests — Level 1 (V1.0)**
 
 ```go
 // test/unit/effectiveness/calculator_test.go
@@ -621,7 +621,7 @@ var _ = Describe("Effectiveness Calculator", func() {
 })
 ```
 
-### **2. Side Effect Detection Tests (BR-INS-005)**
+### **2. Side Effect Detection Tests (BR-INS-005) — Level 1 (V1.0)**
 
 ```go
 // test/unit/effectiveness/side_effects_test.go
@@ -681,7 +681,7 @@ var _ = Describe("Side Effect Detection (BR-INS-005)", func() {
 })
 ```
 
-### **3. Trend Analysis Tests (BR-INS-003)**
+### **3. Trend Analysis Tests (BR-INS-003) — Level 2 (V1.1)**
 
 ```go
 // test/unit/effectiveness/trend_test.go
@@ -777,7 +777,7 @@ var _ = Describe("Trend Analysis (BR-INS-003)", func() {
 
 ---
 
-## 🤖 **Decision Logic Unit Tests**
+## 🤖 **Decision Logic Unit Tests — Level 2 (V1.1)**
 
 ### **Test File**: `test/unit/effectiveness/decision_logic_test.go`
 
@@ -908,14 +908,14 @@ var _ = Describe("AI Decision Logic", func() {
 
 ### **Test Categories**
 
-| Category | Dependencies | Test Count | Focus |
-|----------|-------------|------------|-------|
-| **Data Storage Integration** | PostgreSQL + pgvector | 6 tests | Action history retrieval, effectiveness data persistence |
-| **Infrastructure Monitoring** | Prometheus metrics | 5 tests | Metrics correlation, side effect detection |
-| **Cross-Service Integration** | Context API, Data Storage | 4 tests | Assessment request flow, trend storage |
-| **HolmesGPT API Client Integration** | HolmesGPT API service | 5 tests | Post-execution analysis, authentication, error handling |
+| Category | Scope | Dependencies | Test Count | Focus |
+|----------|--------|-------------|------------|-------|
+| **Data Storage Integration** | Level 1 (V1.0) | PostgreSQL + pgvector | 6 tests | Action history retrieval, effectiveness data persistence |
+| **Infrastructure Monitoring** | Level 1 (V1.0) | Prometheus metrics | 5 tests | Metrics correlation, side effect detection |
+| **Cross-Service Integration** | Level 1 (V1.0) | Context API, Data Storage | 4 tests | Assessment request flow, trend storage |
+| **HolmesGPT API Client Integration** | Level 2 (V1.1) | HolmesGPT API service | 5 tests | Post-execution analysis, authentication, error handling |
 
-### **1. HolmesGPT Client Integration Tests**
+### **1. HolmesGPT Client Integration Tests — Level 2 (V1.1)**
 
 ```go
 // test/integration/effectiveness/holmesgpt_client_test.go
@@ -1102,7 +1102,7 @@ var _ = Describe("HolmesGPT Client Integration (DD-EFFECTIVENESS-001)", func() {
 })
 ```
 
-### **2. Data Storage Integration Tests**
+### **2. Data Storage Integration Tests — Level 1 (V1.0)**
 
 ```go
 // test/integration/effectiveness/data_storage_test.go
@@ -1187,7 +1187,7 @@ func cleanupTestData(db *sql.DB) {
 }
 ```
 
-### **2. Infrastructure Monitoring Integration Tests**
+### **3. Infrastructure Monitoring Integration Tests — Level 1 (V1.0)**
 
 ```go
 // test/integration/effectiveness/infrastructure_monitoring_test.go
@@ -1258,7 +1258,7 @@ var _ = Describe("Infrastructure Monitoring Integration (BR-INS-002)", func() {
 })
 ```
 
-### **3. Cross-Service Integration Tests**
+### **4. Cross-Service Integration Tests — Level 1 (V1.0)**
 
 ```go
 // test/integration/effectiveness/cross_service_test.go
@@ -1358,10 +1358,10 @@ var _ = Describe("Cross-Service Integration", func() {
 
 | Category | Scope | Test Count | Focus |
 |----------|-------|------------|-------|
-| **Complete Assessment Workflow** | Full stack | 3 tests | End-to-end effectiveness assessment with graceful degradation |
-| **Graceful Degradation** | Time-based | 2 tests | Week 5 (insufficient data) vs Week 13+ (full capability) |
+| **Complete Assessment Workflow** | Level 1 (V1.0) | 3 tests | End-to-end effectiveness assessment with audit event emission |
+| **Level 1 vs Level 2** | V1.0 / V1.1 | 2 tests | Level 1 (Day-1 value) vs Level 2 (8+ weeks data for AI analysis) |
 
-### **1. Complete Assessment Workflow Test**
+### **1. Complete Assessment Workflow Test — Level 1 (V1.0)**
 
 ```go
 // test/e2e/effectiveness/assessment_workflow_test.go
@@ -1433,7 +1433,7 @@ var _ = Describe("E2E Assessment Workflow (BR-INS-001 to BR-INS-010)", func() {
 })
 ```
 
-### **2. Graceful Degradation Tests (V1 Strategy)**
+### **2. Level 1 vs Level 2 Tests (V1.0 / V1.1 per DD-017 v2.0)**
 
 ```go
 // test/e2e/effectiveness/graceful_degradation_test.go
@@ -1450,7 +1450,7 @@ import (
     "github.com/jordigilh/kubernaut/pkg/effectiveness"
 )
 
-var _ = Describe("Graceful Degradation Strategy (V1)", func() {
+var _ = Describe("Level 1 vs Level 2 Scope (DD-017 v2.0)", func() {
     var (
         ctx              context.Context
         effectivenessAPI *effectiveness.Service
@@ -1461,10 +1461,8 @@ var _ = Describe("Graceful Degradation Strategy (V1)", func() {
         effectivenessAPI = effectiveness.NewService(logger, dataStorageClient, infraMonitorClient)
     })
 
-    It("should return insufficient_data response in Week 5 (0 weeks historical data)", func() {
-        // Simulate Week 5 scenario: no historical data
-        clearAllHistoricalData()
-
+    It("should return Level 1 assessment from Day 1 (no historical data required)", func() {
+        // Level 1: Day-1 value — no data dependency
         req := &effectiveness.AssessmentRequest{
             ActionID: "act-new-123",
         }
@@ -1472,13 +1470,14 @@ var _ = Describe("Graceful Degradation Strategy (V1)", func() {
         assessment, err := effectivenessAPI.AssessEffectiveness(ctx, req)
 
         Expect(err).ToNot(HaveOccurred())
-        Expect(assessment.Status).To(Equal("insufficient_data"))
-        Expect(assessment.Confidence).To(BeNumerically("<", 0.5))
-        Expect(assessment.EstimatedAvailability).ToNot(BeEmpty())
+        Expect(assessment.Status).To(Equal("assessed"))
+        Expect(assessment.EffectivenessScore).To(BeNumerically(">=", 0.0))
+        Expect(assessment.EffectivenessScore).To(BeNumerically("<=", 1.0))
+        Expect(assessment.HealthChecks).ToNot(BeNil())
     })
 
-    It("should return full assessment in Week 13+ (8+ weeks historical data)", func() {
-        // Simulate Week 13+ scenario: 10 weeks of historical data
+    It("should return Level 2 enriched assessment when 8+ weeks data available", func() {
+        // Level 2: requires 8+ weeks of Level 1 assessment data
         seed10WeeksOfHistoricalData()
 
         req := &effectiveness.AssessmentRequest{
@@ -1490,8 +1489,6 @@ var _ = Describe("Graceful Degradation Strategy (V1)", func() {
         Expect(err).ToNot(HaveOccurred())
         Expect(assessment.Status).To(Equal("assessed"))
         Expect(assessment.Confidence).To(BeNumerically(">=", 0.8))
-        Expect(assessment.TraditionalScore).To(BeNumerically(">", 0.0))
-        Expect(assessment.EnvironmentalImpact).ToNot(BeNil())
         Expect(assessment.PatternInsights).ToNot(BeEmpty())
     })
 })

@@ -126,7 +126,8 @@ async def incident_analyze_endpoint(
             detail=f"severity must be one of: {', '.join(valid_severities)}. Got: '{incident_req.severity}'"
         )
 
-    request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
+    # mode="json" ensures all values are JSON-serializable plain types (str, not Enum)
+    request_data = incident_req.model_dump(mode="json")
 
     # BR-AA-HAPI-064.1: Create session and return immediately
     sm = get_session_manager()

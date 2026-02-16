@@ -1,0 +1,42 @@
+# OOM Recovery Workflow Schema v2.0.0 (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
+metadata:
+  workflowId: oom-recovery-v1
+  version: "v2.0.0"
+  description:
+    what: "Recovers pods from OOM events with vertical pod autoscaling integration"
+    whenToUse: "When pods are OOMKilled and VPA-based memory adjustment is preferred"
+    whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet; VPA installed"
+
+actionType: IncreaseMemoryLimits
+
+labels:
+  signalType: OOMKilled
+  severity: [critical]
+  environment: [production, staging, test]
+  component: deployment
+  priority: P1
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected deployment"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to update memory limits"
+  - name: MEMORY_INCREASE_PERCENT
+    type: integer
+    required: false
+    description: "Percentage to increase memory limits by"
+    default: 50
+  - name: USE_VPA
+    type: boolean
+    required: false
+    description: "Whether to use VPA for memory adjustment"
+    default: true

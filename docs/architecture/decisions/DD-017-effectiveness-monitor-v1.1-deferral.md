@@ -1,185 +1,415 @@
-# DD-017: Effectiveness Monitor Service V1.1 Deferral
+# DD-017: Effectiveness Monitor Service — V1.0 Level 1 + V1.1 Level 2
 
-## Status
-**⏸️ Deferred to V1.1** (2025-12-01)
-**Last Reviewed**: 2025-12-01
-**Confidence**: 98%
+**Status**: ✅ APPROVED (v2.5 — Typed Audit Sub-Objects)
+**Last Reviewed**: 2026-02-14
+**Confidence**: 95%
+
+---
+
+## Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 2.6 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Phase B metrics (memory, latency p95, error rate) were implemented during V1.0 — updated Phase A/B sections to reflect this. Health scoring documented as decision-tree algorithm (matches implementation). Throughput queries remain unimplemented. See ADR-EM-001 v1.7 for full gap inventory. |
+| 2.5 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Added `health_checks`, `metric_deltas`, `alert_resolution` typed sub-objects to `EffectivenessAssessmentAuditPayload` in OpenAPI spec. EM component assessors now emit structured data alongside the human-readable `details` string. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. Metrics assessor expansion (memory, latency p95, error rate PromQL queries) deferred to Phase B. Coordinated with HAPI team (DD-HAPI-016 v1.1) via issue #82. |
+| 2.4 | 2026-02-13 | Architecture Team | EA spec simplification: EAConfig only has StabilizationWindow; ScoringThreshold, PrometheusEnabled, AlertManagerEnabled removed from EA spec (EM operational config only). EM always emits Normal EffectivenessAssessed; RemediationIneffective removed. DS computes weighted score on demand from component audit events. |
+| 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
+| 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
+| 2.1 | 2026-02-09 | Architecture Team | Design refinements from gap analysis: (1) Correlation ID is RR.Name, not UID. (2) EM reads exclusively from audit traces, never from RR CRD. (3) RO must query API server directly for target resource spec (not cache). (4) No graceful degradation for Prometheus/AlertManager — fail-fast via config toggles. (5) Superseded BR-EFFECTIVENESS-001/002/003 and archived stale docs. (6) DD-EFFECTIVENESS-002 DB-backed idempotency superseded — EM uses audit-event dedup via DS. |
+| 2.0 | 2026-02-05 | Architecture Team | Partial reinstatement: Level 1 (automated assessment) moves to V1.0. Level 2 (AI-powered analysis) remains V1.1. Dual spec hash design, audit-trace storage, cooldown alignment, RR immutability via CEL. Supersedes v1.0 full deferral. |
+| 1.0 | 2025-12-01 | Architecture Team | Initial DD-017: Full Effectiveness Monitor deferred to V1.1 due to end-of-2025 timeline constraint |
 
 ---
 
 ## Context & Problem
 
-The **Effectiveness Monitor Service** was originally planned as part of V1.0 to provide remediation action effectiveness assessment and continuous improvement feedback. This service enables learning from past remediation attempts to improve future AI recommendations and action selection.
+### Original Deferral (v1.0, December 2025)
 
-### Key Challenge
+The Effectiveness Monitor was originally deferred entirely to V1.1 (DD-017 v1.0) for two reasons:
 
-During V1.0 development (November-December 2025), a **strict timeline constraint** emerged to deliver V1.0 before the end of 2025. With limited development time remaining and 4 critical services already production-ready, the team must prioritize services that enable **immediate remediation capabilities** over **continuous improvement capabilities**.
+1. **Timeline constraint**: V1.0 had a hard end-of-2025 deadline. Including the EM would have added 2-3 weeks and risked missing the deadline.
+2. **Data dependency**: The EM's AI-powered analysis (Level 2) requires 8+ weeks of remediation data for meaningful pattern recognition and effectiveness assessment at 80%+ confidence.
 
-### Critical Timeline Factors
+Both were valid constraints at the time of the decision.
 
-1. **V1.0 Deadline**: End of December 2025 (4 weeks remaining)
-2. **Current Progress**: 4/9 services production-ready (44%)
-3. **Remaining CRD Controllers**: 4 controllers (Signal Processing, AI Analysis, Remediation Execution, Remediation Orchestrator)
-4. **Development Approach**: Last 2 implementation phases running simultaneously to validate API contracts and prevent integration rework
+### What Changed (v2.0, February 2026)
 
-### Business Requirements Context
+1. **Timeline constraint has lapsed**: V1.0 was delivered. The end-of-2025 deadline is no longer a constraint.
+2. **Remediation feedback loop identified as critical gap**: During DD-HAPI-016 design work, we identified that without post-remediation state capture, the system cannot:
+   - Detect configuration regressions (target resource reverted to a previously problematic state)
+   - Inform the LLM about past remediation effectiveness for the same target
+   - Prevent the LLM from recommending the same ineffective remediation repeatedly
+3. **The spec hash alone justifies V1.0 inclusion**: The dual spec hash (pre/post remediation) is the minimum critical data point for the HAPI remediation history context feature (DD-HAPI-016). Without it, the history context has no way to determine whether past remediations are relevant to the current signal.
+4. **Level 1 provides Day-1 value**: Unlike Level 2 (which needs 8+ weeks of data), Level 1 automated assessment (health checks, metric comparison, effectiveness scoring) provides useful output from the first remediation.
 
-**Effectiveness Monitor Service Business Requirements**:
-- **BR-INS-001** to **BR-INS-010**: Effectiveness assessment, trend detection, pattern recognition, continuous improvement
-- **Dependencies**: Requires 8+ weeks of remediation execution data to provide meaningful assessments
-- **Value Timeline**: Progressive capability (20% confidence at Week 5, 80%+ confidence at Week 13)
+### Business Requirements
 
-**Status**: These requirements are **deferred to V1.1** to enable V1.0 delivery before year-end.
-
----
-
-## Alternatives Considered
-
-### Alternative 1: Include Effectiveness Monitor in V1.0 (Rejected)
-
-**Approach**: Complete Effectiveness Monitor Service implementation and include in V1.0 release before year-end
-
-**Pros**:
-- ✅ Provides continuous improvement feedback loop from Day 1
-- ✅ Enables progressive learning as remediation data accumulates
-- ✅ Completes all 9 originally planned V1.0 services
-- ✅ Detects declining effectiveness trends early
-
-**Cons**:
-- ❌ Adds 2-3 weeks to V1.0 timeline (pushes release to mid-January 2026)
-- ❌ Delays core remediation capabilities (Signal → AI → Execution)
-- ❌ Service provides limited value initially (requires 8 weeks of data)
-- ❌ Increases V1.0 scope and complexity
-- ❌ Risk of missing year-end deadline
-
-**Confidence**: 30% (rejected due to timeline constraints and limited initial value)
-
----
-
-### Alternative 2: Defer Effectiveness Monitor to V1.1 (APPROVED)
-
-**Approach**: Defer Effectiveness Monitor Service implementation to V1.1, focus V1.0 on core remediation capabilities
-
-**Pros**:
-- ✅ Enables V1.0 delivery before year-end deadline
-- ✅ Focuses development on critical remediation path (Signal → AI → Execution → Orchestration)
-- ✅ Allows V1.0 to accumulate remediation data for meaningful V1.1 effectiveness assessments
-- ✅ Reduces V1.0 scope and complexity
-- ✅ V1.0 still provides complete remediation automation without continuous improvement
-- ✅ By V1.1 launch (~8 weeks post V1.0), sufficient data exists for high-confidence assessments
-
-**Cons**:
-- ⚠️ V1.0 lacks continuous improvement feedback loop (acceptable for initial release)
-- ⚠️ Effectiveness trends not detected until V1.1 (mitigated by manual monitoring)
-- ⚠️ Pattern recognition deferred (operators can manually identify patterns initially)
-
-**Confidence**: 98% (approved - strategic timeline management decision)
-
----
-
-### Alternative 3: Deploy Stub Service with Graceful Degradation (Evaluated)
-
-**Approach**: Deploy minimal Effectiveness Monitor in V1.0 that returns "insufficient data" responses
-
-**Pros**:
-- ✅ Service architecture complete in V1.0
-- ✅ Progressive capability as data accumulates
-- ✅ Avoids breaking API changes in V1.1
-
-**Cons**:
-- ❌ Still adds 1-2 weeks to V1.0 timeline for stub implementation
-- ❌ Provides zero business value until Week 13 (8 weeks post-deployment)
-- ❌ Adds maintenance burden for currently useless service
-- ❌ Increases V1.0 testing and deployment complexity
-
-**Confidence**: 25% (not pursued - adds development time without immediate value)
+- **BR-INS-001**: Assess remediation action effectiveness — partially addressed by Level 1
+- **BR-INS-002**: Correlate action outcomes with environment improvements — partially addressed by Level 1 metric comparison
+- **BR-INS-003**: Track long-term effectiveness trends — V1.1 (Level 2)
+- **BR-INS-004**: Identify consistently positive actions — V1.1 (Level 2)
+- **BR-INS-005**: Detect adverse side effects — addressed by Level 1 side-effect detection
+- **BR-INS-006 to BR-INS-010**: Advanced pattern recognition, comparative analysis, temporal patterns, seasonal variations, continuous improvement — V1.1 (Level 2)
 
 ---
 
 ## Decision
 
-**APPROVED: Alternative 2** - Defer Effectiveness Monitor Service to V1.1
+**APPROVED: Partial Reinstatement** — Level 1 (Automated Assessment) moves to V1.0. Level 2 (AI-Powered Analysis) remains V1.1.
 
 ### Rationale
 
-1. **Timeline Constraint (PRIMARY)**: V1.0 must deliver before end of 2025. Including Effectiveness Monitor adds 2-3 weeks and risks missing deadline. This is the **primary business driver** for V1.1 deferral.
+1. **Spec hash capture is a V1.0 dependency**: DD-HAPI-016 (Remediation History Context) requires pre/post remediation spec hashes to function. Without them, HAPI cannot determine whether past remediations are relevant or detect configuration regressions.
 
-2. **Data Dependency**: Effectiveness Monitor requires **8+ weeks of remediation execution data** to provide meaningful assessments (80%+ confidence). V1.0 lacks this data, making the service of limited initial value.
+2. **Level 1 has no data dependency**: Health checks, metric comparisons, and effectiveness scoring work from Day 1. They don't need historical data to accumulate.
 
-3. **Core Capabilities Focus**: V1.0 **must** deliver complete remediation automation (Signal Processing → AI Analysis → Execution → Orchestration). Effectiveness Monitor is an **enhancement** for continuous improvement, not a **requirement** for remediation functionality.
+3. **Level 2 still benefits from deferral**: AI-powered analysis (HolmesGPT PostExec) requires historical patterns. By V1.1 (~8 weeks post V1.0), Level 1 will have generated sufficient assessment data for Level 2 to provide high-confidence pattern analysis.
 
-4. **Progressive Value Alignment**: By V1.1 launch (~8 weeks post V1.0), sufficient remediation data will exist for Effectiveness Monitor to provide high-confidence assessments (80-95%), aligning service deployment with business value delivery.
-
-5. **Parallel Phase Development**: V1.0 development is running last 2 implementation phases (Phase 4: AI Analysis, Phase 3: Signal Processing + Remediation Execution) simultaneously to validate API contracts. Adding Effectiveness Monitor would introduce additional integration complexity and testing burden.
-
-6. **Manual Monitoring Acceptable**: Operators can manually monitor remediation effectiveness in V1.0 using Data Storage Service queries and Prometheus metrics. Automated effectiveness assessment is a V1.1 enhancement, not a V1.0 requirement.
-
-### Key Insight
-
-**"Defer continuous improvement to V1.1 to deliver core remediation capabilities in V1.0."**
-
-The Effectiveness Monitor Service provides **continuous improvement** through automated effectiveness assessment, trend detection, and pattern recognition. However, V1.0's primary goal is to deliver **automated remediation capabilities** (signal processing, AI analysis, workflow execution, orchestration). These capabilities are **independent** of effectiveness monitoring.
-
-V1.0 delivers complete remediation automation. V1.1 adds continuous improvement feedback to optimize future remediation attempts based on historical data. This is a logical progression that aligns service deployment with data availability and business value delivery.
+4. **Cooldown alignment**: The EM stabilization window (5 min) aligns with the RO's `RecentlyRemediatedCooldown` (5 min), guaranteeing effectiveness data is available before a new remediation can start for the same target. This is a natural integration point.
 
 ---
 
-## Implementation
+## V1.0 Scope: Level 1 — Automated Assessment
 
-### V1.0 Actions
+### Overview
 
-**Service Status**:
-- ⏸️ **Defer Implementation**: Effectiveness Monitor Service not included in V1.0 release
-- ✅ **Preserve Business Logic**: `pkg/ai/insights/` code preserved for V1.1 implementation (98% complete, 6,295 lines)
-- ✅ **Preserve Documentation**: All Effectiveness Monitor design documents preserved
+After every workflow completion, the EM waits for a stabilization window, then performs deterministic automated checks to assess whether the remediation improved the situation. All assessment data is emitted as structured audit events — no new database tables required.
 
-**Documentation Updates**:
-- ✅ **Update Service Count**: V1.0 has 8 active services (not 9 or 10)
-  - Original 11 services
-  - -1 Context API (deprecated, DD-CONTEXT-006)
-  - -1 Dynamic Toolset (deferred to V2.0, DD-016)
-  - -1 Effectiveness Monitor (deferred to V1.1, DD-017)
-  - = **8 V1.0 services**
-- ✅ **Mark as V1.1 in README**: Update service status to "V1.1 Roadmap Feature"
-- ✅ **Link to DD-017**: Reference this design decision in all documentation
+### Capabilities
 
-**Manual Monitoring Guidance** (V1.0):
-```bash
-# Query remediation success rates manually
-curl http://data-storage-service:8080/api/v1/audit/query \
-  -d '{"service": "workflow-execution", "event_type": "remediation_completed", "time_range": "7d"}'
+#### 1. Dual Spec Hash Capture
 
-# View Prometheus metrics
-curl http://workflow-execution-service:9090/metrics | grep remediation_success
+The EM captures two hashes per remediation, enabling configuration regression detection:
+
+- **Pre-remediation hash**: SHA-256 of the target resource's `.spec` BEFORE the workflow modifies it. Captured by the **RO controller** when it creates the WorkflowExecution (Analyzing phase). Emitted as a field in the RO's `remediation.workflow_created` audit event.
+
+- **Post-remediation hash**: SHA-256 of the target resource's `.spec` AFTER the workflow completes and the stabilization window passes. Captured by the **EM service**. Emitted as part of the `effectiveness.assessment.completed` audit event.
+
+The hash comparison logic (three-way matching) is documented in DD-HAPI-016.
+
+#### 2. Health Checks (K8s API)
+
+After stabilization, the EM queries the K8s API for the target resource and emits a typed `health_checks` sub-object in the `effectiveness.health.assessed` audit event:
+
+- **pod_running** (bool): At least one pod found for the target resource
+- **readiness_pass** (bool): All desired replicas are ready (`readyReplicas == totalReplicas`)
+- **total_replicas** (int): Total desired replicas
+- **ready_replicas** (int): Number of ready replicas
+- **restart_delta** (int): Total container restart count since remediation
+- **crash_loops** (bool): Any container in CrashLoopBackOff waiting state (v2.5)
+- **oom_killed** (bool): Any container terminated with OOMKilled reason since remediation (v2.5)
+- **pending_count** (int): Number of pods still in Pending phase after stabilization window (v2.5). Non-zero after stabilization indicates scheduling failures, image pull issues, or resource exhaustion.
+
+> **Kind-aware health check**: The EM health checker is Kind-aware: workload kinds (Deployment/ReplicaSet/StatefulSet/DaemonSet) → list pods by `app` label; Pod → direct `client.Get`; other kinds (ConfigMap, Secret, Node) → `HealthNotApplicable: true` → scorer returns `Assessed=true, Score=nil`, no health audit event emitted. Pre/post hash capture uses the same AI-resolved target (AffectedResource when available).
+
+#### 3. Pre/Post Metric Comparison (Prometheus)
+
+The EM queries Prometheus for key metrics and emits a typed `metric_deltas` sub-object in the `effectiveness.metrics.assessed` audit event. Metrics are compared as pre-remediation (earliest sample) vs. post-remediation (latest sample) within a query range window.
+
+**Implemented in V1.0** (all four metrics):
+- CPU utilization (`container_cpu_usage_seconds_total`)
+- Memory utilization (`container_memory_working_set_bytes`)
+- Request latency p95 (`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[...]))`)
+- Error rate (cluster-specific; default: `rate(http_requests_total{code=~"5.."}[...])`)
+
+**Not yet implemented**:
+- Throughput (`throughput_before_rps`, `throughput_after_rps`) — fields exist in OpenAPI schema but no PromQL query is wired.
+
+> **v2.6 Note**: The original Phase A (CPU only) / Phase B (memory, latency, error rate) split was eliminated during implementation. All four PromQL queries were implemented in the V1.0 metrics scorer (`pkg/effectivenessmonitor/metrics/scorer.go`). The `metric_deltas` typed sub-object populates all fields. Throughput remains as a future enhancement.
+
+"Before" = earliest sample in the query range (before EA creation).
+"After" = latest sample in the query range (post-stabilization).
+
+#### 4. Alert Resolution Check (AlertManager)
+
+The EM queries AlertManager to determine whether the triggering alert resolved after remediation and emits a typed `alert_resolution` sub-object in the `effectiveness.alert.assessed` audit event:
+
+- **alert_resolved** (bool): Whether the triggering alert is no longer active
+- **active_count** (int): Number of matching active alerts in AlertManager
+- **resolution_time_seconds** (nullable float): Time from remediation to resolution (null if not resolved)
+
+If AlertManager is unavailable, the check fails with `assessed: false` and the component is excluded from the weighted score.
+
+#### 5. Effectiveness Scoring (V1.0)
+
+A formula-based score from 0.0 (completely ineffective) to 1.0 (fully effective). V1.0 uses three components; side-effect detection is deferred to post-V1.0.
+
+```
+score = weighted_average(
+    health_check_pass_rate   * 0.40,   // target resource healthy?
+    signal_resolved          * 0.35,   // did the triggering alert clear?
+    metric_improvement_ratio * 0.25    // did metrics improve? (no change = 0.0)
+)
 ```
 
-**Business Requirements Status**:
-- ✅ **Mark BR-INS-001 through BR-INS-010 as V1.1**: Update business requirement documents to reflect V1.1 timeline
-- ✅ **Preserve requirement documentation**: Keep all BR definitions for V1.1 implementation reference
+> See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 6 for detailed sub-scoring, weight redistribution tables, and health check sub-component weights.
 
-### V1.1 Actions (Future)
+#### 6. Side-Effect Detection (Deferred to post-V1.0)
 
-**When to Implement** (V1.1 Triggers):
-1. **V1.0 Deployed**: Core remediation capabilities operational in production
-2. **Data Accumulated**: 8+ weeks of remediation execution data available in Data Storage Service
-3. **Timeline Available**: Post year-end deadline, 2-3 weeks available for Effectiveness Monitor implementation
-4. **Business Value Ready**: Sufficient historical data for meaningful effectiveness assessments (80%+ confidence)
+> **v2.2 Decision**: Side-effect detection is deferred to post-V1.0. The complexity of determining causality (a remediation could impact workloads in other namespaces or at the node level) and the dependency on multiple AlertManager scrape cycles makes this unsuitable for the V1.0 formula-based approach. To be revisited in ~1 month.
 
-**V1.1 Implementation Approach**:
-1. **Create HTTP API Wrapper**: Wrap existing business logic (`pkg/ai/insights/`) with REST API endpoints
-2. **Deploy Service**: Kubernetes manifests, RBAC, ServiceMonitor, NetworkPolicy
-3. **Integration Testing**: Validate effectiveness assessments against V1.0 remediation data
-4. **Documentation**: Service specification, API documentation, operational runbooks
-5. **Add to CI/CD Pipeline**: Include in V1.1 continuous integration strategy
+#### 7. K8s Event Emission
 
-**V1.1 Success Criteria**:
-- ✅ 8+ weeks of V1.0 remediation data available in Data Storage Service
-- ✅ Effectiveness assessments achieve 80%+ confidence on V1.0 historical data
-- ✅ Service provides actionable insights for AI recommendation optimization
-- ✅ Trend detection identifies declining effectiveness patterns
-- ✅ Pattern recognition discovers time-of-day, environment, and workload correlations
+The EM always emits a Normal `EffectivenessAssessed` K8s event on assessment completion. There is no threshold-based Warning event; the EM does not compute or compare average scores. DataStorage computes the weighted effectiveness score on demand from component audit events.
 
-**V1.1 Timeline Estimate**: 2-3 weeks post V1.0 GA
+### EM Trigger: RO-Created EffectivenessAssessment CRD
+
+> **v2.2 Clarification**: DD-EFFECTIVENESS-003 (Watch RemediationRequest) is **superseded**. The EM no longer watches RR CRDs directly. Instead, the **RO creates an `EffectivenessAssessment` CRD** when the RR reaches a terminal phase (Completed, Failed, TimedOut), following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
+>
+> This provides: restart recovery via EA CRD `status.components`, `kubectl` observability, assessment deadline enforcement, and consistent lifecycle ownership by the RO.
+>
+> See [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) Section 9.4 for the full EA CRD definition and Section 3 for the lifecycle sequence diagram.
+>
+> **v2.3 Clarification**: EA CRD `validityDeadline` is in **status** (not spec), computed by the EM on first reconciliation. Status also includes `prometheusCheckAfter` and `alertManagerCheckAfter` for derived timing. The EM emits an `effectiveness.assessment.scheduled` audit event when scheduling the assessment, capturing these derived timestamps for audit trail correlation.
+>
+> **EA Spec Simplification**: The EA CRD `spec.config` (EAConfig) now contains only `StabilizationWindow` (set by the RO). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` have been removed from the EA spec — they are EM operational config only.
+
+### Stabilization Window & Cooldown Alignment
+
+The EM waits a stabilization window (configurable, default 5 minutes) after EA CRD creation before running its assessment. This gives the system time to reflect the change (e.g., new pods starting, traffic rebalancing).
+
+**Critical invariant**: The EM stabilization window MUST be <= the RO's `RecentlyRemediatedCooldown` (currently both 5 min). This guarantees health and alert data are available within the cooldown window:
+
+```
+T+0:      Workflow completes → RO creates EA CRD + NotificationRequest (parallel)
+T+0:      RO sets RR Condition: EffectivenessAssessed=False
+T+0-5m:   RO cooldown active → new RRs for same target BLOCKED
+T+5m:     EM stabilization elapsed → health, alert, hash assessed immediately
+T+5m-10m: EM waits for Prometheus metrics (if scrape pending, up to maxWaitForMetrics)
+T+≤10m:   EM finalizes → audit event emitted, EA phase=Completed
+T+≤10m:   RO detects EA completion → updates RR Condition: EffectivenessAssessed=True
+T+5m:     Cooldown expires → if signal fires again, new RR allowed through
+T+5m+:    HAPI queries DS → health/alert effectiveness data IS AVAILABLE
+```
+
+These two values are coupled. If either changes, the other must be reviewed. This constraint must be documented in operational runbooks.
+
+### Data Storage: Audit Traces
+
+All EM assessment data is stored as **structured audit events**, leveraging the existing audit infrastructure:
+
+**RO audit event** (at WFE creation):
+```json
+{
+    "event_type": "remediation.workflow_created",
+    "service": "remediationorchestrator",
+    "remediation_request_uid": "rr-xxx",
+    "target_resource": "Deployment/prod/my-app",
+    "pre_remediation_spec_hash": "sha256:aabb1122...",
+    "workflow_type": "ScaleUp",
+    "timestamp": "2026-02-05T14:00:00Z"
+}
+```
+
+**EM audit events** (per ADR-EM-001 Principle 5: EM collects, DS scores):
+
+The EM emits **individual component-level audit events**, not a single monolithic event. Each component event carries a typed sub-object with structured assessment data alongside the human-readable `details` string. DS correlates component events by `correlation_id` and computes the weighted score on demand.
+
+- `effectiveness.assessment.scheduled` (v2.3): Emitted on first reconciliation; captures derived timing (`validityDeadline`, `prometheusCheckAfter`, `alertManagerCheckAfter`).
+
+- `effectiveness.health.assessed`: Health check results with typed `health_checks` sub-object:
+```json
+{
+    "event_type": "effectiveness.health.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "health",
+    "assessed": true,
+    "score": 1.0,
+    "details": "all 3 pods ready, no restarts",
+    "health_checks": {
+        "pod_running": true,
+        "readiness_pass": true,
+        "total_replicas": 3,
+        "ready_replicas": 3,
+        "restart_delta": 0,
+        "crash_loops": false,
+        "oom_killed": false,
+        "pending_count": 0
+    }
+}
+```
+
+- `effectiveness.alert.assessed`: Alert resolution with typed `alert_resolution` sub-object:
+```json
+{
+    "event_type": "effectiveness.alert.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "alert",
+    "assessed": true,
+    "score": 0.0,
+    "details": "alert \"HighCPULoad\" still active (1 active alerts)",
+    "alert_resolution": {
+        "alert_resolved": false,
+        "active_count": 1,
+        "resolution_time_seconds": null
+    }
+}
+```
+
+- `effectiveness.metrics.assessed`: Metric comparison with typed `metric_deltas` sub-object:
+```json
+{
+    "event_type": "effectiveness.metrics.assessed",
+    "correlation_id": "rr-xxx",
+    "component": "metrics",
+    "assessed": true,
+    "score": 0.5,
+    "details": "1 of 1 metrics improved, average score 0.50",
+    "metric_deltas": {
+        "cpu_before": 0.95,
+        "cpu_after": 0.72,
+        "memory_before": null,
+        "memory_after": null,
+        "latency_p95_before_ms": null,
+        "latency_p95_after_ms": null,
+        "error_rate_before": null,
+        "error_rate_after": null
+    }
+}
+```
+
+> **v2.6 Note — Metrics**: All four metrics (CPU, memory, latency p95, error rate) are populated in V1.0. Throughput fields remain nullable. See ADR-EM-001 v1.7.
+
+- `effectiveness.hash.computed`: Spec hash comparison (DD-EM-002):
+```json
+{
+    "event_type": "effectiveness.hash.computed",
+    "correlation_id": "rr-xxx",
+    "component": "hash",
+    "assessed": true,
+    "post_remediation_spec_hash": "sha256:ccdd3344...",
+    "pre_remediation_spec_hash": "sha256:aabb1122...",
+    "hash_match": false
+}
+```
+
+- `effectiveness.assessment.completed`: Lifecycle marker with reason:
+```json
+{
+    "event_type": "effectiveness.assessment.completed",
+    "correlation_id": "rr-xxx",
+    "component": "completed",
+    "assessed": true,
+    "reason": "full"
+}
+```
+
+**No new database tables**. DataStorage correlates RO and EM audit events by **`RR.Name`** (the RemediationRequest name, which is the correlation ID across all audit traces) to build the complete picture. DS may add internal indexes on hash columns for query performance — this is a DS implementation detail.
+
+The existing `migrations/v1.1/006_effectiveness_assessment.sql` (`action_assessments`, `effectiveness_results` tables) can be repurposed as DS-internal materialized views for performance optimization, not as a separate write target.
+
+> **v2.1 Clarification**: DD-EFFECTIVENESS-002's DB-backed idempotency design (direct PostgreSQL tables for `effectiveness_results` and `action_assessments`) is superseded. The EM does not have its own database connection. Idempotency is achieved through audit event deduplication in DataStorage (DS checks for existing `effectiveness.assessment.completed` event for the given RR.Name before accepting a new one).
+
+### EM Data Source: Audit Traces Only (via EA CRD Trigger)
+
+> **v2.1 Clarification**: The EM MUST NOT read remediation context from the RemediationRequest CRD directly. The RR is transient — it may be deleted, tampered, or have its status modified after the EM assessment window. The EM reads all required data (correlation ID, signal metadata, workflow details, completion timestamps) from the **audit trace** stored in DataStorage.
+>
+> **v2.2 Clarification**: The EM is *triggered* by the `EffectivenessAssessment` CRD (created by RO), not by watching the RR. The EA CRD `spec.correlationID` provides the correlation ID for the DS audit trail query. If the RR is deleted while the EA is still in progress, the EA is garbage-collected via ownerReference, but any audit events already emitted to DS survive.
+>
+> This guarantees:
+> - EM can assess remediations even if the RR CRD is deleted before assessment (EA GC is acceptable; partial audit data in DS survives)
+> - EM is immune to RR status tampering
+> - EM can handle all RR terminal states (Completed, Failed, TimedOut) uniformly
+> - The assessment is based on the immutable audit record, not mutable K8s state
+
+### RO Pre-Remediation Hash: Direct API Server Query
+
+> **v2.1 Clarification**: When the RO computes the `pre_remediation_spec_hash`, it MUST query the Kubernetes API server directly (`client.Get()` with uncached reader) for the target resource's current `.spec`. The RO does NOT cache full resource specs — it only caches partial object metadata for scope management. The hash MUST be computed and emitted in the `remediation.workflow_created` audit event BEFORE creating the WorkflowExecution CRD, ensuring the hash captures the true pre-remediation state.
+
+### Dependency Configuration: Fail-Fast, No Fallbacks
+
+> **v2.1 Clarification**: The EM requires **deterministic outcomes**. There is no graceful degradation for Prometheus or AlertManager.
+
+The EM configuration (`config.yaml`) includes individual toggles for each external dependency:
+
+```yaml
+# config.yaml
+prometheus:
+  enabled: true          # Enable/disable Prometheus metric comparison
+  url: "http://prometheus:9090"
+alertmanager:
+  enabled: true          # Enable/disable AlertManager alert resolution check
+  url: "http://alertmanager:9093"
+```
+
+**Startup behavior**:
+- If `prometheus.enabled: true` and Prometheus is unreachable → **EM fails to start** (fail-fast)
+- If `alertmanager.enabled: true` and AlertManager is unreachable → **EM fails to start** (fail-fast)
+- If either is `enabled: false` → that capability is excluded from the assessment and scoring formula is adjusted accordingly (the weight is redistributed to remaining capabilities)
+
+| Dependency | `enabled: true` + unreachable | `enabled: false` |
+|------------|-------------------------------|-------------------|
+| K8s API | Assessment fails — retry on next reconcile | N/A (always required) |
+| Prometheus | **EM fails to start** | Skip metric comparison, adjust scoring weights |
+| AlertManager | **EM fails to start** | Skip alert resolution, adjust scoring weights |
+| DataStorage | Buffer audit events locally, retry delivery | N/A (always required) |
+
+### New Service
+
+```
+cmd/effectivenessmonitor/main.go
+pkg/effectivenessmonitor/
+    assessor.go          — assessment orchestrator
+    hash.go              — spec hash computation
+    health/checker.go    — K8s health checks
+    metrics/collector.go — Prometheus metric queries
+    metrics/scorer.go    — effectiveness score formula
+    alertmanager/client.go — alert resolution check
+```
+
+**RBAC**: Read access to pods, deployments, replicasets. Prometheus query access. AlertManager query access. DataStorage audit event write access.
+
+---
+
+## RR Status Immutability (CRD CEL Validation)
+
+As part of the EM integration, we introduce immutability enforcement on RemediationRequest status fields via Kubernetes CEL validation rules (`x-kubernetes-validations`). This ensures hash fields and terminal outcomes cannot be accidentally overwritten.
+
+**No webhook needed** — CEL validation is enforced by the API server at the CRD schema level.
+
+### Immutability Tiers
+
+**Write-once** (immutable after first set):
+- `Outcome`, `CompletedAt`, `FailureReason`, `FailurePhase`, `TimeoutPhase`, `TimeoutTime`, `SkipReason`
+- CEL rule: `!has(oldSelf.outcome) || self.outcome == oldSelf.outcome`
+
+**Terminal-immutable** (locked once `OverallPhase` reaches a terminal state):
+- `OverallPhase`, `Message`
+- CEL rule: `!(oldSelf.overallPhase in ['Completed', 'Failed', 'Skipped']) || self.overallPhase == oldSelf.overallPhase`
+
+**Always mutable** (controller/operator-writable throughout lifecycle):
+- `Conditions`, `Deduplication`, `TimeoutConfig`, `LastModifiedBy`, `LastModifiedAt`, `ConsecutiveFailureCount`, `NextAllowedExecution`, `BlockedUntil`
+
+**Lifecycle-mutable** (writable during active reconciliation, locked after terminal phase):
+- All Ref fields (`SignalProcessingRef`, `AIAnalysisRef`, `WorkflowExecutionRef`, etc.), phase timestamps, counters
+
+The existing mutating webhook for `TimeoutConfig` operator attribution (`LastModifiedBy`, `LastModifiedAt`) remains — CEL can validate but not mutate.
+
+---
+
+## V1.1 Scope: Level 2 — AI-Powered Analysis (Unchanged)
+
+Level 2 remains deferred to V1.1 as originally planned in DD-017 v1.0:
+
+- **HolmesGPT PostExec endpoint** (`/api/v1/postexec/analyze`): Root cause validation, oscillation detection, lesson extraction
+- **Decision logic**: When to trigger AI analysis (P0 failures, new action types, suspected oscillations, periodic batch)
+- **Pattern learning**: Historical comparison, context-aware effectiveness
+- **Batch processing**: Cost-efficient daily/weekly aggregation
+
+### V1.1 Triggers (Unchanged)
+
+1. V1.0 deployed with Level 1 EM operational
+2. 8+ weeks of Level 1 assessment data accumulated
+3. Sufficient historical patterns for Level 2 to provide high-confidence analysis (80%+)
+
+### V1.1 Integration with DD-HAPI-016
+
+When Level 2 arrives, it enriches the audit events with:
+- `root_cause_resolved: true/false` — did the remediation fix the actual cause or just mask it?
+- `lessons_learned: [...]` — extracted insights for future investigations
+- `oscillation_detected: true/false` — did the fix cause a different problem?
+
+DS reads these richer fields from the same audit traces. HAPI receives richer context through the same endpoint. No architectural change required.
 
 ---
 
@@ -187,60 +417,34 @@ curl http://workflow-execution-service:9090/metrics | grep remediation_success
 
 ### Positive
 
-- ✅ **V1.0 Timeline Met**: Enables V1.0 delivery before end of 2025 deadline
-- ✅ **Core Capabilities Prioritized**: V1.0 focuses on remediation automation, not continuous improvement
-- ✅ **Data Availability Aligned**: V1.1 deployment coincides with sufficient historical data for meaningful assessments
-- ✅ **Implementation Preserved**: Business logic (98% complete) preserved for V1.1, no work lost
-- ✅ **Reduced V1.0 Complexity**: Fewer services, simpler deployment, faster validation
-- ✅ **Better V1.1 Value**: Effectiveness Monitor provides high-confidence insights from Day 1 of V1.1 (vs. Week 13 of V1.0)
+- V1.0 captures post-remediation state (dual spec hash) — critical for DD-HAPI-016
+- Deterministic effectiveness scoring from Day 1 — no data dependency
+- HAPI receives pre-computed effectiveness data, reducing LLM investigation burden for past remediations
+- Cooldown-EM alignment guarantees data availability before next remediation
+- Audit-trace storage avoids new tables and leverages existing infrastructure
+- CEL immutability protects terminal status fields without webhook overhead
+- V1.1 delta reduced — only Level 2 AI analysis remains
 
 ### Negative
 
-- ⚠️ **V1.0 Lacks Continuous Improvement**: No automated effectiveness feedback loop in V1.0
-  - **Mitigation**: Operators manually monitor remediation success rates via Data Storage queries and Prometheus metrics
-  - **Impact**: Acceptable for V1.0 (manual monitoring feasible, automated optimization is V1.1 enhancement)
-
-- ⚠️ **V1.1 Code Refresh**: Preserved code may require updates to align with V1.0 API contracts
-  - **Mitigation**: Comprehensive documentation and test preservation reduces refresh effort
-  - **Impact**: Expected technical debt acceptable for strategic timeline management
-
-- ⚠️ **Trend Detection Delayed**: Pattern recognition and declining effectiveness detection deferred until V1.1
-  - **Mitigation**: Operators manually review Grafana dashboards for remediation success trends
-  - **Impact**: V1.0 still delivers core value (automated remediation), continuous improvement is V1.1 enhancement
-
-### Neutral
-
-- 🔄 **Repository Preservation**: Code remains in repository but marked as V1.1 feature
-- 🔄 **Team Knowledge**: Effectiveness Monitor implementation knowledge preserved for V1.1
-- 🔄 **Business Requirements**: BR-INS-001+ requirements remain valid, timeline adjusted to V1.1
-
----
-
-## Validation Results
-
-### Confidence Assessment Progression
-
-- **Initial assessment**: 90% confidence (strategic timeline management)
-- **After year-end deadline confirmation**: 95% confidence (business constraint validated)
-- **After V1.0 scope review**: 98% confidence (core vs. enhancement prioritization confirmed)
-
-### Key Validation Points
-
-- ✅ **V1.0 Timeline Critical**: Year-end deadline is hard constraint, missing it delays product launch to Q1 2026
-- ✅ **Data Dependency Real**: Effectiveness Monitor requires 8+ weeks of remediation data for meaningful assessments (80%+ confidence)
-- ✅ **Manual Monitoring Viable**: Data Storage queries + Prometheus metrics provide basic effectiveness visibility in V1.0
-- ✅ **Core Capabilities Independent**: Signal Processing, AI Analysis, Remediation Execution, Orchestration do not require Effectiveness Monitor
-- ✅ **V1.1 Roadmap Fit**: Continuous improvement is logical V1.1 enhancement after core remediation capabilities proven in V1.0
+- New service in V1.0 (`cmd/effectivenessmonitor/`) adds operational complexity
+- RBAC requires Prometheus and AlertManager access — not all clusters may have these
+  - **Mitigation**: Configuration toggles (`prometheus.enabled`, `alertmanager.enabled`) allow disabling at deployment time. When enabled, fail-fast ensures deterministic outcomes.
+- Formula-based scoring may not capture nuance (e.g., "CPU dropped 3% but crossed below alert threshold" vs. "CPU dropped 3% but still critical")
+  - **Mitigation**: Level 2 AI analysis in V1.1 addresses nuanced cases
 
 ---
 
 ## Related Decisions
 
-- **Builds On**: V1.0 timeline constraints, parallel phase development strategy
-- **Supports**: V1.0 feature scope prioritization
-- **Defers**: BR-INS-001 through BR-INS-010
-- **Related**: DD-CONTEXT-006 (Context API deprecation), DD-016 (Dynamic Toolset V2.0 deferral)
-- **Supersedes**: `006-effectiveness-monitor-v1-inclusion.md` (October 2025 decision)
+- **DD-HAPI-016**: Remediation History Context Enrichment (depends on this DD for effectiveness data)
+- **DD-EFFECTIVENESS-001**: Hybrid Automated + AI Analysis approach (Level 1 architecture, Level 2 triggers)
+- **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
+- **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
+- **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
+- **DD-CRD-002-EA**: [EffectivenessAssessment Conditions](DD-CRD-002-effectivenessassessment-conditions.md) — `AssessmentComplete` and `SpecIntegrity` condition types
+- **DD-EM-002 v1.1**: [Canonical Spec Hashing & Spec Drift Guard](DD-EM-002-canonical-spec-hash.md) — Re-hash on each reconcile, `spec_drift` reason, DS score=0.0 short-circuit
+- **DD-EVENT-001**: Controller Event Registry (event reason constants)
 
 ---
 
@@ -248,30 +452,13 @@ curl http://workflow-execution-service:9090/metrics | grep remediation_success
 
 ### When to Revisit
 
-- **MANDATORY**: When V1.0 achieves GA status and 8+ weeks of remediation data exists in Data Storage Service
-- **MANDATORY**: Before V1.1 planning begins (estimated Q1 2026) to confirm Effectiveness Monitor prioritization
-- **OPTIONAL**: If V1.0 operators report critical need for automated effectiveness feedback (user demand validation)
-
-### Success Metrics (V1.1)
-
-- **Metric 1**: V1.0 production deployment with 8+ weeks of remediation data - **Target**: Sufficient historical data for 80%+ confidence assessments
-- **Metric 2**: V1.0 operator feedback collected - **Target**: >10 production deployments with continuous improvement demand validated
-- **Metric 3**: Effectiveness Monitor V1.1 implementation effort - **Target**: <3 weeks from V1.0 GA to V1.1 deployment
-- **Metric 4**: Assessment confidence on V1.0 historical data - **Target**: 80%+ confidence on effectiveness assessments
-- **Metric 5**: Actionable insights delivered - **Target**: Measurable AI recommendation improvement from effectiveness feedback
+- **MANDATORY**: When V1.1 planning begins — confirm Level 2 scope and triggers
+- **MANDATORY**: If Level 1 formula-based scoring proves insufficient — may need to accelerate Level 2
+- **OPTIONAL**: If cooldown values change — review EM stabilization window alignment
+- **OPTIONAL**: If audit trace query performance degrades — evaluate materialized view approach
 
 ---
 
-## Document History
-
-| Date | Version | Author | Changes |
-|---|---|---|---|
-| 2025-12-01 | 1.0 | Kubernaut Architecture Team | Initial DD-017 creation - Effectiveness Monitor V1.1 deferral decision |
-
----
-
-**Status**: ⏸️ **Deferred to V1.1** - Implementation deferred to V1.1, revisit when V1.0 achieves GA with 8+ weeks of historical data
-
-**Next Review**: When V1.0 achieves GA status (estimated Q1 2026) or before V1.1 planning
-
-
+**Status**: ✅ APPROVED (v2.5) — Level 1 in V1.0 (EA CRD pattern, typed audit sub-objects), Level 2 in V1.1
+**Authoritative Integration Architecture**: [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md)
+**Next Review**: Throughput PromQL query implementation, then V1.1 planning (estimated Q2 2026)

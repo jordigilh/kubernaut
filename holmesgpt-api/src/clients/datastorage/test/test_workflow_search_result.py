@@ -65,7 +65,6 @@ class TestWorkflowSearchResult(unittest.TestCase):
                 workflow_id = '',
                 title = '',
                 description = '',
-                signal_type = '',
                 confidence = 0.0,
                 final_score = 0.0,
                 rank = 1,

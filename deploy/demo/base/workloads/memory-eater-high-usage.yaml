@@ -1,0 +1,37 @@
+# Memory Eater: High Usage variant (Prometheus alert, no OOMKill)
+# Runs at 92% memory usage to trigger Prometheus MemoryExceedsLimit alert.
+# Extracted from: test/infrastructure/fullpipeline_e2e.go:DeployMemoryEaterHighUsage
+#
+# Behavior: allocates 50Mi, grows to 92Mi over 5s, holds for 300s.
+# With 100Mi limit, 92Mi = 92% usage -- above the 90% alert threshold.
+# AlertManager fires MemoryExceedsLimit alert -> webhook to Gateway.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-eater
+  namespace: demo-workloads
+  labels:
+    app: memory-eater
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-eater
+  template:
+    metadata:
+      labels:
+        app: memory-eater
+        kubernaut.ai/managed: "true"
+    spec:
+      containers:
+        - name: memory-eater
+          image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
+          imagePullPolicy: IfNotPresent
+          # Args: initial_memory initial_duration target_memory target_duration hold_duration
+          args: ["50Mi", "2", "92Mi", "5", "300"]
+          resources:
+            limits:
+              memory: "100Mi"
+            requests:
+              memory: "50Mi"

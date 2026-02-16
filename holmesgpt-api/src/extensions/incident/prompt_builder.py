@@ -105,7 +105,7 @@ def build_cluster_context_section(detected_labels: DetectedLabels) -> str:
 
 def build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     """
-    Build MCP workflow search filter instructions based on DetectedLabels.
+    Build workflow discovery filter instructions based on DetectedLabels.
 
     Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
 
@@ -160,22 +160,31 @@ def build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     # Remove empty string values
     filters = {k: v for k, v in filters.items() if v}
 
+    # Build conditional guidance based on which labels are actually present in filters
+    # DD-WORKFLOW-001 v2.1: Only mention labels that weren't excluded by failedDetections
+    guidance_lines = []
+    if "gitops_managed" in filters:
+        guidance_lines.append("If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.")
+    if "stateful" in filters:
+        guidance_lines.append("If `stateful=true`, prefer stateful-aware workflows.")
+    if "pdb_protected" in filters:
+        guidance_lines.append("If `pdb_protected=true`, ensure the selected workflow respects PodDisruptionBudget constraints.")
+
+    guidance_text = "\n".join(guidance_lines) if guidance_lines else "Use the detected characteristics to guide workflow selection."
+
     return f"""
-### MCP Workflow Search Instructions
+### Workflow Discovery Context (DetectedLabels)
 
-When calling the `search_workflow_catalog` MCP tool, include detected labels as filters:
+The following detected labels describe the target cluster environment.
+Use these to inform your workflow selection reasoning — prefer workflows
+that are compatible with the detected environment characteristics.
 
+Detected environment characteristics:
 ```json
-{{
-  "query": "<signal_type> <severity>",
-  "filters": {json.dumps(filters, indent=4)}
-}}
+{json.dumps(filters, indent=4)}
 ```
 
-The Data Storage service will use these filters to return only workflows that are compatible
-with the detected cluster environment.
-
-**IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+**IMPORTANT**: {guidance_text}
 """
 
 
@@ -225,7 +234,7 @@ Your previous workflow response had validation errors:
 {errors_list}
 {schema_section}
 **Please correct your response:**
-1. Re-check the workflow ID exists in the catalog (use MCP search_workflow_catalog)
+1. Re-check the workflow ID exists (use get_workflow with the workflow_id)
 2. Ensure container_image matches the catalog exactly (or omit to use catalog default)
 3. Verify all required parameters are provided with correct types and values
 
@@ -233,13 +242,23 @@ Your previous workflow response had validation errors:
 """
 
 
-def create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
+def create_incident_investigation_prompt(
+    request_data: Dict[str, Any],
+    remediation_history_context: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create investigation prompt for initial incident analysis (ADR-041 v3.3).
 
     Used by: /incident/analyze endpoint
     Input: IncidentRequest model data
     Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
+
+    Args:
+        request_data: IncidentRequest model data.
+        remediation_history_context: Optional remediation history context from
+            DataStorage (BR-HAPI-016, DD-HAPI-016 v1.1). When provided, a
+            remediation history section is appended to the prompt to inform
+            the LLM about past remediations for the affected resource.
     """
     # Extract fields from IncidentRequest
     signal_type = request_data.get("signal_type", "Unknown")
@@ -415,7 +434,7 @@ that a **{signal_type}** event will occur for **{namespace}/{resource_kind}/{res
 ## Cluster Environment Characteristics (AUTO-DETECTED)
 
 The following characteristics were automatically detected for the target resource.
-**YOU MUST include these as filters in your MCP workflow search request.**
+**Use these to guide your workflow selection reasoning.**
 
 {build_cluster_context_section(detected_labels)}
 
@@ -423,11 +442,24 @@ The following characteristics were automatically detected for the target resourc
 
 """
 
+    # BR-HAPI-016: Add remediation history section if context is available
+    if remediation_history_context:
+        from extensions.remediation_history_prompt import build_remediation_history_section
+
+        history_section = build_remediation_history_section(remediation_history_context)
+        if history_section:
+            prompt += f"""
+## Remediation History Context (AUTO-DETECTED)
+
+{history_section}
+
+"""
+
     # Add Business Context section
     prompt += f"""
-## Business Context (FOR MCP WORKFLOW SEARCH)
+## Business Context (AUTO-INJECTED INTO WORKFLOW DISCOVERY)
 
-**IMPORTANT**: These fields are for MCP workflow search label filtering, NOT for your RCA investigation.
+**IMPORTANT**: These fields are automatically injected into all workflow discovery tool calls. They are for context only — you do NOT need to pass them.
 
 - Environment: {environment}
 
@@ -437,8 +469,8 @@ The following characteristics were automatically detected for the target resourc
 
 - Risk Tolerance: {risk_tolerance}
 
-**Note**: When you call MCP workflow search tools (e.g., `search_workflow_catalog`), you must
-pass these business context fields as parameters.
+**Note**: These business context fields are automatically included as signal context filters
+in all workflow discovery tool calls. You do NOT need to pass them manually.
 
 ## Your Investigation Workflow
 
@@ -481,17 +513,28 @@ Determine the **root owner** resource that the remediation should target:
 - Use `kubectl get pod <name> -n <ns> -o jsonpath='{{.metadata.ownerReferences}}'` to find the owner.
 - Include `kind`, `name`, and `namespace` in the `affectedResource` field of `root_cause_analysis`.
 
-### Phase 4: Search for Workflow (MANDATORY)
-**YOU MUST** call MCP `search_workflow_catalog` tool with:
-- **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
-- **Label Filters**: Business context values
+### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
+**YOU MUST** follow this three-step workflow discovery protocol:
 
-**This step is REQUIRED** - you cannot skip workflow search. If the tool is available, you must invoke it.
+**Step 1**: Call `list_available_actions` to discover available remediation action types.
+Review all returned action types and their descriptions. Choose the action type that
+best matches your RCA findings.
+
+**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
+**CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to
+review ALL workflows. Compare workflow descriptions, version notes, and suitability
+for your RCA findings across ALL workflows before selecting.
+
+**Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to
+retrieve its full parameter schema. If you get "not found", go back to Step 2
+and choose a different workflow.
+
+**This step is REQUIRED** - you cannot skip workflow discovery. If the tools are available, you must invoke them.
 
 ### Phase 5: Return Summary + JSON Payload
 {'Provide natural language summary of your prediction assessment + structured JSON with preventive workflow and parameters. Include whether preemptive action is recommended or if the prediction is unlikely to materialize.' if signal_mode == 'predictive' else 'Provide natural language summary + structured JSON with workflow and parameters.'}
 
-**If MCP search succeeds**:
+**If workflow discovery succeeds**:
 ```json
 {{
   "root_cause_analysis": {{
@@ -506,6 +549,7 @@ Determine the **root owner** resource that the remediation should target:
   }},
   "selected_workflow": {{
     "workflow_id": "workflow-id-from-mcp-search",
+    "action_type": "ScaleReplicas",
     "version": "1.0.0",
     "confidence": 0.95,
     "rationale": "Why your RCA findings led to this workflow selection",
@@ -536,7 +580,7 @@ It identifies the Kubernetes resource that the remediation workflow will act upo
 "affectedResource": {{"kind": "Deployment", "name": "memory-eater", "namespace": "production"}}
 ```
 
-**If MCP search fails or returns no workflows**:
+**If workflow discovery fails or returns no workflows**:
 ```json
 {{
   "root_cause_analysis": {{
@@ -550,7 +594,7 @@ It identifies the Kubernetes resource that the remediation workflow will act upo
     }}
   }},
   "selected_workflow": null,
-  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
+  "rationale": "Workflow discovery failed: [error details]. RCA completed but workflow selection unavailable."
 }}
 ```
 
@@ -630,7 +674,7 @@ Do NOT include `investigation_outcome` in this case. The system will automatical
 **When to use**:
 - You clearly identified the root cause (high confidence)
 - The problem is still active (pod still crashing, resource still unhealthy)
-- The MCP workflow catalog search returned no matching workflows
+- The workflow discovery returned no matching workflows
 - Human intervention is needed to resolve the issue
 
 ## RCA Severity Assessment
@@ -681,42 +725,31 @@ After your investigation, assess the severity of the root cause using these leve
 - Novel condition with no precedent in the system
 - Example: Pod in CrashLoopBackOff but container logs are empty and no events provide context
 
-## MCP Workflow Search Guidance
+## Workflow Discovery Guidance (Three-Step Protocol)
 
-When searching for remediation workflows, use this taxonomy:
+You have three workflow discovery tools available. Use them in order:
 
-**Query Format**: `<signal_type> <severity> [optional_keywords]`
-- Example: `"OOMKilled critical"` or `"CrashLoopBackOff high"`
-- Use canonical Kubernetes event reasons for signal_type (from your RCA assessment)
-- Use your RCA severity assessment (may differ from input signal)
+1. **`list_available_actions`** — Discover what remediation action types are available.
+   Each action type includes guidance on when to use it and when not to.
 
-**Canonical Signal Types** (examples - use any canonical Kubernetes event reason):
-- `OOMKilled`: Container exceeded memory limit and was killed
-- `CrashLoopBackOff`: Container repeatedly crashing
-- `ImagePullBackOff`: Cannot pull container image
-- `Evicted`: Pod evicted due to resource pressure
-- `NodeNotReady`: Node is not ready
-- `PodPending`: Pod stuck in pending state
-- `FailedScheduling`: Scheduler cannot place pod
-- `BackoffLimitExceeded`: Job exceeded retry limit
-- `DeadlineExceeded`: Job exceeded active deadline
-- `FailedMount`: Volume mount failed
+2. **`list_workflows`** with `action_type` — List specific workflows for your chosen action.
+   Review ALL pages (if `hasMore=true`, call again with increased `offset`).
+   Compare workflow descriptions and suitability for your RCA findings.
 
-**Note**: These are common examples. Use any canonical Kubernetes event reason that matches your RCA findings.
+3. **`get_workflow`** with `workflow_id` — Get the full workflow with parameter schema.
+   If "not found", the workflow doesn't match your signal context — choose another.
+
+**Signal context filters** (severity, component, environment, priority, custom_labels,
+detected_labels) are automatically included in all discovery calls. You do NOT need to
+provide them manually — they are injected by the system.
+
+**Canonical Signal Types** (for reference during RCA):
+- `OOMKilled`, `CrashLoopBackOff`, `ImagePullBackOff`, `Evicted`
+- `NodeNotReady`, `PodPending`, `FailedScheduling`
+- `BackoffLimitExceeded`, `DeadlineExceeded`, `FailedMount`
+
+Use any canonical Kubernetes event reason that matches your RCA findings.
 For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event
-
-**Label Parameters** (for MCP workflow search):
-1. **signal_type** (Technical - from your RCA assessment)
-2. **severity** (Technical - from your RCA assessment)
-3. **environment** (Business - pass-through: `{environment}`)
-4. **priority** (Business - pass-through: `{priority}`)
-5. **risk_tolerance** (Business - pass-through: `{risk_tolerance}`)
-6. **business_category** (Business - pass-through: `{business_category}`)
-
-**Search Optimization**:
-- Exact label matching increases confidence score
-- Workflow descriptions should start with `"<signal_type> <severity>:"`
-- Use all 6 label parameters for filtering
 
 ## Expected Response Format
 
@@ -737,7 +770,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 0.95
 
 # selected_workflow
-{{"workflow_id": "workflow-id-from-mcp-search-results", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
+{{"workflow_id": "workflow-id-from-mcp-search-results", "action_type": "ScaleReplicas", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
 [{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]

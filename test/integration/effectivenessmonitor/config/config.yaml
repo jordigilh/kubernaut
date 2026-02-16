@@ -1,0 +1,34 @@
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: host.containers.internal
+  port: 15434
+  name: action_history
+  user: slm_user
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: host.containers.internal:16383
+  db: 0
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
+  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+  passwordKey: "password"
+logging:
+  level: debug
+  format: json

@@ -1,0 +1,32 @@
+# Audit Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 06_workflow_discovery_audit_test.go (DD-WORKFLOW-014 v3.0)
+metadata:
+  workflowId: audit-test-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow for workflow discovery audit event validation"
+    whenToUse: "For E2E testing of audit trail emission during discovery steps"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with audit tables available"
+
+actionType: RestartPod
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [critical]
+  environment: [production, staging, test]
+  component: pod
+  priority: P0
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected pod"
+  - name: POD_NAME
+    type: string
+    required: true
+    description: "Name of the pod to restart"

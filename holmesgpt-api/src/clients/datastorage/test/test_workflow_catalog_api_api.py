@@ -29,7 +29,14 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
     def test_create_workflow(self) -> None:
         """Test case for create_workflow
 
-        Create workflow
+        Register workflow from OCI image
+        """
+        pass
+
+    def test_deprecate_workflow(self) -> None:
+        """Test case for deprecate_workflow
+
+        Deprecate workflow
         """
         pass
 
@@ -40,10 +47,17 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
         """
         pass
 
+    def test_enable_workflow(self) -> None:
+        """Test case for enable_workflow
+
+        Enable workflow
+        """
+        pass
+
     def test_get_workflow_by_id(self) -> None:
         """Test case for get_workflow_by_id
 
-        Get workflow by UUID
+        Get workflow by UUID (with optional security gate)
         """
         pass
 
@@ -51,13 +65,6 @@ class TestWorkflowCatalogAPIApi(unittest.TestCase):
         """Test case for list_workflows
 
         List workflows
-        """
-        pass
-
-    def test_search_workflows(self) -> None:
-        """Test case for search_workflows
-
-        Label-based workflow search
         """
         pass
 

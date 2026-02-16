@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
@@ -56,6 +58,33 @@ type DBInterface interface {
 	AggregateIncidentTrend(period string) (*models.TrendAggregationResponse, error)
 }
 
+// WorkflowLifecycleRepository defines the data access interface for workflow
+// lifecycle operations (enable, disable, deprecate). Used for testability.
+// *repository.WorkflowRepository satisfies this interface.
+//
+// GAP-WF-1: DD-WORKFLOW-017 Phase 4.4 - PATCH /enable and PATCH /deprecate
+type WorkflowLifecycleRepository interface {
+	GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error)
+	UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error
+}
+
+// RemediationHistoryQuerier defines the data access interface for remediation
+// history context queries. Used by HandleGetRemediationHistoryContext.
+//
+// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// DD-HAPI-016 v1.1: Two-step query pattern (RO events by target, EM events by correlation_id).
+type RemediationHistoryQuerier interface {
+	QueryROEventsByTarget(ctx context.Context, targetResource string, since time.Time) ([]repository.RawAuditRow, error)
+	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
+	QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+}
+
+// ActionTypeValidator validates action types against the taxonomy before DB insertion.
+// DD-WORKFLOW-016: Explicit validation for clean 400 errors instead of FK constraint 500.
+type ActionTypeValidator interface {
+	ActionTypeExists(ctx context.Context, actionType string) (bool, error)
+}
+
 // Handler handles REST API requests for Data Storage Service
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
@@ -63,12 +92,16 @@ type DBInterface interface {
 // REFACTOR: Enhanced with structured logging, request timing, and observability
 // V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
 type Handler struct {
-	db                    DBInterface
-	sqlDB                 *sql.DB                           // For reconstruction queries (BR-AUDIT-006)
-	logger                logr.Logger
-	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
-	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
-	auditStore            audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
+	db                      DBInterface
+	sqlDB                   *sql.DB                           // For reconstruction queries (BR-AUDIT-006)
+	logger                  logr.Logger
+	actionTraceRepository   *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
+	workflowRepo            *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
+	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
+	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
+	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
+	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI-based workflow registration
+	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -98,6 +131,23 @@ func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 	}
 }
 
+// WithWorkflowLifecycleRepository sets the workflow lifecycle repository for enable/disable/deprecate.
+// When nil, lifecycle handlers use workflowRepo. Used for unit test mocking (GAP-WF-1).
+func WithWorkflowLifecycleRepository(repo WorkflowLifecycleRepository) HandlerOption {
+	return func(h *Handler) {
+		h.workflowLifecycleRepo = repo
+	}
+}
+
+// WithActionTypeValidator sets the action type taxonomy validator.
+// DD-WORKFLOW-016 GAP-4: Validates action_type against taxonomy before DB insert
+// for clean 400 errors instead of FK constraint 500.
+func WithActionTypeValidator(v ActionTypeValidator) HandlerOption {
+	return func(h *Handler) {
+		h.actionTypeValidator = v
+	}
+}
+
 // WithSQLDB sets the SQL database connection for reconstruction queries
 // BR-AUDIT-006: RemediationRequest reconstruction from audit trail
 func WithSQLDB(db *sql.DB) HandlerOption {
@@ -111,6 +161,22 @@ func WithSQLDB(db *sql.DB) HandlerOption {
 func WithAuditStore(store audit.AuditStore) HandlerOption {
 	return func(h *Handler) {
 		h.auditStore = store
+	}
+}
+
+// WithSchemaExtractor sets the OCI schema extractor for workflow registration
+// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
+	return func(h *Handler) {
+		h.schemaExtractor = extractor
+	}
+}
+
+// WithRemediationHistoryQuerier sets the remediation history repository.
+// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
+	return func(h *Handler) {
+		h.remediationHistoryRepo = repo
 	}
 }
 

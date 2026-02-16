@@ -296,7 +296,7 @@ class TestSearchWorkflowsFailedDetections:
         Scenario: pdbProtected detection failed
         Expected: detected_labels sent to DS should NOT include pdbProtected
         """
-        from src.toolsets.workflow_catalog import strip_failed_detections
+        from src.toolsets.workflow_discovery import strip_failed_detections
 
         detected_labels = DetectedLabels(
             failedDetections=["pdbProtected"],
@@ -322,7 +322,7 @@ class TestSearchWorkflowsFailedDetections:
         """
         Business Outcome: Multiple failed detections all stripped
         """
-        from src.toolsets.workflow_catalog import strip_failed_detections
+        from src.toolsets.workflow_discovery import strip_failed_detections
 
         detected_labels = DetectedLabels(
             failedDetections=["pdbProtected", "hpaEnabled", "networkIsolated"],
@@ -350,7 +350,7 @@ class TestSearchWorkflowsFailedDetections:
         """
         Business Outcome: All labels preserved when no detection failures
         """
-        from src.toolsets.workflow_catalog import strip_failed_detections
+        from src.toolsets.workflow_discovery import strip_failed_detections
 
         detected_labels = DetectedLabels(
             failedDetections=[],
@@ -373,7 +373,7 @@ class TestSearchWorkflowsFailedDetections:
         """
         Business Outcome: Backward compatibility - works without failedDetections key
         """
-        from src.toolsets.workflow_catalog import strip_failed_detections
+        from src.toolsets.workflow_discovery import strip_failed_detections
 
         detected_labels = DetectedLabels(
             # failedDetections defaults to []

@@ -502,7 +502,7 @@ def set_shutdown_flag(value: bool):
 @router.get("/health")
 async def health_check(request: Request):
     """
-    BR-HAPI-016: Health check endpoint
+    BR-HAPI-018: Health check endpoint
     BR-HAPI-110: Returns RFC 7807 error during shutdown
     """
     if _is_shutting_down:

@@ -380,10 +380,11 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-hello-world",
 				Version:    "v1.0.0",
-				// Use multi-arch bundle from quay.io/kubernaut-cicd (amd64 + arm64)
-				// Per ADR-043: Bundle contains pipeline.yaml + workflow-schema.yaml
-				// Per test/infrastructure/workflow_bundles.go: BuildAndRegisterTestWorkflows
-				ContainerImage: "quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0",
+				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (amd64 + arm64)
+				// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations
+				// Schema image (test-workflows/) is used for DataStorage registration (DD-WORKFLOW-017)
+				// Tekton bundle (tekton-bundles/) is used for WFE execution via bundle resolver
+				ContainerImage: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

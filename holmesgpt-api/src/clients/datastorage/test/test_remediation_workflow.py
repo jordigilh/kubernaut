@@ -38,9 +38,14 @@ class TestRemediationWorkflow(unittest.TestCase):
             return RemediationWorkflow(
                 workflow_id = '',
                 workflow_name = '',
+                action_type = 'ScaleReplicas',
                 version = '',
                 name = '',
-                description = '',
+                description = datastorage.models.structured_description.StructuredDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
                 owner = '',
                 maintainer = '',
                 content = '',
@@ -51,7 +56,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 container_digest = 'sha256:abc123...',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
                     signal_type = 'OOMKilled', 
-                    severity = 'critical', 
+                    severity = ['critical'], 
                     component = 'pod', 
                     environment = ["staging","production"], 
                     priority = 'P0', ),
@@ -90,15 +95,20 @@ class TestRemediationWorkflow(unittest.TestCase):
         else:
             return RemediationWorkflow(
                 workflow_name = '',
+                action_type = 'ScaleReplicas',
                 version = '',
                 name = '',
-                description = '',
+                description = datastorage.models.structured_description.StructuredDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
                 content = '',
                 content_hash = '0123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263',
                 execution_engine = '',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
                     signal_type = 'OOMKilled', 
-                    severity = 'critical', 
+                    severity = ['critical'], 
                     component = 'pod', 
                     environment = ["staging","production"], 
                     priority = 'P0', ),

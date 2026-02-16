@@ -13,12 +13,28 @@ type CreateWorkflowRes interface {
 	createWorkflowRes()
 }
 
+type DeprecateWorkflowRes interface {
+	deprecateWorkflowRes()
+}
+
 type DisableWorkflowRes interface {
 	disableWorkflowRes()
 }
 
+type EnableWorkflowRes interface {
+	enableWorkflowRes()
+}
+
 type ExportAuditEventsRes interface {
 	exportAuditEventsRes()
+}
+
+type GetEffectivenessScoreRes interface {
+	getEffectivenessScoreRes()
+}
+
+type GetRemediationHistoryContextRes interface {
+	getRemediationHistoryContextRes()
 }
 
 type GetWorkflowByIDRes interface {
@@ -27,6 +43,14 @@ type GetWorkflowByIDRes interface {
 
 type HealthCheckRes interface {
 	healthCheckRes()
+}
+
+type ListAvailableActionsRes interface {
+	listAvailableActionsRes()
+}
+
+type ListWorkflowsByActionTypeRes interface {
+	listWorkflowsByActionTypeRes()
 }
 
 type ListWorkflowsRes interface {
@@ -47,10 +71,6 @@ type ReconstructRemediationRequestRes interface {
 
 type ReleaseLegalHoldRes interface {
 	releaseLegalHoldRes()
-}
-
-type SearchWorkflowsRes interface {
-	searchWorkflowsRes()
 }
 
 type UpdateWorkflowRes interface {

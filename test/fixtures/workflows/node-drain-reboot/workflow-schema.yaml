@@ -1,0 +1,35 @@
+# Node Drain and Reboot Workflow Schema (BR-WORKFLOW-004)
+# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+metadata:
+  workflowId: node-drain-reboot-v1
+  version: "1.0.0"
+  description:
+    what: "Drains and reboots a node that is in NotReady state"
+    whenToUse: "When a node becomes NotReady and requires a reboot to recover"
+    whenNotToUse: "When the node issue is caused by network partitioning"
+    preconditions: "Node exists and is accessible via kubectl"
+
+actionType: DrainNode
+
+labels:
+  signalType: NodeNotReady
+  severity: [critical]
+  environment: [production, staging, test]
+  component: node
+  priority: P0
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NODE_NAME
+    type: string
+    required: true
+    description: "Name of the node to drain and reboot"
+  - name: DRAIN_TIMEOUT_SECONDS
+    type: integer
+    required: false
+    description: "Timeout for drain operation in seconds"
+    default: 120
+    minimum: 30
+    maximum: 600

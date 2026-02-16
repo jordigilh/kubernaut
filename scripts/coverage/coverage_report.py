@@ -85,6 +85,15 @@ GO_SERVICE_CONFIG = {
         "unit_exclude": r"/(audit|status)/",
         "int_include": r"/(audit|status)/",
     },
+    "effectivenessmonitor": {
+        "pkg_pattern": "/pkg/effectivenessmonitor/",
+        "controller_pattern": "/internal/controller/effectivenessmonitor/",
+        # Unit-testable: config, health scoring, alert scoring, metric comparison,
+        # hash computation, validity window, audit event construction, phase logic, types
+        # Unit-excluded (I/O-dependent): clients that talk to Prom/AM/DS, status updaters
+        "unit_exclude": r"/(client|status|reconciler)/",
+        "int_include": r"/(client|status|reconciler)/",
+    },
 }
 
 # Python holmesgpt-api: module patterns for unit vs integration
@@ -752,8 +761,8 @@ def output_markdown(services: list[ServiceCoverage]) -> str:
         "",
         "### 🎯 Quality Targets",
         "",
-        "- Unit-Testable: ≥70%",
-        "- Integration: ≥60%",
+        "- Unit-Testable: ≥80%",
+        "- Integration-Testable: ≥80%",
         "- All Tiers: ≥80%",
         "",
         "---",
@@ -787,8 +796,8 @@ def output_table(services: list[ServiceCoverage]) -> str:
         "   • All Tiers: Line-by-line merged coverage where ANY tier covering a line counts (true total coverage)",
         "",
         "🎯 QUALITY TARGETS:",
-        "   - Unit-Testable: ≥70% (pure logic should be well-tested)",
-        "   - Integration: ≥60% (handlers/servers should have good integration coverage)",
+        "   - Unit-Testable: ≥80% (TDD: all business logic must be tested)",
+        "   - Integration-Testable: ≥80% (TDD: all I/O code paths must be tested)",
         "   - All Tiers: ≥80% (overall coverage goal)",
         "",
         "📈 Run 'make test-tier-unit test-tier-integration test-tier-e2e' to update all coverage files.",

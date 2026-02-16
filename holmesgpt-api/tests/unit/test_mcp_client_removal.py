@@ -207,12 +207,12 @@ class TestWorkflowCatalogToolsetIntegration:
         """Path to recovery package (refactored from recovery.py)"""
         return src_path / "extensions" / "recovery"
 
-    def test_recovery_py_uses_register_workflow_catalog_toolset(self, recovery_py_path):
+    def test_recovery_py_uses_register_workflow_discovery_toolset(self, recovery_py_path):
         """
-        Verify recovery package uses register_workflow_catalog_toolset
+        Verify recovery package uses register_workflow_discovery_toolset
 
-        BEHAVIOR: recovery package should use register_workflow_catalog_toolset
-        CORRECTNESS: This is the correct integration pattern per DD-WORKFLOW-002 v2.4
+        BEHAVIOR: recovery package should use register_workflow_discovery_toolset
+        CORRECTNESS: This is the correct integration pattern per DD-HAPI-017
 
         TDD Phase: GREEN - This test should PASS (already implemented)
 
@@ -226,12 +226,12 @@ class TestWorkflowCatalogToolsetIntegration:
             with open(py_file, "r") as f:
                 content = f.read()
 
-            if "register_workflow_catalog_toolset" in content:
+            if "register_workflow_discovery_toolset" in content:
                 found = True
                 break
 
         assert found, \
-            "DD-WORKFLOW-002 v2.4: recovery package should use register_workflow_catalog_toolset"
+            "DD-HAPI-017: recovery package should use register_workflow_discovery_toolset"
 
 
 if __name__ == "__main__":

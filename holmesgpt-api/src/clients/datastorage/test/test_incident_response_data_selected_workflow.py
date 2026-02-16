@@ -37,6 +37,7 @@ class TestIncidentResponseDataSelectedWorkflow(unittest.TestCase):
         if include_optional:
             return IncidentResponseDataSelectedWorkflow(
                 workflow_id = '',
+                action_type = 'ScaleReplicas',
                 container_image = '',
                 confidence = 0.0,
                 parameters = { }

@@ -20,7 +20,7 @@ HolmesGPT API Models
 
 from .recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
 from .incident_models import IncidentRequest, IncidentResponse, AlternativeWorkflow
-# DD-017: PostExec models deferred to V1.1 - Effectiveness Monitor not in V1.0
+# DD-017: PostExec models deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the consumer
 # from .postexec_models import PostExecRequest, PostExecResponse, EffectivenessAssessment
 
 __all__ = [
@@ -34,7 +34,7 @@ __all__ = [
     "RecoveryResponse",
     "RecoveryStrategy",
 
-    # DD-017: Post-Execution models deferred to V1.1
+    # DD-017: PostExec models deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the consumer
     # "PostExecRequest",
     # "PostExecResponse",
     # "EffectivenessAssessment",

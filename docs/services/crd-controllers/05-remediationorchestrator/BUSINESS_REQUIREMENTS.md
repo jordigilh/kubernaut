@@ -418,6 +418,41 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ---
 
+### Category 5: Operational Awareness
+
+#### BR-ORCH-046: Policy-Driven Operational Awareness Notification
+
+**Description**: RemediationOrchestrator MUST evaluate a configurable Rego policy after SignalProcessing completes (at the `processing → analyzing` transition) to determine whether operators should be proactively notified that a remediation is underway, using normalized signal data and remediation history.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: During early adoption, SREs need real-time awareness of automated remediation activity. Beyond early adoption, policy-driven notifications detect operational patterns (remediation loops, critical production incidents) that require attention even when individual remediations succeed. No existing notification mechanism covers the window between signal classification and workflow outcome.
+
+**Implementation**:
+- Evaluate Rego policy at `processing → analyzing` transition
+- Policy input: normalized severity, environment, priority, fingerprint, remediation history
+- Default rules: critical/high + production, frequency ≥ 2/1h, first-time remediation
+- Create `NotificationRequest` with `type=operational-awareness` when policy returns `notify: true`
+- Idempotency via `operationalNotificationSent` status flag
+- Non-blocking: policy failure does not delay remediation pipeline
+
+**Acceptance Criteria**:
+- ✅ Rego policy evaluated after SP completion, before AA creation
+- ✅ Default policy covers critical/high production, frequency escalation, first-time
+- ✅ Configurable via ConfigMap (hot-reloadable)
+- ✅ Non-blocking: policy errors logged but don't stop remediation
+- ✅ Idempotent: one notification per RR
+
+**Test Coverage**:
+- Unit: Policy evaluation, history computation, idempotency
+- Integration: SP completion → policy → NotificationRequest flow
+- E2E: Full pipeline with operational notification (file sink)
+
+**Full BR**: [BR-ORCH-046: Policy-Driven Operational Awareness Notification](../../../requirements/BR-ORCH-046-operational-awareness-notification.md)
+**Related BRs**: BR-ORCH-042 (field index reuse), BR-ORCH-001 (notification pattern), DD-AIANALYSIS-001 (Rego pattern)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -452,6 +487,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | 2026-02-12 | Added BR-ORCH-046 (Policy-Driven Operational Awareness Notification) - Rego-based notification at SP completion |
 | 1.4 | 2025-12-02 | Added BR-ORCH-001 (Approval Notification Creation) - formalized from existing usage; Deprecated BR-ORCH-015 to BR-ORCH-021 as implementation details |
 | 1.3 | 2025-12-01 | Added BR-ORCH-032/033/034 for resource lock deduplication handling (DD-RO-001) |
 | 1.2 | 2025-12-01 | **BREAKING**: BR-ORCH-025 updated - RO does NOT call Data Storage API. HolmesGPT-API resolves workflow_id → containerImage during MCP search. RO passes through from AIAnalysis.status. Aligned with DD-CONTRACT-001 v1.2 (authoritative). |
@@ -460,8 +496,8 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ---
 
-**Document Version**: 1.4
-**Last Updated**: December 2, 2025
+**Document Version**: 1.5
+**Last Updated**: February 12, 2026
 **Maintained By**: Kubernaut Architecture Team
 **Status**: In Development
 

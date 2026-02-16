@@ -1,63 +1,39 @@
-# Kubernaut Workflow Schema v1.0
+# Test Intentional Failure Job Workflow Schema (BR-WORKFLOW-004)
 # Authority: ADR-043
-# See: docs/architecture/decisions/ADR-043-workflow-schema-definition-standard.md
-#
-# Test Intentional Failure Job Workflow - E2E Testing
-# This workflow validates failure handling in the WorkflowExecution controller's Job backend
-
-apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-
-# ============================================
-# METADATA (Required)
-# ============================================
+# E2E Testing: Validates failure handling in WorkflowExecution controller's Job backend
 metadata:
-  workflow_id: test-job-intentional-failure
-  version: "v1.0.0"
-  name: "Test Intentional Failure Job Workflow"
-  description: "Intentionally failing workflow using Kubernetes Job backend for E2E testing of failure handling"
+  workflowId: test-job-intentional-failure
+  version: "1.0.0"
+  description:
+    what: "Intentionally failing workflow using Kubernetes Job backend for E2E testing"
+    whenToUse: "For E2E validation of failure detection and error propagation"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Kubernetes cluster with Job support"
 
-# ============================================
-# LABELS (Required - 6 mandatory + optional)
-# DD-WORKFLOW-001 v1.3
-# ============================================
+actionType: RestartPod
+
 labels:
-  # Mandatory labels (all 6 required)
-  kubernaut.ai/signal-type: "test"
-  kubernaut.ai/severity: "low"
-  kubernaut.ai/category: "testing"
-  kubernaut.ai/resource-kind: "deployment"
-  kubernaut.ai/intervention-type: "non-invasive"
-  kubernaut.ai/workflow-type: "test"
+  signalType: test
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
 
-  # Optional custom labels
-  kubernaut.ai/test-category: "e2e"
-  kubernaut.ai/validation-type: "failure-path"
-  kubernaut.ai/execution-engine: "job"
+customLabels:
+  test-category: e2e
+  validation-type: failure-path
 
-# ============================================
-# EXECUTION (BR-WE-014: Kubernetes Job backend)
-# ============================================
 execution:
-  engine: "job"
+  engine: job
 
-# ============================================
-# PARAMETERS (Required)
-# ============================================
 parameters:
-  - name: "TARGET_RESOURCE"
-    type: "string"
+  - name: TARGET_RESOURCE
+    type: string
     required: true
     description: "Target resource (test purposes only)"
     default: "test/deployment/failing"
-
-  - name: "FAILURE_MESSAGE"
-    type: "string"
+  - name: FAILURE_MESSAGE
+    type: string
     required: false
     description: "Error message to include in failure output"
     default: "Intentional test failure"
-
-# ============================================
-# ROLLBACK PARAMETERS (Optional)
-# ============================================
-# Not applicable for test workflow

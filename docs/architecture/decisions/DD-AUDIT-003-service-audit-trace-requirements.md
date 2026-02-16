@@ -297,7 +297,8 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
     "selected_workflow_ref": {
       "name": "restart-pod-workflow",
       "version": "v1.2.3",
-      "namespace": "kubernaut-system"
+      "namespace": "kubernaut-system",
+      "action_type": "RestartPod"
     },
     "selection_reason": "Best match for OOMKill incident",
     "alternatives_considered": 3
@@ -360,7 +361,11 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | Event Type | Description | Priority |
 |------------|-------------|----------|
 | `datastorage.workflow.created` | Workflow added to catalog (business logic) | P0 |
-| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable) | P0 |
+| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable, deprecate) | P0 |
+| `workflow.catalog.actions_listed` | Step 1: Action types returned for signal context (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.workflows_listed` | Step 2: Workflows returned for selected action type (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.workflow_retrieved` | Step 3: Single workflow parameter schema retrieved (DD-WORKFLOW-014 v3.0) | P0 |
+| `workflow.catalog.selection_validated` | Post-selection: HAPI validation re-query result (DD-WORKFLOW-014 v3.0) | P0 |
 
 **Note**: Data Storage **NO LONGER** audits meta-operations (audit writes, DLQ fallback) per DD-AUDIT-002 V2.0.1 (December 14, 2025). These were redundant because:
 - **Successful writes**: Event in DB **IS** proof of success
@@ -369,7 +374,8 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 **What Data Storage DOES Audit**: Workflow catalog operations involve state changes and business decisions:
 - Workflow creation (sets `status="active"`, marks as latest version)
-- Workflow updates (mutable field changes, status transitions, disable operations)
+- Workflow updates (mutable field changes, status transitions, disable/deprecate operations)
+- Workflow discovery (three-step protocol queries per DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016)
 
 **Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs (audit business operations, not CRUD operations)
 
@@ -386,18 +392,24 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 **Rationale**:
 - ✅ **Business-Critical**: Tracks remediation effectiveness (learning loop)
 - ✅ **Compliance**: Effectiveness metrics require audit trail (SOC 2)
-- ✅ **State Changes**: Updates effectiveness scores, triggers retraining
+- ✅ **State Changes**: Emits assessment data as audit events (DD-017 v2.0)
 - ✅ **Debugging Value**: Critical for understanding AI learning
 - ✅ **ML Observability**: Model performance tracking
 
-**Audit Events**:
+**Audit Events** (per ADR-EM-001 v1.3, component-level architecture):
 
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `effectiveness.assessment.started` | Effectiveness assessment started | P0 |
-| `effectiveness.score.calculated` | Effectiveness score calculated | P0 |
-| `effectiveness.learning.triggered` | Learning feedback triggered | P0 |
-| `effectiveness.crd.updated` | Effectiveness CRD updated | P1 |
+| Event Type | Description | Typed Sub-Objects | Scope | Priority |
+|------------|-------------|-------------------|-------|----------|
+| `effectiveness.health.assessed` | Health component assessment (pod status, readiness, restarts) | `health_checks` (pod_running, readiness_pass, restart_delta, crash_loops, oom_killed, pending_count) | V1.0 (Level 1) | P0 |
+| `effectiveness.alert.assessed` | Alert component assessment (signal resolution) | `alert_resolution` (alert_resolved, active_count, resolution_time_seconds) | V1.0 (Level 1) | P0 |
+| `effectiveness.metrics.assessed` | Metrics component assessment (before/after comparison) | `metric_deltas` (cpu_before/after, memory_before/after, latency_p95_before/after_ms, error_rate_before/after) | V1.0 (Level 1) | P0 |
+| `effectiveness.hash.computed` | Pre/post remediation spec hash comparison (DD-EM-002) | pre_remediation_spec_hash, post_remediation_spec_hash, hash_match | V1.0 (Level 1) | P0 |
+| `effectiveness.assessment.completed` | Lifecycle marker — assessment finished | reason ("full", "partial", "expired") | V1.0 (Level 1) | P0 |
+| `effectiveness.assessment.started` | Effectiveness assessment started | — | V1.0 (Level 1) | P0 |
+| `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | — | V1.1 (Level 2) | P0 |
+| `effectiveness.crd.updated` | Effectiveness CRD updated | — | V1.1 (Level 2) | P1 |
+
+**Note**: EM Level 1 (V1.0) emits **component-level** audit events (per ADR-EM-001 v1.3) rather than a single monolithic event. Each component event carries typed sub-objects in the `EffectivenessAssessmentAuditPayload` (ogen-generated). The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-HAPI-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
 
 **Industry Precedent**: MLflow tracking, Weights & Biases audit logs, Kubeflow Pipelines logs
 

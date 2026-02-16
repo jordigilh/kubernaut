@@ -36,12 +36,13 @@ type MandatoryLabels struct {
 	// SignalType is the signal type this workflow handles (REQUIRED)
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
 	// Source: K8s Event Reason (auto-populated by Signal Processing)
-	SignalType string `json:"signal_type" validate:"required"`
+	SignalType string `json:"signalType" validate:"required"`
 
-	// Severity is the severity level this workflow is designed for (REQUIRED)
+	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
 	// Source: Alert/Event (auto-populated by Signal Processing)
-	Severity string `json:"severity" validate:"required,oneof=critical high medium low"`
+	// DD-WORKFLOW-001 v2.7: Always stored as JSONB array. No wildcard.
+	Severity []string `json:"severity" validate:"required,min=1"`
 
 	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
 	// Examples: "pod", "deployment", "node", "service", "pvc"
@@ -195,12 +196,85 @@ type DetectedLabels struct {
 }
 
 // ========================================
+// STRUCTURED DESCRIPTION (BR-WORKFLOW-004)
+// ========================================
+// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Stored as JSONB in the description column (migration 026)
+// Matches action_type_taxonomy.description format (DD-WORKFLOW-016)
+
+// StructuredDescription provides structured workflow information for LLM and operators.
+// This is stored as JSONB in the description column of remediation_workflow_catalog.
+type StructuredDescription struct {
+	// What describes what this workflow concretely does. One sentence. (REQUIRED)
+	What string `json:"what" validate:"required"`
+
+	// WhenToUse describes root cause conditions under which this workflow is appropriate. (REQUIRED)
+	WhenToUse string `json:"whenToUse" validate:"required"`
+
+	// WhenNotToUse describes specific exclusion conditions. (OPTIONAL)
+	WhenNotToUse string `json:"whenNotToUse,omitempty"`
+
+	// Preconditions describes conditions that must be verified through investigation. (OPTIONAL)
+	Preconditions string `json:"preconditions,omitempty"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for StructuredDescription
+// Handles both formats:
+// - string: {"description": "some text"} -> StructuredDescription{What: "some text"}
+// - object: {"description": {"what": "...", "whenToUse": "..."}} -> StructuredDescription{...}
+// This enables backward compatibility with API clients that send plain string descriptions
+func (d *StructuredDescription) UnmarshalJSON(data []byte) error {
+	// Try as string first (backward compatibility)
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		d.What = s
+		return nil
+	}
+
+	// Try as structured object
+	type Alias StructuredDescription // Prevent infinite recursion
+	var a Alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("description must be a string or structured object: %w", err)
+	}
+	*d = StructuredDescription(a)
+	return nil
+}
+
+// Scan implements sql.Scanner for StructuredDescription
+// Allows scanning JSONB column data into structured StructuredDescription type
+func (d *StructuredDescription) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("failed to scan StructuredDescription: expected []byte, got %T", value)
+	}
+
+	return json.Unmarshal(bytes, d)
+}
+
+// Value implements driver.Valuer for StructuredDescription
+// Allows writing structured StructuredDescription type to JSONB column
+func (d StructuredDescription) Value() (driver.Value, error) {
+	return json.Marshal(d)
+}
+
+// String returns a human-readable flat text representation of the description
+func (d StructuredDescription) String() string {
+	return d.What
+}
+
+// ========================================
 // HELPER FUNCTIONS
 // ========================================
 
 // NewMandatoryLabels creates a new MandatoryLabels instance
 // DD-WORKFLOW-001 v2.5: environment is []string (workflow declares target environments)
-func NewMandatoryLabels(signalType, severity, component string, environment []string, priority string) *MandatoryLabels {
+// DD-WORKFLOW-001 v2.7: severity is []string (always array, no wildcard)
+func NewMandatoryLabels(signalType string, severity []string, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
 		SignalType:  signalType,
 		Severity:    severity,

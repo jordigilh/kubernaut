@@ -58,7 +58,6 @@ class TestWorkflowSearchFilters(unittest.TestCase):
             )
         else:
             return WorkflowSearchFilters(
-                signal_type = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
                 environment = 'production',

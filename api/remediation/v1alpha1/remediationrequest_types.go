@@ -465,6 +465,21 @@ type RemediationRequestStatus struct {
 	// +optional
 	NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
 
+	// EffectivenessAssessmentRef tracks the EffectivenessAssessment CRD created for this remediation.
+	// Set by the RO after creating the EA CRD on terminal phase transitions.
+	// Reference: ADR-EM-001
+	// +optional
+	EffectivenessAssessmentRef *corev1.ObjectReference `json:"effectivenessAssessmentRef,omitempty"`
+
+	// PreRemediationSpecHash is the canonical spec hash of the target resource captured
+	// by the RO BEFORE launching the remediation workflow. This enables the EM to compare
+	// pre vs post-remediation state without querying DataStorage audit events.
+	// Set once by the RO during the transition to WorkflowExecution phase; immutable after.
+	// Reference: ADR-EM-001, DD-EM-002
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="preRemediationSpecHash is immutable once set"
+	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
+
 	// Approval notification tracking (BR-ORCH-001)
 	// Prevents duplicate notifications when AIAnalysis requires approval
 	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`

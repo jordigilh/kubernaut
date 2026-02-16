@@ -1,0 +1,42 @@
+# DataStorage auth middleware RBAC (DD-AUTH-014)
+# Extracted from: deploy/data-storage/service-rbac.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  namespace: kubernaut-system
+  labels:
+    app: data-storage-service
+    component: auth
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: kubernaut-system

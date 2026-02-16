@@ -28,7 +28,7 @@ except ImportError:
 
 class WorkflowDisableRequest(BaseModel):
     """
-    Convenience request to disable a workflow
+    Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)
     """ # noqa: E501
     reason: Optional[StrictStr] = Field(default=None, description="Why the workflow is being disabled")
     updated_by: Optional[StrictStr] = Field(default=None, description="Who is disabling the workflow")

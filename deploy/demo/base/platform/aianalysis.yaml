@@ -1,0 +1,245 @@
+# AIAnalysis Controller
+# Extracted from: test/infrastructure/aianalysis_e2e.go
+# Stripped: coverage volumes, NodePort
+---
+# Rego approval gate policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-policies
+  namespace: kubernaut-system
+data:
+  approval.rego: |
+    package aianalysis.approval
+    import rego.v1
+
+    default require_approval := false
+    default reason := "Auto-approved"
+
+    require_approval if {
+        input.environment == "production"
+    }
+
+    require_approval if {
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number >= 3
+    }
+
+    require_approval if {
+        input.environment == "production"
+        count(input.warnings) > 0
+    }
+
+    require_approval if {
+        input.environment == "production"
+        count(input.failed_detections) > 0
+    }
+
+    reason := msg if {
+        require_approval
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number >= 3
+        msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
+    }
+
+    reason := "Data quality warnings in production environment" if {
+        require_approval
+        input.environment == "production"
+        count(input.warnings) > 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Data quality issues detected in production environment" if {
+        require_approval
+        input.environment == "production"
+        count(input.failed_detections) > 0
+        count(input.warnings) == 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Production environment requires manual approval" if {
+        require_approval
+        input.environment == "production"
+        count(input.warnings) == 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Production environment requires manual approval" if {
+        require_approval
+        input.environment == "production"
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number < 3
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      read_timeout: "30s"
+      write_timeout: "30s"
+    logging:
+      level: "info"
+      format: "json"
+    holmesgpt:
+      url: "http://holmesgpt-api:8080"
+      timeout: "60s"
+    datastorage:
+      url: "http://data-storage-service:8080"
+      timeout: "60s"
+    rego:
+      policy_path: "/etc/aianalysis/policies/approval.rego"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+  automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aianalysis-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aianalysis-controller
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-client
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["holmesgpt-api"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-holmesgpt-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-datastorage-access
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: kubernaut-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aianalysis-controller
+  template:
+    metadata:
+      labels:
+        app: aianalysis-controller
+    spec:
+      serviceAccountName: aianalysis-controller
+      containers:
+        - name: aianalysis
+          image: quay.io/kubernaut-ai/aianalysis:demo-v1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            - name: CONFIG_PATH
+              value: /etc/aianalysis/config.yaml
+            - name: REGO_POLICY_PATH
+              value: /etc/aianalysis/policies/approval.rego
+            - name: HOLMESGPT_API_URL
+              value: http://holmesgpt-api:8080
+            - name: DATASTORAGE_URL
+              value: http://data-storage-service:8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aianalysis
+              readOnly: true
+            - name: rego-policies
+              mountPath: /etc/aianalysis/policies
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: aianalysis-config
+        - name: rego-policies
+          configMap:
+            name: aianalysis-policies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: aianalysis-controller
+  ports:
+    - name: api
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+    - name: health
+      port: 8081
+      targetPort: 8081

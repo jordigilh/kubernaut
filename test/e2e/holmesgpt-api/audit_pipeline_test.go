@@ -81,6 +81,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-045",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -161,6 +166,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-046",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -238,6 +248,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-047",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -315,6 +330,11 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-048",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================

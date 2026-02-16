@@ -18,6 +18,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
@@ -39,127 +42,123 @@ import (
 // WORKFLOW CATALOG HANDLERS
 // ========================================
 // Business Requirements:
-// - BR-STORAGE-013: Semantic search for remediation workflows
 // - BR-STORAGE-014: Workflow catalog management
+// - BR-STORAGE-039: Workflow Catalog Retrieval API
 //
 // API Endpoints:
 // - POST /api/v1/workflows - Create a new workflow
-// - POST /api/v1/workflows/search - Semantic search for workflows
 // - GET /api/v1/workflows - List workflows with filters
-// - GET /api/v1/workflows/{id}/{version} - Get specific workflow version
-// - GET /api/v1/workflows/{id}/latest - Get latest workflow version
+// - GET /api/v1/workflows/{workflowID} - Get workflow by ID (with optional security gate)
+// - PATCH /api/v1/workflows/{workflowID} - Update mutable fields
+// - PATCH /api/v1/workflows/{workflowID}/disable - Soft-delete workflow
+//
+// Three-Step Discovery Protocol (DD-HAPI-017):
+// - GET /api/v1/workflows/actions - Step 1: List available action types
+// - GET /api/v1/workflows/actions/{action_type} - Step 2: List workflows by action type
+// - GET /api/v1/workflows/{workflowID} - Step 3: Get workflow with security gate
 
 // HandleCreateWorkflow handles POST /api/v1/workflows
-// BR-STORAGE-014: Workflow catalog management
-// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
+// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+// BR-WORKFLOW-017-001: Accept only containerImage, pull OCI image, extract schema, populate catalog
 func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Parse request body
-	var workflow models.RemediationWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
+	// Step 1: Parse request body — expect only {"container_image": "..."}
+	var req struct {
+		ContainerImage string `json:"container_image"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error(err, "Failed to decode workflow create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
 		return
 	}
 
-	// Validate required fields
-	if err := h.validateCreateWorkflowRequest(&workflow); err != nil {
-		h.logger.Error(err, "Invalid workflow create request",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request", err.Error(), h.logger)
+	// Step 2: Validate containerImage is present
+	if req.ContainerImage == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"container_image is required", h.logger)
 		return
 	}
 
-	// ADR-043: Extract parameter schema from workflow-schema.yaml content
-	// The content field IS the workflow-schema.yaml (single source of truth for parameters).
-	// DataStorage parses it and stores extracted parameters in the parameters JSONB column.
-	// BR-HAPI-191: Parameters are used by HAPI for validation and by MCP tool results for LLM guidance.
-	schemaParser := schema.NewParser()
-	parsedSchema, err := schemaParser.ParseAndValidate(workflow.Content)
-	if err != nil {
-		h.logger.Error(err, "Content is not a valid workflow-schema.yaml (ADR-043)",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Content must be valid workflow-schema.yaml per ADR-043: %v", err), h.logger)
-		return
-	}
-
-	// Extract parameters and wrap in the format expected by HAPI's WorkflowResponseValidator
-	// Format: {"schema": {"parameters": [{"name": "PARAM", "type": "string", ...}]}}
-	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
-	if err != nil {
-		h.logger.Error(err, "Failed to extract parameters from workflow schema",
-			"workflow_name", workflow.WorkflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Failed to extract parameters: %v", err), h.logger)
-		return
-	}
-	// Wrap in {"schema": {"parameters": [...]}} for HAPI validator compatibility
-	wrappedParams := map[string]interface{}{
-		"schema": map[string]json.RawMessage{
-			"parameters": extractedParams,
-		},
-	}
-	wrappedJSON, err := json.Marshal(wrappedParams)
-	if err != nil {
-		h.logger.Error(err, "Failed to marshal wrapped parameters")
+	// Step 3: Validate schema extractor is configured
+	if h.schemaExtractor == nil {
+		h.logger.Error(fmt.Errorf("schemaExtractor not configured"), "Handler misconfiguration")
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to process parameters", h.logger)
+			"OCI schema extraction not configured", h.logger)
 		return
 	}
-	rawMsg := json.RawMessage(wrappedJSON)
-	workflow.Parameters = &rawMsg
 
-	// V1.0: Embedding generation removed (label-only search)
-	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
-
-	// Set default status if not provided
-	if workflow.Status == "" {
-		workflow.Status = "active"
+	// Step 4: Pull OCI image and extract /workflow-schema.yaml (DD-WORKFLOW-017)
+	result, err := h.schemaExtractor.ExtractFromImage(r.Context(), req.ContainerImage)
+	if err != nil {
+		h.classifyExtractionError(w, err, req.ContainerImage)
+		return
 	}
 
-	// DD-WORKFLOW-002 v3.0: New workflows are always the latest version
-	// The repository will handle marking previous versions as not latest
-	workflow.IsLatestVersion = true
+	// Step 5: Build RemediationWorkflow from extracted schema
+	schemaParser := schema.NewParser()
+	workflow, err := h.buildWorkflowFromSchema(schemaParser, result, req.ContainerImage)
+	if err != nil {
+		h.logger.Error(err, "Failed to build workflow from extracted schema",
+			"container_image", req.ContainerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to process extracted schema", h.logger)
+		return
+	}
 
-	// Create workflow in repository
-	if err := h.workflowRepo.Create(r.Context(), &workflow); err != nil {
-		// DS-BUG-001: Check for PostgreSQL unique constraint violation (duplicate workflow)
-		// RFC 9110 Section 15.5.10: Return 409 Conflict for duplicate resources
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			// Duplicate workflow detected - this is an expected condition, not a server error
-			h.logger.Info("Workflow creation skipped - already exists",
+	// Step 5b: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
+	// Explicit validation for clean 400 instead of FK constraint 500.
+	if h.actionTypeValidator != nil {
+		exists, err := h.actionTypeValidator.ActionTypeExists(r.Context(), workflow.ActionType)
+		if err != nil {
+			h.logger.Error(err, "Failed to validate action_type against taxonomy",
+				"action_type", workflow.ActionType,
+			)
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+				"Failed to validate action type", h.logger)
+			return
+		}
+		if !exists {
+			detail := fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+				detail, h.logger)
+			return
+		}
+	}
+
+	// Step 6: Create workflow in repository
+	if h.workflowRepo != nil {
+		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
+			// DS-BUG-001: Check for PostgreSQL unique constraint violation (duplicate workflow)
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				h.logger.Info("Workflow creation skipped - already exists",
+					"workflow_name", workflow.WorkflowName,
+					"version", workflow.Version,
+				)
+				detail := fmt.Sprintf("Workflow '%s' version '%s' already exists", workflow.WorkflowName, workflow.Version)
+				response.WriteRFC7807Error(w, http.StatusConflict, "conflict",
+					"Workflow Already Exists", detail, h.logger)
+				return
+			}
+
+			h.logger.Error(err, "Failed to create workflow",
 				"workflow_name", workflow.WorkflowName,
 				"version", workflow.Version,
 			)
-			detail := fmt.Sprintf("Workflow '%s' version '%s' already exists", workflow.WorkflowName, workflow.Version)
-			response.WriteRFC7807Error(w, http.StatusConflict, "conflict",
-				"Workflow Already Exists", detail, h.logger)
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+				"Failed to create workflow", h.logger)
 			return
 		}
-
-		// Other database errors remain 500 Internal Server Error
-		h.logger.Error(err, "Failed to create workflow",
-			"workflow_name", workflow.WorkflowName,
-			"version", workflow.Version,
-		)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to create workflow", h.logger)
-		return
 	}
 
-	// BR-STORAGE-183: Audit workflow creation (business logic operation)
-	// DD-AUDIT-002 V2.0.1: Workflow catalog operations are business logic (not pure CRUD)
+	// Step 7: Audit workflow creation (async, best-effort)
 	if h.auditStore != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(&workflow)
+			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(workflow)
 			if err != nil {
 				h.logger.Error(err, "Failed to create workflow creation audit event",
 					"workflow_id", workflow.WorkflowID,
@@ -178,10 +177,12 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log success
-	h.logger.Info("Workflow created successfully",
+	h.logger.Info("Workflow created successfully from OCI image",
 		"workflow_id", workflow.WorkflowID,
 		"workflow_name", workflow.WorkflowName,
 		"version", workflow.Version,
+		"container_image", req.ContainerImage,
+		"container_digest", workflow.ContainerDigest,
 	)
 
 	// Return created workflow
@@ -192,110 +193,123 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// validateCreateWorkflowRequest validates the workflow create request
-func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWorkflow) error {
-	if workflow.WorkflowName == "" {
-		return fmt.Errorf("workflow_name is required")
+// classifyExtractionError maps OCI extraction errors to appropriate HTTP status codes.
+// DD-WORKFLOW-017 validation order:
+// - Image pull failure → 502 Bad Gateway
+// - /workflow-schema.yaml not found → 422 Unprocessable Entity
+// - Schema validation failure → 400 Bad Request
+func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, containerImage string) {
+	errMsg := err.Error()
+
+	// Image pull failure: errors from the puller contain "pull image"
+	if strings.Contains(errMsg, "pull image") {
+		h.logger.Error(err, "OCI image pull failed",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadGateway, "image-pull-failed", "Image Pull Failed",
+			fmt.Sprintf("Failed to pull OCI image %q: %v", containerImage, err), h.logger)
+		return
 	}
-	if workflow.Version == "" {
-		return fmt.Errorf("version is required")
+
+	// Schema not found: the extractor returns "not found in image layers"
+	if strings.Contains(errMsg, "not found in image layers") {
+		h.logger.Error(err, "workflow-schema.yaml not found in OCI image",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusUnprocessableEntity, "schema-not-found", "Schema Not Found",
+			fmt.Sprintf("/workflow-schema.yaml not found in OCI image %q", containerImage), h.logger)
+		return
 	}
-	if workflow.Name == "" {
-		return fmt.Errorf("name is required")
+
+	// Schema validation failure: errors from ParseAndValidate contain "validate workflow-schema.yaml"
+	if strings.Contains(errMsg, "validate workflow-schema.yaml") {
+		h.logger.Error(err, "Invalid workflow-schema.yaml in OCI image",
+			"container_image", containerImage,
+		)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Schema Validation Error",
+			fmt.Sprintf("Invalid workflow-schema.yaml in image %q: %v", containerImage, err), h.logger)
+		return
 	}
-	if workflow.Description == "" {
-		return fmt.Errorf("description is required")
-	}
-	if workflow.Content == "" {
-		return fmt.Errorf("content is required")
-	}
-	// V1.0: MandatoryLabels is a struct (not pointer), validate required fields
-	if workflow.Labels.SignalType == "" || workflow.Labels.Severity == "" || workflow.Labels.Component == "" {
-		return fmt.Errorf("labels are required (signal_type, severity, component, environment, priority)")
-	}
-	return nil
+
+	// Fallback: unknown extraction error
+	h.logger.Error(err, "Unexpected error during OCI schema extraction",
+		"container_image", containerImage,
+	)
+	response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+		fmt.Sprintf("Schema extraction failed: %v", err), h.logger)
 }
 
-// HandleWorkflowSearch handles POST /api/v1/workflows/search
-// BR-STORAGE-013: Label-based workflow search (V1.0 - embeddings removed)
-// BR-AUDIT-023: Audit event generation for workflow search
-// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
-func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now()
+// buildWorkflowFromSchema populates a RemediationWorkflow from the extracted OCI schema.
+// DD-WORKFLOW-017: All catalog fields are derived from the schema; nothing from the API request.
+func (h *Handler) buildWorkflowFromSchema(
+	schemaParser *schema.Parser,
+	result *oci.ExtractionResult,
+	containerImage string,
+) (*models.RemediationWorkflow, error) {
+	parsedSchema := result.Schema
 
-	// Parse request body
-	var searchReq models.WorkflowSearchRequest
-	if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
-		h.logger.Error(err, "Failed to decode workflow search request")
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
-		return
-	}
-
-	// Validate request (filters are required for label-only search)
-	if err := h.validateWorkflowSearchRequest(&searchReq); err != nil {
-		h.logger.Error(err, "Invalid workflow search request",
-			"filters", searchReq.Filters,
-		)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request", err.Error(), h.logger)
-		return
-	}
-
-	// Execute label-only search (NO embedding generation)
-	// V1.0: Pure SQL label matching with wildcard weighting
-	searchResult, err := h.workflowRepo.SearchByLabels(r.Context(), &searchReq)
+	// Extract parameters and wrap for HAPI validator compatibility
+	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
 	if err != nil {
-		h.logger.Error(err, "Failed to search workflows",
-			"filters", searchReq.Filters,
-			"top_k", searchReq.TopK,
-		)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to search workflows", h.logger)
-		return
+		return nil, fmt.Errorf("extract parameters: %w", err)
+	}
+	wrappedParams := map[string]interface{}{
+		"schema": map[string]json.RawMessage{
+			"parameters": extractedParams,
+		},
+	}
+	wrappedJSON, err := json.Marshal(wrappedParams)
+	if err != nil {
+		return nil, fmt.Errorf("marshal parameters: %w", err)
+	}
+	rawParams := json.RawMessage(wrappedJSON)
+
+	// Extract labels as JSONB
+	labelsJSON, err := schemaParser.ExtractLabels(parsedSchema)
+	if err != nil {
+		return nil, fmt.Errorf("extract labels: %w", err)
 	}
 
-	// Calculate search duration
-	duration := time.Since(startTime)
-
-	// BR-AUDIT-023: Generate and store audit event asynchronously (non-blocking per ADR-038)
-	// Use background context because the request context is cancelled when the response is sent
-	if h.auditStore != nil {
-		go func() {
-			auditEvent, err := dsaudit.NewWorkflowSearchAuditEvent(&searchReq, searchResult, duration)
-			if err != nil {
-				h.logger.Error(err, "Failed to create workflow search audit event",
-					"filters", searchReq.Filters,
-				)
-				return
-			}
-
-			// Use a background context with a timeout for async audit storage
-			// The request context is cancelled when the response is sent
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-				h.logger.Error(err, "Failed to store workflow search audit event",
-					"filters", searchReq.Filters,
-				)
-			}
-		}()
+	// Convert WorkflowDescription (schema) to StructuredDescription (DB model)
+	desc := models.StructuredDescription{
+		What:          parsedSchema.Metadata.Description.What,
+		WhenToUse:     parsedSchema.Metadata.Description.WhenToUse,
+		WhenNotToUse:  parsedSchema.Metadata.Description.WhenNotToUse,
+		Preconditions: parsedSchema.Metadata.Description.Preconditions,
 	}
 
-	// Log success
-	h.logger.Info("Workflow search completed",
-		"filters", searchReq.Filters,
-		"results_count", len(searchResult.Workflows),
-		"top_k", searchReq.TopK,
-		"duration_ms", duration.Milliseconds(),
-	)
+	// Convert execution engine string to ExecutionEngine type
+	execEngine := models.ExecutionEngine(schemaParser.ExtractExecutionEngine(parsedSchema))
 
-	// Return results
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(searchResult); err != nil {
-		h.logger.Error(err, "Failed to encode workflow search response")
+	// ContainerImage and ContainerDigest are *string in the DB model
+	imgRef := containerImage
+	digest := result.Digest
+
+	// Build the workflow from schema fields
+	workflow := &models.RemediationWorkflow{
+		WorkflowName:    parsedSchema.Metadata.WorkflowID,
+		Version:         parsedSchema.Metadata.Version,
+		Name:            parsedSchema.Metadata.WorkflowID, // Use workflowId as display name
+		Description:     desc,
+		Content:         result.RawContent,
+		Parameters:      &rawParams,
+		ExecutionEngine: execEngine,
+		ContainerImage:  &imgRef,
+		ContainerDigest: &digest,
+		ActionType:      parsedSchema.ActionType,
+		Status:          "active",
+		IsLatestVersion: true,
 	}
+
+	// Set labels from extracted JSONB
+	if err := json.Unmarshal(labelsJSON, &workflow.Labels); err != nil {
+		return nil, fmt.Errorf("unmarshal labels: %w", err)
+	}
+
+	// Compute content hash (SHA-256)
+	workflow.ContentHash = computeContentHash(result.RawContent)
+
+	return workflow, nil
 }
 
 // HandleListWorkflows handles GET /api/v1/workflows
@@ -410,14 +424,20 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 // HandleGetWorkflowByID handles GET /api/v1/workflows/{workflowID}
 // BR-STORAGE-039: Workflow Catalog Retrieval API
 // DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
+// DD-WORKFLOW-016, DD-HAPI-017: Security gate via optional context filters (Step 3)
 //
 // Returns complete workflow object including:
 // - spec.container_image: OCI container image reference (for HAPI validation)
 // - spec.parameters[]: Parameter schema (for LLM parameter validation)
 // - detected_labels: Signal type, severity labels (for workflow filtering)
 //
+// Security Gate (when context filters are present):
+// - Returns 404 if workflow exists but doesn't match context (DD-WORKFLOW-016)
+// - Intentionally doesn't distinguish "not found" from "filtered out" to prevent info leakage
+// - Emits workflow.catalog.workflow_retrieved audit event
+//
 // Cross-Service Integration:
-// - HolmesGPT-API: Uses for validate_workflow_exists tool (Q17 in handoff doc)
+// - HolmesGPT-API: Uses for get_workflow tool (Step 3 of discovery protocol)
 // - AIAnalysis: May use for defense-in-depth validation
 func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) {
 	// Get workflow ID from URL path
@@ -428,12 +448,31 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get workflow from repository
-	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	// DD-WORKFLOW-016: Parse optional context filters for security gate
+	filters, err := ParseDiscoveryFilters(r)
+	if err != nil {
+		h.logger.Error(err, "Invalid discovery filter parameters")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			err.Error(), h.logger)
+		return
+	}
+
+	var wf *models.RemediationWorkflow
+
+	// DD-WORKFLOW-016: Use context-filtered query when filters are present (security gate)
+	// GAP-WF-6: Measure query duration for audit payload (DD-WORKFLOW-014 v3.0)
+	startGet := time.Now()
+	if filters.HasContextFilters() {
+		wf, err = h.workflowRepo.GetWorkflowWithContextFilters(r.Context(), workflowID, filters)
+	} else {
+		wf, err = h.workflowRepo.GetByID(r.Context(), workflowID)
+	}
+	durationMs := time.Since(startGet).Milliseconds()
+
 	if err != nil {
 		// Check if workflow not found
 		if err.Error() == fmt.Sprintf("workflow not found: %s", workflowID) {
-			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
 				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 			return
 		}
@@ -446,72 +485,56 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Check for nil workflow (defensive check - repository should return error, not nil)
-	if workflow == nil {
-		h.logger.Info("Workflow not found (nil returned)",
+	// Check for nil workflow (not found or security gate filtered out)
+	if wf == nil {
+		h.logger.Info("Workflow not found or filtered by security gate",
 			"workflow_id", workflowID,
+			"has_context_filters", filters.HasContextFilters(),
 		)
-		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+		// DD-WORKFLOW-016: Return same 404 for "not found" and "filtered out" (prevent info leakage)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 		return
+	}
+
+	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
+	// DD-WORKFLOW-014 v3.0: Context filters indicate HAPI is validating its selection,
+	// so we emit both workflow_retrieved and selection_validated.
+	if filters.HasContextFilters() && h.auditStore != nil {
+		retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters, durationMs)
+		if err != nil {
+			h.logger.Error(err, "Failed to create workflow_retrieved audit event", "workflow_id", workflowID)
+		}
+		validatedEvent, err := dsaudit.NewSelectionValidatedAuditEvent(workflowID, filters, true, durationMs)
+		if err != nil {
+			h.logger.Error(err, "Failed to create selection_validated audit event", "workflow_id", workflowID)
+		}
+
+		var events []*api.AuditEventRequest
+		if retrievedEvent != nil {
+			events = append(events, retrievedEvent)
+		}
+		if validatedEvent != nil {
+			events = append(events, validatedEvent)
+		}
+		if len(events) > 0 {
+			h.emitAuditEventsAsync(events, "workflow_id", workflowID)
+		}
 	}
 
 	// Log success
 	h.logger.Info("Workflow retrieved",
 		"workflow_id", workflowID,
-		"workflow_name", workflow.WorkflowName,
-		"version", workflow.Version,
+		"workflow_name", wf.WorkflowName,
+		"version", wf.Version,
+		"has_context_filters", filters.HasContextFilters(),
 	)
 
 	// Return workflow
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+	if err := json.NewEncoder(w).Encode(wf); err != nil {
 		h.logger.Error(err, "Failed to encode workflow response")
-	}
-}
-
-// HandleListWorkflowVersions handles GET /api/v1/workflows/by-name/{workflowName}/versions
-// BR-STORAGE-014: Workflow catalog management
-// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
-func (h *Handler) HandleListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
-	// Get workflow name from URL path
-	workflowName := chi.URLParam(r, "workflowName")
-	if workflowName == "" {
-		h.logger.Error(fmt.Errorf("workflow_name is required"), "Missing workflow_name in request")
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			"workflow_name is required", h.logger)
-		return
-	}
-
-	// Get all versions for this workflow
-	workflows, err := h.workflowRepo.GetVersionsByName(r.Context(), workflowName)
-	if err != nil {
-		h.logger.Error(err, "Failed to list workflow versions",
-			"workflow_name", workflowName,
-		)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to list workflow versions", h.logger)
-		return
-	}
-
-	// Log success
-	h.logger.Info("Workflow versions listed",
-		"workflow_name", workflowName,
-		"count", len(workflows),
-	)
-
-	// Return results
-	response := models.WorkflowVersionsResponse{
-		WorkflowName: workflowName,
-		Versions:     workflows,
-		Total:        len(workflows),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error(err, "Failed to encode workflow versions response")
 	}
 }
 
@@ -637,6 +660,264 @@ func getStringValue(s *string) string {
 	return *s
 }
 
+// emitAuditEventsAsync stores one or more audit events asynchronously in a background goroutine.
+// This is the standard pattern for non-blocking audit event emission (BR-AUDIT-024).
+// Events are stored sequentially within a single goroutine to share one context/timeout.
+// If event creation fails for any event, remaining events are still attempted.
+func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...interface{}) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		for _, event := range events {
+			if err := h.auditStore.StoreAudit(ctx, event); err != nil {
+				args := append([]interface{}{"Failed to store audit event", "event_type", event.EventType}, kvs...)
+				h.logger.Error(err, args[0].(string), args[1:]...)
+			}
+		}
+	}()
+}
+
+// getWorkflowLifecycleRepo returns the workflow lifecycle repository for enable/disable/deprecate.
+// Uses workflowLifecycleRepo when set (tests), otherwise workflowRepo.
+func (h *Handler) getWorkflowLifecycleRepo() WorkflowLifecycleRepository {
+	if h.workflowLifecycleRepo != nil {
+		return h.workflowLifecycleRepo
+	}
+	return h.workflowRepo
+}
+
+// HandleEnableWorkflow handles PATCH /api/v1/workflows/{workflowID}/enable
+// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Convenience endpoint for re-enabling workflows
+func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"workflow_id is required", h.logger)
+		return
+	}
+
+	// Parse request body
+	var req models.WorkflowDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error(err, "Failed to decode workflow enable request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if req.Reason == nil || strings.TrimSpace(*req.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
+	// Get existing workflow
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for enable",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// Update the workflow status to active
+	reason := ""
+	if req.Reason != nil {
+		reason = *req.Reason
+	}
+	updatedBy := ""
+	if req.UpdatedBy != nil {
+		updatedBy = *req.UpdatedBy
+	}
+
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "active", reason, updatedBy); err != nil {
+		h.logger.Error(err, "Failed to enable workflow",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to enable workflow", h.logger)
+		return
+	}
+
+	// Update workflow object for response
+	workflow.Status = "active"
+	workflow.DisabledAt = nil
+	workflow.DisabledBy = nil
+	workflow.DisabledReason = nil
+
+	// BR-STORAGE-183: Audit workflow enable (business logic operation)
+	if h.auditStore != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo("active")
+
+			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
+			if err != nil {
+				h.logger.Error(err, "Failed to create workflow enable audit event",
+					"workflow_id", workflowID,
+				)
+				return
+			}
+
+			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+				h.logger.Error(err, "Failed to audit workflow enable",
+					"workflow_id", workflowID,
+				)
+			}
+		}()
+	}
+
+	// Log success
+	h.logger.Info("Workflow enabled",
+		"workflow_id", workflowID,
+		"reason", reason,
+		"updated_by", updatedBy,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
+// HandleDeprecateWorkflow handles PATCH /api/v1/workflows/{workflowID}/deprecate
+// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Convenience endpoint for deprecating workflows
+func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"workflow_id is required", h.logger)
+		return
+	}
+
+	// Parse request body
+	var req models.WorkflowDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error(err, "Failed to decode workflow deprecate request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if req.Reason == nil || strings.TrimSpace(*req.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
+	// Get existing workflow
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for deprecate",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// Update the workflow status to deprecated
+	reason := ""
+	if req.Reason != nil {
+		reason = *req.Reason
+	}
+	updatedBy := ""
+	if req.UpdatedBy != nil {
+		updatedBy = *req.UpdatedBy
+	}
+
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "deprecated", reason, updatedBy); err != nil {
+		h.logger.Error(err, "Failed to deprecate workflow",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to deprecate workflow", h.logger)
+		return
+	}
+
+	// Update workflow object for response
+	workflow.Status = "deprecated"
+
+	// BR-STORAGE-183: Audit workflow deprecate (business logic operation)
+	if h.auditStore != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo("deprecated")
+
+			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
+			if err != nil {
+				h.logger.Error(err, "Failed to create workflow deprecate audit event",
+					"workflow_id", workflowID,
+				)
+				return
+			}
+
+			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+				h.logger.Error(err, "Failed to audit workflow deprecate",
+					"workflow_id", workflowID,
+				)
+			}
+		}()
+	}
+
+	// Log success
+	h.logger.Info("Workflow deprecated",
+		"workflow_id", workflowID,
+		"reason", reason,
+		"updated_by", updatedBy,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
 // HandleDisableWorkflow handles PATCH /api/v1/workflows/{workflowID}/disable
 // DD-WORKFLOW-012: Convenience endpoint for disabling workflows (soft delete)
 func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -658,12 +939,32 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-5): reason is mandatory for lifecycle operations
+	if disableReq.Reason == nil || strings.TrimSpace(*disableReq.Reason) == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Required Field",
+			"reason is required for lifecycle operations", h.logger)
+		return
+	}
+
 	// Get existing workflow
-	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	repo := h.getWorkflowLifecycleRepo()
+	if repo == nil {
+		h.logger.Error(fmt.Errorf("workflow repository not configured"), "Handler misconfiguration")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Workflow repository not configured", h.logger)
+		return
+	}
+
+	workflow, err := repo.GetByID(r.Context(), workflowID)
 	if err != nil {
 		h.logger.Error(err, "Failed to get workflow for disable",
 			"workflow_id", workflowID,
 		)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 		return
@@ -679,7 +980,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		updatedBy = *disableReq.UpdatedBy
 	}
 
-	if err := h.workflowRepo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to disable workflow",
 			"workflow_id", workflowID,
 		)
@@ -739,44 +1040,227 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// validateWorkflowSearchRequest validates the workflow search request
-// V1.0: Label-only search validation (filters required, no query/embedding)
-func (h *Handler) validateWorkflowSearchRequest(req *models.WorkflowSearchRequest) error {
-	// V1.0: Filters are required for label-only search
-	if req.Filters == nil {
-		return fmt.Errorf("filters are required for label-only search")
+// ========================================
+// THREE-STEP WORKFLOW DISCOVERY HANDLERS
+// ========================================
+// Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+// Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+//
+// Step 1: GET /api/v1/workflows/actions - List available action types
+// Step 2: GET /api/v1/workflows/actions/{action_type} - List workflows for action type
+// Step 3: GET /api/v1/workflows/{workflowID} (modified) - Get workflow with security gate
+
+// HandleListAvailableActions handles GET /api/v1/workflows/actions
+// Step 1: Returns action types from taxonomy that have active workflows
+// matching the provided signal context filters.
+// Emits workflow.catalog.actions_listed audit event (DD-WORKFLOW-014 v3.0)
+func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Request) {
+	// Parse discovery filters from query parameters
+	filters, err := ParseDiscoveryFilters(r)
+	if err != nil {
+		h.logger.Error(err, "Invalid discovery filter parameters")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			err.Error(), h.logger)
+		return
 	}
 
-	// Validate mandatory filter fields (5 required)
-	if req.Filters.SignalType == "" {
-		return fmt.Errorf("filters.signal_type is required")
-	}
-	if req.Filters.Severity == "" {
-		return fmt.Errorf("filters.severity is required")
-	}
-	if req.Filters.Component == "" {
-		return fmt.Errorf("filters.component is required")
-	}
-	// DD-WORKFLOW-001 v2.5: Environment validation (single value required)
-	if req.Filters.Environment == "" {
-		return fmt.Errorf("filters.environment is required")
-	}
-	if req.Filters.Priority == "" {
-		return fmt.Errorf("filters.priority is required")
+	// Parse pagination
+	offset, limit := ParsePagination(r)
+
+	// Execute query (GAP-WF-6: measure duration for audit payload)
+	startList := time.Now()
+	entries, totalCount, err := h.workflowRepo.ListActions(r.Context(), filters, offset, limit)
+	durationMs := time.Since(startList).Milliseconds()
+	if err != nil {
+		h.logger.Error(err, "Failed to list available actions",
+			"filters", filters)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to list available actions", h.logger)
+		return
 	}
 
-	// Validate TopK
-	if req.TopK <= 0 {
-		req.TopK = 10 // Default to 10 results
-	}
-	if req.TopK > 100 {
-		req.TopK = 100 // Max 100 results
-	}
-
-	// Validate MinScore (replaces MinSimilarity)
-	if req.MinScore < 0 || req.MinScore > 1 {
-		return fmt.Errorf("min_score must be between 0 and 1")
+	// Build response
+	resp := models.ActionTypeListResponse{
+		ActionTypes: entries,
+		Pagination: models.PaginationMetadata{
+			TotalCount: totalCount,
+			Offset:     offset,
+			Limit:      limit,
+			HasMore:    offset+limit < totalCount,
+		},
 	}
 
-	return nil
+	// BR-AUDIT-023: Emit workflow.catalog.actions_listed audit event
+	if h.auditStore != nil {
+		if event, err := dsaudit.NewActionsListedAuditEvent(filters, totalCount, durationMs); err != nil {
+			h.logger.Error(err, "Failed to create actions_listed audit event")
+		} else {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{event})
+		}
+	}
+
+	h.logger.Info("Available actions listed",
+		"total_count", totalCount,
+		"returned_count", len(entries),
+		"offset", offset,
+		"limit", limit,
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error(err, "Failed to encode actions list response")
+	}
+}
+
+// HandleListWorkflowsByActionType handles GET /api/v1/workflows/actions/{action_type}
+// Step 2: Returns active workflows matching the specified action type and context filters.
+// Emits workflow.catalog.workflows_listed audit event (DD-WORKFLOW-014 v3.0)
+func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http.Request) {
+	// Get action_type from URL path
+	actionType := chi.URLParam(r, "action_type")
+	if actionType == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			"action_type path parameter is required", h.logger)
+		return
+	}
+
+	// Parse discovery filters from query parameters
+	filters, err := ParseDiscoveryFilters(r)
+	if err != nil {
+		h.logger.Error(err, "Invalid discovery filter parameters")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
+			err.Error(), h.logger)
+		return
+	}
+
+	// Parse pagination
+	offset, limit := ParsePagination(r)
+
+	// Execute query (GAP-WF-6: measure duration for audit payload)
+	startList := time.Now()
+	workflows, totalCount, err := h.workflowRepo.ListWorkflowsByActionType(r.Context(), actionType, filters, offset, limit)
+	durationMs := time.Since(startList).Milliseconds()
+	if err != nil {
+		h.logger.Error(err, "Failed to list workflows by action type",
+			"action_type", actionType)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to list workflows by action type", h.logger)
+		return
+	}
+
+	// Convert to discovery entries
+	// DD-HAPI-017 v1.1: ActualSuccessRate and TotalExecutions excluded from
+	// LLM-facing response — global aggregates are misleading for per-incident selection.
+	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
+	for _, wf := range workflows {
+		entry := models.WorkflowDiscoveryEntry{
+			WorkflowID:      wf.WorkflowID,
+			WorkflowName:    wf.WorkflowName,
+			Name:            wf.Name,
+			Description:     wf.Description,
+			Version:         wf.Version,
+			ExecutionEngine: string(wf.ExecutionEngine),
+		}
+		if wf.ContainerImage != nil {
+			entry.ContainerImage = *wf.ContainerImage
+		}
+		discoveryEntries = append(discoveryEntries, entry)
+	}
+
+	// Build response
+	resp := models.WorkflowDiscoveryResponse{
+		ActionType: actionType,
+		Workflows:  discoveryEntries,
+		Pagination: models.PaginationMetadata{
+			TotalCount: totalCount,
+			Offset:     offset,
+			Limit:      limit,
+			HasMore:    offset+limit < totalCount,
+		},
+	}
+
+	// BR-AUDIT-023: Emit workflow.catalog.workflows_listed audit event
+	if h.auditStore != nil {
+		if event, err := dsaudit.NewWorkflowsListedAuditEvent(actionType, filters, totalCount, durationMs); err != nil {
+			h.logger.Error(err, "Failed to create workflows_listed audit event", "action_type", actionType)
+		} else {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{event}, "action_type", actionType)
+		}
+	}
+
+	h.logger.Info("Workflows listed by action type",
+		"action_type", actionType,
+		"total_count", totalCount,
+		"returned_count", len(discoveryEntries),
+		"offset", offset,
+		"limit", limit,
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error(err, "Failed to encode workflows list response")
+	}
+}
+
+// ParseDiscoveryFilters extracts WorkflowDiscoveryFilters from query parameters.
+// Used by all three discovery endpoints.
+// Exported for unit testing (UT-DS-017-001-003).
+func ParseDiscoveryFilters(r *http.Request) (*models.WorkflowDiscoveryFilters, error) {
+	filters := &models.WorkflowDiscoveryFilters{
+		Severity:      r.URL.Query().Get("severity"),
+		Component:     r.URL.Query().Get("component"),
+		Environment:   r.URL.Query().Get("environment"),
+		Priority:      r.URL.Query().Get("priority"),
+		RemediationID: r.URL.Query().Get("remediation_id"),
+	}
+
+	// Parse optional JSON-encoded custom_labels
+	if customLabelsStr := r.URL.Query().Get("custom_labels"); customLabelsStr != "" {
+		var customLabels map[string][]string
+		if err := json.Unmarshal([]byte(customLabelsStr), &customLabels); err != nil {
+			return nil, fmt.Errorf("invalid custom_labels JSON: %w", err)
+		}
+		filters.CustomLabels = customLabels
+	}
+
+	// Parse optional JSON-encoded detected_labels
+	if detectedLabelsStr := r.URL.Query().Get("detected_labels"); detectedLabelsStr != "" {
+		var detectedLabels models.DetectedLabels
+		if err := json.Unmarshal([]byte(detectedLabelsStr), &detectedLabels); err != nil {
+			return nil, fmt.Errorf("invalid detected_labels JSON: %w", err)
+		}
+		filters.DetectedLabels = &detectedLabels
+	}
+
+	return filters, nil
+}
+
+// ParsePagination extracts offset and limit from query parameters.
+// Defaults: offset=0, limit=10 (DD-WORKFLOW-016 default page size)
+// Exported for unit testing (UT-DS-017-001-002).
+func ParsePagination(r *http.Request) (int, int) {
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit <= 0 {
+		limit = models.DefaultPaginationLimit
+	}
+	if limit > models.MaxPaginationLimit {
+		limit = models.MaxPaginationLimit
+	}
+
+	return offset, limit
+}
+
+// computeContentHash computes a SHA-256 hash of the workflow content.
+// DD-WORKFLOW-017: Content hash is derived from the raw YAML extracted from the OCI image.
+func computeContentHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
 }

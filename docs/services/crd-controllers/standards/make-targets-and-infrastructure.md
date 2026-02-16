@@ -464,7 +464,7 @@ make cleanup-integration-env-<service>
 [Service-specific env vars listed above]
 
 **Dependencies**:
-- Kind: `brew install kind` (macOS) or `curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64`
+- Kind: `brew install kind` (macOS) or `curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64`
 - Podman: `brew install podman` (macOS) or `sudo apt-get install podman` (Linux)
 - kubectl: Standard Kubernetes CLI
 
@@ -527,7 +527,7 @@ jobs:
 
       - name: Install Kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -552,7 +552,7 @@ jobs:
 
       - name: Install Kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -571,7 +571,7 @@ jobs:
 
       - name: Install Kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 

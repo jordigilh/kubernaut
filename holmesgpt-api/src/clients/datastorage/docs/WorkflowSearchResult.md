@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **workflow_id** | **str** | UUID primary key (DD-WORKFLOW-002 v3.0) | 
 **title** | **str** | Human-readable workflow name | 
 **description** | **str** | Workflow description | 
-**signal_type** | **str** | Signal type this workflow handles | 
+**signal_type** | **str** | Signal type this workflow handles | [optional] 
 **container_image** | **str** | OCI image reference | [optional] 
 **container_digest** | **str** | OCI image digest | [optional] 
 **confidence** | **float** | Normalized label score (0.0-1.0) | 

@@ -171,6 +171,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_signalprocessings.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
+		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EA creation on terminal phases
 	}
 
 	for _, crdFile := range crdFiles {
@@ -486,8 +487,8 @@ data:
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
     # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
-    audit:
-      dataStorageUrl: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
+    datastorage:
+      url: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -499,6 +500,8 @@ data:
       healthProbeAddr: :8084
       leaderElection: false
       leaderElectionId: remediationorchestrator.kubernaut.ai
+    effectivenessAssessment:
+      stabilizationWindow: 10s  # E2E: Allow OOMKill-restarted pods to recover before EM assesses health
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -615,6 +618,12 @@ rules:
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["notificationrequests/status"]
+  verbs: ["get"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["effectivenessassessments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["effectivenessassessments/status"]
   verbs: ["get"]
 - apiGroups: [""]
   resources: ["events"]

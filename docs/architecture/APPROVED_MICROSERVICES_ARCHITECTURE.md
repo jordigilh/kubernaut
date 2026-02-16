@@ -3,19 +3,20 @@
 > **⚠️ DEPRECATION & DEFERRAL NOTICES**:
 > - **Context API** (2025-11-13): Deprecated, consolidated into Data Storage Service (DD-CONTEXT-006)
 > - **Dynamic Toolset** (2025-11-21): Deferred to V2.0, V1.x uses static config (DD-016)
-> - **Effectiveness Monitor** (2025-12-01): Deferred to V1.1 due to year-end timeline (DD-017)
+> - **Effectiveness Monitor** (2025-12-01): DD-017 v2.0 — Level 1 (automated assessment) in V1.0; Level 2 (AI-powered analysis) deferred to V1.1
 >
 > This document retains historical references. See DD-CONTEXT-006, DD-016, DD-017 for details.
 
-**Document Version**: 2.6
-**Date**: December 1, 2025
+**Document Version**: 2.7
+**Date**: February 2026
 **Status**: **V1 IMPLEMENTATION** - Current Architecture Specification
-**Architecture Type**: V1.0 Microservices (8 Services) with V1.1 (1 Service) and V2 Roadmap (15+ Services)
+**Architecture Type**: V1.0 Microservices (10 Services) with V1.1 (1 Service) and V2 Roadmap (15+ Services)
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.7 | Feb 2026 | **DD-017 v2.0 Integration**: Effectiveness Monitor Level 1 (automated assessment) reinstated to V1.0. Level 2 (AI-powered analysis) remains V1.1. V1.0 service count: 10 (5 CRD + 5 stateless). Must-Gather is diagnostic tool, not counted. | AI Assistant |
 | 2.6 | Dec 1, 2025 | **DD-016 & DD-017 Integration**: Updated V1.0 service count from 10 to 8. Dynamic Toolset deferred to V2.0 (DD-016). Effectiveness Monitor deferred to V1.1 (DD-017, year-end timeline constraints). Updated service breakdown and architecture overview. | AI Assistant |
 | 2.5 | Nov 13, 2025 | **Context API Deprecation**: Updated service count from 11 to 10. Context API deprecated in favor of Data Storage Service (DD-CONTEXT-006). Document retains historical Context API references. | AI Assistant |
 | 2.4 | Oct 31, 2025 | Updated 2 sequence diagrams: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
@@ -25,7 +26,7 @@
 
 ## 🎯 **EXECUTIVE SUMMARY**
 
-This document defines the **V1.0 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1.0 architecture implements **8 core microservices** (4 CRD controllers + 4 stateless services), each adhering to the **Single Responsibility Principle**, with a **V1.1 roadmap** for 1 additional service and **V2 roadmap** for advanced services. This provides rapid deployment capability before year-end 2025 while maintaining complete core remediation requirements coverage.
+This document defines the **V1.0 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1.0 architecture implements **10 core microservices** (5 CRD controllers + 5 stateless services), each adhering to the **Single Responsibility Principle**, with a **V1.1 roadmap** for 1 additional service and **V2 roadmap** for advanced services. This provides rapid deployment capability before year-end 2025 while maintaining complete core remediation requirements coverage.
 
 **December 2025 Updates**:
 - **Dynamic Toolset** deferred to V2.0 (DD-016, redundant with HolmesGPT-API's Prometheus discovery)
@@ -43,9 +44,9 @@ This document defines the **V1.0 microservices architecture** for Kubernaut, an 
 
 ---
 
-## 🏗️ **V1.0 MICROSERVICES OVERVIEW (8 Services)**
+## 🏗️ **V1.0 MICROSERVICES OVERVIEW (10 Services)**
 
-### **V1.0 Service Portfolio - Current Implementation (8 Services)**
+### **V1.0 Service Portfolio - Current Implementation (10 Services)**
 | Service | Responsibility | Business Requirements | External Connections | Status |
 |---------|---------------|----------------------|---------------------|--------|
 | **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources | ✅ Production-Ready |
@@ -56,11 +57,12 @@ This document defines the **V1.0 microservices architecture** for Kubernaut, an 
 | **📊 Data Storage** | Data Persistence & Semantic Search | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Vector DB | ✅ Production-Ready |
 | **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK | ✅ Production-Ready |
 | **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty | ✅ Production-Ready |
+| **📈 Effectiveness Monitor (Level 1)** | Automated Assessment: Dual Spec Hash, Health Checks, Metric Comparison, Effectiveness Scoring, Side-Effect Detection | BR-INS-001, BR-INS-002, BR-INS-005 (partial) | Stateless service — V1.0 |
 
 ### **V1.1 Services (Deferred from V1.0)**
 | Service | Responsibility | Business Requirements | Deferral Reason |
 |---------|---------------|----------------------|-----------------|
-| **📈 Effectiveness Monitor** | Performance Assessment & Oscillation Detection | BR-INS-001 to BR-INS-010 | DD-017: Requires 8+ weeks of remediation data |
+| **📈 Effectiveness Monitor (Level 2)** | HolmesGPT PostExec AI Analysis, Pattern Learning, Batch Processing | BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010 | DD-017 v2.0: Level 1 (automated assessment) in V1.0. Level 2 (AI-powered analysis) deferred to V1.1 — requires 8+ weeks of Level 1 data |
 
 ### **V2.0 Services (Deferred from V1.x)**
 | Service | Responsibility | Business Requirements | Deferral Reason |
@@ -68,8 +70,8 @@ This document defines the **V1.0 microservices architecture** for Kubernaut, an 
 | **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | DD-016: Redundant with HolmesGPT-API Prometheus discovery |
 
 **Service Breakdown**:
-- **CRD Controllers** (4): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator
-- **Stateless Services** (4): Gateway, Data Storage, HolmesGPT API, Notifications
+- **CRD Controllers** (5): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator, Notification
+- **Stateless Services** (5): Gateway, Data Storage, HolmesGPT API, Notifications, Effectiveness Monitor (Level 1)
 
 **Important Notes**:
 - **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
@@ -88,7 +90,7 @@ This document defines the **V1.0 microservices architecture** for Kubernaut, an 
 
 ## 🔄 **SERVICE FLOW ARCHITECTURE**
 
-### **V1.0 Complete Architecture (8 Services)**
+### **V1.0 Complete Architecture (10 Services)**
 
 This diagram shows all V1.0 services and their interactions (Historical diagram retains deprecated/deferred services for reference):
 
@@ -561,7 +563,7 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 ---
 
 **Key V1 Architecture Characteristics**:
-- **12 Services**: Complete signal-to-execution pipeline (5 CRD controllers + 7 stateless services)
+- **10 Services**: Complete signal-to-execution pipeline (5 CRD controllers + 5 stateless services)
 - **Port Standardization**: All services use 8080 (100% standardization)
 - **Clear Separation**: Main processing, AI investigation, and support services are independently grouped
 - **Query-Based Storage**: Services query Storage on-demand (not push-based)
@@ -857,39 +859,27 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 ### **📈 Effectiveness Monitor Service**
 **Image**: `quay.io/jordigilh/monitor-service`
 **Port**: 8080
-**Single Responsibility**: Effectiveness Assessment Only
-**V1 Status**: ✅ **INCLUDED IN V1** (Graceful Degradation Mode)
+**Single Responsibility**: Effectiveness Assessment
+**V1 Status**: ✅ **Level 1 in V1.0** (automated assessment) | Level 2 in V1.1 (AI-powered analysis)
 
-**Capabilities**:
-- Real-time effectiveness assessment (BR-INS-001 to BR-INS-010)
-- Long-term effectiveness trend tracking (BR-INS-003)
-- Advanced pattern recognition across remediation history (BR-INS-006)
-- Seasonal and temporal pattern identification (BR-INS-008)
-- Side effect detection and monitoring
-- Performance correlation analysis
-- Continuous improvement feedback loops
-- Assessment intervals: 30s, 2min, 30min
-- **Graceful degradation based on data availability**
+**Level 1 Capabilities (V1.0)** — Stateless service:
+- Dual spec hash capture (pre/post remediation state)
+- Health checks (pod running, OOM errors, latency metrics)
+- Metric comparison (pre/post execution)
+- Effectiveness scoring
+- Side-effect detection (BR-INS-005)
+- BR-INS-001, BR-INS-002, BR-INS-005: Partially addressed in V1.0
 
-**V1 Implementation Notes**:
-- **Week 5 Deployment**: Returns "insufficient data" status with low confidence (0-20%)
-- **Week 8-10**: Progressive capability improvement as data accumulates (40-60% confidence)
-- **Week 13+**: Full effectiveness monitoring with high confidence (80-95%)
-- Confidence scores reflect data quantity and quality for transparency
-
-**Vector Database Operations**:
-- Queries effectiveness trends from historical vector data
-- Performs temporal pattern analysis using vector similarity
-- Retrieves seasonal behavior patterns from vector database
-- Analyzes effectiveness correlation patterns
+**Level 2 Capabilities (V1.1)** — Requires 8+ weeks of Level 1 data:
+- HolmesGPT PostExec AI analysis
+- Pattern learning across remediation history
+- Batch processing for high-value cases
+- BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010: V1.1
 
 **Internal Dependencies**:
-- **Queries action history from Data Storage Service** (V1)
-- **Retrieves metrics from Infrastructure Monitoring Service** (V1)
-- **Performs trend analysis via Data Storage Service vector operations** (V1)
-- **Queries temporal patterns from Data Storage Service** (V1)
-- Provides context to Context API Service
-- ⚠️ **Intelligence Service (V2)**: Optional advanced pattern discovery - gracefully degrades without it
+- **Queries action history from Data Storage Service**
+- **Retrieves metrics from external Prometheus/Grafana**
+- Provides assessment context to downstream services
 
 ---
 
@@ -1164,19 +1154,17 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 
 ## 🎯 **IMPLEMENTATION ROADMAP**
 
-### **Phase 1: V1 Core Services (Weeks 1-4) - 12 Services**
+### **Phase 1: V1 Core Services (Weeks 1-4) - 10 Services** (5 CRD + 5 stateless per DD-017 v2.0)
 1. Gateway Service - HTTP gateway and security
 2. Signal Processing Service - Signal enrichment and business classification
 3. AI Analysis Service - AI analysis and decision making
 4. Workflow Execution Service - Workflow execution
-5. K8s Executor Service - Kubernetes operations
-6. Data Storage Service - Data persistence and vector database
-7. Context API Service - Context orchestration (HolmesGPT-optimized)
+5. Remediation Orchestrator Service - End-to-end remediation lifecycle management
+6. Notification Service - Multi-channel notifications (NotificationRequest CRD)
+7. Data Storage Service - Data persistence and vector database
 8. HolmesGPT API Service - AI investigation wrapper
-9. Dynamic Toolset Service - HolmesGPT toolset configuration management
-10. Effectiveness Monitor Service - Assessment and monitoring (graceful degradation, includes oscillation detection)
-11. Notifications Service - Multi-channel notifications
-12. Remediation Orchestrator Service - End-to-end remediation lifecycle management
+9. Effectiveness Monitor Service (Level 1) - Automated assessment (dual spec hash, health checks, metric comparison, effectiveness scoring, side-effect detection)
+10. Must-Gather - Diagnostic tool (not counted in service total per DD-017 v2.0)
 
 **Note**: Oscillation detection is a capability of Effectiveness Monitor (queries PostgreSQL action_history table), not a separate service. External infrastructure monitoring (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut services.
 
@@ -1217,14 +1205,14 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 
 ### **Architecture Improvements Summary**
 
-**2025-10-08 Corrections** (Based on comprehensive triage):
+**2025-10-08 / 2026-02 Corrections** (Based on comprehensive triage):
 - ✅ Removed fabricated "Infrastructure Monitoring" service (external Prometheus/Grafana, not a Kubernaut service)
-- ✅ Added missing `dynamic-toolset` service (BR-TOOLSET-001 to BR-TOOLSET-020)
-- ✅ Corrected V1 service count: 12 services (5 CRD controllers + 7 stateless services)
+- ✅ Added missing `dynamic-toolset` service (BR-TOOLSET-001 to BR-TOOLSET-020) — deferred to V2.0
+- ✅ Corrected V1 service count: 10 services (5 CRD controllers + 5 stateless services) per DD-017 v2.0
 - ✅ Fixed port numbers: All services use 8080 (100% standardization)
 - ✅ Clarified oscillation detection is a query pattern in Effectiveness Monitor, not a separate service
-- ✅ Separated V1 (12 services) from V2 (4 additional services) clearly
-- ✅ Updated all diagrams, tables, and specifications to reflect accurate architecture
+- ✅ Separated V1 (10 services) from V2 (4 additional services) clearly
+- ✅ DD-017 v2.0: Effectiveness Monitor Level 1 in V1.0; Level 2 in V1.1
 
 **Architecture Correctness Score**: **95/100** (Post-correction: 2025-10-08)
 

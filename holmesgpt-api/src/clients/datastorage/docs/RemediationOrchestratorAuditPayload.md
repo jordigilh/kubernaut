@@ -30,6 +30,10 @@ Name | Type | Description | Notes
 **sub_reason** | **str** | Sub-categorization of the reason | [optional] 
 **notification_name** | **str** | Associated notification name | [optional] 
 **timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**pre_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec before remediation. Computed using DD-EM-002 canonical spec hash algorithm. Format: \&quot;sha256:&lt;hex&gt;\&quot;  | [optional] 
+**target_resource** | **str** | Target resource identifier in format \&quot;namespace/Kind/name\&quot; or \&quot;Kind/name\&quot; for cluster-scoped. Used by remediation.workflow_created to capture what resource is being remediated.  | [optional] 
+**workflow_version** | **str** | Version of the selected workflow | [optional] 
+**workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
 
 ## Example
 

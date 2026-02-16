@@ -41,6 +41,14 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+class _SecurityGateRejection(Exception):
+    """Raised internally when DS security gate rejects a workflow (404 with context filters)."""
+    def __init__(self, workflow_id: str, context_filters: Dict[str, str]):
+        self.workflow_id = workflow_id
+        self.context_filters = context_filters
+        super().__init__(f"Workflow '{workflow_id}' rejected by security gate")
+
+
 @dataclass
 class ValidationResult:
     """
@@ -74,14 +82,40 @@ class WorkflowResponseValidator:
     Design Decision: DD-HAPI-002 v1.2
     """
 
-    def __init__(self, data_storage_client):
+    def __init__(
+        self,
+        data_storage_client,
+        *,
+        severity: Optional[str] = None,
+        component: Optional[str] = None,
+        environment: Optional[str] = None,
+        priority: Optional[str] = None,
+    ):
         """
-        Initialize validator with Data Storage client.
+        Initialize validator with Data Storage client and optional context filters.
+
+        When context filters are provided, the validator passes them to the DS
+        get_workflow_by_id call, enabling the DS security gate (DD-HAPI-017).
+        A 404 response with context filters is treated as a context mismatch
+        rather than a simple "not found".
 
         Args:
             data_storage_client: Client for Data Storage service
+            severity: Signal severity level (critical/high/medium/low)
+            component: Kubernetes resource type (pod/deployment/node/etc.)
+            environment: Target environment (production/staging/development)
+            priority: Business priority level (P0/P1/P2/P3)
         """
         self.ds_client = data_storage_client
+        self._context_filters: Dict[str, str] = {}
+        if severity:
+            self._context_filters["severity"] = severity
+        if component:
+            self._context_filters["component"] = component
+        if environment:
+            self._context_filters["environment"] = environment
+        if priority:
+            self._context_filters["priority"] = priority
 
     def validate(
         self,
@@ -107,8 +141,19 @@ class WorkflowResponseValidator:
         """
         errors: List[str] = []
 
-        # STEP 1: Workflow Existence Validation (BR-AI-023)
-        workflow = self._validate_workflow_exists(workflow_id)
+        # STEP 1: Workflow Existence Validation (BR-AI-023, BR-HAPI-017-003)
+        try:
+            workflow = self._validate_workflow_exists(workflow_id)
+        except _SecurityGateRejection:
+            # DD-HAPI-017: Context filter mismatch — different error message
+            errors.append(
+                f"Workflow '{workflow_id}' does not match your current signal context "
+                f"(severity, component, environment, priority). This workflow may exist "
+                f"but is not compatible with the current incident context. "
+                f"Please select a different workflow using the three-step discovery tools."
+            )
+            return ValidationResult(is_valid=False, errors=errors)
+
         if workflow is None:
             errors.append(
                 f"Workflow '{workflow_id}' not found in catalog. "
@@ -116,6 +161,10 @@ class WorkflowResponseValidator:
             )
             # Can't continue validation without workflow
             return ValidationResult(is_valid=False, errors=errors)
+
+        # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
+        action_type_errors = self._validate_action_type_crosscheck(workflow)
+        errors.extend(action_type_errors)
 
         # STEP 2: Container Image Consistency (BR-HAPI-196)
         image_errors = self._validate_container_image(
@@ -148,28 +197,106 @@ class WorkflowResponseValidator:
         STEP 1: Validate workflow exists in catalog.
 
         Business Requirement: BR-AI-023 (Hallucination Detection)
+        Business Requirement: BR-HAPI-017-003 (Context Filter Security Gate)
 
-        Calls: GET /api/v1/workflows/{workflow_id}
+        Calls: GET /api/v1/workflows/{workflow_id} with optional context filters.
+        When context filters are provided, the DS security gate evaluates
+        workflow compatibility and returns 404 on mismatch (DD-HAPI-017).
 
         Args:
             workflow_id: Workflow ID to validate
 
         Returns:
             RemediationWorkflow if found, None if not found
+
+        Raises:
+            _SecurityGateRejection: When DS returns 404 and context filters are active
         """
         logger.debug(f"Validating workflow exists: {workflow_id}")
 
         try:
-            # Generated OpenAPI client method: get_workflow_by_id (not get_workflow_by_uuid)
+            # Generated OpenAPI client method: get_workflow_by_id
             # Maps to: GET /api/v1/workflows/{workflowID}
             # DD-WORKFLOW-002 v3.0: workflow_id is UUID primary key
-            workflow = self.ds_client.get_workflow_by_id(workflow_id)
+            # DD-HAPI-017: Context filters passed as query params for security gate
+            workflow = self.ds_client.get_workflow_by_id(
+                workflow_id, **self._context_filters
+            )
             if workflow is None:
                 logger.info(f"Workflow not found in catalog: {workflow_id}")
             return workflow
         except Exception as e:
+            # DD-HAPI-017: Check if this is a 404 from the DS security gate
+            if hasattr(e, 'status') and e.status == 404 and self._context_filters:
+                logger.info(
+                    f"Workflow '{workflow_id}' rejected by security gate — "
+                    f"does not match signal context. Filters: {self._context_filters}"
+                )
+                raise _SecurityGateRejection(workflow_id, self._context_filters) from e
             logger.error(f"Error checking workflow existence: {e}")
             return None
+
+    def _validate_action_type_crosscheck(self, workflow) -> List[str]:
+        """
+        STEP 1b: Cross-check workflow's action_type against available actions.
+
+        DD-WORKFLOW-016 Gap 3: When context filters are set, queries DS for
+        available action types and verifies the selected workflow's action_type
+        is in that set. This is a belt-and-suspenders check on top of the
+        security gate.
+
+        Only performed when context filters are active (otherwise skip).
+        Gracefully degrades on DS errors (returns empty errors list).
+
+        Args:
+            workflow: Workflow fetched from DS (has action_type attribute)
+
+        Returns:
+            List of error messages (empty if valid or skipped)
+        """
+        # Skip if no context filters (nothing to cross-check against)
+        if not self._context_filters:
+            return []
+
+        # Skip if workflow has no action_type
+        action_type = getattr(workflow, "action_type", None)
+        if not action_type:
+            return []
+
+        try:
+            # Query DS directly for available action types with context filters
+            response = self.ds_client.list_available_actions(**self._context_filters)
+
+            # Extract action_type strings from response
+            action_types_data = response.get("action_types", []) if isinstance(response, dict) else []
+            available_types = {
+                at.get("action_type", "") if isinstance(at, dict) else str(at)
+                for at in action_types_data
+            }
+
+            if action_type not in available_types:
+                logger.info(
+                    f"DD-WORKFLOW-016 Gap 3: action_type '{action_type}' not in available "
+                    f"actions for context {self._context_filters}. "
+                    f"Available: {sorted(available_types)}"
+                )
+                return [
+                    f"Workflow '{workflow.workflow_id}' has action_type '{action_type}' "
+                    f"which was not in the available actions for this context. "
+                    f"Please use list_available_actions to discover valid actions."
+                ]
+
+            logger.debug(
+                f"DD-WORKFLOW-016 Gap 3: action_type '{action_type}' confirmed in available actions"
+            )
+            return []
+
+        except Exception as e:
+            # Graceful degradation: don't block validation on DS errors
+            logger.warning(
+                f"DD-WORKFLOW-016 Gap 3: action_type cross-check failed (graceful degradation): {e}"
+            )
+            return []
 
     def _validate_container_image(
         self,

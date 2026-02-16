@@ -64,6 +64,7 @@ NOTIFICATION_UNIT_PATTERN = pkg/notification/config/|pkg/notification/formatting
 REMEDIATIONORCHESTRATOR_UNIT_PATTERN = pkg/remediationorchestrator/audit/|pkg/remediationorchestrator/config/|pkg/remediationorchestrator/helpers/|pkg/remediationorchestrator/metrics/|pkg/remediationorchestrator/phase/|pkg/remediationorchestrator/routing/|pkg/remediationorchestrator/timeout/|pkg/remediationorchestrator/types|pkg/remediationorchestrator/handler/skip/|pkg/remediationorchestrator/interfaces
 SIGNALPROCESSING_UNIT_PATTERN = pkg/signalprocessing/classifier/|pkg/signalprocessing/config/|pkg/signalprocessing/detection/|pkg/signalprocessing/metrics/|pkg/signalprocessing/ownerchain/|pkg/signalprocessing/phase/|pkg/signalprocessing/rego/|pkg/signalprocessing/conditions
 WORKFLOWEXECUTION_UNIT_PATTERN = pkg/workflowexecution/config/|pkg/workflowexecution/metrics/|pkg/workflowexecution/phase/|pkg/workflowexecution/conditions
+EFFECTIVENESSMONITOR_UNIT_PATTERN = pkg/effectivenessmonitor/config/|pkg/effectivenessmonitor/health/|pkg/effectivenessmonitor/alert/|pkg/effectivenessmonitor/metrics/|pkg/effectivenessmonitor/hash/|pkg/effectivenessmonitor/audit/|pkg/effectivenessmonitor/phase/|pkg/effectivenessmonitor/validity/|pkg/effectivenessmonitor/types
 
 ##@ General
 
@@ -363,6 +364,102 @@ docker-build-%: ## Build service container image (e.g., make docker-build-gatewa
 docker-push-%: docker-build-% ## Push service container image
 	@echo "🐳 Pushing Docker image for $*..."
 	@$(CONTAINER_TOOL) push $(IMG)
+
+##@ Test Workflow Image Targets
+
+# Registry for test workflow OCI images (DD-WORKFLOW-017, ADR-043)
+# Override for CI: WORKFLOW_REGISTRY=ghcr.io/jordigilh/kubernaut/test-workflows
+WORKFLOW_REGISTRY ?= quay.io/kubernaut-cicd/test-workflows
+WORKFLOW_VERSION ?= v1.0.0
+WORKFLOW_FIXTURES_DIR := test/fixtures/workflows
+# Platforms to build workflow images for (multi-arch manifest)
+WORKFLOW_PLATFORMS ?= linux/amd64,linux/arm64
+
+# _build_workflow_manifest builds a multi-arch manifest for one workflow.
+# Usage: $(call _build_workflow_manifest,<ref>,<dockerfile>,<context-dir>)
+define _build_workflow_manifest
+	@$(CONTAINER_TOOL) rmi "$(1)" 2>/dev/null || true
+	@$(CONTAINER_TOOL) manifest rm "$(1)" 2>/dev/null || true
+	@$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$(1)" -f "$(2)" "$(3)"
+endef
+
+.PHONY: build-test-workflows
+build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 + arm64)
+	@echo "📦 Building test workflow OCI images (multi-arch)..."
+	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
+	@echo "  Version:   $(WORKFLOW_VERSION)"
+	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
+	@echo ""
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
+		dockerfile="$(WORKFLOW_FIXTURES_DIR)/Dockerfile"; \
+		if [ -f "$$dir/Dockerfile" ]; then dockerfile="$$dir/Dockerfile"; fi; \
+		echo "  Building $$name -> $$ref"; \
+		$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
+		$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
+		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
+	done
+	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
+	@echo "  Building oom-recovery:v1.1.0 (version variant)"
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0,$(WORKFLOW_FIXTURES_DIR)/Dockerfile,$(WORKFLOW_FIXTURES_DIR)/oom-recovery-v1.1/)
+	@echo "  Building oom-recovery:v2.0.0 (version variant)"
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0,$(WORKFLOW_FIXTURES_DIR)/Dockerfile,$(WORKFLOW_FIXTURES_DIR)/oom-recovery-v2.0/)
+	@echo ""
+	@echo "✅ All test workflow images built ($(WORKFLOW_PLATFORMS))"
+
+.PHONY: push-test-workflows
+push-test-workflows: ## Push test workflow multi-arch manifests to registry
+	@echo "📦 Pushing test workflow OCI images (multi-arch)..."
+	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
+	@echo "  Version:   $(WORKFLOW_VERSION)"
+	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
+	@echo ""
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
+		echo "  Pushing $$name -> $$ref"; \
+		$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
+		echo "  ✅ Pushed $$ref"; \
+	done
+	@# Multi-version variants for version management E2E tests
+	@echo "  Pushing oom-recovery:v1.1.0 (version variant)"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0" "docker://$(WORKFLOW_REGISTRY)/oom-recovery:v1.1.0"
+	@echo "  Pushing oom-recovery:v2.0.0 (version variant)"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0" "docker://$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0"
+	@echo ""
+	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY) ($(WORKFLOW_PLATFORMS))"
+
+##@ Tekton Bundle Image Targets
+
+# Registry for Tekton Pipeline bundle images (separate from schema-only workflow images)
+# Tekton bundles are built with `tkn bundle push` and contain Tekton Pipeline resources
+# with required annotations (dev.tekton.image.apiVersion, dev.tekton.image.kind, etc.)
+# Schema images (test-workflows/) are for DataStorage registration; bundles (tekton-bundles/) are for WFE execution.
+TEKTON_BUNDLE_REGISTRY ?= quay.io/kubernaut-cicd/tekton-bundles
+TEKTON_FIXTURES_DIR := test/fixtures/tekton
+
+.PHONY: push-tekton-bundles
+push-tekton-bundles: ## Build and push Tekton Pipeline bundle images (tkn bundle push builds+pushes in one step)
+	@echo "📦 Building and pushing Tekton Pipeline bundles..."
+	@echo "  Registry: $(TEKTON_BUNDLE_REGISTRY)"
+	@echo "  Version:  $(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "  Building+pushing hello-world Tekton bundle..."
+	tkn bundle push "$(TEKTON_BUNDLE_REGISTRY)/hello-world:$(WORKFLOW_VERSION)" \
+		-f $(TEKTON_FIXTURES_DIR)/hello-world-pipeline.yaml
+	@echo "  ✅ Pushed $(TEKTON_BUNDLE_REGISTRY)/hello-world:$(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "  Building+pushing failing Tekton bundle..."
+	tkn bundle push "$(TEKTON_BUNDLE_REGISTRY)/failing:$(WORKFLOW_VERSION)" \
+		-f $(TEKTON_FIXTURES_DIR)/failing-pipeline.yaml
+	@echo "  ✅ Pushed $(TEKTON_BUNDLE_REGISTRY)/failing:$(WORKFLOW_VERSION)"
+	@echo ""
+	@echo "✅ All Tekton bundles pushed to $(TEKTON_BUNDLE_REGISTRY)"
 
 ##@ Cleanup Pattern Targets
 
@@ -786,3 +883,107 @@ lint-business-integration: ## Check business code integration in main applicatio
 lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
 	@echo "🔍 Checking TDD compliance..."
 	@./scripts/validation/check-tdd-compliance.sh
+
+##@ Demo Deployment (Issue #94)
+
+# Demo image registry and tag (override for pre-built images)
+DEMO_REGISTRY ?= quay.io/kubernaut-ai
+DEMO_TAG ?= demo-v1.0
+DEMO_CLUSTER_NAME ?= kubernaut-demo
+DEMO_KUBECONFIG ?= $(HOME)/.kube/kubernaut-demo-config
+DEMO_KIND_PROVIDER ?= $(shell command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker")
+
+# Go service → Dockerfile mapping (matches CI pipeline)
+DEMO_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+DEMO_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
+DEMO_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+DEMO_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
+DEMO_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
+DEMO_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+DEMO_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
+DEMO_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
+DEMO_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
+DEMO_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
+
+# _demo_build_one builds a single demo service image.
+# Usage: $(call _demo_build_one,<service>,<dockerfile>)
+define _demo_build_one
+	@echo "  Building $(1) from $(2)..."
+	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/$(1):$(DEMO_TAG) -f $(2) .
+endef
+
+.PHONY: demo-build-images
+demo-build-images: generate ## Build all demo service images locally
+	@echo "🐳 Building demo images ($(DEMO_REGISTRY):$(DEMO_TAG))..."
+	$(foreach svc,$(DEMO_SERVICES),$(call _demo_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	@echo "  Building holmesgpt-api..."
+	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) -f holmesgpt-api/Dockerfile.e2e .
+
+.PHONY: demo-create-cluster
+demo-create-cluster: ## Create Kind cluster for demo
+	@echo "🏗️  Creating Kind cluster '$(DEMO_CLUSTER_NAME)'..."
+	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind create cluster \
+		--name $(DEMO_CLUSTER_NAME) \
+		--config deploy/demo/overlays/kind/kind-cluster-config.yaml \
+		--kubeconfig $(DEMO_KUBECONFIG)
+	@echo "  Cluster created. KUBECONFIG=$(DEMO_KUBECONFIG)"
+
+.PHONY: demo-load-images
+demo-load-images: ## Load demo images into Kind cluster
+	@echo "📦 Loading images into Kind cluster..."
+	@for svc in $(DEMO_SERVICES); do \
+		echo "  Loading $${svc}..."; \
+		KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
+			$(DEMO_REGISTRY)/$${svc}:$(DEMO_TAG) \
+			--name $(DEMO_CLUSTER_NAME) ; \
+	done
+	@echo "  Loading holmesgpt-api..."
+	@KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
+		$(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) \
+		--name $(DEMO_CLUSTER_NAME)
+	@echo "  All images loaded."
+
+.PHONY: demo-deploy
+demo-deploy: ## Deploy Kubernaut platform to Kind cluster
+	@echo "🚀 Deploying Kubernaut demo..."
+	@echo "  Applying CRDs..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f config/crd/bases/
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -k deploy/demo/overlays/kind/
+	@echo "  Waiting for PostgreSQL..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod -l app=postgresql \
+		-n kubernaut-system --timeout=120s
+	@echo "  Applying migrations..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/apply-migrations.sh
+	@echo "  Generating AuthWebhook TLS certs..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/generate-webhook-certs.sh
+	@echo "  Waiting for all pods to be ready..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod --all \
+		-n kubernaut-system --timeout=300s || true
+	@echo "  Seeding workflow catalog..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/seed-workflows.sh
+	@echo ""
+	@echo "✅ Kubernaut demo deployed!"
+	@echo "   Gateway:      http://localhost:30080"
+	@echo "   DataStorage:  http://localhost:30081"
+	@echo "   Prometheus:   http://localhost:9190"
+	@echo "   AlertManager: http://localhost:9193"
+
+.PHONY: demo-setup
+demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)
+	@echo ""
+	@echo "🎉 Demo environment ready!"
+	@echo "   Apply LLM credentials:  kubectl apply -f deploy/demo/credentials/vertex-ai-example.yaml"
+	@echo "   Trigger workloads:       kubectl apply -k deploy/demo/base/workloads/"
+
+.PHONY: demo-teardown
+demo-teardown: ## Destroy demo Kind cluster
+	@echo "🧹 Tearing down demo cluster '$(DEMO_CLUSTER_NAME)'..."
+	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind delete cluster --name $(DEMO_CLUSTER_NAME)
+	rm -f $(DEMO_KUBECONFIG)
+	@echo "  Demo cluster removed."
+
+.PHONY: demo-status
+demo-status: ## Show demo cluster status
+	@echo "📊 Demo cluster status:"
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true

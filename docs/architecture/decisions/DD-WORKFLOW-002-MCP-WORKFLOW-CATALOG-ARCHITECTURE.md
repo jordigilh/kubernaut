@@ -1,7 +1,11 @@
 # DD-WORKFLOW-002: MCP Workflow Catalog Architecture
 
+> **SUPERSEDED** by [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Action-Type Workflow Catalog Indexing, February 2026).
+>
+> DD-WORKFLOW-016 replaces the single `search_workflow_catalog` tool with a three-step discovery protocol (`list_available_actions`, `list_workflows`, `get_workflow`). The `signal_type`-based querying, semantic search with pgvector embeddings, and Embedding Service architecture defined in this document are no longer valid. The `action_type` taxonomy (DD-WORKFLOW-016) replaces `signal_type` as the primary catalog indexing key. Refer to DD-WORKFLOW-016 for the current HAPI toolset and DS endpoint design.
+
 **Date**: November 14, 2025
-**Status**: ✅ APPROVED
+**Status**: **SUPERSEDED** by DD-WORKFLOW-016
 **Deciders**: Architecture Team
 **Version**: 3.3
 **Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)

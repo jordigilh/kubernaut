@@ -1,0 +1,9 @@
+# Demo workloads namespace
+# This namespace MUST have kubernaut.ai/managed=true for Event Exporter
+# to forward K8s events from pods in this namespace to Gateway.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-workloads
+  labels:
+    kubernaut.ai/managed: "true"

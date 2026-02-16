@@ -87,7 +87,7 @@ USER 1001
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \
-	PYTHONPATH="/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
+	PYTHONPATH="/opt/app-root/src:/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
 	HOME=/opt/app-root
 
 # Expose port

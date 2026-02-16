@@ -23,37 +23,38 @@ import (
 
 // HAPIWorkflowFixture defines test workflow data for HAPI integration tests
 // Pattern: Matches holmesgpt-api/tests/fixtures/workflow_fixtures.py structure
+// BR-WORKFLOW-004: riskTolerance removed (deprecated, never stored in DB)
 type HAPIWorkflowFixture struct {
-	WorkflowName     string
-	Version          string
-	DisplayName      string
-	Description      string
-	SignalType       string
-	Severity         string
-	Component        string
-	Environment      string
-	Priority         string
-	RiskTolerance    string
-	ContainerImage   string
-	ContainerDigest  string
-	ContentHash      string
+	WorkflowName    string
+	Version         string
+	DisplayName     string
+	Description     string
+	ActionType      string // DD-WORKFLOW-016 V1.0: FK to action_type_taxonomy (e.g., "IncreaseMemoryLimits", "ScaleReplicas")
+	SignalType      string
+	Severity        string
+	Component       string
+	Environment     string
+	Priority        string
+	ContainerImage  string
+	ContainerDigest string
+	ContentHash     string
 }
 
-// ToYAMLContent generates workflow YAML content (matches Python fixture)
+// ToYAMLContent generates workflow YAML content per BR-WORKFLOW-004 format
 func (wf *HAPIWorkflowFixture) ToYAMLContent() string {
-	return fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
+	return fmt.Sprintf(`metadata:
+  workflowId: %s
   version: "%s"
-  description: %s
+  description:
+    what: %s
+    whenToUse: Test workflow for %s
+actionType: %s
 labels:
-  signal_type: %s
+  signalType: %s
   severity: %s
   component: %s
   environment: %s
   priority: %s
-  risk_tolerance: %s
 parameters:
   - name: NAMESPACE
     type: string
@@ -65,12 +66,14 @@ parameters:
     description: Target resource name
 execution:
   engine: tekton
-  bundle: %s`, wf.WorkflowName, wf.Version, wf.Description, wf.SignalType,
-		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.RiskTolerance, wf.ContainerImage)
+  bundle: %s`, wf.WorkflowName, wf.Version, wf.Description, wf.ActionType,
+		wf.ActionType, wf.SignalType,
+		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.ContainerImage)
 }
 
 // GetHAPITestWorkflows returns test workflows for HAPI integration tests
 // Pattern: Matches holmesgpt-api/tests/fixtures/workflow_fixtures.py TEST_WORKFLOWS
+// DD-WORKFLOW-017: ContainerImage references real OCI images at quay.io/kubernaut-cicd/test-workflows (same as E2E)
 func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 	workflows := []HAPIWorkflowFixture{
 		{
@@ -78,70 +81,70 @@ func GetHAPITestWorkflows() []HAPIWorkflowFixture {
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Increase Memory Limits",
 			Description:     "Increases memory limits for pods experiencing OOMKilled events",
+			ActionType:      "IncreaseMemoryLimits", // DD-WORKFLOW-016 V1.0: Increase memory limits
 			SignalType:      "OOMKilled",
 			Severity:        "critical",
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P0",
-			RiskTolerance:   "low",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory:v1.0.0",
+			ContainerDigest: "", // Tag-based ref; digest not required for pull
 		},
 		{
 			WorkflowName:    "memory-optimize-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "OOMKill Remediation - Scale Down Replicas",
 			Description:     "Reduces replica count for deployments experiencing OOMKilled",
+			ActionType:      "ScaleReplicas", // DD-WORKFLOW-016: Horizontally scale workload
 			SignalType:      "OOMKilled",
 			Severity:        "high",
 			Component:       "deployment",
 			Environment:     "staging",
 			Priority:        "P1",
-			RiskTolerance:   "medium",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/memory-optimize:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "crashloop-config-fix-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "CrashLoopBackOff - Fix Configuration",
 			Description:     "Identifies and fixes configuration issues causing CrashLoopBackOff",
+			ActionType:      "RestartDeployment", // DD-WORKFLOW-016 V1.0: Rolling restart for config fix
 			SignalType:      "CrashLoopBackOff",
 			Severity:        "high",
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			RiskTolerance:   "low",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "node-drain-reboot-v1", // MUST match Mock LLM and AIAnalysis test_workflows.go
 			Version:         "1.0.0",
 			DisplayName:     "NodeNotReady - Drain and Reboot",
 			Description:     "Safely drains and reboots nodes in NotReady state",
+			ActionType:      "RestartPod", // DD-WORKFLOW-016: Delete and recreate to recover
 			SignalType:      "NodeNotReady",
 			Severity:        "critical",
 			Component:       "node",
 			Environment:     "production",
 			Priority:        "P0",
-			RiskTolerance:   "low",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/node-drain-reboot:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 		{
 			WorkflowName:    "image-pull-backoff-fix-credentials",
 			Version:         "1.0.0",
 			DisplayName:     "ImagePullBackOff - Fix Registry Credentials",
 			Description:     "Fixes ImagePullBackOff errors by updating registry credentials",
+			ActionType:      "RollbackDeployment", // DD-WORKFLOW-016 V1.0: Revert to previous revision
 			SignalType:      "ImagePullBackOff",
 			Severity:        "high",
 			Component:       "pod",
 			Environment:     "production",
 			Priority:        "P1",
-			RiskTolerance:   "medium",
-			ContainerImage:  "ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005",
-			ContainerDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/imagepull-fix-creds:v1.0.0",
+			ContainerDigest: "", // Tag-based ref
 		},
 	}
 

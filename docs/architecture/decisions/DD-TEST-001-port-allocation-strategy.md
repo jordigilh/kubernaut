@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-02-05
-**Version**: 2.7
+**Last Updated**: 2026-02-09
+**Version**: 2.8
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -53,6 +53,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **AIAnalysis** | 9090 | 8081 | 30084 | 30184 | 8084 |
 | **WorkflowExecution** | 9090 | 8081 | 30085 | 30185 | 8085 |
 | **Notification** | 9090 | 8081 | 30086 | 30186 | 8086 |
+| **Effectiveness Monitor** | 9090 | 8081 | 30089 | 30189 | 8089 |
 
 ### **Kind NodePort Allocation for E2E Tests (AUTHORITATIVE)**
 
@@ -70,10 +71,13 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
+| **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 | — | — | `test/infrastructure/kind-effectivenessmonitor-config.yaml` |
 | **Full Pipeline E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fullpipeline-config.yaml` |
 | &nbsp;&nbsp;→ Gateway | 30080 | 30080 | — | — | — | — | (Gateway ingress for event-exporter webhook) |
 | &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | — | — | — | — | (DataStorage for workflow catalog seeding) |
 | &nbsp;&nbsp;→ Mock LLM | — | ClusterIP | — | — | — | — | (Internal only - accessed by HAPI) |
+| &nbsp;&nbsp;→ Prometheus | 9190 | 30190 | — | — | — | — | (EM metric comparison - remote write receiver) |
+| &nbsp;&nbsp;→ AlertManager | 9193 | 30193 | — | — | — | — | (EM alert resolution queries) |
 
 **Note**:
 - Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
@@ -398,43 +402,67 @@ Data Storage (Dependency):
 
 ---
 
-### **Effectiveness Monitor Service**
+### **Effectiveness Monitor Controller** (CRD)
 
-#### **Integration Tests** (`test/integration/effectiveness-monitor/`)
+#### **Integration Tests** (`test/integration/effectivenessmonitor/`)
 ```yaml
-PostgreSQL:
+PostgreSQL (Data Storage dependency):
   Host Port: 15434
   Container Port: 5432
   Connection: 127.0.0.1:15434
+  Purpose: DataStorage audit trail storage
 
-Effectiveness Monitor API:
-  Host Port: 18100
-  Container Port: 8080
-  Connection: http://127.0.0.1:18100
+Redis (Data Storage dependency):
+  Host Port: 16383
+  Container Port: 6379
+  Connection: 127.0.0.1:16383
+  Purpose: DataStorage caching layer
 
 Data Storage (Dependency):
   Host Port: 18092
   Container Port: 8080
   Connection: http://127.0.0.1:18092
+  Purpose: Audit event persistence API
+
+Prometheus Mock:
+  Port: Ephemeral (httptest.NewServer)
+  Purpose: Canned PromQL responses for metric comparison tests
+
+AlertManager Mock:
+  Port: Ephemeral (httptest.NewServer)
+  Purpose: Canned alert responses for alert resolution tests
 ```
 
-#### **E2E Tests** (`test/e2e/effectiveness-monitor/`)
+**Infrastructure**: envtest (K8s API) + programmatic Go (PostgreSQL, Redis, DataStorage via DS bootstrap) + in-process httptest mocks (Prometheus, AlertManager)
+**Pattern**: SynchronizedBeforeSuite (Process 1 only) - supports parallel execution with up to 12 Ginkgo processes
+
+**Prometheus/AlertManager Mocking**: Per TESTING_GUIDELINES.md v2.6.0 Section 4a, Tier 2 uses `httptest.NewServer` mock servers with canned API responses. Real Prometheus/AlertManager contract validation is deferred to E2E (Tier 3). Each Ginkgo process creates its own in-process mock on an ephemeral port -- no port allocation needed.
+
+#### **E2E Tests** (`test/e2e/effectivenessmonitor/`)
 ```yaml
-PostgreSQL:
-  Host Port: 25434
-  Container Port: 5432
-  Connection: 127.0.0.1:25434
+Kind Cluster:
+  Config: test/infrastructure/kind-effectivenessmonitor-config.yaml
 
-Effectiveness Monitor API:
-  Host Port: 28100
-  Container Port: 8080
-  Connection: http://127.0.0.1:28100
+EM Controller (in Kind):
+  Host Port: 8089
+  NodePort: 30089
+  Metrics Host: 9189
+  Metrics NodePort: 30189
 
-Data Storage (Dependency):
+Data Storage (Dependency, in Kind):
   Host Port: 28092
-  Container Port: 8080
+  NodePort: 30081
   Connection: http://127.0.0.1:28092
+
+Prometheus (Real, in Kind):
+  Flags: --web.enable-remote-write-receiver --storage.tsdb.retention.time=1h
+  Purpose: Real PromQL queries for metric comparison; data injected via remote write API
+
+AlertManager (Real, in Kind):
+  Purpose: Real alert resolution queries; alerts injected via POST /api/v2/alerts
 ```
+
+**Note**: E2E uses real Prometheus and AlertManager deployed in Kind cluster to validate actual API contracts (PromQL query syntax, response formats, protobuf/snappy encoding). This avoids the contract mismatch surprises experienced with Mock LLM.
 
 ---
 
@@ -659,6 +687,7 @@ extraPortMappings:
 | **Notification** | 8086 | 30086 | 9186 | 30186 |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 |
+| **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 |
 
 **Pattern**:
 - Service NodePort: `3008X` where X = service index
@@ -779,8 +808,10 @@ var _ = SynchronizedBeforeSuite(
 - [ ] Update `test/e2e/gateway/` (ports: 26380, 28080, 28091)
 
 ### **Phase 3: Effectiveness Monitor**
-- [ ] Update `test/integration/effectiveness-monitor/` (ports: 15434, 18100, 18092)
-- [ ] Update `test/e2e/effectiveness-monitor/` (ports: 25434, 28100, 28092)
+- [ ] Create `test/integration/effectivenessmonitor/` (ports: PostgreSQL 15434, Redis 16383, DataStorage 18092)
+- [ ] Create `test/e2e/effectivenessmonitor/` (Kind NodePort: 30089/30189)
+- [ ] Create `test/infrastructure/kind-effectivenessmonitor-config.yaml`
+- [ ] Add Prometheus (NodePort 30190) and AlertManager (NodePort 30193) to Kind Full Pipeline config
 
 ### **Phase 4: Workflow Engine**
 - [ ] Update `test/integration/workflow-engine/` (ports: 18110, 18093)
@@ -802,7 +833,7 @@ var _ = SynchronizedBeforeSuite(
 |---------|-----------|-------|-----|--------------|
 | **Data Storage** | 15433 | 16379 | 18090 | Embedding: 18000 |
 | **Gateway** | 15437 | 16380 | 18080 | Data Storage: 18091 |
-| **Effectiveness Monitor** | 15434 | N/A | 18100 | Data Storage: 18092 |
+| **Effectiveness Monitor (CRD)** | 15434 | 16383 | N/A | Data Storage: 18092 |
 | **Workflow Engine** | N/A | N/A | 18110 | Data Storage: 18093 |
 | **SignalProcessing (CRD)** | 15436 | 16382 | N/A | Data Storage: 18094 |
 | **RemediationOrchestrator (CRD)** | 15435 | 16381 | N/A | Data Storage: 18140 |
@@ -820,7 +851,7 @@ var _ = SynchronizedBeforeSuite(
 |---------|-----------|-------|-----|--------------|
 | **Data Storage** | 25433 | 26379 | 28090 | Embedding: 28000 |
 | **Gateway** | N/A | 26380 | 28080 | Data Storage: 28091 |
-| **Effectiveness Monitor** | 25434 | N/A | 28100 | Data Storage: 28092 |
+| **Effectiveness Monitor (CRD)** | 25434 | N/A | N/A | Data Storage: 28092 |
 | **Workflow Engine** | N/A | N/A | 28110 | Data Storage: 28093 |
 | **RemediationOrchestrator** | N/A | N/A | N/A | Data Storage: 8089 |
 | **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092 |
@@ -877,6 +908,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.8 | 2026-02-09 | AI Assistant | **EFFECTIVENESS MONITOR**: Added EM to CRD Controllers NodePort table (30089/30189/8089); Added Redis 16383 for EM integration DS bootstrap (was N/A); Added Prometheus NodePort 30190 and AlertManager NodePort 30193 for Full Pipeline E2E; Updated EM detailed section to reflect CRD controller pattern (envtest + DS bootstrap + httptest mocks for Prom/AM); Updated Port Collision Matrix and NodePort Summary; Updated implementation checklist Phase 3 |
 | 2.7 | 2026-02-05 | AI Assistant | **FULL PIPELINE E2E**: Added Full Pipeline E2E port allocations for end-to-end remediation lifecycle test (Issue #39); Gateway ingress NodePort 30080 (event-exporter webhook), DataStorage NodePort 30081 (workflow catalog seeding), Mock LLM ClusterIP (internal only, accessed by HAPI); Kind config: `test/infrastructure/kind-fullpipeline-config.yaml`; All ports verified against Port Collision Matrix - no conflicts |
 | 2.6 | 2026-01-15 | AI Assistant | **IMMUDB REMOVAL**: Removed all Immudb port allocations (13322-13331 range) from integration tests; **USER MANDATE**: "Immudb is deprecated, we don't use this DB anymore by authoritative mandate"; **IMPACT**: Simpler infrastructure (one less container per service), faster startup, reduced port allocation requirements; **AFFECTED SERVICES**: Gateway (removed 13323), DataStorage (removed 13322), SignalProcessing (removed 13324), all other services; Port range 13322-13331 now available for future allocation; Updated Port Collision Matrix, service-specific sections, and example usage |
 | 2.5 | 2026-01-11 | AI Assistant | **NAMESPACE CONSOLIDATION**: Mock LLM E2E moved to `kubernaut-system` namespace (from dedicated `mock-llm` namespace); **Simplified DNS**: `http://mock-llm:8080` (from `http://mock-llm.mock-llm.svc.cluster.local:8080`); **Rationale**: Matches established E2E pattern (AuthWebhook, DataStorage all use `kubernaut-system`); Kubernetes auto-resolves short DNS names within same namespace; Consistent with test dependency co-location pattern; Integration tests unchanged (still use podman ports 18140/18141) |

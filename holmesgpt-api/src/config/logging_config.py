@@ -105,7 +105,7 @@ def setup_logging(app_config: Optional[AppConfig] = None) -> None:
         "src.extensions.llm_config",
         "src.extensions.incident",
         "src.extensions.recovery",
-        "src.toolsets.workflow_catalog",
+        "src.toolsets.workflow_discovery",
         "src.config",
         "src.auth",        # Authentication/authorization (DD-AUTH-014)
         "src.middleware",  # Auth middleware
