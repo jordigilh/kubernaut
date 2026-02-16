@@ -514,13 +514,14 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying severity-based fallback priority")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+		By("Verifying severity-based fallback priority")
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).ToNot(BeNil())
-			// Unknown environment + critical = P1 per fallback rules
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P1"))
+		Expect(final.Status.PriorityAssignment).ToNot(BeNil())
+		// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
+		// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
+		Expect(final.Status.PriorityAssignment.Priority).To(Equal("P3"))
 		})
 
 		// ConfigMap policy load
