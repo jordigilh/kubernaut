@@ -11,8 +11,6 @@ spec:
     kind: SignalProcessing
     listKind: SignalProcessingList
     plural: signalprocessings
-    shortNames:
-    - sp
     singular: signalprocessing
   scope: Namespaced
   versions:
@@ -137,8 +135,8 @@ spec:
                     maxLength: 253
                     type: string
                   providerData:
-                    description: Provider-specific fields in raw JSON format
-                    format: byte
+                    description: 'Provider-specific fields in raw JSON format (issue
+                      #96: string to avoid base64)'
                     type: string
                   receivedTime:
                     description: When Gateway received the signal

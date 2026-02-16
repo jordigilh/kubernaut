@@ -758,9 +758,9 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with empty namespace")
-					// ProviderData is JSON - should contain empty namespace value
+					// ProviderData is JSON string - should contain empty namespace value
 					var providerDataMap map[string]interface{}
-					jsonErr := json.Unmarshal(rr.Spec.ProviderData, &providerDataMap)
+					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
 					Expect(jsonErr).ToNot(HaveOccurred())
 					Expect(providerDataMap).To(HaveKey("namespace"))
 					Expect(providerDataMap).To(HaveKey("labels"))
@@ -790,9 +790,9 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with nil labels")
-					// ProviderData JSON should handle nil labels gracefully
+					// ProviderData JSON string should handle nil labels gracefully
 					var providerDataMap map[string]interface{}
-					jsonErr := json.Unmarshal(rr.Spec.ProviderData, &providerDataMap)
+					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
 					Expect(jsonErr).ToNot(HaveOccurred(),
 						"ProviderData JSON should be valid even with nil labels")
 				})

@@ -42,8 +42,8 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "High CPU"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-123"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-123"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
@@ -115,8 +115,8 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-456","analysis":"complete"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-456","analysis":"complete"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
@@ -207,8 +207,8 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-789"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-789"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
