@@ -1,0 +1,34 @@
+# Hello World Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: WorkflowExecution E2E
+metadata:
+  workflowId: test-hello-world
+  version: "1.0.0"
+  description:
+    what: "Simple hello-world workflow for testing the execution pipeline"
+    whenToUse: "For E2E validation of workflow registration and execution"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Tekton Pipelines installed in the cluster"
+
+actionType: RestartPod
+
+labels:
+  signalType: test
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: TARGET_RESOURCE
+    type: string
+    required: true
+    description: "Target resource identifier"
+    default: "test/deployment/hello"
+  - name: MESSAGE
+    type: string
+    required: false
+    description: "Message to print during execution"
+    default: "Hello from Kubernaut WorkflowExecution!"

@@ -1,71 +1,45 @@
-# Kubernaut Workflow Schema v1.0
+# Test Hello World Tekton Workflow Schema (BR-WORKFLOW-004)
 # Authority: ADR-043
-# See: docs/architecture/decisions/ADR-043-workflow-schema-definition-standard.md
-#
-# Test Hello World Workflow - E2E Testing
-# This workflow validates the WorkflowExecution controller's Tekton integration
-
-apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-
-# ============================================
-# METADATA (Required)
-# ============================================
+# E2E Testing: Validates WorkflowExecution controller's Tekton integration
 metadata:
-  workflow_id: test-hello-world
-  version: "v1.0.0"
-  name: "Test Hello World Workflow"
-  description: "Simple hello-world workflow for E2E testing of WorkflowExecution controller"
+  workflowId: test-hello-world
+  version: "1.0.0"
+  description:
+    what: "Simple hello-world workflow for E2E testing of WorkflowExecution controller"
+    whenToUse: "For E2E validation of Tekton-based workflow execution"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Tekton Pipelines installed in the cluster"
 
-# ============================================
-# LABELS (Required - 6 mandatory + optional)
-# DD-WORKFLOW-001 v1.3
-# ============================================
+actionType: RestartPod
+
 labels:
-  # Mandatory labels (all 6 required)
-  kubernaut.ai/signal-type: "test"
-  kubernaut.ai/severity: "low"
-  kubernaut.ai/category: "testing"
-  kubernaut.ai/resource-kind: "deployment"
-  kubernaut.ai/intervention-type: "non-invasive"
-  kubernaut.ai/workflow-type: "test"
+  signalType: test
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
 
-  # Optional custom labels
-  kubernaut.ai/test-category: "e2e"
-  kubernaut.ai/validation-type: "success-path"
+customLabels:
+  test-category: e2e
+  validation-type: success-path
 
-# ============================================
-# EXECUTION (Optional in V1.0)
-# ============================================
 execution:
-  engine: "tekton"
-  # bundle: derived from OCI bundle
+  engine: tekton
 
-# ============================================
-# PARAMETERS (Required)
-# ============================================
 parameters:
-  - name: "TARGET_RESOURCE"
-    type: "string"
+  - name: TARGET_RESOURCE
+    type: string
     required: true
     description: "Target resource being remediated (e.g., 'default/deployment/my-app')"
     default: "test/deployment/hello"
-
-  - name: "MESSAGE"
-    type: "string"
+  - name: MESSAGE
+    type: string
     required: false
     description: "Optional message to echo during execution"
     default: "Hello from Kubernaut WorkflowExecution!"
-
-  - name: "DELAY_SECONDS"
-    type: "string"
+  - name: DELAY_SECONDS
+    type: string
     required: false
     description: "Optional delay before completion (for testing running state)"
     default: "2"
     pattern: "^[0-9]+$"
-
-# ============================================
-# ROLLBACK PARAMETERS (Optional)
-# ============================================
-# Not applicable for test workflow
-

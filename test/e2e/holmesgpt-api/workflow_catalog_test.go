@@ -63,6 +63,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-030",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -107,6 +112,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-031",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -150,6 +160,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			ResourceKind:      "Pod",
 			ResourceName:      "test-pod",
 			ErrorMessage:      "Test error",
+			Environment:       "production",
+			Priority:          "P1",
+			RiskTolerance:     "medium",
+			BusinessCategory:  "standard",
+			ClusterName:       "e2e-test",
 		}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -191,6 +206,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -232,6 +252,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -293,6 +318,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT: Simulate LLM completing RCA for OOMKilled
@@ -336,6 +366,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -378,6 +413,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			ResourceKind:      "Pod",
 			ResourceName:      "test-pod",
 			ErrorMessage:      "Test error",
+			Environment:       "production",
+			Priority:          "P1",
+			RiskTolerance:     "medium",
+			BusinessCategory:  "standard",
+			ClusterName:       "e2e-test",
 		}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -436,6 +476,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -475,6 +520,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -514,6 +564,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)
@@ -553,6 +608,11 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "Test error",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// ========================================
 			// ACT (BR-AA-HAPI-064: async session flow)

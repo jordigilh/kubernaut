@@ -29,13 +29,14 @@ except ImportError:
 
 class IncidentResponseDataSelectedWorkflow(BaseModel):
     """
-    Selected workflow with workflow_id, containerImage, confidence, parameters (optional)
+    Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
     """ # noqa: E501
     workflow_id: Optional[StrictStr] = None
+    action_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from HAPI three-step discovery protocol. ")
     container_image: Optional[StrictStr] = None
     confidence: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = None
     parameters: Optional[Dict[str, Any]] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "container_image", "confidence", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflow_id", "action_type", "container_image", "confidence", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -87,6 +88,7 @@ class IncidentResponseDataSelectedWorkflow(BaseModel):
 
         _obj = cls.model_validate({
             "workflow_id": obj.get("workflow_id"),
+            "action_type": obj.get("action_type"),
             "container_image": obj.get("container_image"),
             "confidence": obj.get("confidence"),
             "parameters": obj.get("parameters")

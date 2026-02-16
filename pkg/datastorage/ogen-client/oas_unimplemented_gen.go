@@ -58,12 +58,25 @@ func (UnimplementedHandler) CreateNotificationAudit(ctx context.Context, req *No
 
 // CreateWorkflow implements createWorkflow operation.
 //
-// Create a new workflow in the catalog.
-// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+// Register a new workflow by providing an OCI image pullspec.
+// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+// validates the schema, and populates all catalog fields from it.
+// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 //
 // POST /api/v1/workflows
-func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *RemediationWorkflow) (r CreateWorkflowRes, _ error) {
+func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkflowFromOCIRequest) (r CreateWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeprecateWorkflow implements deprecateWorkflow operation.
+//
+// Mark a workflow as deprecated. Deprecated workflows are excluded from
+// discovery results but remain in the catalog for audit history.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/deprecate
+func (UnimplementedHandler) DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (r DeprecateWorkflowRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -71,10 +84,21 @@ func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *Remediation
 //
 // Convenience endpoint to disable a workflow (soft delete).
 // Sets status to 'disabled' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 //
 // PATCH /api/v1/workflows/{workflow_id}/disable
-func (UnimplementedHandler) DisableWorkflow(ctx context.Context, req OptWorkflowDisableRequest, params DisableWorkflowParams) (r DisableWorkflowRes, _ error) {
+func (UnimplementedHandler) DisableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DisableWorkflowParams) (r DisableWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// EnableWorkflow implements enableWorkflow operation.
+//
+// Re-enable a previously disabled or deprecated workflow.
+// Sets status to 'active' with timestamp and reason.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/enable
+func (UnimplementedHandler) EnableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params EnableWorkflowParams) (r EnableWorkflowRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -114,6 +138,27 @@ func (UnimplementedHandler) ExportAuditEvents(ctx context.Context, params Export
 	return r, ht.ErrNotImplemented
 }
 
+// GetEffectivenessScore implements getEffectivenessScore operation.
+//
+// Computes the weighted effectiveness score for a given remediation lifecycle
+// from component audit events in the audit trail.
+// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+// The Effectiveness Monitor emits raw component assessment events; this endpoint
+// aggregates them and applies the DD-017 v2.1 scoring formula:
+// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+// **Business Requirements**: BR-EM-001 to BR-EM-004
+// **Response includes**:
+// - Weighted overall score (0.0 to 1.0)
+// - Individual component scores (health, alert, metrics)
+// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// GET /api/v1/effectiveness/{correlation_id}
+func (UnimplementedHandler) GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (r GetEffectivenessScoreRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetMetrics implements getMetrics operation.
 //
 // Exposes Prometheus metrics in text format.
@@ -128,10 +173,43 @@ func (UnimplementedHandler) GetMetrics(ctx context.Context) (r GetMetricsOK, _ e
 	return r, ht.ErrNotImplemented
 }
 
+// GetRemediationHistoryContext implements getRemediationHistoryContext operation.
+//
+// Returns structured remediation history context for LLM prompt enrichment.
+// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+// **Design Document**: DD-HAPI-016
+// **Behavior**:
+// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+// audit events into structured remediation chains for a target resource.
+// **Two-Tier Query Design**:
+// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+// and full effectiveness data for the target resource.
+// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+// regression.
+// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+// `preRemediationSpecHash` matches `currentSpecHash`.
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// GET /api/v1/remediation-history/context
+func (UnimplementedHandler) GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (r GetRemediationHistoryContextRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetWorkflowByID implements getWorkflowByID operation.
 //
 // Retrieve a specific workflow by its UUID.
-// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key).
+// Step 3 of the three-step workflow discovery protocol when context filters are provided.
+// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+// **Without context filters**: Returns workflow by ID (existing behavior).
+// **With context filters**: Returns workflow only if it matches the signal context.
+// Returns 404 if the workflow exists but does not match the context filters
+// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
 //
 // GET /api/v1/workflows/{workflow_id}
 func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (r GetWorkflowByIDRes, _ error) {
@@ -145,6 +223,25 @@ func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkf
 //
 // GET /health
 func (UnimplementedHandler) HealthCheck(ctx context.Context) (r HealthCheckRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListAvailableActions implements listAvailableActions operation.
+//
+// Step 1 of the three-step workflow discovery protocol.
+// Returns action types from the taxonomy that have active workflows matching
+// the provided signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **Behavior**:
+// - Queries action_type_taxonomy joined with remediation_workflow_catalog
+// - Filters by active workflows matching signal context (severity, component, environment, priority)
+// - Returns action types with descriptions and workflow counts
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions
+func (UnimplementedHandler) ListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (r ListAvailableActionsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -172,6 +269,27 @@ func (UnimplementedHandler) ListLegalHolds(ctx context.Context) (r *ListLegalHol
 //
 // GET /api/v1/workflows
 func (UnimplementedHandler) ListWorkflows(ctx context.Context, params ListWorkflowsParams) (r ListWorkflowsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListWorkflowsByActionType implements listWorkflowsByActionType operation.
+//
+// Step 2 of the three-step workflow discovery protocol.
+// Returns all active workflows matching the specified action type and
+// signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+// before selecting one. Do not select from an incomplete list.
+// **Behavior**:
+// - Filters by action_type + signal context (severity, component, environment, priority)
+// - Excludes disabled and deprecated workflows
+// - Returns workflow metadata including effectiveness data
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions/{action_type}
+func (UnimplementedHandler) ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (r ListWorkflowsByActionTypeRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -270,24 +388,6 @@ func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, p
 //
 // DELETE /api/v1/audit/legal-hold/{correlation_id}
 func (UnimplementedHandler) ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (r ReleaseLegalHoldRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// SearchWorkflows implements searchWorkflows operation.
-//
-// Search workflows using label-based matching with wildcard support and weighted scoring.
-// **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-// **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-// **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
-// **Behavior**:
-// - Mandatory filters: signal_type, severity, component, environment, priority
-// - Optional filters: custom_labels, detected_labels
-// - Wildcard support: "*" matches any non-null value
-// - Weighted scoring: Exact matches > Wildcard matches
-// - Returns top_k results sorted by confidence score (0.0-1.0).
-//
-// POST /api/v1/workflows/search
-func (UnimplementedHandler) SearchWorkflows(ctx context.Context, req *WorkflowSearchRequest) (r SearchWorkflowsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

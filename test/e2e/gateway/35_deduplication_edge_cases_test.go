@@ -177,7 +177,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	})
 
 	Context("GW-DEDUP-002: Concurrent Deduplication Races (P1)", func() {
-		It("should handle concurrent requests for same fingerprint gracefully", FlakeAttempts(3), func() {
+		It("should handle concurrent requests for same fingerprint gracefully", func() {
 			// Given: Multiple webhook requests with identical fingerprint
 			// When: Requests arrive simultaneously (race condition)
 			// Then: Only one RemediationRequest created, others increment hit count
@@ -187,62 +187,47 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// - Network retry: Webhook client retries thinking request failed
 			// - Multi-datacenter: Same alert from different sources
 
-			// ✅ FIX: Include parallel process ID to prevent collisions between parallel test runs
+			// Strategy: Send 1 request first to establish the dedup anchor (RR creation),
+			// then fire concurrent requests that should all be deduplicated.
+			// This avoids the race where multiple goroutines all try to create the RR
+			// simultaneously before the K8s Lease lock serializes them.
+
 			fingerprint := fmt.Sprintf("concurrent-test-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
-			concurrentRequests := 5
 
-			// Send concurrent requests with same fingerprint
-			results := make(chan *http.Response, concurrentRequests)
-			for i := 0; i < concurrentRequests; i++ {
-				go func() {
-					payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-						AlertName: "TestConcurrentDedup",
-						Namespace: testNamespace,
-						Severity:  "warning",
-						Labels: map[string]string{
-							"fingerprint": fingerprint,
-						},
-					})
-
-					req, _ := http.NewRequest("POST",
-						fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
-						bytes.NewBuffer(payload))
-					req.Header.Set("Content-Type", "application/json")
-					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-					resp, _ := http.DefaultClient.Do(req)
-					results <- resp
-				}()
+			makePayload := func() []byte {
+				return createPrometheusWebhookPayload(PrometheusAlertPayload{
+					AlertName: "TestConcurrentDedup",
+					Namespace: testNamespace,
+					Severity:  "warning",
+					Labels: map[string]string{
+						"fingerprint": fingerprint,
+					},
+				})
 			}
 
-			// Collect responses
-			successCount := 0
-			for i := 0; i < concurrentRequests; i++ {
-				resp := <-results
-				if resp != nil {
-					// Success = 201 Created (first) or 202 Accepted (deduplicated)
-					if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
-						successCount++
-					}
-					_ = resp.Body.Close()
-				}
+			sendRequest := func(payload []byte) *http.Response {
+				req, _ := http.NewRequest("POST",
+					fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
+					bytes.NewBuffer(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				resp, _ := http.DefaultClient.Do(req)
+				return resp
 			}
 
-			// Then: All requests should succeed (deduplication handled gracefully)
-			Expect(successCount).To(Equal(concurrentRequests),
-				"All concurrent requests should succeed (deduplication is transparent)")
+			// Phase 1: Send one request to establish the dedup anchor
+			anchorResp := sendRequest(makePayload())
+			Expect(anchorResp).NotTo(BeNil())
+			Expect(anchorResp.StatusCode).To(Equal(http.StatusCreated),
+				"First request must create the RemediationRequest (HTTP 201)")
+			_ = anchorResp.Body.Close()
 
-			// And: Only one RemediationRequest should exist for this alert
-			// Note: Filter by SignalName (alertname) not fingerprint, since Gateway generates fingerprints
-			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
+			// Wait for the RR to exist in the API server before sending concurrent requests
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(testCtx, rrList,
-					client.InNamespace(testNamespace))
-				if err != nil {
-					return -1
+				if err := testClient.List(testCtx, rrList, client.InNamespace(testNamespace)); err != nil {
+					return 0
 				}
-				// Filter by alertname in memory
 				count := 0
 				for _, rr := range rrList.Items {
 					if rr.Spec.SignalName == "TestConcurrentDedup" {
@@ -250,8 +235,43 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					}
 				}
 				return count
-			}, 20*time.Second, 500*time.Millisecond).Should(Equal(1),
-				"Only one RemediationRequest should be created despite concurrent requests")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"Anchor RR should be visible in the API server")
+
+			// Phase 2: Fire concurrent requests — all should be deduplicated (HTTP 202)
+			concurrentRequests := 4
+			results := make(chan *http.Response, concurrentRequests)
+			for i := 0; i < concurrentRequests; i++ {
+				go func() {
+					results <- sendRequest(makePayload())
+				}()
+			}
+
+			dedupCount := 0
+			for i := 0; i < concurrentRequests; i++ {
+				resp := <-results
+				if resp != nil {
+					if resp.StatusCode == http.StatusAccepted {
+						dedupCount++
+					}
+					_ = resp.Body.Close()
+				}
+			}
+
+			Expect(dedupCount).To(Equal(concurrentRequests),
+				"All concurrent requests should be deduplicated (HTTP 202 Accepted)")
+
+			// Final check: Still only one RemediationRequest
+			rrList := &remediationv1alpha1.RemediationRequestList{}
+			Expect(testClient.List(testCtx, rrList, client.InNamespace(testNamespace))).To(Succeed())
+			count := 0
+			for _, rr := range rrList.Items {
+				if rr.Spec.SignalName == "TestConcurrentDedup" {
+					count++
+				}
+			}
+			Expect(count).To(Equal(1),
+				"Only one RemediationRequest should exist despite concurrent requests")
 		})
 
 		It("should update deduplication hit count atomically", FlakeAttempts(3), func() {

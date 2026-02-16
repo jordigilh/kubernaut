@@ -1329,6 +1329,255 @@ func (s *AIAnalysisRegoEvaluationPayload) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *ActionTypeEntry) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ActionTypeEntry) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("actionType")
+		e.Str(s.ActionType)
+	}
+	{
+		e.FieldStart("description")
+		s.Description.Encode(e)
+	}
+	{
+		e.FieldStart("workflowCount")
+		e.Int(s.WorkflowCount)
+	}
+}
+
+var jsonFieldsNameOfActionTypeEntry = [3]string{
+	0: "actionType",
+	1: "description",
+	2: "workflowCount",
+}
+
+// Decode decodes ActionTypeEntry from json.
+func (s *ActionTypeEntry) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ActionTypeEntry to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "actionType":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ActionType = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actionType\"")
+			}
+		case "description":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.Description.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"description\"")
+			}
+		case "workflowCount":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int()
+				s.WorkflowCount = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowCount\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ActionTypeEntry")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfActionTypeEntry) {
+					name = jsonFieldsNameOfActionTypeEntry[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ActionTypeEntry) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ActionTypeEntry) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ActionTypeListResponse) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ActionTypeListResponse) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("actionTypes")
+		e.ArrStart()
+		for _, elem := range s.ActionTypes {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+	{
+		e.FieldStart("pagination")
+		s.Pagination.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfActionTypeListResponse = [2]string{
+	0: "actionTypes",
+	1: "pagination",
+}
+
+// Decode decodes ActionTypeListResponse from json.
+func (s *ActionTypeListResponse) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ActionTypeListResponse to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "actionTypes":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				s.ActionTypes = make([]ActionTypeEntry, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem ActionTypeEntry
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.ActionTypes = append(s.ActionTypes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actionTypes\"")
+			}
+		case "pagination":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.Pagination.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pagination\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ActionTypeListResponse")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfActionTypeListResponse) {
+					name = jsonFieldsNameOfActionTypeListResponse[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ActionTypeListResponse) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ActionTypeListResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AsyncAcceptanceResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -1873,6 +2122,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryOrchestration
 	case AuditEventEventCategoryWebhook:
 		*s = AuditEventEventCategoryWebhook
+	case AuditEventEventCategoryEffectiveness:
+		*s = AuditEventEventCategoryEffectiveness
 	default:
 		*s = AuditEventEventCategory(v)
 	}
@@ -1996,7 +2247,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData:
 			e.FieldStart("event_type")
@@ -2028,6 +2279,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.routing.blocked")
+		case AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("remediation.workflow_created")
 		}
 		{
 			s := s.RemediationOrchestratorAuditPayload
@@ -2163,6 +2417,30 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.TimeoutConfig.Set {
 					e.FieldStart("timeout_config")
 					s.TimeoutConfig.Encode(e)
+				}
+			}
+			{
+				if s.PreRemediationSpecHash.Set {
+					e.FieldStart("pre_remediation_spec_hash")
+					s.PreRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.TargetResource.Set {
+					e.FieldStart("target_resource")
+					s.TargetResource.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowVersion.Set {
+					e.FieldStart("workflow_version")
+					s.WorkflowVersion.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowType.Set {
+					e.FieldStart("workflow_type")
+					s.WorkflowType.Encode(e)
 				}
 			}
 		}
@@ -2753,11 +3031,23 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case WorkflowSearchAuditPayloadAuditEventEventData:
-		e.FieldStart("event_type")
-		e.Str("workflow.catalog.search_completed")
+	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+		switch s.Type {
+		case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.actions_listed")
+		case AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.selection_validated")
+		case AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.workflow_retrieved")
+		case AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.workflows_listed")
+		}
 		{
-			s := s.WorkflowSearchAuditPayload
+			s := s.WorkflowDiscoveryAuditPayload
 			{
 				e.FieldStart("query")
 				s.Query.Encode(e)
@@ -3319,6 +3609,166 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+		switch s.Type {
+		case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.alert.assessed")
+		case AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.assessment.completed")
+		case AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.assessment.scheduled")
+		case AuditEventEventDataEffectivenessHashComputedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.hash.computed")
+		case AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.health.assessed")
+		case AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.metrics.assessed")
+		}
+		{
+			s := s.EffectivenessAssessmentAuditPayload
+			{
+				e.FieldStart("correlation_id")
+				e.Str(s.CorrelationID)
+			}
+			{
+				e.FieldStart("namespace")
+				e.Str(s.Namespace)
+			}
+			{
+				if s.EaName.Set {
+					e.FieldStart("ea_name")
+					s.EaName.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("component")
+				s.Component.Encode(e)
+			}
+			{
+				if s.Assessed.Set {
+					e.FieldStart("assessed")
+					s.Assessed.Encode(e)
+				}
+			}
+			{
+				if s.Score.Set {
+					e.FieldStart("score")
+					s.Score.Encode(e)
+				}
+			}
+			{
+				if s.Details.Set {
+					e.FieldStart("details")
+					s.Details.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
+			{
+				if s.AlertName.Set {
+					e.FieldStart("alert_name")
+					s.AlertName.Encode(e)
+				}
+			}
+			{
+				if s.ComponentsAssessed != nil {
+					e.FieldStart("components_assessed")
+					e.ArrStart()
+					for _, elem := range s.ComponentsAssessed {
+						e.Str(elem)
+					}
+					e.ArrEnd()
+				}
+			}
+			{
+				if s.CompletedAt.Set {
+					e.FieldStart("completed_at")
+					s.CompletedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.AssessmentDurationSeconds.Set {
+					e.FieldStart("assessment_duration_seconds")
+					s.AssessmentDurationSeconds.Encode(e)
+				}
+			}
+			{
+				if s.ValidityDeadline.Set {
+					e.FieldStart("validity_deadline")
+					s.ValidityDeadline.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.PrometheusCheckAfter.Set {
+					e.FieldStart("prometheus_check_after")
+					s.PrometheusCheckAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.AlertmanagerCheckAfter.Set {
+					e.FieldStart("alertmanager_check_after")
+					s.AlertmanagerCheckAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.ValidityWindow.Set {
+					e.FieldStart("validity_window")
+					s.ValidityWindow.Encode(e)
+				}
+			}
+			{
+				if s.StabilizationWindow.Set {
+					e.FieldStart("stabilization_window")
+					s.StabilizationWindow.Encode(e)
+				}
+			}
+			{
+				if s.PreRemediationSpecHash.Set {
+					e.FieldStart("pre_remediation_spec_hash")
+					s.PreRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.PostRemediationSpecHash.Set {
+					e.FieldStart("post_remediation_spec_hash")
+					s.PostRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.HashMatch.Set {
+					e.FieldStart("hash_match")
+					s.HashMatch.Encode(e)
+				}
+			}
+			{
+				if s.HealthChecks.Set {
+					e.FieldStart("health_checks")
+					s.HealthChecks.Encode(e)
+				}
+			}
+			{
+				if s.MetricDeltas.Set {
+					e.FieldStart("metric_deltas")
+					s.MetricDeltas.Encode(e)
+				}
+			}
+			{
+				if s.AlertResolution.Set {
+					e.FieldStart("alert_resolution")
+					s.AlertResolution.Encode(e)
+				}
+			}
+		}
 	}
 }
 
@@ -3387,6 +3837,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "orchestrator.routing.blocked":
 					s.Type = AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData
 					found = true
+				case "remediation.workflow_created":
+					s.Type = AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData
+					found = true
 				case "signalprocessing.business.classified":
 					s.Type = AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData
 					found = true
@@ -3441,8 +3894,17 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "RemediationApprovalDecisionPayload":
 					s.Type = RemediationApprovalDecisionPayloadAuditEventEventData
 					found = true
-				case "workflow.catalog.search_completed":
-					s.Type = WorkflowSearchAuditPayloadAuditEventEventData
+				case "workflow.catalog.actions_listed":
+					s.Type = AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData
+					found = true
+				case "workflow.catalog.selection_validated":
+					s.Type = AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData
+					found = true
+				case "workflow.catalog.workflow_retrieved":
+					s.Type = AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData
+					found = true
+				case "workflow.catalog.workflows_listed":
+					s.Type = AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData
 					found = true
 				case "datastorage.workflow.created":
 					s.Type = WorkflowCatalogCreatedPayloadAuditEventEventData
@@ -3495,6 +3957,24 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
 					found = true
+				case "effectiveness.alert.assessed":
+					s.Type = AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData
+					found = true
+				case "effectiveness.assessment.completed":
+					s.Type = AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData
+					found = true
+				case "effectiveness.assessment.scheduled":
+					s.Type = AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData
+					found = true
+				case "effectiveness.hash.computed":
+					s.Type = AuditEventEventDataEffectivenessHashComputedAuditEventEventData
+					found = true
+				case "effectiveness.health.assessed":
+					s.Type = AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData
+					found = true
+				case "effectiveness.metrics.assessed":
+					s.Type = AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -3513,7 +3993,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -3545,8 +4025,8 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationApprovalDecisionPayload.Decode(d); err != nil {
 			return err
 		}
-	case WorkflowSearchAuditPayloadAuditEventEventData:
-		if err := s.WorkflowSearchAuditPayload.Decode(d); err != nil {
+	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+		if err := s.WorkflowDiscoveryAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowCatalogCreatedPayloadAuditEventEventData:
@@ -3615,6 +4095,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+		if err := s.EffectivenessAssessmentAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -4076,6 +4560,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryOrchestration
 	case AuditEventRequestEventCategoryWebhook:
 		*s = AuditEventRequestEventCategoryWebhook
+	case AuditEventRequestEventCategoryEffectiveness:
+		*s = AuditEventRequestEventCategoryEffectiveness
 	default:
 		*s = AuditEventRequestEventCategory(v)
 	}
@@ -4199,7 +4685,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -4231,6 +4717,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.routing.blocked")
+		case AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("remediation.workflow_created")
 		}
 		{
 			s := s.RemediationOrchestratorAuditPayload
@@ -4366,6 +4855,30 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.TimeoutConfig.Set {
 					e.FieldStart("timeout_config")
 					s.TimeoutConfig.Encode(e)
+				}
+			}
+			{
+				if s.PreRemediationSpecHash.Set {
+					e.FieldStart("pre_remediation_spec_hash")
+					s.PreRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.TargetResource.Set {
+					e.FieldStart("target_resource")
+					s.TargetResource.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowVersion.Set {
+					e.FieldStart("workflow_version")
+					s.WorkflowVersion.Encode(e)
+				}
+			}
+			{
+				if s.WorkflowType.Set {
+					e.FieldStart("workflow_type")
+					s.WorkflowType.Encode(e)
 				}
 			}
 		}
@@ -4956,11 +5469,23 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case WorkflowSearchAuditPayloadAuditEventRequestEventData:
-		e.FieldStart("event_type")
-		e.Str("workflow.catalog.search_completed")
+	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+		switch s.Type {
+		case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.actions_listed")
+		case AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.selection_validated")
+		case AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.workflow_retrieved")
+		case AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("workflow.catalog.workflows_listed")
+		}
 		{
-			s := s.WorkflowSearchAuditPayload
+			s := s.WorkflowDiscoveryAuditPayload
 			{
 				e.FieldStart("query")
 				s.Query.Encode(e)
@@ -5522,6 +6047,166 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+		switch s.Type {
+		case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.alert.assessed")
+		case AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.assessment.completed")
+		case AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.assessment.scheduled")
+		case AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.hash.computed")
+		case AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.health.assessed")
+		case AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("effectiveness.metrics.assessed")
+		}
+		{
+			s := s.EffectivenessAssessmentAuditPayload
+			{
+				e.FieldStart("correlation_id")
+				e.Str(s.CorrelationID)
+			}
+			{
+				e.FieldStart("namespace")
+				e.Str(s.Namespace)
+			}
+			{
+				if s.EaName.Set {
+					e.FieldStart("ea_name")
+					s.EaName.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("component")
+				s.Component.Encode(e)
+			}
+			{
+				if s.Assessed.Set {
+					e.FieldStart("assessed")
+					s.Assessed.Encode(e)
+				}
+			}
+			{
+				if s.Score.Set {
+					e.FieldStart("score")
+					s.Score.Encode(e)
+				}
+			}
+			{
+				if s.Details.Set {
+					e.FieldStart("details")
+					s.Details.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
+			{
+				if s.AlertName.Set {
+					e.FieldStart("alert_name")
+					s.AlertName.Encode(e)
+				}
+			}
+			{
+				if s.ComponentsAssessed != nil {
+					e.FieldStart("components_assessed")
+					e.ArrStart()
+					for _, elem := range s.ComponentsAssessed {
+						e.Str(elem)
+					}
+					e.ArrEnd()
+				}
+			}
+			{
+				if s.CompletedAt.Set {
+					e.FieldStart("completed_at")
+					s.CompletedAt.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.AssessmentDurationSeconds.Set {
+					e.FieldStart("assessment_duration_seconds")
+					s.AssessmentDurationSeconds.Encode(e)
+				}
+			}
+			{
+				if s.ValidityDeadline.Set {
+					e.FieldStart("validity_deadline")
+					s.ValidityDeadline.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.PrometheusCheckAfter.Set {
+					e.FieldStart("prometheus_check_after")
+					s.PrometheusCheckAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.AlertmanagerCheckAfter.Set {
+					e.FieldStart("alertmanager_check_after")
+					s.AlertmanagerCheckAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.ValidityWindow.Set {
+					e.FieldStart("validity_window")
+					s.ValidityWindow.Encode(e)
+				}
+			}
+			{
+				if s.StabilizationWindow.Set {
+					e.FieldStart("stabilization_window")
+					s.StabilizationWindow.Encode(e)
+				}
+			}
+			{
+				if s.PreRemediationSpecHash.Set {
+					e.FieldStart("pre_remediation_spec_hash")
+					s.PreRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.PostRemediationSpecHash.Set {
+					e.FieldStart("post_remediation_spec_hash")
+					s.PostRemediationSpecHash.Encode(e)
+				}
+			}
+			{
+				if s.HashMatch.Set {
+					e.FieldStart("hash_match")
+					s.HashMatch.Encode(e)
+				}
+			}
+			{
+				if s.HealthChecks.Set {
+					e.FieldStart("health_checks")
+					s.HealthChecks.Encode(e)
+				}
+			}
+			{
+				if s.MetricDeltas.Set {
+					e.FieldStart("metric_deltas")
+					s.MetricDeltas.Encode(e)
+				}
+			}
+			{
+				if s.AlertResolution.Set {
+					e.FieldStart("alert_resolution")
+					s.AlertResolution.Encode(e)
+				}
+			}
+		}
 	}
 }
 
@@ -5590,6 +6275,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "orchestrator.routing.blocked":
 					s.Type = AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData
 					found = true
+				case "remediation.workflow_created":
+					s.Type = AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData
+					found = true
 				case "signalprocessing.business.classified":
 					s.Type = AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData
 					found = true
@@ -5644,8 +6332,17 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "RemediationApprovalDecisionPayload":
 					s.Type = RemediationApprovalDecisionPayloadAuditEventRequestEventData
 					found = true
-				case "workflow.catalog.search_completed":
-					s.Type = WorkflowSearchAuditPayloadAuditEventRequestEventData
+				case "workflow.catalog.actions_listed":
+					s.Type = AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData
+					found = true
+				case "workflow.catalog.selection_validated":
+					s.Type = AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData
+					found = true
+				case "workflow.catalog.workflow_retrieved":
+					s.Type = AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData
+					found = true
+				case "workflow.catalog.workflows_listed":
+					s.Type = AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData
 					found = true
 				case "datastorage.workflow.created":
 					s.Type = WorkflowCatalogCreatedPayloadAuditEventRequestEventData
@@ -5698,6 +6395,24 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 					found = true
+				case "effectiveness.alert.assessed":
+					s.Type = AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData
+					found = true
+				case "effectiveness.assessment.completed":
+					s.Type = AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData
+					found = true
+				case "effectiveness.assessment.scheduled":
+					s.Type = AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData
+					found = true
+				case "effectiveness.hash.computed":
+					s.Type = AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData
+					found = true
+				case "effectiveness.health.assessed":
+					s.Type = AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData
+					found = true
+				case "effectiveness.metrics.assessed":
+					s.Type = AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -5716,7 +6431,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -5748,8 +6463,8 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationApprovalDecisionPayload.Decode(d); err != nil {
 			return err
 		}
-	case WorkflowSearchAuditPayloadAuditEventRequestEventData:
-		if err := s.WorkflowSearchAuditPayload.Decode(d); err != nil {
+	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+		if err := s.WorkflowDiscoveryAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowCatalogCreatedPayloadAuditEventRequestEventData:
@@ -5818,6 +6533,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+		if err := s.EffectivenessAssessmentAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -7797,6 +8516,44 @@ func (s *CreateNotificationAuditInternalServerError) UnmarshalJSON(data []byte) 
 	return s.Decode(d)
 }
 
+// Encode encodes CreateWorkflowBadGateway as json.
+func (s *CreateWorkflowBadGateway) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowBadGateway from json.
+func (s *CreateWorkflowBadGateway) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowBadGateway to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowBadGateway(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowBadGateway) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowBadGateway) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateWorkflowBadRequest as json.
 func (s *CreateWorkflowBadRequest) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -7911,6 +8668,102 @@ func (s *CreateWorkflowForbidden) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode implements json.Marshaler.
+func (s *CreateWorkflowFromOCIRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *CreateWorkflowFromOCIRequest) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("container_image")
+		e.Str(s.ContainerImage)
+	}
+}
+
+var jsonFieldsNameOfCreateWorkflowFromOCIRequest = [1]string{
+	0: "container_image",
+}
+
+// Decode decodes CreateWorkflowFromOCIRequest from json.
+func (s *CreateWorkflowFromOCIRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowFromOCIRequest to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "container_image":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ContainerImage = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"container_image\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode CreateWorkflowFromOCIRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfCreateWorkflowFromOCIRequest) {
+					name = jsonFieldsNameOfCreateWorkflowFromOCIRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowFromOCIRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowFromOCIRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateWorkflowInternalServerError as json.
 func (s *CreateWorkflowInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -7987,6 +8840,44 @@ func (s *CreateWorkflowUnauthorized) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreateWorkflowUnprocessableEntity as json.
+func (s *CreateWorkflowUnprocessableEntity) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowUnprocessableEntity from json.
+func (s *CreateWorkflowUnprocessableEntity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowUnprocessableEntity to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowUnprocessableEntity(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowUnprocessableEntity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowUnprocessableEntity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s CustomLabels) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -8051,6 +8942,82 @@ func (s CustomLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CustomLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DeprecateWorkflowBadRequest as json.
+func (s *DeprecateWorkflowBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes DeprecateWorkflowBadRequest from json.
+func (s *DeprecateWorkflowBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DeprecateWorkflowBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = DeprecateWorkflowBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DeprecateWorkflowBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DeprecateWorkflowBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DeprecateWorkflowNotFound as json.
+func (s *DeprecateWorkflowNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes DeprecateWorkflowNotFound from json.
+func (s *DeprecateWorkflowNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DeprecateWorkflowNotFound to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = DeprecateWorkflowNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DeprecateWorkflowNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DeprecateWorkflowNotFound) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -8395,6 +9362,1677 @@ func (s DetectedLabelsServiceMesh) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *DetectedLabelsServiceMesh) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DisableWorkflowBadRequest as json.
+func (s *DisableWorkflowBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes DisableWorkflowBadRequest from json.
+func (s *DisableWorkflowBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DisableWorkflowBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = DisableWorkflowBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DisableWorkflowBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DisableWorkflowBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DisableWorkflowNotFound as json.
+func (s *DisableWorkflowNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes DisableWorkflowNotFound from json.
+func (s *DisableWorkflowNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DisableWorkflowNotFound to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = DisableWorkflowNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *DisableWorkflowNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DisableWorkflowNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessAssessmentAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("correlation_id")
+		e.Str(s.CorrelationID)
+	}
+	{
+		e.FieldStart("namespace")
+		e.Str(s.Namespace)
+	}
+	{
+		if s.EaName.Set {
+			e.FieldStart("ea_name")
+			s.EaName.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("component")
+		s.Component.Encode(e)
+	}
+	{
+		if s.Assessed.Set {
+			e.FieldStart("assessed")
+			s.Assessed.Encode(e)
+		}
+	}
+	{
+		if s.Score.Set {
+			e.FieldStart("score")
+			s.Score.Encode(e)
+		}
+	}
+	{
+		if s.Details.Set {
+			e.FieldStart("details")
+			s.Details.Encode(e)
+		}
+	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
+	{
+		if s.AlertName.Set {
+			e.FieldStart("alert_name")
+			s.AlertName.Encode(e)
+		}
+	}
+	{
+		if s.ComponentsAssessed != nil {
+			e.FieldStart("components_assessed")
+			e.ArrStart()
+			for _, elem := range s.ComponentsAssessed {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.CompletedAt.Set {
+			e.FieldStart("completed_at")
+			s.CompletedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.AssessmentDurationSeconds.Set {
+			e.FieldStart("assessment_duration_seconds")
+			s.AssessmentDurationSeconds.Encode(e)
+		}
+	}
+	{
+		if s.ValidityDeadline.Set {
+			e.FieldStart("validity_deadline")
+			s.ValidityDeadline.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.PrometheusCheckAfter.Set {
+			e.FieldStart("prometheus_check_after")
+			s.PrometheusCheckAfter.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.AlertmanagerCheckAfter.Set {
+			e.FieldStart("alertmanager_check_after")
+			s.AlertmanagerCheckAfter.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.ValidityWindow.Set {
+			e.FieldStart("validity_window")
+			s.ValidityWindow.Encode(e)
+		}
+	}
+	{
+		if s.StabilizationWindow.Set {
+			e.FieldStart("stabilization_window")
+			s.StabilizationWindow.Encode(e)
+		}
+	}
+	{
+		if s.PreRemediationSpecHash.Set {
+			e.FieldStart("pre_remediation_spec_hash")
+			s.PreRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.PostRemediationSpecHash.Set {
+			e.FieldStart("post_remediation_spec_hash")
+			s.PostRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.HashMatch.Set {
+			e.FieldStart("hash_match")
+			s.HashMatch.Encode(e)
+		}
+	}
+	{
+		if s.HealthChecks.Set {
+			e.FieldStart("health_checks")
+			s.HealthChecks.Encode(e)
+		}
+	}
+	{
+		if s.MetricDeltas.Set {
+			e.FieldStart("metric_deltas")
+			s.MetricDeltas.Encode(e)
+		}
+	}
+	{
+		if s.AlertResolution.Set {
+			e.FieldStart("alert_resolution")
+			s.AlertResolution.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
+	0:  "event_type",
+	1:  "correlation_id",
+	2:  "namespace",
+	3:  "ea_name",
+	4:  "component",
+	5:  "assessed",
+	6:  "score",
+	7:  "details",
+	8:  "reason",
+	9:  "alert_name",
+	10: "components_assessed",
+	11: "completed_at",
+	12: "assessment_duration_seconds",
+	13: "validity_deadline",
+	14: "prometheus_check_after",
+	15: "alertmanager_check_after",
+	16: "validity_window",
+	17: "stabilization_window",
+	18: "pre_remediation_spec_hash",
+	19: "post_remediation_spec_hash",
+	20: "hash_match",
+	21: "health_checks",
+	22: "metric_deltas",
+	23: "alert_resolution",
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayload from json.
+func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayload to nil")
+	}
+	var requiredBitSet [3]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "correlation_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.CorrelationID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"correlation_id\"")
+			}
+		case "namespace":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Namespace = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		case "ea_name":
+			if err := func() error {
+				s.EaName.Reset()
+				if err := s.EaName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ea_name\"")
+			}
+		case "component":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				if err := s.Component.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"component\"")
+			}
+		case "assessed":
+			if err := func() error {
+				s.Assessed.Reset()
+				if err := s.Assessed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessed\"")
+			}
+		case "score":
+			if err := func() error {
+				s.Score.Reset()
+				if err := s.Score.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"score\"")
+			}
+		case "details":
+			if err := func() error {
+				s.Details.Reset()
+				if err := s.Details.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"details\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "alert_name":
+			if err := func() error {
+				s.AlertName.Reset()
+				if err := s.AlertName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_name\"")
+			}
+		case "components_assessed":
+			if err := func() error {
+				s.ComponentsAssessed = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.ComponentsAssessed = append(s.ComponentsAssessed, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"components_assessed\"")
+			}
+		case "completed_at":
+			if err := func() error {
+				s.CompletedAt.Reset()
+				if err := s.CompletedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completed_at\"")
+			}
+		case "assessment_duration_seconds":
+			if err := func() error {
+				s.AssessmentDurationSeconds.Reset()
+				if err := s.AssessmentDurationSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessment_duration_seconds\"")
+			}
+		case "validity_deadline":
+			if err := func() error {
+				s.ValidityDeadline.Reset()
+				if err := s.ValidityDeadline.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"validity_deadline\"")
+			}
+		case "prometheus_check_after":
+			if err := func() error {
+				s.PrometheusCheckAfter.Reset()
+				if err := s.PrometheusCheckAfter.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prometheus_check_after\"")
+			}
+		case "alertmanager_check_after":
+			if err := func() error {
+				s.AlertmanagerCheckAfter.Reset()
+				if err := s.AlertmanagerCheckAfter.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alertmanager_check_after\"")
+			}
+		case "validity_window":
+			if err := func() error {
+				s.ValidityWindow.Reset()
+				if err := s.ValidityWindow.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"validity_window\"")
+			}
+		case "stabilization_window":
+			if err := func() error {
+				s.StabilizationWindow.Reset()
+				if err := s.StabilizationWindow.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"stabilization_window\"")
+			}
+		case "pre_remediation_spec_hash":
+			if err := func() error {
+				s.PreRemediationSpecHash.Reset()
+				if err := s.PreRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pre_remediation_spec_hash\"")
+			}
+		case "post_remediation_spec_hash":
+			if err := func() error {
+				s.PostRemediationSpecHash.Reset()
+				if err := s.PostRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"post_remediation_spec_hash\"")
+			}
+		case "hash_match":
+			if err := func() error {
+				s.HashMatch.Reset()
+				if err := s.HashMatch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_match\"")
+			}
+		case "health_checks":
+			if err := func() error {
+				s.HealthChecks.Reset()
+				if err := s.HealthChecks.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"health_checks\"")
+			}
+		case "metric_deltas":
+			if err := func() error {
+				s.MetricDeltas.Reset()
+				if err := s.MetricDeltas.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metric_deltas\"")
+			}
+		case "alert_resolution":
+			if err := func() error {
+				s.AlertResolution.Reset()
+				if err := s.AlertResolution.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_resolution\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessAssessmentAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [3]uint8{
+		0b00010111,
+		0b00000000,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfEffectivenessAssessmentAuditPayload) {
+					name = jsonFieldsNameOfEffectivenessAssessmentAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessAssessmentAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) encodeFields(e *jx.Encoder) {
+	{
+		if s.AlertResolved.Set {
+			e.FieldStart("alert_resolved")
+			s.AlertResolved.Encode(e)
+		}
+	}
+	{
+		if s.ActiveCount.Set {
+			e.FieldStart("active_count")
+			s.ActiveCount.Encode(e)
+		}
+	}
+	{
+		if s.ResolutionTimeSeconds.Set {
+			e.FieldStart("resolution_time_seconds")
+			s.ResolutionTimeSeconds.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadAlertResolution = [3]string{
+	0: "alert_resolved",
+	1: "active_count",
+	2: "resolution_time_seconds",
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadAlertResolution from json.
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayloadAlertResolution to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "alert_resolved":
+			if err := func() error {
+				s.AlertResolved.Reset()
+				if err := s.AlertResolved.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_resolved\"")
+			}
+		case "active_count":
+			if err := func() error {
+				s.ActiveCount.Reset()
+				if err := s.ActiveCount.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"active_count\"")
+			}
+		case "resolution_time_seconds":
+			if err := func() error {
+				s.ResolutionTimeSeconds.Reset()
+				if err := s.ResolutionTimeSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resolution_time_seconds\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessAssessmentAuditPayloadAlertResolution")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessAssessmentAuditPayloadComponent as json.
+func (s EffectivenessAssessmentAuditPayloadComponent) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadComponent from json.
+func (s *EffectivenessAssessmentAuditPayloadComponent) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayloadComponent to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EffectivenessAssessmentAuditPayloadComponent(v) {
+	case EffectivenessAssessmentAuditPayloadComponentHealth:
+		*s = EffectivenessAssessmentAuditPayloadComponentHealth
+	case EffectivenessAssessmentAuditPayloadComponentAlert:
+		*s = EffectivenessAssessmentAuditPayloadComponentAlert
+	case EffectivenessAssessmentAuditPayloadComponentMetrics:
+		*s = EffectivenessAssessmentAuditPayloadComponentMetrics
+	case EffectivenessAssessmentAuditPayloadComponentHash:
+		*s = EffectivenessAssessmentAuditPayloadComponentHash
+	case EffectivenessAssessmentAuditPayloadComponentScheduled:
+		*s = EffectivenessAssessmentAuditPayloadComponentScheduled
+	case EffectivenessAssessmentAuditPayloadComponentCompleted:
+		*s = EffectivenessAssessmentAuditPayloadComponentCompleted
+	default:
+		*s = EffectivenessAssessmentAuditPayloadComponent(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EffectivenessAssessmentAuditPayloadComponent) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadComponent) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessAssessmentAuditPayloadEventType as json.
+func (s EffectivenessAssessmentAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadEventType from json.
+func (s *EffectivenessAssessmentAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EffectivenessAssessmentAuditPayloadEventType(v) {
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHealthAssessed
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessHashComputed
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAlertAssessed
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessMetricsAssessed
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentScheduled
+	case EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted:
+		*s = EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted
+	default:
+		*s = EffectivenessAssessmentAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EffectivenessAssessmentAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadHealthChecks) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessAssessmentAuditPayloadHealthChecks) encodeFields(e *jx.Encoder) {
+	{
+		if s.PodRunning.Set {
+			e.FieldStart("pod_running")
+			s.PodRunning.Encode(e)
+		}
+	}
+	{
+		if s.ReadinessPass.Set {
+			e.FieldStart("readiness_pass")
+			s.ReadinessPass.Encode(e)
+		}
+	}
+	{
+		if s.TotalReplicas.Set {
+			e.FieldStart("total_replicas")
+			s.TotalReplicas.Encode(e)
+		}
+	}
+	{
+		if s.ReadyReplicas.Set {
+			e.FieldStart("ready_replicas")
+			s.ReadyReplicas.Encode(e)
+		}
+	}
+	{
+		if s.RestartDelta.Set {
+			e.FieldStart("restart_delta")
+			s.RestartDelta.Encode(e)
+		}
+	}
+	{
+		if s.CrashLoops.Set {
+			e.FieldStart("crash_loops")
+			s.CrashLoops.Encode(e)
+		}
+	}
+	{
+		if s.OomKilled.Set {
+			e.FieldStart("oom_killed")
+			s.OomKilled.Encode(e)
+		}
+	}
+	{
+		if s.PendingCount.Set {
+			e.FieldStart("pending_count")
+			s.PendingCount.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadHealthChecks = [8]string{
+	0: "pod_running",
+	1: "readiness_pass",
+	2: "total_replicas",
+	3: "ready_replicas",
+	4: "restart_delta",
+	5: "crash_loops",
+	6: "oom_killed",
+	7: "pending_count",
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadHealthChecks from json.
+func (s *EffectivenessAssessmentAuditPayloadHealthChecks) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayloadHealthChecks to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "pod_running":
+			if err := func() error {
+				s.PodRunning.Reset()
+				if err := s.PodRunning.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pod_running\"")
+			}
+		case "readiness_pass":
+			if err := func() error {
+				s.ReadinessPass.Reset()
+				if err := s.ReadinessPass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"readiness_pass\"")
+			}
+		case "total_replicas":
+			if err := func() error {
+				s.TotalReplicas.Reset()
+				if err := s.TotalReplicas.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_replicas\"")
+			}
+		case "ready_replicas":
+			if err := func() error {
+				s.ReadyReplicas.Reset()
+				if err := s.ReadyReplicas.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ready_replicas\"")
+			}
+		case "restart_delta":
+			if err := func() error {
+				s.RestartDelta.Reset()
+				if err := s.RestartDelta.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"restart_delta\"")
+			}
+		case "crash_loops":
+			if err := func() error {
+				s.CrashLoops.Reset()
+				if err := s.CrashLoops.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"crash_loops\"")
+			}
+		case "oom_killed":
+			if err := func() error {
+				s.OomKilled.Reset()
+				if err := s.OomKilled.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"oom_killed\"")
+			}
+		case "pending_count":
+			if err := func() error {
+				s.PendingCount.Reset()
+				if err := s.PendingCount.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pending_count\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessAssessmentAuditPayloadHealthChecks")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadHealthChecks) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadHealthChecks) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) encodeFields(e *jx.Encoder) {
+	{
+		if s.CPUBefore.Set {
+			e.FieldStart("cpu_before")
+			s.CPUBefore.Encode(e)
+		}
+	}
+	{
+		if s.CPUAfter.Set {
+			e.FieldStart("cpu_after")
+			s.CPUAfter.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBefore.Set {
+			e.FieldStart("memory_before")
+			s.MemoryBefore.Encode(e)
+		}
+	}
+	{
+		if s.MemoryAfter.Set {
+			e.FieldStart("memory_after")
+			s.MemoryAfter.Encode(e)
+		}
+	}
+	{
+		if s.LatencyP95BeforeMs.Set {
+			e.FieldStart("latency_p95_before_ms")
+			s.LatencyP95BeforeMs.Encode(e)
+		}
+	}
+	{
+		if s.LatencyP95AfterMs.Set {
+			e.FieldStart("latency_p95_after_ms")
+			s.LatencyP95AfterMs.Encode(e)
+		}
+	}
+	{
+		if s.ErrorRateBefore.Set {
+			e.FieldStart("error_rate_before")
+			s.ErrorRateBefore.Encode(e)
+		}
+	}
+	{
+		if s.ErrorRateAfter.Set {
+			e.FieldStart("error_rate_after")
+			s.ErrorRateAfter.Encode(e)
+		}
+	}
+	{
+		if s.ThroughputBeforeRps.Set {
+			e.FieldStart("throughput_before_rps")
+			s.ThroughputBeforeRps.Encode(e)
+		}
+	}
+	{
+		if s.ThroughputAfterRps.Set {
+			e.FieldStart("throughput_after_rps")
+			s.ThroughputAfterRps.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [10]string{
+	0: "cpu_before",
+	1: "cpu_after",
+	2: "memory_before",
+	3: "memory_after",
+	4: "latency_p95_before_ms",
+	5: "latency_p95_after_ms",
+	6: "error_rate_before",
+	7: "error_rate_after",
+	8: "throughput_before_rps",
+	9: "throughput_after_rps",
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadMetricDeltas from json.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayloadMetricDeltas to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cpu_before":
+			if err := func() error {
+				s.CPUBefore.Reset()
+				if err := s.CPUBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpu_before\"")
+			}
+		case "cpu_after":
+			if err := func() error {
+				s.CPUAfter.Reset()
+				if err := s.CPUAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpu_after\"")
+			}
+		case "memory_before":
+			if err := func() error {
+				s.MemoryBefore.Reset()
+				if err := s.MemoryBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memory_before\"")
+			}
+		case "memory_after":
+			if err := func() error {
+				s.MemoryAfter.Reset()
+				if err := s.MemoryAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memory_after\"")
+			}
+		case "latency_p95_before_ms":
+			if err := func() error {
+				s.LatencyP95BeforeMs.Reset()
+				if err := s.LatencyP95BeforeMs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"latency_p95_before_ms\"")
+			}
+		case "latency_p95_after_ms":
+			if err := func() error {
+				s.LatencyP95AfterMs.Reset()
+				if err := s.LatencyP95AfterMs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"latency_p95_after_ms\"")
+			}
+		case "error_rate_before":
+			if err := func() error {
+				s.ErrorRateBefore.Reset()
+				if err := s.ErrorRateBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_rate_before\"")
+			}
+		case "error_rate_after":
+			if err := func() error {
+				s.ErrorRateAfter.Reset()
+				if err := s.ErrorRateAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_rate_after\"")
+			}
+		case "throughput_before_rps":
+			if err := func() error {
+				s.ThroughputBeforeRps.Reset()
+				if err := s.ThroughputBeforeRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughput_before_rps\"")
+			}
+		case "throughput_after_rps":
+			if err := func() error {
+				s.ThroughputAfterRps.Reset()
+				if err := s.ThroughputAfterRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughput_after_rps\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessAssessmentAuditPayloadMetricDeltas")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessComponents) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessComponents) encodeFields(e *jx.Encoder) {
+	{
+		if s.HealthAssessed.Set {
+			e.FieldStart("health_assessed")
+			s.HealthAssessed.Encode(e)
+		}
+	}
+	{
+		if s.HealthScore.Set {
+			e.FieldStart("health_score")
+			s.HealthScore.Encode(e)
+		}
+	}
+	{
+		if s.HealthDetails.Set {
+			e.FieldStart("health_details")
+			s.HealthDetails.Encode(e)
+		}
+	}
+	{
+		if s.AlertAssessed.Set {
+			e.FieldStart("alert_assessed")
+			s.AlertAssessed.Encode(e)
+		}
+	}
+	{
+		if s.AlertScore.Set {
+			e.FieldStart("alert_score")
+			s.AlertScore.Encode(e)
+		}
+	}
+	{
+		if s.AlertDetails.Set {
+			e.FieldStart("alert_details")
+			s.AlertDetails.Encode(e)
+		}
+	}
+	{
+		if s.MetricsAssessed.Set {
+			e.FieldStart("metrics_assessed")
+			s.MetricsAssessed.Encode(e)
+		}
+	}
+	{
+		if s.MetricsScore.Set {
+			e.FieldStart("metrics_score")
+			s.MetricsScore.Encode(e)
+		}
+	}
+	{
+		if s.MetricsDetails.Set {
+			e.FieldStart("metrics_details")
+			s.MetricsDetails.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfEffectivenessComponents = [9]string{
+	0: "health_assessed",
+	1: "health_score",
+	2: "health_details",
+	3: "alert_assessed",
+	4: "alert_score",
+	5: "alert_details",
+	6: "metrics_assessed",
+	7: "metrics_score",
+	8: "metrics_details",
+}
+
+// Decode decodes EffectivenessComponents from json.
+func (s *EffectivenessComponents) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessComponents to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "health_assessed":
+			if err := func() error {
+				s.HealthAssessed.Reset()
+				if err := s.HealthAssessed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"health_assessed\"")
+			}
+		case "health_score":
+			if err := func() error {
+				s.HealthScore.Reset()
+				if err := s.HealthScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"health_score\"")
+			}
+		case "health_details":
+			if err := func() error {
+				s.HealthDetails.Reset()
+				if err := s.HealthDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"health_details\"")
+			}
+		case "alert_assessed":
+			if err := func() error {
+				s.AlertAssessed.Reset()
+				if err := s.AlertAssessed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_assessed\"")
+			}
+		case "alert_score":
+			if err := func() error {
+				s.AlertScore.Reset()
+				if err := s.AlertScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_score\"")
+			}
+		case "alert_details":
+			if err := func() error {
+				s.AlertDetails.Reset()
+				if err := s.AlertDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_details\"")
+			}
+		case "metrics_assessed":
+			if err := func() error {
+				s.MetricsAssessed.Reset()
+				if err := s.MetricsAssessed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metrics_assessed\"")
+			}
+		case "metrics_score":
+			if err := func() error {
+				s.MetricsScore.Reset()
+				if err := s.MetricsScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metrics_score\"")
+			}
+		case "metrics_details":
+			if err := func() error {
+				s.MetricsDetails.Reset()
+				if err := s.MetricsDetails.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metrics_details\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessComponents")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessComponents) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessComponents) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *EffectivenessScoreResponse) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *EffectivenessScoreResponse) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("correlation_id")
+		e.Str(s.CorrelationID)
+	}
+	{
+		if s.Score.Set {
+			e.FieldStart("score")
+			s.Score.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("components")
+		s.Components.Encode(e)
+	}
+	{
+		if s.HashComparison.Set {
+			e.FieldStart("hash_comparison")
+			s.HashComparison.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("assessment_status")
+		s.AssessmentStatus.Encode(e)
+	}
+	{
+		e.FieldStart("computed_at")
+		json.EncodeDateTime(e, s.ComputedAt)
+	}
+}
+
+var jsonFieldsNameOfEffectivenessScoreResponse = [6]string{
+	0: "correlation_id",
+	1: "score",
+	2: "components",
+	3: "hash_comparison",
+	4: "assessment_status",
+	5: "computed_at",
+}
+
+// Decode decodes EffectivenessScoreResponse from json.
+func (s *EffectivenessScoreResponse) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessScoreResponse to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "correlation_id":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.CorrelationID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"correlation_id\"")
+			}
+		case "score":
+			if err := func() error {
+				s.Score.Reset()
+				if err := s.Score.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"score\"")
+			}
+		case "components":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Components.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"components\"")
+			}
+		case "hash_comparison":
+			if err := func() error {
+				s.HashComparison.Reset()
+				if err := s.HashComparison.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_comparison\"")
+			}
+		case "assessment_status":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				if err := s.AssessmentStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessment_status\"")
+			}
+		case "computed_at":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.ComputedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"computed_at\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode EffectivenessScoreResponse")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00110101,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfEffectivenessScoreResponse) {
+					name = jsonFieldsNameOfEffectivenessScoreResponse[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EffectivenessScoreResponse) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessScoreResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessScoreResponseAssessmentStatus as json.
+func (s EffectivenessScoreResponseAssessmentStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EffectivenessScoreResponseAssessmentStatus from json.
+func (s *EffectivenessScoreResponseAssessmentStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EffectivenessScoreResponseAssessmentStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EffectivenessScoreResponseAssessmentStatus(v) {
+	case EffectivenessScoreResponseAssessmentStatusNoData:
+		*s = EffectivenessScoreResponseAssessmentStatusNoData
+	case EffectivenessScoreResponseAssessmentStatusInProgress:
+		*s = EffectivenessScoreResponseAssessmentStatusInProgress
+	case EffectivenessScoreResponseAssessmentStatusFull:
+		*s = EffectivenessScoreResponseAssessmentStatusFull
+	case EffectivenessScoreResponseAssessmentStatusPartial:
+		*s = EffectivenessScoreResponseAssessmentStatusPartial
+	case EffectivenessScoreResponseAssessmentStatusSpecDrift:
+		*s = EffectivenessScoreResponseAssessmentStatusSpecDrift
+	case EffectivenessScoreResponseAssessmentStatusExpired:
+		*s = EffectivenessScoreResponseAssessmentStatusExpired
+	case EffectivenessScoreResponseAssessmentStatusNoExecution:
+		*s = EffectivenessScoreResponseAssessmentStatusNoExecution
+	case EffectivenessScoreResponseAssessmentStatusMetricsTimedOut:
+		*s = EffectivenessScoreResponseAssessmentStatusMetricsTimedOut
+	case EffectivenessScoreResponseAssessmentStatusEffectivenessAssessed:
+		*s = EffectivenessScoreResponseAssessmentStatusEffectivenessAssessed
+	default:
+		*s = EffectivenessScoreResponseAssessmentStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EffectivenessScoreResponseAssessmentStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EffectivenessScoreResponseAssessmentStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EnableWorkflowBadRequest as json.
+func (s *EnableWorkflowBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes EnableWorkflowBadRequest from json.
+func (s *EnableWorkflowBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EnableWorkflowBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = EnableWorkflowBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EnableWorkflowBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EnableWorkflowBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EnableWorkflowNotFound as json.
+func (s *EnableWorkflowNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes EnableWorkflowNotFound from json.
+func (s *EnableWorkflowNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EnableWorkflowNotFound to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = EnableWorkflowNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *EnableWorkflowNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EnableWorkflowNotFound) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -9361,6 +11999,158 @@ func (s *GatewayAuditPayloadSignalType) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes GetEffectivenessScoreInternalServerError as json.
+func (s *GetEffectivenessScoreInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes GetEffectivenessScoreInternalServerError from json.
+func (s *GetEffectivenessScoreInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GetEffectivenessScoreInternalServerError to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = GetEffectivenessScoreInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GetEffectivenessScoreInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GetEffectivenessScoreInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GetEffectivenessScoreNotFound as json.
+func (s *GetEffectivenessScoreNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes GetEffectivenessScoreNotFound from json.
+func (s *GetEffectivenessScoreNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GetEffectivenessScoreNotFound to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = GetEffectivenessScoreNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GetEffectivenessScoreNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GetEffectivenessScoreNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GetRemediationHistoryContextBadRequest as json.
+func (s *GetRemediationHistoryContextBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes GetRemediationHistoryContextBadRequest from json.
+func (s *GetRemediationHistoryContextBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GetRemediationHistoryContextBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = GetRemediationHistoryContextBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GetRemediationHistoryContextBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GetRemediationHistoryContextBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GetRemediationHistoryContextInternalServerError as json.
+func (s *GetRemediationHistoryContextInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes GetRemediationHistoryContextInternalServerError from json.
+func (s *GetRemediationHistoryContextInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GetRemediationHistoryContextInternalServerError to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = GetRemediationHistoryContextInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GetRemediationHistoryContextInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GetRemediationHistoryContextInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes GetWorkflowByIDInternalServerError as json.
 func (s *GetWorkflowByIDInternalServerError) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -9433,6 +12223,103 @@ func (s *GetWorkflowByIDNotFound) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *GetWorkflowByIDNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *HashComparisonData) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *HashComparisonData) encodeFields(e *jx.Encoder) {
+	{
+		if s.PreRemediationSpecHash.Set {
+			e.FieldStart("pre_remediation_spec_hash")
+			s.PreRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.PostRemediationSpecHash.Set {
+			e.FieldStart("post_remediation_spec_hash")
+			s.PostRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.HashMatch.Set {
+			e.FieldStart("hash_match")
+			s.HashMatch.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfHashComparisonData = [3]string{
+	0: "pre_remediation_spec_hash",
+	1: "post_remediation_spec_hash",
+	2: "hash_match",
+}
+
+// Decode decodes HashComparisonData from json.
+func (s *HashComparisonData) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode HashComparisonData to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "pre_remediation_spec_hash":
+			if err := func() error {
+				s.PreRemediationSpecHash.Reset()
+				if err := s.PreRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pre_remediation_spec_hash\"")
+			}
+		case "post_remediation_spec_hash":
+			if err := func() error {
+				s.PostRemediationSpecHash.Reset()
+				if err := s.PostRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"post_remediation_spec_hash\"")
+			}
+		case "hash_match":
+			if err := func() error {
+				s.HashMatch.Reset()
+				if err := s.HashMatch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_match\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode HashComparisonData")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *HashComparisonData) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *HashComparisonData) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -10280,6 +13167,12 @@ func (s *IncidentResponseDataSelectedWorkflow) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ActionType.Set {
+			e.FieldStart("action_type")
+			s.ActionType.Encode(e)
+		}
+	}
+	{
 		if s.ContainerImage.Set {
 			e.FieldStart("container_image")
 			s.ContainerImage.Encode(e)
@@ -10299,11 +13192,12 @@ func (s *IncidentResponseDataSelectedWorkflow) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataSelectedWorkflow = [4]string{
+var jsonFieldsNameOfIncidentResponseDataSelectedWorkflow = [5]string{
 	0: "workflow_id",
-	1: "container_image",
-	2: "confidence",
-	3: "parameters",
+	1: "action_type",
+	2: "container_image",
+	3: "confidence",
+	4: "parameters",
 }
 
 // Decode decodes IncidentResponseDataSelectedWorkflow from json.
@@ -10323,6 +13217,16 @@ func (s *IncidentResponseDataSelectedWorkflow) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_id\"")
+			}
+		case "action_type":
+			if err := func() error {
+				s.ActionType.Reset()
+				if err := s.ActionType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_type\"")
 			}
 		case "container_image":
 			if err := func() error {
@@ -11294,6 +14198,82 @@ func (s *LLMToolCallPayloadToolArguments) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ListAvailableActionsBadRequest as json.
+func (s *ListAvailableActionsBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes ListAvailableActionsBadRequest from json.
+func (s *ListAvailableActionsBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListAvailableActionsBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = ListAvailableActionsBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListAvailableActionsBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListAvailableActionsBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ListAvailableActionsInternalServerError as json.
+func (s *ListAvailableActionsInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes ListAvailableActionsInternalServerError from json.
+func (s *ListAvailableActionsInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListAvailableActionsInternalServerError to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = ListAvailableActionsInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListAvailableActionsInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListAvailableActionsInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *ListLegalHoldsOK) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -11516,6 +14496,82 @@ func (s *ListLegalHoldsOKHoldsItem) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ListWorkflowsByActionTypeBadRequest as json.
+func (s *ListWorkflowsByActionTypeBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes ListWorkflowsByActionTypeBadRequest from json.
+func (s *ListWorkflowsByActionTypeBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListWorkflowsByActionTypeBadRequest to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = ListWorkflowsByActionTypeBadRequest(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListWorkflowsByActionTypeBadRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListWorkflowsByActionTypeBadRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ListWorkflowsByActionTypeInternalServerError as json.
+func (s *ListWorkflowsByActionTypeInternalServerError) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes ListWorkflowsByActionTypeInternalServerError from json.
+func (s *ListWorkflowsByActionTypeInternalServerError) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListWorkflowsByActionTypeInternalServerError to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = ListWorkflowsByActionTypeInternalServerError(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListWorkflowsByActionTypeInternalServerError) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListWorkflowsByActionTypeInternalServerError) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *MandatoryLabels) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -11526,12 +14582,18 @@ func (s *MandatoryLabels) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		if s.SignalType.Set {
+			e.FieldStart("signal_type")
+			s.SignalType.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("severity")
-		s.Severity.Encode(e)
+		e.ArrStart()
+		for _, elem := range s.Severity {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
 	}
 	{
 		e.FieldStart("component")
@@ -11569,11 +14631,9 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
 		case "signal_type":
-			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := d.Str()
-				s.SignalType = string(v)
-				if err != nil {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -11583,7 +14643,15 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 		case "severity":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				if err := s.Severity.Decode(d); err != nil {
+				s.Severity = make([]MandatoryLabelsSeverityItem, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem MandatoryLabelsSeverityItem
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Severity = append(s.Severity, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
@@ -11640,7 +14708,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00011110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -11778,48 +14846,46 @@ func (s *MandatoryLabelsPriority) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes MandatoryLabelsSeverity as json.
-func (s MandatoryLabelsSeverity) Encode(e *jx.Encoder) {
+// Encode encodes MandatoryLabelsSeverityItem as json.
+func (s MandatoryLabelsSeverityItem) Encode(e *jx.Encoder) {
 	e.Str(string(s))
 }
 
-// Decode decodes MandatoryLabelsSeverity from json.
-func (s *MandatoryLabelsSeverity) Decode(d *jx.Decoder) error {
+// Decode decodes MandatoryLabelsSeverityItem from json.
+func (s *MandatoryLabelsSeverityItem) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode MandatoryLabelsSeverity to nil")
+		return errors.New("invalid: unable to decode MandatoryLabelsSeverityItem to nil")
 	}
 	v, err := d.StrBytes()
 	if err != nil {
 		return err
 	}
 	// Try to use constant string.
-	switch MandatoryLabelsSeverity(v) {
-	case MandatoryLabelsSeverity_critical:
-		*s = MandatoryLabelsSeverity_critical
-	case MandatoryLabelsSeverity_high:
-		*s = MandatoryLabelsSeverity_high
-	case MandatoryLabelsSeverity_medium:
-		*s = MandatoryLabelsSeverity_medium
-	case MandatoryLabelsSeverity_low:
-		*s = MandatoryLabelsSeverity_low
-	case MandatoryLabelsSeverity_:
-		*s = MandatoryLabelsSeverity_
+	switch MandatoryLabelsSeverityItem(v) {
+	case MandatoryLabelsSeverityItemCritical:
+		*s = MandatoryLabelsSeverityItemCritical
+	case MandatoryLabelsSeverityItemHigh:
+		*s = MandatoryLabelsSeverityItemHigh
+	case MandatoryLabelsSeverityItemMedium:
+		*s = MandatoryLabelsSeverityItemMedium
+	case MandatoryLabelsSeverityItemLow:
+		*s = MandatoryLabelsSeverityItemLow
 	default:
-		*s = MandatoryLabelsSeverity(v)
+		*s = MandatoryLabelsSeverityItem(v)
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s MandatoryLabelsSeverity) MarshalJSON() ([]byte, error) {
+func (s MandatoryLabelsSeverityItem) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *MandatoryLabelsSeverity) UnmarshalJSON(data []byte) error {
+func (s *MandatoryLabelsSeverityItem) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -14489,6 +17555,105 @@ func (s *OptDetectedLabelsServiceMesh) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes EffectivenessAssessmentAuditPayloadAlertResolution as json.
+func (o OptEffectivenessAssessmentAuditPayloadAlertResolution) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadAlertResolution from json.
+func (o *OptEffectivenessAssessmentAuditPayloadAlertResolution) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptEffectivenessAssessmentAuditPayloadAlertResolution to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptEffectivenessAssessmentAuditPayloadAlertResolution) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptEffectivenessAssessmentAuditPayloadAlertResolution) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessAssessmentAuditPayloadHealthChecks as json.
+func (o OptEffectivenessAssessmentAuditPayloadHealthChecks) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadHealthChecks from json.
+func (o *OptEffectivenessAssessmentAuditPayloadHealthChecks) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptEffectivenessAssessmentAuditPayloadHealthChecks to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptEffectivenessAssessmentAuditPayloadHealthChecks) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptEffectivenessAssessmentAuditPayloadHealthChecks) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes EffectivenessAssessmentAuditPayloadMetricDeltas as json.
+func (o OptEffectivenessAssessmentAuditPayloadMetricDeltas) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes EffectivenessAssessmentAuditPayloadMetricDeltas from json.
+func (o *OptEffectivenessAssessmentAuditPayloadMetricDeltas) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptEffectivenessAssessmentAuditPayloadMetricDeltas to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptEffectivenessAssessmentAuditPayloadMetricDeltas) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptEffectivenessAssessmentAuditPayloadMetricDeltas) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes ErrorDetails as json.
 func (o OptErrorDetails) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -14723,6 +17888,39 @@ func (s OptGatewayAuditPayloadSignalLabels) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptGatewayAuditPayloadSignalLabels) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HashComparisonData as json.
+func (o OptHashComparisonData) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes HashComparisonData from json.
+func (o *OptHashComparisonData) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptHashComparisonData to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptHashComparisonData) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptHashComparisonData) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -15032,6 +18230,57 @@ func (s *OptLLMToolCallPayloadToolArguments) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes bool as json.
+func (o OptNilBool) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Bool(bool(o.Value))
+}
+
+// Decode decodes bool from json.
+func (o *OptNilBool) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilBool to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v bool
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	v, err := d.Bool()
+	if err != nil {
+		return err
+	}
+	o.Value = bool(v)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilBool) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilBool) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes time.Time as json.
 func (o OptNilDate) Encode(e *jx.Encoder, format func(*jx.Encoder, time.Time)) {
 	if !o.Set {
@@ -15083,6 +18332,57 @@ func (s *OptNilDate) UnmarshalJSON(data []byte) error {
 	return s.Decode(d, json.DecodeDate)
 }
 
+// Encode encodes float64 as json.
+func (o OptNilFloat64) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Float64(float64(o.Value))
+}
+
+// Decode decodes float64 from json.
+func (o *OptNilFloat64) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilFloat64 to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v float64
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	v, err := d.Float64()
+	if err != nil {
+		return err
+	}
+	o.Value = float64(v)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilFloat64) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilFloat64) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes int as json.
 func (o OptNilInt) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -15130,6 +18430,104 @@ func (s OptNilInt) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilInt) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistoryEntryAssessmentReason as json.
+func (o OptNilRemediationHistoryEntryAssessmentReason) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistoryEntryAssessmentReason from json.
+func (o *OptNilRemediationHistoryEntryAssessmentReason) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilRemediationHistoryEntryAssessmentReason to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v RemediationHistoryEntryAssessmentReason
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilRemediationHistoryEntryAssessmentReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilRemediationHistoryEntryAssessmentReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryAssessmentReason as json.
+func (o OptNilRemediationHistorySummaryAssessmentReason) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistorySummaryAssessmentReason from json.
+func (o *OptNilRemediationHistorySummaryAssessmentReason) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilRemediationHistorySummaryAssessmentReason to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v RemediationHistorySummaryAssessmentReason
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilRemediationHistorySummaryAssessmentReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilRemediationHistorySummaryAssessmentReason) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -15600,6 +18998,138 @@ func (s OptRFC7807ProblemFieldErrors) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptRFC7807ProblemFieldErrors) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHealthChecks as json.
+func (o OptRemediationHealthChecks) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes RemediationHealthChecks from json.
+func (o *OptRemediationHealthChecks) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHealthChecks to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHealthChecks) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHealthChecks) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistoryEntryHashMatch as json.
+func (o OptRemediationHistoryEntryHashMatch) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistoryEntryHashMatch from json.
+func (o *OptRemediationHistoryEntryHashMatch) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistoryEntryHashMatch to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistoryEntryHashMatch) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistoryEntryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryHashMatch as json.
+func (o OptRemediationHistorySummaryHashMatch) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes RemediationHistorySummaryHashMatch from json.
+func (o *OptRemediationHistorySummaryHashMatch) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationHistorySummaryHashMatch to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationHistorySummaryHashMatch) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationHistorySummaryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationMetricDeltas as json.
+func (o OptRemediationMetricDeltas) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes RemediationMetricDeltas from json.
+func (o *OptRemediationMetricDeltas) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptRemediationMetricDeltas to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptRemediationMetricDeltas) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptRemediationMetricDeltas) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -16239,18 +19769,18 @@ func (s *OptWorkflowCatalogCreatedPayloadLabels) UnmarshalJSON(data []byte) erro
 	return s.Decode(d)
 }
 
-// Encode encodes WorkflowDisableRequest as json.
-func (o OptWorkflowDisableRequest) Encode(e *jx.Encoder) {
+// Encode encodes WorkflowDiscoveryEntryExecutionEngine as json.
+func (o OptWorkflowDiscoveryEntryExecutionEngine) Encode(e *jx.Encoder) {
 	if !o.Set {
 		return
 	}
-	o.Value.Encode(e)
+	e.Str(string(o.Value))
 }
 
-// Decode decodes WorkflowDisableRequest from json.
-func (o *OptWorkflowDisableRequest) Decode(d *jx.Decoder) error {
+// Decode decodes WorkflowDiscoveryEntryExecutionEngine from json.
+func (o *OptWorkflowDiscoveryEntryExecutionEngine) Decode(d *jx.Decoder) error {
 	if o == nil {
-		return errors.New("invalid: unable to decode OptWorkflowDisableRequest to nil")
+		return errors.New("invalid: unable to decode OptWorkflowDiscoveryEntryExecutionEngine to nil")
 	}
 	o.Set = true
 	if err := o.Value.Decode(d); err != nil {
@@ -16260,14 +19790,14 @@ func (o *OptWorkflowDisableRequest) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s OptWorkflowDisableRequest) MarshalJSON() ([]byte, error) {
+func (s OptWorkflowDiscoveryEntryExecutionEngine) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptWorkflowDisableRequest) UnmarshalJSON(data []byte) error {
+func (s *OptWorkflowDiscoveryEntryExecutionEngine) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -16372,40 +19902,6 @@ func (s *OptWorkflowSearchFilters) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes WorkflowSearchResultParameters as json.
-func (o OptWorkflowSearchResultParameters) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes WorkflowSearchResultParameters from json.
-func (o *OptWorkflowSearchResultParameters) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptWorkflowSearchResultParameters to nil")
-	}
-	o.Set = true
-	o.Value = make(WorkflowSearchResultParameters)
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptWorkflowSearchResultParameters) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptWorkflowSearchResultParameters) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes WorkflowUpdateRequestStatus as json.
 func (o OptWorkflowUpdateRequestStatus) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -16435,6 +19931,153 @@ func (s OptWorkflowUpdateRequestStatus) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptWorkflowUpdateRequestStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PaginationMetadata) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PaginationMetadata) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("totalCount")
+		e.Int(s.TotalCount)
+	}
+	{
+		e.FieldStart("offset")
+		e.Int(s.Offset)
+	}
+	{
+		e.FieldStart("limit")
+		e.Int(s.Limit)
+	}
+	{
+		e.FieldStart("hasMore")
+		e.Bool(s.HasMore)
+	}
+}
+
+var jsonFieldsNameOfPaginationMetadata = [4]string{
+	0: "totalCount",
+	1: "offset",
+	2: "limit",
+	3: "hasMore",
+}
+
+// Decode decodes PaginationMetadata from json.
+func (s *PaginationMetadata) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PaginationMetadata to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "totalCount":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int()
+				s.TotalCount = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"totalCount\"")
+			}
+		case "offset":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int()
+				s.Offset = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"offset\"")
+			}
+		case "limit":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int()
+				s.Limit = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"limit\"")
+			}
+		case "hasMore":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Bool()
+				s.HasMore = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hasMore\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PaginationMetadata")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfPaginationMetadata) {
+					name = jsonFieldsNameOfPaginationMetadata[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PaginationMetadata) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PaginationMetadata) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18599,6 +22242,1520 @@ func (s *RemediationApprovalDecisionPayloadEventType) UnmarshalJSON(data []byte)
 }
 
 // Encode implements json.Marshaler.
+func (s *RemediationHealthChecks) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHealthChecks) encodeFields(e *jx.Encoder) {
+	{
+		if s.PodRunning.Set {
+			e.FieldStart("podRunning")
+			s.PodRunning.Encode(e)
+		}
+	}
+	{
+		if s.ReadinessPass.Set {
+			e.FieldStart("readinessPass")
+			s.ReadinessPass.Encode(e)
+		}
+	}
+	{
+		if s.RestartDelta.Set {
+			e.FieldStart("restartDelta")
+			s.RestartDelta.Encode(e)
+		}
+	}
+	{
+		if s.CrashLoops.Set {
+			e.FieldStart("crashLoops")
+			s.CrashLoops.Encode(e)
+		}
+	}
+	{
+		if s.OomKilled.Set {
+			e.FieldStart("oomKilled")
+			s.OomKilled.Encode(e)
+		}
+	}
+	{
+		if s.PendingCount.Set {
+			e.FieldStart("pendingCount")
+			s.PendingCount.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationHealthChecks = [6]string{
+	0: "podRunning",
+	1: "readinessPass",
+	2: "restartDelta",
+	3: "crashLoops",
+	4: "oomKilled",
+	5: "pendingCount",
+}
+
+// Decode decodes RemediationHealthChecks from json.
+func (s *RemediationHealthChecks) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHealthChecks to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "podRunning":
+			if err := func() error {
+				s.PodRunning.Reset()
+				if err := s.PodRunning.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"podRunning\"")
+			}
+		case "readinessPass":
+			if err := func() error {
+				s.ReadinessPass.Reset()
+				if err := s.ReadinessPass.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"readinessPass\"")
+			}
+		case "restartDelta":
+			if err := func() error {
+				s.RestartDelta.Reset()
+				if err := s.RestartDelta.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"restartDelta\"")
+			}
+		case "crashLoops":
+			if err := func() error {
+				s.CrashLoops.Reset()
+				if err := s.CrashLoops.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"crashLoops\"")
+			}
+		case "oomKilled":
+			if err := func() error {
+				s.OomKilled.Reset()
+				if err := s.OomKilled.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"oomKilled\"")
+			}
+		case "pendingCount":
+			if err := func() error {
+				s.PendingCount.Reset()
+				if err := s.PendingCount.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pendingCount\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHealthChecks")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHealthChecks) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHealthChecks) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationHistoryContext) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHistoryContext) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("targetResource")
+		e.Str(s.TargetResource)
+	}
+	{
+		e.FieldStart("currentSpecHash")
+		e.Str(s.CurrentSpecHash)
+	}
+	{
+		e.FieldStart("regressionDetected")
+		e.Bool(s.RegressionDetected)
+	}
+	{
+		e.FieldStart("tier1")
+		s.Tier1.Encode(e)
+	}
+	{
+		e.FieldStart("tier2")
+		s.Tier2.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfRemediationHistoryContext = [5]string{
+	0: "targetResource",
+	1: "currentSpecHash",
+	2: "regressionDetected",
+	3: "tier1",
+	4: "tier2",
+}
+
+// Decode decodes RemediationHistoryContext from json.
+func (s *RemediationHistoryContext) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryContext to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "targetResource":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.TargetResource = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetResource\"")
+			}
+		case "currentSpecHash":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.CurrentSpecHash = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentSpecHash\"")
+			}
+		case "regressionDetected":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Bool()
+				s.RegressionDetected = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"regressionDetected\"")
+			}
+		case "tier1":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Tier1.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tier1\"")
+			}
+		case "tier2":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				if err := s.Tier2.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tier2\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHistoryContext")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationHistoryContext) {
+					name = jsonFieldsNameOfRemediationHistoryContext[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHistoryContext) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryContext) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationHistoryEntry) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHistoryEntry) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("remediationUID")
+		e.Str(s.RemediationUID)
+	}
+	{
+		if s.SignalFingerprint.Set {
+			e.FieldStart("signalFingerprint")
+			s.SignalFingerprint.Encode(e)
+		}
+	}
+	{
+		if s.SignalType.Set {
+			e.FieldStart("signalType")
+			s.SignalType.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowType.Set {
+			e.FieldStart("workflowType")
+			s.WorkflowType.Encode(e)
+		}
+	}
+	{
+		if s.Outcome.Set {
+			e.FieldStart("outcome")
+			s.Outcome.Encode(e)
+		}
+	}
+	{
+		if s.EffectivenessScore.Set {
+			e.FieldStart("effectivenessScore")
+			s.EffectivenessScore.Encode(e)
+		}
+	}
+	{
+		if s.SignalResolved.Set {
+			e.FieldStart("signalResolved")
+			s.SignalResolved.Encode(e)
+		}
+	}
+	{
+		if s.HashMatch.Set {
+			e.FieldStart("hashMatch")
+			s.HashMatch.Encode(e)
+		}
+	}
+	{
+		if s.PreRemediationSpecHash.Set {
+			e.FieldStart("preRemediationSpecHash")
+			s.PreRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.PostRemediationSpecHash.Set {
+			e.FieldStart("postRemediationSpecHash")
+			s.PostRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.HealthChecks.Set {
+			e.FieldStart("healthChecks")
+			s.HealthChecks.Encode(e)
+		}
+	}
+	{
+		if s.MetricDeltas.Set {
+			e.FieldStart("metricDeltas")
+			s.MetricDeltas.Encode(e)
+		}
+	}
+	{
+		if s.SideEffects != nil {
+			e.FieldStart("sideEffects")
+			e.ArrStart()
+			for _, elem := range s.SideEffects {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		e.FieldStart("completedAt")
+		json.EncodeDateTime(e, s.CompletedAt)
+	}
+	{
+		if s.AssessmentReason.Set {
+			e.FieldStart("assessmentReason")
+			s.AssessmentReason.Encode(e)
+		}
+	}
+	{
+		if s.AssessedAt.Set {
+			e.FieldStart("assessedAt")
+			s.AssessedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationHistoryEntry = [16]string{
+	0:  "remediationUID",
+	1:  "signalFingerprint",
+	2:  "signalType",
+	3:  "workflowType",
+	4:  "outcome",
+	5:  "effectivenessScore",
+	6:  "signalResolved",
+	7:  "hashMatch",
+	8:  "preRemediationSpecHash",
+	9:  "postRemediationSpecHash",
+	10: "healthChecks",
+	11: "metricDeltas",
+	12: "sideEffects",
+	13: "completedAt",
+	14: "assessmentReason",
+	15: "assessedAt",
+}
+
+// Decode decodes RemediationHistoryEntry from json.
+func (s *RemediationHistoryEntry) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryEntry to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "remediationUID":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.RemediationUID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediationUID\"")
+			}
+		case "signalFingerprint":
+			if err := func() error {
+				s.SignalFingerprint.Reset()
+				if err := s.SignalFingerprint.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signalFingerprint\"")
+			}
+		case "signalType":
+			if err := func() error {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signalType\"")
+			}
+		case "workflowType":
+			if err := func() error {
+				s.WorkflowType.Reset()
+				if err := s.WorkflowType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowType\"")
+			}
+		case "outcome":
+			if err := func() error {
+				s.Outcome.Reset()
+				if err := s.Outcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"outcome\"")
+			}
+		case "effectivenessScore":
+			if err := func() error {
+				s.EffectivenessScore.Reset()
+				if err := s.EffectivenessScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"effectivenessScore\"")
+			}
+		case "signalResolved":
+			if err := func() error {
+				s.SignalResolved.Reset()
+				if err := s.SignalResolved.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signalResolved\"")
+			}
+		case "hashMatch":
+			if err := func() error {
+				s.HashMatch.Reset()
+				if err := s.HashMatch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hashMatch\"")
+			}
+		case "preRemediationSpecHash":
+			if err := func() error {
+				s.PreRemediationSpecHash.Reset()
+				if err := s.PreRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preRemediationSpecHash\"")
+			}
+		case "postRemediationSpecHash":
+			if err := func() error {
+				s.PostRemediationSpecHash.Reset()
+				if err := s.PostRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"postRemediationSpecHash\"")
+			}
+		case "healthChecks":
+			if err := func() error {
+				s.HealthChecks.Reset()
+				if err := s.HealthChecks.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"healthChecks\"")
+			}
+		case "metricDeltas":
+			if err := func() error {
+				s.MetricDeltas.Reset()
+				if err := s.MetricDeltas.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metricDeltas\"")
+			}
+		case "sideEffects":
+			if err := func() error {
+				s.SideEffects = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.SideEffects = append(s.SideEffects, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sideEffects\"")
+			}
+		case "completedAt":
+			requiredBitSet[1] |= 1 << 5
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.CompletedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completedAt\"")
+			}
+		case "assessmentReason":
+			if err := func() error {
+				s.AssessmentReason.Reset()
+				if err := s.AssessmentReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessmentReason\"")
+			}
+		case "assessedAt":
+			if err := func() error {
+				s.AssessedAt.Reset()
+				if err := s.AssessedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessedAt\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHistoryEntry")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00000001,
+		0b00100000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationHistoryEntry) {
+					name = jsonFieldsNameOfRemediationHistoryEntry[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHistoryEntry) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryEntry) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistoryEntryAssessmentReason as json.
+func (s RemediationHistoryEntryAssessmentReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistoryEntryAssessmentReason from json.
+func (s *RemediationHistoryEntryAssessmentReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryEntryAssessmentReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistoryEntryAssessmentReason(v) {
+	case RemediationHistoryEntryAssessmentReasonFull:
+		*s = RemediationHistoryEntryAssessmentReasonFull
+	case RemediationHistoryEntryAssessmentReasonPartial:
+		*s = RemediationHistoryEntryAssessmentReasonPartial
+	case RemediationHistoryEntryAssessmentReasonSpecDrift:
+		*s = RemediationHistoryEntryAssessmentReasonSpecDrift
+	case RemediationHistoryEntryAssessmentReasonExpired:
+		*s = RemediationHistoryEntryAssessmentReasonExpired
+	case RemediationHistoryEntryAssessmentReasonNoExecution:
+		*s = RemediationHistoryEntryAssessmentReasonNoExecution
+	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
+		*s = RemediationHistoryEntryAssessmentReasonMetricsTimedOut
+	default:
+		*s = RemediationHistoryEntryAssessmentReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistoryEntryAssessmentReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryEntryAssessmentReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistoryEntryHashMatch as json.
+func (s RemediationHistoryEntryHashMatch) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistoryEntryHashMatch from json.
+func (s *RemediationHistoryEntryHashMatch) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryEntryHashMatch to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistoryEntryHashMatch(v) {
+	case RemediationHistoryEntryHashMatchPreRemediation:
+		*s = RemediationHistoryEntryHashMatchPreRemediation
+	case RemediationHistoryEntryHashMatchPostRemediation:
+		*s = RemediationHistoryEntryHashMatchPostRemediation
+	case RemediationHistoryEntryHashMatchNone:
+		*s = RemediationHistoryEntryHashMatchNone
+	default:
+		*s = RemediationHistoryEntryHashMatch(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistoryEntryHashMatch) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryEntryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationHistorySummary) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHistorySummary) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("remediationUID")
+		e.Str(s.RemediationUID)
+	}
+	{
+		if s.SignalType.Set {
+			e.FieldStart("signalType")
+			s.SignalType.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowType.Set {
+			e.FieldStart("workflowType")
+			s.WorkflowType.Encode(e)
+		}
+	}
+	{
+		if s.Outcome.Set {
+			e.FieldStart("outcome")
+			s.Outcome.Encode(e)
+		}
+	}
+	{
+		if s.EffectivenessScore.Set {
+			e.FieldStart("effectivenessScore")
+			s.EffectivenessScore.Encode(e)
+		}
+	}
+	{
+		if s.SignalResolved.Set {
+			e.FieldStart("signalResolved")
+			s.SignalResolved.Encode(e)
+		}
+	}
+	{
+		if s.HashMatch.Set {
+			e.FieldStart("hashMatch")
+			s.HashMatch.Encode(e)
+		}
+	}
+	{
+		if s.AssessmentReason.Set {
+			e.FieldStart("assessmentReason")
+			s.AssessmentReason.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("completedAt")
+		json.EncodeDateTime(e, s.CompletedAt)
+	}
+}
+
+var jsonFieldsNameOfRemediationHistorySummary = [9]string{
+	0: "remediationUID",
+	1: "signalType",
+	2: "workflowType",
+	3: "outcome",
+	4: "effectivenessScore",
+	5: "signalResolved",
+	6: "hashMatch",
+	7: "assessmentReason",
+	8: "completedAt",
+}
+
+// Decode decodes RemediationHistorySummary from json.
+func (s *RemediationHistorySummary) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistorySummary to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "remediationUID":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.RemediationUID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"remediationUID\"")
+			}
+		case "signalType":
+			if err := func() error {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signalType\"")
+			}
+		case "workflowType":
+			if err := func() error {
+				s.WorkflowType.Reset()
+				if err := s.WorkflowType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowType\"")
+			}
+		case "outcome":
+			if err := func() error {
+				s.Outcome.Reset()
+				if err := s.Outcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"outcome\"")
+			}
+		case "effectivenessScore":
+			if err := func() error {
+				s.EffectivenessScore.Reset()
+				if err := s.EffectivenessScore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"effectivenessScore\"")
+			}
+		case "signalResolved":
+			if err := func() error {
+				s.SignalResolved.Reset()
+				if err := s.SignalResolved.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signalResolved\"")
+			}
+		case "hashMatch":
+			if err := func() error {
+				s.HashMatch.Reset()
+				if err := s.HashMatch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hashMatch\"")
+			}
+		case "assessmentReason":
+			if err := func() error {
+				s.AssessmentReason.Reset()
+				if err := s.AssessmentReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"assessmentReason\"")
+			}
+		case "completedAt":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.CompletedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completedAt\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHistorySummary")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00000001,
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationHistorySummary) {
+					name = jsonFieldsNameOfRemediationHistorySummary[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHistorySummary) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistorySummary) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryAssessmentReason as json.
+func (s RemediationHistorySummaryAssessmentReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistorySummaryAssessmentReason from json.
+func (s *RemediationHistorySummaryAssessmentReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistorySummaryAssessmentReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistorySummaryAssessmentReason(v) {
+	case RemediationHistorySummaryAssessmentReasonFull:
+		*s = RemediationHistorySummaryAssessmentReasonFull
+	case RemediationHistorySummaryAssessmentReasonPartial:
+		*s = RemediationHistorySummaryAssessmentReasonPartial
+	case RemediationHistorySummaryAssessmentReasonSpecDrift:
+		*s = RemediationHistorySummaryAssessmentReasonSpecDrift
+	case RemediationHistorySummaryAssessmentReasonExpired:
+		*s = RemediationHistorySummaryAssessmentReasonExpired
+	case RemediationHistorySummaryAssessmentReasonNoExecution:
+		*s = RemediationHistorySummaryAssessmentReasonNoExecution
+	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
+		*s = RemediationHistorySummaryAssessmentReasonMetricsTimedOut
+	default:
+		*s = RemediationHistorySummaryAssessmentReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistorySummaryAssessmentReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistorySummaryAssessmentReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationHistorySummaryHashMatch as json.
+func (s RemediationHistorySummaryHashMatch) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationHistorySummaryHashMatch from json.
+func (s *RemediationHistorySummaryHashMatch) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistorySummaryHashMatch to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationHistorySummaryHashMatch(v) {
+	case RemediationHistorySummaryHashMatchPreRemediation:
+		*s = RemediationHistorySummaryHashMatchPreRemediation
+	case RemediationHistorySummaryHashMatchPostRemediation:
+		*s = RemediationHistorySummaryHashMatchPostRemediation
+	case RemediationHistorySummaryHashMatchNone:
+		*s = RemediationHistorySummaryHashMatchNone
+	default:
+		*s = RemediationHistorySummaryHashMatch(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationHistorySummaryHashMatch) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistorySummaryHashMatch) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationHistoryTier1) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHistoryTier1) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("window")
+		e.Str(s.Window)
+	}
+	{
+		e.FieldStart("chain")
+		e.ArrStart()
+		for _, elem := range s.Chain {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfRemediationHistoryTier1 = [2]string{
+	0: "window",
+	1: "chain",
+}
+
+// Decode decodes RemediationHistoryTier1 from json.
+func (s *RemediationHistoryTier1) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryTier1 to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "window":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Window = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"window\"")
+			}
+		case "chain":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				s.Chain = make([]RemediationHistoryEntry, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem RemediationHistoryEntry
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Chain = append(s.Chain, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"chain\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHistoryTier1")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationHistoryTier1) {
+					name = jsonFieldsNameOfRemediationHistoryTier1[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHistoryTier1) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryTier1) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationHistoryTier2) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationHistoryTier2) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("window")
+		e.Str(s.Window)
+	}
+	{
+		e.FieldStart("chain")
+		e.ArrStart()
+		for _, elem := range s.Chain {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfRemediationHistoryTier2 = [2]string{
+	0: "window",
+	1: "chain",
+}
+
+// Decode decodes RemediationHistoryTier2 from json.
+func (s *RemediationHistoryTier2) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationHistoryTier2 to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "window":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Window = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"window\"")
+			}
+		case "chain":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				s.Chain = make([]RemediationHistorySummary, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem RemediationHistorySummary
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Chain = append(s.Chain, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"chain\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationHistoryTier2")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationHistoryTier2) {
+					name = jsonFieldsNameOfRemediationHistoryTier2[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationHistoryTier2) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationHistoryTier2) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationMetricDeltas) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationMetricDeltas) encodeFields(e *jx.Encoder) {
+	{
+		if s.CpuBefore.Set {
+			e.FieldStart("cpuBefore")
+			s.CpuBefore.Encode(e)
+		}
+	}
+	{
+		if s.CpuAfter.Set {
+			e.FieldStart("cpuAfter")
+			s.CpuAfter.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBefore.Set {
+			e.FieldStart("memoryBefore")
+			s.MemoryBefore.Encode(e)
+		}
+	}
+	{
+		if s.MemoryAfter.Set {
+			e.FieldStart("memoryAfter")
+			s.MemoryAfter.Encode(e)
+		}
+	}
+	{
+		if s.LatencyP95BeforeMs.Set {
+			e.FieldStart("latencyP95BeforeMs")
+			s.LatencyP95BeforeMs.Encode(e)
+		}
+	}
+	{
+		if s.LatencyP95AfterMs.Set {
+			e.FieldStart("latencyP95AfterMs")
+			s.LatencyP95AfterMs.Encode(e)
+		}
+	}
+	{
+		if s.ErrorRateBefore.Set {
+			e.FieldStart("errorRateBefore")
+			s.ErrorRateBefore.Encode(e)
+		}
+	}
+	{
+		if s.ErrorRateAfter.Set {
+			e.FieldStart("errorRateAfter")
+			s.ErrorRateAfter.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationMetricDeltas = [8]string{
+	0: "cpuBefore",
+	1: "cpuAfter",
+	2: "memoryBefore",
+	3: "memoryAfter",
+	4: "latencyP95BeforeMs",
+	5: "latencyP95AfterMs",
+	6: "errorRateBefore",
+	7: "errorRateAfter",
+}
+
+// Decode decodes RemediationMetricDeltas from json.
+func (s *RemediationMetricDeltas) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationMetricDeltas to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cpuBefore":
+			if err := func() error {
+				s.CpuBefore.Reset()
+				if err := s.CpuBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuBefore\"")
+			}
+		case "cpuAfter":
+			if err := func() error {
+				s.CpuAfter.Reset()
+				if err := s.CpuAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuAfter\"")
+			}
+		case "memoryBefore":
+			if err := func() error {
+				s.MemoryBefore.Reset()
+				if err := s.MemoryBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBefore\"")
+			}
+		case "memoryAfter":
+			if err := func() error {
+				s.MemoryAfter.Reset()
+				if err := s.MemoryAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryAfter\"")
+			}
+		case "latencyP95BeforeMs":
+			if err := func() error {
+				s.LatencyP95BeforeMs.Reset()
+				if err := s.LatencyP95BeforeMs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"latencyP95BeforeMs\"")
+			}
+		case "latencyP95AfterMs":
+			if err := func() error {
+				s.LatencyP95AfterMs.Reset()
+				if err := s.LatencyP95AfterMs.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"latencyP95AfterMs\"")
+			}
+		case "errorRateBefore":
+			if err := func() error {
+				s.ErrorRateBefore.Reset()
+				if err := s.ErrorRateBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"errorRateBefore\"")
+			}
+		case "errorRateAfter":
+			if err := func() error {
+				s.ErrorRateAfter.Reset()
+				if err := s.ErrorRateAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"errorRateAfter\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationMetricDeltas")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationMetricDeltas) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationMetricDeltas) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *RemediationOrchestratorAuditPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -18745,9 +23902,33 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 			s.TimeoutConfig.Encode(e)
 		}
 	}
+	{
+		if s.PreRemediationSpecHash.Set {
+			e.FieldStart("pre_remediation_spec_hash")
+			s.PreRemediationSpecHash.Encode(e)
+		}
+	}
+	{
+		if s.TargetResource.Set {
+			e.FieldStart("target_resource")
+			s.TargetResource.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowVersion.Set {
+			e.FieldStart("workflow_version")
+			s.WorkflowVersion.Encode(e)
+		}
+	}
+	{
+		if s.WorkflowType.Set {
+			e.FieldStart("workflow_type")
+			s.WorkflowType.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [24]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [28]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -18772,6 +23953,10 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [24]string{
 	21: "sub_reason",
 	22: "notification_name",
 	23: "timeout_config",
+	24: "pre_remediation_spec_hash",
+	25: "target_resource",
+	26: "workflow_version",
+	27: "workflow_type",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -18779,7 +23964,7 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationOrchestratorAuditPayload to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -19027,6 +24212,46 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"timeout_config\"")
 			}
+		case "pre_remediation_spec_hash":
+			if err := func() error {
+				s.PreRemediationSpecHash.Reset()
+				if err := s.PreRemediationSpecHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pre_remediation_spec_hash\"")
+			}
+		case "target_resource":
+			if err := func() error {
+				s.TargetResource.Reset()
+				if err := s.TargetResource.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target_resource\"")
+			}
+		case "workflow_version":
+			if err := func() error {
+				s.WorkflowVersion.Reset()
+				if err := s.WorkflowVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_version\"")
+			}
+		case "workflow_type":
+			if err := func() error {
+				s.WorkflowType.Reset()
+				if err := s.WorkflowType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_type\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -19036,8 +24261,9 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b00000111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 	} {
@@ -19163,6 +24389,8 @@ func (s *RemediationOrchestratorAuditPayloadEventType) Decode(d *jx.Decoder) err
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked
+	case RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated:
+		*s = RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated
 	default:
 		*s = RemediationOrchestratorAuditPayloadEventType(v)
 	}
@@ -19569,6 +24797,10 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 		e.Str(s.WorkflowName)
 	}
 	{
+		e.FieldStart("action_type")
+		e.Str(s.ActionType)
+	}
+	{
 		e.FieldStart("version")
 		e.Str(s.Version)
 	}
@@ -19578,7 +24810,7 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("description")
-		e.Str(s.Description)
+		s.Description.Encode(e)
 	}
 	{
 		if s.Owner.Set {
@@ -19758,43 +24990,44 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationWorkflow = [36]string{
+var jsonFieldsNameOfRemediationWorkflow = [37]string{
 	0:  "workflow_id",
 	1:  "workflow_name",
-	2:  "version",
-	3:  "name",
-	4:  "description",
-	5:  "owner",
-	6:  "maintainer",
-	7:  "content",
-	8:  "content_hash",
-	9:  "parameters",
-	10: "execution_engine",
-	11: "container_image",
-	12: "container_digest",
-	13: "labels",
-	14: "custom_labels",
-	15: "detected_labels",
-	16: "status",
-	17: "disabled_at",
-	18: "disabled_by",
-	19: "disabled_reason",
-	20: "is_latest_version",
-	21: "previous_version",
-	22: "deprecation_notice",
-	23: "version_notes",
-	24: "change_summary",
-	25: "approved_by",
-	26: "approved_at",
-	27: "expected_success_rate",
-	28: "expected_duration_seconds",
-	29: "actual_success_rate",
-	30: "total_executions",
-	31: "successful_executions",
-	32: "created_at",
-	33: "updated_at",
-	34: "created_by",
-	35: "updated_by",
+	2:  "action_type",
+	3:  "version",
+	4:  "name",
+	5:  "description",
+	6:  "owner",
+	7:  "maintainer",
+	8:  "content",
+	9:  "content_hash",
+	10: "parameters",
+	11: "execution_engine",
+	12: "container_image",
+	13: "container_digest",
+	14: "labels",
+	15: "custom_labels",
+	16: "detected_labels",
+	17: "status",
+	18: "disabled_at",
+	19: "disabled_by",
+	20: "disabled_reason",
+	21: "is_latest_version",
+	22: "previous_version",
+	23: "deprecation_notice",
+	24: "version_notes",
+	25: "change_summary",
+	26: "approved_by",
+	27: "approved_at",
+	28: "expected_success_rate",
+	29: "expected_duration_seconds",
+	30: "actual_success_rate",
+	31: "total_executions",
+	32: "successful_executions",
+	33: "created_at",
+	34: "updated_at",
+	35: "created_by",
+	36: "updated_by",
 }
 
 // Decode decodes RemediationWorkflow from json.
@@ -19828,8 +25061,20 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_name\"")
 			}
-		case "version":
+		case "action_type":
 			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.ActionType = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action_type\"")
+			}
+		case "version":
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Version = string(v)
@@ -19841,7 +25086,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"version\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -19853,11 +25098,9 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "description":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
-				v, err := d.Str()
-				s.Description = string(v)
-				if err != nil {
+				if err := s.Description.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -19885,7 +25128,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"maintainer\"")
 			}
 		case "content":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Content = string(v)
@@ -19897,7 +25140,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"content\"")
 			}
 		case "content_hash":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ContentHash = string(v)
@@ -19919,7 +25162,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"parameters\"")
 			}
 		case "execution_engine":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecutionEngine = string(v)
@@ -19951,7 +25194,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"container_digest\"")
 			}
 		case "labels":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				if err := s.Labels.Decode(d); err != nil {
 					return err
@@ -19981,7 +25224,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"detected_labels\"")
 			}
 		case "status":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -20190,9 +25433,9 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
-		0b10011110,
-		0b00100101,
-		0b00000001,
+		0b00111110,
+		0b01001011,
+		0b00000010,
 		0b00000000,
 		0b00000000,
 	} {
@@ -20670,82 +25913,6 @@ func (s *SearchExecutionMetadata) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SearchExecutionMetadata) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SearchWorkflowsBadRequest as json.
-func (s *SearchWorkflowsBadRequest) Encode(e *jx.Encoder) {
-	unwrapped := (*RFC7807Problem)(s)
-
-	unwrapped.Encode(e)
-}
-
-// Decode decodes SearchWorkflowsBadRequest from json.
-func (s *SearchWorkflowsBadRequest) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SearchWorkflowsBadRequest to nil")
-	}
-	var unwrapped RFC7807Problem
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
-	}
-	*s = SearchWorkflowsBadRequest(unwrapped)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *SearchWorkflowsBadRequest) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SearchWorkflowsBadRequest) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SearchWorkflowsInternalServerError as json.
-func (s *SearchWorkflowsInternalServerError) Encode(e *jx.Encoder) {
-	unwrapped := (*RFC7807Problem)(s)
-
-	unwrapped.Encode(e)
-}
-
-// Decode decodes SearchWorkflowsInternalServerError from json.
-func (s *SearchWorkflowsInternalServerError) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SearchWorkflowsInternalServerError to nil")
-	}
-	var unwrapped RFC7807Problem
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
-	}
-	*s = SearchWorkflowsInternalServerError(unwrapped)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *SearchWorkflowsInternalServerError) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SearchWorkflowsInternalServerError) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -21808,6 +26975,153 @@ func (s *SignalProcessingAuditPayloadSignalMode) UnmarshalJSON(data []byte) erro
 }
 
 // Encode implements json.Marshaler.
+func (s *StructuredDescription) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *StructuredDescription) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("what")
+		e.Str(s.What)
+	}
+	{
+		e.FieldStart("whenToUse")
+		e.Str(s.WhenToUse)
+	}
+	{
+		if s.WhenNotToUse.Set {
+			e.FieldStart("whenNotToUse")
+			s.WhenNotToUse.Encode(e)
+		}
+	}
+	{
+		if s.Preconditions.Set {
+			e.FieldStart("preconditions")
+			s.Preconditions.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfStructuredDescription = [4]string{
+	0: "what",
+	1: "whenToUse",
+	2: "whenNotToUse",
+	3: "preconditions",
+}
+
+// Decode decodes StructuredDescription from json.
+func (s *StructuredDescription) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode StructuredDescription to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "what":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.What = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"what\"")
+			}
+		case "whenToUse":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.WhenToUse = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"whenToUse\"")
+			}
+		case "whenNotToUse":
+			if err := func() error {
+				s.WhenNotToUse.Reset()
+				if err := s.WhenNotToUse.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"whenNotToUse\"")
+			}
+		case "preconditions":
+			if err := func() error {
+				s.Preconditions.Reset()
+				if err := s.Preconditions.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"preconditions\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode StructuredDescription")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfStructuredDescription) {
+					name = jsonFieldsNameOfStructuredDescription[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *StructuredDescription) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *StructuredDescription) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *TimeoutConfig) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -22742,81 +28056,558 @@ func (s *WorkflowCatalogUpdatedPayload) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *WorkflowDisableRequest) Encode(e *jx.Encoder) {
+func (s *WorkflowDiscoveryAuditPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
 // encodeFields encodes fields.
-func (s *WorkflowDisableRequest) encodeFields(e *jx.Encoder) {
+func (s *WorkflowDiscoveryAuditPayload) encodeFields(e *jx.Encoder) {
 	{
-		if s.Reason.Set {
-			e.FieldStart("reason")
-			s.Reason.Encode(e)
-		}
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
 	}
 	{
-		if s.UpdatedBy.Set {
-			e.FieldStart("updated_by")
-			s.UpdatedBy.Encode(e)
-		}
+		e.FieldStart("query")
+		s.Query.Encode(e)
+	}
+	{
+		e.FieldStart("results")
+		s.Results.Encode(e)
+	}
+	{
+		e.FieldStart("search_metadata")
+		s.SearchMetadata.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfWorkflowDisableRequest = [2]string{
-	0: "reason",
-	1: "updated_by",
+var jsonFieldsNameOfWorkflowDiscoveryAuditPayload = [4]string{
+	0: "event_type",
+	1: "query",
+	2: "results",
+	3: "search_metadata",
 }
 
-// Decode decodes WorkflowDisableRequest from json.
-func (s *WorkflowDisableRequest) Decode(d *jx.Decoder) error {
+// Decode decodes WorkflowDiscoveryAuditPayload from json.
+func (s *WorkflowDiscoveryAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowDisableRequest to nil")
+		return errors.New("invalid: unable to decode WorkflowDiscoveryAuditPayload to nil")
 	}
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "reason":
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				s.Reason.Reset()
-				if err := s.Reason.Decode(d); err != nil {
+				if err := s.EventType.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"reason\"")
+				return errors.Wrap(err, "decode field \"event_type\"")
 			}
-		case "updated_by":
+		case "query":
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				s.UpdatedBy.Reset()
-				if err := s.UpdatedBy.Decode(d); err != nil {
+				if err := s.Query.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"updated_by\"")
+				return errors.Wrap(err, "decode field \"query\"")
+			}
+		case "results":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Results.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"results\"")
+			}
+		case "search_metadata":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.SearchMetadata.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"search_metadata\"")
 			}
 		default:
 			return d.Skip()
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowDisableRequest")
+		return errors.Wrap(err, "decode WorkflowDiscoveryAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowDiscoveryAuditPayload) {
+					name = jsonFieldsNameOfWorkflowDiscoveryAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *WorkflowDisableRequest) MarshalJSON() ([]byte, error) {
+func (s *WorkflowDiscoveryAuditPayload) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowDisableRequest) UnmarshalJSON(data []byte) error {
+func (s *WorkflowDiscoveryAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowDiscoveryAuditPayloadEventType as json.
+func (s WorkflowDiscoveryAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowDiscoveryAuditPayloadEventType from json.
+func (s *WorkflowDiscoveryAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowDiscoveryAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowDiscoveryAuditPayloadEventType(v) {
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowsListed
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved
+	case WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated:
+		*s = WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogSelectionValidated
+	default:
+		*s = WorkflowDiscoveryAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowDiscoveryAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowDiscoveryAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowDiscoveryEntry) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowDiscoveryEntry) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("workflowId")
+		json.EncodeUUID(e, s.WorkflowId)
+	}
+	{
+		e.FieldStart("workflowName")
+		e.Str(s.WorkflowName)
+	}
+	{
+		e.FieldStart("name")
+		e.Str(s.Name)
+	}
+	{
+		e.FieldStart("description")
+		s.Description.Encode(e)
+	}
+	{
+		e.FieldStart("version")
+		e.Str(s.Version)
+	}
+	{
+		e.FieldStart("containerImage")
+		e.Str(s.ContainerImage)
+	}
+	{
+		if s.ExecutionEngine.Set {
+			e.FieldStart("executionEngine")
+			s.ExecutionEngine.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowDiscoveryEntry = [7]string{
+	0: "workflowId",
+	1: "workflowName",
+	2: "name",
+	3: "description",
+	4: "version",
+	5: "containerImage",
+	6: "executionEngine",
+}
+
+// Decode decodes WorkflowDiscoveryEntry from json.
+func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowDiscoveryEntry to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "workflowId":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := json.DecodeUUID(d)
+				s.WorkflowId = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowId\"")
+			}
+		case "workflowName":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.WorkflowName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflowName\"")
+			}
+		case "name":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Name = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "description":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Description.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"description\"")
+			}
+		case "version":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Version = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"version\"")
+			}
+		case "containerImage":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Str()
+				s.ContainerImage = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"containerImage\"")
+			}
+		case "executionEngine":
+			if err := func() error {
+				s.ExecutionEngine.Reset()
+				if err := s.ExecutionEngine.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"executionEngine\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowDiscoveryEntry")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00111111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowDiscoveryEntry) {
+					name = jsonFieldsNameOfWorkflowDiscoveryEntry[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowDiscoveryEntry) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowDiscoveryEntry) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes WorkflowDiscoveryEntryExecutionEngine as json.
+func (s WorkflowDiscoveryEntryExecutionEngine) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes WorkflowDiscoveryEntryExecutionEngine from json.
+func (s *WorkflowDiscoveryEntryExecutionEngine) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowDiscoveryEntryExecutionEngine to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch WorkflowDiscoveryEntryExecutionEngine(v) {
+	case WorkflowDiscoveryEntryExecutionEngineTekton:
+		*s = WorkflowDiscoveryEntryExecutionEngineTekton
+	case WorkflowDiscoveryEntryExecutionEngineJob:
+		*s = WorkflowDiscoveryEntryExecutionEngineJob
+	default:
+		*s = WorkflowDiscoveryEntryExecutionEngine(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowDiscoveryEntryExecutionEngine) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowDiscoveryEntryExecutionEngine) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *WorkflowDiscoveryResponse) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowDiscoveryResponse) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("actionType")
+		e.Str(s.ActionType)
+	}
+	{
+		e.FieldStart("workflows")
+		e.ArrStart()
+		for _, elem := range s.Workflows {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+	{
+		e.FieldStart("pagination")
+		s.Pagination.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfWorkflowDiscoveryResponse = [3]string{
+	0: "actionType",
+	1: "workflows",
+	2: "pagination",
+}
+
+// Decode decodes WorkflowDiscoveryResponse from json.
+func (s *WorkflowDiscoveryResponse) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowDiscoveryResponse to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "actionType":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ActionType = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actionType\"")
+			}
+		case "workflows":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				s.Workflows = make([]WorkflowDiscoveryEntry, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem WorkflowDiscoveryEntry
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Workflows = append(s.Workflows, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflows\"")
+			}
+		case "pagination":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Pagination.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pagination\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowDiscoveryResponse")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowDiscoveryResponse) {
+					name = jsonFieldsNameOfWorkflowDiscoveryResponse[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowDiscoveryResponse) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowDiscoveryResponse) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -23584,6 +29375,119 @@ func (s *WorkflowExecutionWebhookAuditPayloadPreviousState) UnmarshalJSON(data [
 }
 
 // Encode implements json.Marshaler.
+func (s *WorkflowLifecycleRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *WorkflowLifecycleRequest) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("reason")
+		e.Str(s.Reason)
+	}
+	{
+		if s.UpdatedBy.Set {
+			e.FieldStart("updated_by")
+			s.UpdatedBy.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfWorkflowLifecycleRequest = [2]string{
+	0: "reason",
+	1: "updated_by",
+}
+
+// Decode decodes WorkflowLifecycleRequest from json.
+func (s *WorkflowLifecycleRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowLifecycleRequest to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "reason":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Reason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "updated_by":
+			if err := func() error {
+				s.UpdatedBy.Reset()
+				if err := s.UpdatedBy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"updated_by\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowLifecycleRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfWorkflowLifecycleRequest) {
+					name = jsonFieldsNameOfWorkflowLifecycleRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *WorkflowLifecycleRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowLifecycleRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *WorkflowListResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -23980,183 +29884,6 @@ func (s *WorkflowResultAuditLabels) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *WorkflowSearchAuditPayload) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *WorkflowSearchAuditPayload) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("event_type")
-		s.EventType.Encode(e)
-	}
-	{
-		e.FieldStart("query")
-		s.Query.Encode(e)
-	}
-	{
-		e.FieldStart("results")
-		s.Results.Encode(e)
-	}
-	{
-		e.FieldStart("search_metadata")
-		s.SearchMetadata.Encode(e)
-	}
-}
-
-var jsonFieldsNameOfWorkflowSearchAuditPayload = [4]string{
-	0: "event_type",
-	1: "query",
-	2: "results",
-	3: "search_metadata",
-}
-
-// Decode decodes WorkflowSearchAuditPayload from json.
-func (s *WorkflowSearchAuditPayload) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchAuditPayload to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "event_type":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				if err := s.EventType.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"event_type\"")
-			}
-		case "query":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				if err := s.Query.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"query\"")
-			}
-		case "results":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				if err := s.Results.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"results\"")
-			}
-		case "search_metadata":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				if err := s.SearchMetadata.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"search_metadata\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowSearchAuditPayload")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001111,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfWorkflowSearchAuditPayload) {
-					name = jsonFieldsNameOfWorkflowSearchAuditPayload[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *WorkflowSearchAuditPayload) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchAuditPayload) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes WorkflowSearchAuditPayloadEventType as json.
-func (s WorkflowSearchAuditPayloadEventType) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes WorkflowSearchAuditPayloadEventType from json.
-func (s *WorkflowSearchAuditPayloadEventType) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchAuditPayloadEventType to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch WorkflowSearchAuditPayloadEventType(v) {
-	case WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted:
-		*s = WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted
-	default:
-		*s = WorkflowSearchAuditPayloadEventType(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s WorkflowSearchAuditPayloadEventType) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchAuditPayloadEventType) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
 func (s *WorkflowSearchFilters) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -24166,8 +29893,10 @@ func (s *WorkflowSearchFilters) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *WorkflowSearchFilters) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		if s.SignalType.Set {
+			e.FieldStart("signal_type")
+			s.SignalType.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("severity")
@@ -24230,11 +29959,9 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
 		case "signal_type":
-			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := d.Str()
-				s.SignalType = string(v)
-				if err != nil {
+				s.SignalType.Reset()
+				if err := s.SignalType.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -24332,7 +30059,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00011110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -24506,653 +30233,6 @@ func (s WorkflowSearchFiltersStatusItem) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowSearchFiltersStatusItem) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *WorkflowSearchRequest) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *WorkflowSearchRequest) encodeFields(e *jx.Encoder) {
-	{
-		if s.RemediationID.Set {
-			e.FieldStart("remediation_id")
-			s.RemediationID.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("filters")
-		s.Filters.Encode(e)
-	}
-	{
-		if s.TopK.Set {
-			e.FieldStart("top_k")
-			s.TopK.Encode(e)
-		}
-	}
-	{
-		if s.MinScore.Set {
-			e.FieldStart("min_score")
-			s.MinScore.Encode(e)
-		}
-	}
-	{
-		if s.IncludeDisabled.Set {
-			e.FieldStart("include_disabled")
-			s.IncludeDisabled.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfWorkflowSearchRequest = [5]string{
-	0: "remediation_id",
-	1: "filters",
-	2: "top_k",
-	3: "min_score",
-	4: "include_disabled",
-}
-
-// Decode decodes WorkflowSearchRequest from json.
-func (s *WorkflowSearchRequest) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchRequest to nil")
-	}
-	var requiredBitSet [1]uint8
-	s.setDefaults()
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "remediation_id":
-			if err := func() error {
-				s.RemediationID.Reset()
-				if err := s.RemediationID.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"remediation_id\"")
-			}
-		case "filters":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				if err := s.Filters.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"filters\"")
-			}
-		case "top_k":
-			if err := func() error {
-				s.TopK.Reset()
-				if err := s.TopK.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"top_k\"")
-			}
-		case "min_score":
-			if err := func() error {
-				s.MinScore.Reset()
-				if err := s.MinScore.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"min_score\"")
-			}
-		case "include_disabled":
-			if err := func() error {
-				s.IncludeDisabled.Reset()
-				if err := s.IncludeDisabled.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"include_disabled\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowSearchRequest")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00000010,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfWorkflowSearchRequest) {
-					name = jsonFieldsNameOfWorkflowSearchRequest[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *WorkflowSearchRequest) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchRequest) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *WorkflowSearchResponse) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *WorkflowSearchResponse) encodeFields(e *jx.Encoder) {
-	{
-		if s.Workflows != nil {
-			e.FieldStart("workflows")
-			e.ArrStart()
-			for _, elem := range s.Workflows {
-				elem.Encode(e)
-			}
-			e.ArrEnd()
-		}
-	}
-	{
-		if s.TotalResults.Set {
-			e.FieldStart("total_results")
-			s.TotalResults.Encode(e)
-		}
-	}
-	{
-		if s.Filters.Set {
-			e.FieldStart("filters")
-			s.Filters.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfWorkflowSearchResponse = [3]string{
-	0: "workflows",
-	1: "total_results",
-	2: "filters",
-}
-
-// Decode decodes WorkflowSearchResponse from json.
-func (s *WorkflowSearchResponse) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchResponse to nil")
-	}
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "workflows":
-			if err := func() error {
-				s.Workflows = make([]WorkflowSearchResult, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem WorkflowSearchResult
-					if err := elem.Decode(d); err != nil {
-						return err
-					}
-					s.Workflows = append(s.Workflows, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workflows\"")
-			}
-		case "total_results":
-			if err := func() error {
-				s.TotalResults.Reset()
-				if err := s.TotalResults.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"total_results\"")
-			}
-		case "filters":
-			if err := func() error {
-				s.Filters.Reset()
-				if err := s.Filters.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"filters\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowSearchResponse")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *WorkflowSearchResponse) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchResponse) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *WorkflowSearchResult) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *WorkflowSearchResult) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("workflow_id")
-		json.EncodeUUID(e, s.WorkflowID)
-	}
-	{
-		e.FieldStart("title")
-		e.Str(s.Title)
-	}
-	{
-		e.FieldStart("description")
-		e.Str(s.Description)
-	}
-	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
-	}
-	{
-		if s.ContainerImage.Set {
-			e.FieldStart("container_image")
-			s.ContainerImage.Encode(e)
-		}
-	}
-	{
-		if s.ContainerDigest.Set {
-			e.FieldStart("container_digest")
-			s.ContainerDigest.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("confidence")
-		e.Float32(s.Confidence)
-	}
-	{
-		if s.LabelBoost.Set {
-			e.FieldStart("label_boost")
-			s.LabelBoost.Encode(e)
-		}
-	}
-	{
-		if s.LabelPenalty.Set {
-			e.FieldStart("label_penalty")
-			s.LabelPenalty.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("final_score")
-		e.Float32(s.FinalScore)
-	}
-	{
-		e.FieldStart("rank")
-		e.Int(s.Rank)
-	}
-	{
-		if s.CustomLabels.Set {
-			e.FieldStart("custom_labels")
-			s.CustomLabels.Encode(e)
-		}
-	}
-	{
-		if s.DetectedLabels.Set {
-			e.FieldStart("detected_labels")
-			s.DetectedLabels.Encode(e)
-		}
-	}
-	{
-		if s.Parameters.Set {
-			e.FieldStart("parameters")
-			s.Parameters.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfWorkflowSearchResult = [14]string{
-	0:  "workflow_id",
-	1:  "title",
-	2:  "description",
-	3:  "signal_type",
-	4:  "container_image",
-	5:  "container_digest",
-	6:  "confidence",
-	7:  "label_boost",
-	8:  "label_penalty",
-	9:  "final_score",
-	10: "rank",
-	11: "custom_labels",
-	12: "detected_labels",
-	13: "parameters",
-}
-
-// Decode decodes WorkflowSearchResult from json.
-func (s *WorkflowSearchResult) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchResult to nil")
-	}
-	var requiredBitSet [2]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "workflow_id":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.WorkflowID = v
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workflow_id\"")
-			}
-		case "title":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Str()
-				s.Title = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"title\"")
-			}
-		case "description":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Str()
-				s.Description = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"description\"")
-			}
-		case "signal_type":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				v, err := d.Str()
-				s.SignalType = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signal_type\"")
-			}
-		case "container_image":
-			if err := func() error {
-				s.ContainerImage.Reset()
-				if err := s.ContainerImage.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"container_image\"")
-			}
-		case "container_digest":
-			if err := func() error {
-				s.ContainerDigest.Reset()
-				if err := s.ContainerDigest.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"container_digest\"")
-			}
-		case "confidence":
-			requiredBitSet[0] |= 1 << 6
-			if err := func() error {
-				v, err := d.Float32()
-				s.Confidence = float32(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"confidence\"")
-			}
-		case "label_boost":
-			if err := func() error {
-				s.LabelBoost.Reset()
-				if err := s.LabelBoost.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"label_boost\"")
-			}
-		case "label_penalty":
-			if err := func() error {
-				s.LabelPenalty.Reset()
-				if err := s.LabelPenalty.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"label_penalty\"")
-			}
-		case "final_score":
-			requiredBitSet[1] |= 1 << 1
-			if err := func() error {
-				v, err := d.Float32()
-				s.FinalScore = float32(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"final_score\"")
-			}
-		case "rank":
-			requiredBitSet[1] |= 1 << 2
-			if err := func() error {
-				v, err := d.Int()
-				s.Rank = int(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"rank\"")
-			}
-		case "custom_labels":
-			if err := func() error {
-				s.CustomLabels.Reset()
-				if err := s.CustomLabels.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"custom_labels\"")
-			}
-		case "detected_labels":
-			if err := func() error {
-				s.DetectedLabels.Reset()
-				if err := s.DetectedLabels.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"detected_labels\"")
-			}
-		case "parameters":
-			if err := func() error {
-				s.Parameters.Reset()
-				if err := s.Parameters.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"parameters\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowSearchResult")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b01001111,
-		0b00000110,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfWorkflowSearchResult) {
-					name = jsonFieldsNameOfWorkflowSearchResult[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *WorkflowSearchResult) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchResult) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s WorkflowSearchResultParameters) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields implements json.Marshaler.
-func (s WorkflowSearchResultParameters) encodeFields(e *jx.Encoder) {
-	for k, elem := range s {
-		e.FieldStart(k)
-
-		if len(elem) != 0 {
-			e.Raw(elem)
-		}
-	}
-}
-
-// Decode decodes WorkflowSearchResultParameters from json.
-func (s *WorkflowSearchResultParameters) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode WorkflowSearchResultParameters to nil")
-	}
-	m := s.init()
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem jx.Raw
-		if err := func() error {
-			v, err := d.RawAppend(nil)
-			elem = jx.Raw(v)
-			if err != nil {
-				return err
-			}
-			return nil
-		}(); err != nil {
-			return errors.Wrapf(err, "decode field %q", k)
-		}
-		m[string(k)] = elem
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode WorkflowSearchResultParameters")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s WorkflowSearchResultParameters) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *WorkflowSearchResultParameters) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

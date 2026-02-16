@@ -1,0 +1,33 @@
+# Discovery Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+metadata:
+  workflowId: discovery-test-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow for three-step discovery E2E validation"
+    whenToUse: "For E2E testing of ListAvailableActions, ListWorkflows, GetWorkflow"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
+
+actionType: ScaleReplicas
+
+labels:
+  signalType: OOMKilled
+  severity: [critical]
+  environment: [production, staging, test]
+  component: pod
+  priority: P0
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected pod"
+  - name: REPLICA_COUNT
+    type: integer
+    required: false
+    description: "Target replica count"
+    default: 3

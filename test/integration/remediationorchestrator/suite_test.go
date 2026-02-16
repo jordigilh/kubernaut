@@ -60,6 +60,7 @@ import (
 
 	// Import ALL CRD types that RO interacts with
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -72,6 +73,7 @@ import (
 
 	// Import audit infrastructure (ADR-032)
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -275,6 +277,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = notificationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// EffectivenessAssessment (RO owns these - ADR-EM-001, GAP-RO-3)
+	err = eav1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	By("Bootstrapping per-process envtest with ALL CRDs")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
@@ -379,6 +385,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		scopeMgr, // BR-SCOPE-010: Mandatory scope checker
 	)
 
+	// ADR-EM-001: Create EA creator for EffectivenessAssessment CRD creation on terminal phases
+	eaCreator := creator.NewEffectivenessAssessmentCreator(
+		k8sManager.GetClient(),
+		k8sManager.GetScheme(),
+		roMetrics,
+		k8sManager.GetEventRecorderFor("remediationorchestrator-controller"),
+		30*time.Second, // Stabilization window for integration tests
+	)
+
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
@@ -388,7 +403,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
 		controller.TimeoutConfig{}, // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
 		routingEngine,              // Real routing engine for integration tests (BR-ORCH-042)
+		eaCreator,                  // ADR-EM-001: EA creation on terminal phases
 	)
+	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
+	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

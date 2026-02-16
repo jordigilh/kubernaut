@@ -1088,30 +1088,29 @@ var eventTypeCatalog = []eventTypeTestCase{
 	},
 
 	// ========================================
-	// WORKFLOW CATALOG SERVICE (1 event type)
+	// WORKFLOW DISCOVERY SERVICE (1 event type - DD-HAPI-017)
 	// ========================================
 	{
 		Service:       "workflow",
-		EventType:     "workflow.catalog.search_completed",
+		EventType:     "workflow.catalog.actions_listed",
 		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
-		EventAction:   "search_completed",
+		EventAction:   "discovery",
 		CreateEvent: func() ogenclient.AuditEventRequest {
-			searchID := fmt.Sprintf("search-test-%s", uuid.New().String()[:8])
-			correlationID := fmt.Sprintf("test-gap-1.1-workflow-search-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-workflow-discovery-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
-				EventType:      "workflow.catalog.search_completed",
+				EventType:      "workflow.catalog.actions_listed",
 				EventTimestamp: time.Now().UTC(),
 				EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflow,
-				EventAction:    "search_completed",
+				EventAction:    "discovery",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("service"),
 				ActorID:        ogenclient.NewOptString("datastorage-service"),
-				ResourceType:   ogenclient.NewOptString("WorkflowSearch"),
-				ResourceID:     ogenclient.NewOptString(searchID),
+				ResourceType:   ogenclient.NewOptString("WorkflowDiscovery"),
+				ResourceID:     ogenclient.NewOptString("actions-list"),
 				CorrelationID:  correlationID,
-				EventData: ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowSearchAuditPayload{
-					EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				EventData: ogenclient.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(ogenclient.WorkflowDiscoveryAuditPayload{
+					EventType: ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
 					Query: ogenclient.QueryMetadata{
 						TopK: 5,
 					},
@@ -1127,7 +1126,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			// FIX: Query nested field results->total_found (WorkflowSearchAuditPayload.results is a ResultsMetadata object)
+			// Query nested field results->total_found (WorkflowDiscoveryAuditPayload.results is a ResultsMetadata object)
 			// Query construction: event_data->'results'->>'total_found' = '5'
 			{Field: "total_found", Operator: "->'results'->>", Value: "5", ExpectedRows: 1},
 		},

@@ -78,28 +78,37 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 	})
 
 	Context("Timestamp Validation (BR-GATEWAY-074, BR-GATEWAY-075)", func() {
-		It("should reject alerts without timestamp header (mandatory validation)", func() {
+		It("should reject alerts without timestamp when body also lacks startsAt (mandatory validation)", func() {
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			testLogger.Info("Scenario: Send alert without X-Timestamp header")
-			testLogger.Info("Expected: HTTP 400 Bad Request (timestamp is mandatory)")
+			testLogger.Info("Scenario: Send alert without X-Timestamp header AND without body startsAt")
+			testLogger.Info("Expected: HTTP 400 Bad Request (no timestamp source available)")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			testLogger.Info("Step 1: Create Prometheus webhook payload")
-			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-				AlertName: "TestAlertNoTimestamp",
-				Namespace: testNamespace,
-				Severity:  "warning",
-				PodName:   "test-pod",
-				Labels: map[string]string{
-					"scenario": "no-timestamp",
-				},
-			})
+			testLogger.Info("Step 1: Create payload without startsAt timestamp")
+			// Craft a minimal AlertManager-like payload that omits startsAt
+			payloadNoTimestamp := []byte(fmt.Sprintf(`{
+				"receiver": "kubernaut",
+				"status": "firing",
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "TestAlertNoTimestamp",
+						"namespace": "%s",
+						"severity": "warning",
+						"pod": "test-pod"
+					},
+					"annotations": {}
+				}],
+				"groupLabels": {"alertname": "TestAlertNoTimestamp"},
+				"commonLabels": {"alertname": "TestAlertNoTimestamp"},
+				"commonAnnotations": {}
+			}`, testNamespace))
 
-			testLogger.Info("Step 2: Send request to Gateway WITHOUT X-Timestamp header")
-			req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+			testLogger.Info("Step 2: Send request WITHOUT X-Timestamp header and WITHOUT body startsAt")
+			req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payloadNoTimestamp))
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
-			// Deliberately NOT setting X-Timestamp header to test rejection
+			// Deliberately NOT setting X-Timestamp header; body also lacks startsAt
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should complete")
 			defer func() { _ = resp.Body.Close() }()
@@ -107,14 +116,14 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			testLogger.Info("Step 3: Verify HTTP 400 Bad Request response")
 			body, _ := io.ReadAll(resp.Body)
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-				"Request without timestamp must be rejected (BR-GATEWAY-074)",
+				"Request without any timestamp source must be rejected (BR-GATEWAY-074)",
 				"response", string(body))
-			Expect(string(body)).To(ContainSubstring("missing timestamp header"),
-				"Error message should indicate missing timestamp")
+			Expect(string(body)).To(ContainSubstring("startsAt"),
+				"Error message should indicate missing startsAt timestamp")
 
-			testLogger.Info("✅ Alert rejected without timestamp header")
+			testLogger.Info("✅ Alert rejected without any timestamp source")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			testLogger.Info("✅ Test 19a PASSED: Missing Timestamp Rejected")
+			testLogger.Info("✅ Test 19a PASSED: Missing Timestamp (header + body) Rejected")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		})
 
@@ -135,25 +144,18 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 				},
 			})
 
-			currentTimestamp := time.Now().Unix()
-			testLogger.Info("Step 2: Send request with X-Timestamp header",
-				"timestamp", currentTimestamp,
-				"time", time.Unix(currentTimestamp, 0).Format(time.RFC3339))
-
-			req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", strconv.FormatInt(currentTimestamp, 10))
-
-			resp, err := httpClient.Do(req)
-			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer func() { _ = resp.Body.Close() }()
+			// BR-SCOPE-002: Use sendWebhookExpectCreated to handle scope checker
+			// informer cache race condition. The namespace was just created in
+			// BeforeAll, so the informer may not have synced it yet. Retrying
+			// on HTTP 200 (scope rejection) until 201 is safe because no CRD
+			// is created on rejection. sendWebhook sets X-Timestamp to
+			// time.Now().Unix() which satisfies the "valid timestamp" requirement.
+			testLogger.Info("Step 2: Send request with X-Timestamp (retries for informer cache sync)")
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 
 			testLogger.Info("Step 3: Verify HTTP 201 Created response")
-			body, _ := io.ReadAll(resp.Body)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-				"Request with valid timestamp should succeed (BR-GATEWAY-074)",
-				"response", string(body))
+				"Request with valid timestamp should succeed (BR-GATEWAY-074)")
 
 			testLogger.Info("✅ Alert accepted with valid timestamp")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

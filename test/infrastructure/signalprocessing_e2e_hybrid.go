@@ -693,22 +693,27 @@ data:
     import rego.v1
 
     # BR-SP-105: Severity Determination via Rego Policy
-    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
+    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback (original casing preserved)
     # Maps external severity values to normalized values: critical/high/medium/low/unknown
+    # Uses lower() for case-insensitive matching since Go code preserves original casing
     determine_severity := "critical" if {
-      input.signal.severity == "sev1"
+      lower(input.signal.severity) == "sev1"
     } else := "critical" if {
-      input.signal.severity == "p0"
+      lower(input.signal.severity) == "p0"
     } else := "critical" if {
-      input.signal.severity == "p1"
+      lower(input.signal.severity) == "p1"
+    } else := "critical" if {
+      lower(input.signal.severity) == "error"
     } else := "high" if {
-      input.signal.severity == "sev2"
+      lower(input.signal.severity) == "sev2"
     } else := "high" if {
-      input.signal.severity == "p2"
+      lower(input.signal.severity) == "p2"
+    } else := "high" if {
+      lower(input.signal.severity) == "warning"
     } else := "medium" if {
-      input.signal.severity == "sev3"
+      lower(input.signal.severity) == "sev3"
     } else := "low" if {
-      input.signal.severity == "p3"
+      lower(input.signal.severity) == "p3"
     } else := "unknown" if {
       # Default fallback for unknown severity values
       # Per DD-SEVERITY-001 v1.1: Unknown external values map to "unknown"

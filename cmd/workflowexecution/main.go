@@ -109,7 +109,7 @@ func main() {
 		"serviceAccount", cfg.Execution.ServiceAccount,
 		"metricsAddr", cfg.Controller.MetricsAddr,
 		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 		// DD-WE-004: Exponential Backoff Configuration
 		"baseCooldown", cfg.Backoff.BaseCooldown,
 		"maxCooldown", cfg.Backoff.MaxCooldown,
@@ -123,12 +123,12 @@ func main() {
 	// Per ADR-038: Async buffered audit ingestion
 	// ========================================
 	setupLog.Info("Initializing audit store (DD-AUDIT-003, DD-AUDIT-002)",
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
 	// Create OpenAPI client for Data Storage Service (DD-API-001 + DD-AUDIT-002 V2.0)
 	// Uses generated OpenAPI client for type safety and contract validation
-	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.Audit.DataStorageURL, cfg.Audit.Timeout)
+	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "FATAL: failed to create Data Storage client - DD-API-001 compliance required")
 		os.Exit(1)

@@ -19,7 +19,7 @@ limitations under the License.
 // Configuration Structure (ADR-030):
 //   - ExecutionConfig: PipelineRun execution settings (namespace, service account, cooldown)
 //   - BackoffConfig: Exponential backoff settings (DD-WE-004, BR-WE-012)
-//   - AuditConfig: Audit trail settings (BR-WE-005, ADR-032)
+//   - DataStorageConfig: Data Storage connectivity (BR-WE-005, ADR-030)
 //   - ControllerConfig: Controller runtime settings (metrics, health probes, leader election)
 //
 // All configuration values are validated via Config.Validate() before use.
@@ -34,14 +34,16 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
 // Config holds the complete configuration for the WorkflowExecution controller.
 type Config struct {
-	Execution  ExecutionConfig  `yaml:"execution" validate:"required"`
-	Backoff    BackoffConfig    `yaml:"backoff" validate:"required"`
-	Audit      AuditConfig      `yaml:"audit" validate:"required"`
-	Controller ControllerConfig `yaml:"controller" validate:"required"`
+	Execution   ExecutionConfig              `yaml:"execution" validate:"required"`
+	Backoff     BackoffConfig                `yaml:"backoff" validate:"required"`
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
+	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
 }
 
 // ExecutionConfig holds settings for Tekton PipelineRun execution.
@@ -83,20 +85,6 @@ type BackoffConfig struct {
 	MaxConsecutiveFailures int `yaml:"maxConsecutiveFailures" validate:"required,gt=0"`
 }
 
-// AuditConfig holds settings for audit trail via Data Storage service.
-//
-// Business Requirements:
-// - BR-WE-005: Audit trail for execution lifecycle
-// - ADR-032: Mandatory audit for P0 services
-// - DD-AUDIT-003: Audit store configuration
-type AuditConfig struct {
-	// DataStorageURL is the Data Storage Service URL for audit events (ADR-032: MANDATORY)
-	DataStorageURL string `yaml:"dataStorageUrl" validate:"required,url"`
-
-	// Timeout for audit API calls
-	Timeout time.Duration `yaml:"timeout" validate:"required,gt=0"`
-}
-
 // ControllerConfig holds controller runtime settings.
 //
 // Standard controller configuration following DD-005 (Observability Standards).
@@ -134,10 +122,7 @@ func DefaultConfig() *Config {
 			MaxExponent:            4,
 			MaxConsecutiveFailures: 5,
 		},
-		Audit: AuditConfig{
-			DataStorageURL: "http://data-storage-service:8080", // DD-AUTH-011: Standard service name (with hyphen)
-			Timeout:        10 * time.Second,
-		},
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Controller: ControllerConfig{
 			MetricsAddr:      ":9090",
 			HealthProbeAddr:  ":8081",
@@ -186,11 +171,9 @@ func LoadFromFile(path string) (*Config, error) {
 	if cfg.Backoff.MaxConsecutiveFailures == 0 {
 		cfg.Backoff.MaxConsecutiveFailures = 5
 	}
-	if cfg.Audit.DataStorageURL == "" {
-		cfg.Audit.DataStorageURL = "http://data-storage-service:8080" // DD-AUTH-011: Standard service name (with hyphen)
-	}
-	if cfg.Audit.Timeout == 0 {
-		cfg.Audit.Timeout = 10 * time.Second
+	if cfg.DataStorage.URL == "" {
+		ds := sharedconfig.DefaultDataStorageConfig()
+		cfg.DataStorage = ds
 	}
 	if cfg.Controller.MetricsAddr == "" {
 		cfg.Controller.MetricsAddr = ":9090"
@@ -230,5 +213,9 @@ func LoadFromFile(path string) (*Config, error) {
 // Returns validator.ValidationErrors if validation fails.
 func (c *Config) Validate() error {
 	validate := validator.New()
-	return validate.Struct(c)
+	if err := validate.Struct(c); err != nil {
+		return err
+	}
+	// DataStorage uses shared validation (ADR-030)
+	return sharedconfig.ValidateDataStorageConfig(&c.DataStorage)
 }

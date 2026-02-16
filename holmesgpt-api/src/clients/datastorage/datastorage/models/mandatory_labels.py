@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
@@ -29,10 +29,10 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)
+    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)
     """ # noqa: E501
-    signal_type: StrictStr = Field(description="Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)")
-    severity: StrictStr = Field(description="Severity level this workflow is designed for ('*' matches any severity)")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)")
+    severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array per DD-WORKFLOW-001 v1.4.")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
@@ -40,9 +40,10 @@ class MandatoryLabels(BaseModel):
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
-        """Validates the enum"""
-        if value not in ('critical', 'high', 'medium', 'low', '*'):
-            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', '*')")
+        """Validates the enum — each item must be a valid severity level"""
+        for i in value:
+            if i not in ('critical', 'high', 'medium', 'low'):
+                raise ValueError("each list item must be one of ('critical', 'high', 'medium', 'low')")
         return value
 
     @field_validator('environment')

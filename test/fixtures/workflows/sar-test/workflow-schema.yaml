@@ -1,0 +1,32 @@
+# SAR Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 23_sar_access_control_test.go (DD-AUTH-012)
+metadata:
+  workflowId: sar-test-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow for SubjectAccessReview and user attribution validation"
+    whenToUse: "For E2E testing of SAR-based access control on workflow catalog"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with RBAC configured"
+
+actionType: RestartPod
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [high]
+  environment: [test]
+  component: deployment
+  priority: P2
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to restart"

@@ -43,7 +43,7 @@ For SRE teams, the value proposition is: **reduce MTTR on known failure patterns
 
 ## 🏗️ Architecture
 
-Kubernaut follows a microservices architecture with 10 production-ready services (5 CRD controllers + 4 stateless services + 1 diagnostic tool):
+Kubernaut follows a microservices architecture with 10 production-ready services (5 CRD controllers + 5 stateless services):
 
 ![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
@@ -56,7 +56,7 @@ Kubernaut follows a microservices architecture with 10 production-ready services
    - **Workflow Execution**: Orchestrates Tekton Pipelines or Kubernetes Jobs for remediation workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)
 3. **Data Storage Service** provides centralized PostgreSQL access (ADR-032)
-4. **Effectiveness Monitor** tracks workflow remediation outcomes (deferred to V1.1)
+4. **Effectiveness Monitor** (Level 1) provides automated post-remediation assessment: dual spec hash capture, health checks, metric comparison, and effectiveness scoring (DD-017 v2.0). Level 2 AI-powered analysis deferred to V1.1.
 
 ### Communication Pattern
 
@@ -84,8 +84,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Auth Webhook** | ✅ v1.0 | SOC2 operator attribution (DD-WEBHOOK-001) | 78.9% |
 | **Notification** | ✅ v1.0 | Multi-channel delivery | 73.3% |
 | **Data Storage** | ✅ v1.0 | REST API for PostgreSQL (ADR-032) | 61.4% |
-| **Must-Gather** | ✅ v1.0 | Enterprise diagnostic collection (BR-PLATFORM-001) | N/A (bats) |
-| ~~Effectiveness Monitor~~ | ❌ V1.1 | Continuous improvement (DD-017) | — |
+| **Effectiveness Monitor (L1)** | ✅ v1.0 | Automated assessment, dual spec hash (DD-017 v2.0) | — |
+| ~~Effectiveness Monitor (L2)~~ | ❌ V1.1 | AI-powered analysis, pattern learning (DD-017 v2.0) | — |
 
 > **Coverage** is the merged "All Tiers" metric: line-by-line deduplication across unit, integration, and E2E tiers. See the [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for per-tier breakdown. Coverage is reported automatically on every PR via CI.
 
@@ -360,7 +360,7 @@ Apache License 2.0
 
 **Kubernaut** - AIOps for Kubernetes: from alert to remediation, intelligently. Building the next evolution of Kubernetes operations through AI-driven, CRD-based microservices that learn and adapt.
 
-**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | Scope management ✅ | Full pipeline E2E ✅ | 1 deferred to V1.1 (DD-017) | Pre-release: February 2026
+**V1.0 Status**: 10 services production-ready ✅ | SOC2 compliance ✅ | CI coverage pipeline ✅ | Scope management ✅ | Full pipeline E2E ✅ | EM Level 2 deferred to V1.1 (DD-017 v2.0) | Pre-release: February 2026
 
 **Next**: PagerDuty delivery channel ([#60](https://github.com/jordigilh/kubernaut/issues/60)) | Async AA-HAPI polling ([#64](https://github.com/jordigilh/kubernaut/issues/64))
 

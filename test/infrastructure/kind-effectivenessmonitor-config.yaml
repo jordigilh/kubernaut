@@ -1,0 +1,74 @@
+# Kind Cluster Configuration for EffectivenessMonitor E2E Tests
+# Reference: DD-TEST-001 Port Allocation Strategy v2.8
+#
+# EffectivenessMonitor (EM) is a CRD controller that watches EffectivenessAssessment
+# (EA) CRDs and performs 4 assessment checks (health, alert, metrics, spec-hash).
+#
+# Port Allocation (from DD-TEST-001 v2.8):
+#   EM API:          NodePort 30089, hostPort 8089
+#   EM Metrics:      NodePort 30189, hostPort 9189
+#   DataStorage:     NodePort 30081, hostPort 8091 (audit event queries)
+#   Prometheus:      NodePort 30190, hostPort 9190 (metric comparison)
+#   AlertManager:    NodePort 30193, hostPort 9193 (alert resolution)
+#
+# Kubeconfig Convention (per TESTING_GUIDELINES.md):
+#   Pattern: ~/.kube/{service}-e2e-config
+#   Path: ~/.kube/effectivenessmonitor-e2e-config
+#   Cluster Name: em-e2e
+#
+# Memory Budget: ~3.5GB total
+#   - Kind cluster overhead: ~1.5GB
+#   - PostgreSQL: ~256MB
+#   - Redis: ~64MB
+#   - DataStorage: ~128MB
+#   - EM Controller: ~128MB
+#   - AuthWebhook: ~64MB
+#   - Prometheus: ~128MB
+#   - AlertManager: ~64MB
+#   - Target workload pod: ~128MB
+#   - Buffer: ~1GB
+#
+# Usage:
+#   kind create cluster \
+#     --name em-e2e \
+#     --config test/infrastructure/kind-effectivenessmonitor-config.yaml \
+#     --kubeconfig ~/.kube/effectivenessmonitor-e2e-config
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48  # K8s 1.34.3 with CRD selectableFields support
+  extraPortMappings:
+  # DataStorage API (for audit event queries in E2E tests)
+  - containerPort: 30081
+    hostPort: 8091        # DD-TEST-001: EM → DataStorage dependency
+    protocol: TCP
+  # EM API Port
+  - containerPort: 30089
+    hostPort: 8089        # DD-TEST-001: EM controller
+    protocol: TCP
+  # EM Metrics Port
+  - containerPort: 30189
+    hostPort: 9189        # DD-TEST-001: EM metrics
+    protocol: TCP
+  # Prometheus (for EM metric comparison via OTLP remote write)
+  - containerPort: 30190
+    hostPort: 9190        # DD-TEST-001 v2.8: Prometheus
+    protocol: TCP
+  # AlertManager (for EM alert resolution queries)
+  - containerPort: 30193
+    hostPort: 9193        # DD-TEST-001 v2.8: AlertManager
+    protocol: TCP
+  # Extra mounts are added programmatically in SetupEMInfrastructure
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        kube-api-qps: "100"
+        kube-api-burst: "200"

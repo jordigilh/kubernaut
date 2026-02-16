@@ -1,9 +1,9 @@
 # Kubernaut CRD Architecture
 
-**Version**: 1.2.0
-**Date**: December 1, 2025
+**Version**: 1.3.0
+**Date**: February 2026
 **Status**: ✅ Authoritative Reference
-**V1.0 Services**: 8 (Dynamic Toolset→V2.0, Effectiveness Monitor→V1.1)
+**V1.0 Services**: 10 (5 CRD + 5 stateless; Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
 **Supersedes**: [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (DEPRECATED)
 
 ---
@@ -12,7 +12,7 @@
 
 This document is the **authoritative reference** for Kubernaut's Custom Resource Definition (CRD) architecture. It defines:
 
-- **Service catalog** (8 V1.0 services: 4 CRD controllers + 4 stateless services; 2 services deferred per DD-016, DD-017)
+- **Service catalog** (10 V1.0 services: 5 CRD controllers + 5 stateless services; Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
 - **CRD specifications** for all 4 CRDs
 - **Reconciliation patterns** and controller responsibilities
 - **Integration flows** between services
@@ -42,7 +42,7 @@ This document is the **authoritative reference** for Kubernaut's Custom Resource
 Kubernaut is an AI-powered Kubernetes remediation platform that uses a **microservices + CRD architecture** to enable autonomous incident analysis and automated remediation actions.
 
 **Key Characteristics**:
-- **8 V1.0 Services**: 4 CRD controllers + 4 stateless services (2 deferred: Dynamic Toolset→V2.0, Effectiveness Monitor→V1.1)
+- **10 V1.0 Services**: 5 CRD controllers + 5 stateless services (Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
 - **Multi-Signal Processing**: Prometheus alerts, Kubernetes events, CloudWatch, webhooks
 - **AI-Powered Analysis**: HolmesGPT integration for root cause analysis
 - **Tekton-Based Execution**: Industry-standard CI/CD for remediation workflows
@@ -51,7 +51,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform that uses a **microse
 
 ---
 
-### 8 V1.0 Services + Tekton Pipelines
+### 10 V1.0 Services + Tekton Pipelines
 
 Kubernaut's V1.0 architecture consists of:
 
@@ -62,13 +62,14 @@ Kubernaut's V1.0 architecture consists of:
 4. **RemediationExecution** - Remediation Playbook orchestration with Tekton
 5. **Notification** - Multi-channel notifications
 
-**Stateless Services** (6):
+**Stateless Services** (5):
 1. **Gateway** - HTTP ingestion and security
 2. **Context API** - Historical intelligence provider
 3. **Data Storage** - PostgreSQL + Vector DB persistence
 4. **HolmesGPT-API** - AI investigation wrapper
-~~5. **Dynamic Toolset**~~ - ⏸️ Deferred to V2.0 (DD-016)
-~~6. **Effectiveness Monitor**~~ - ⏸️ Deferred to V1.1 (DD-017)
+5. **Effectiveness Monitor (Level 1)** - Automated assessment (V1.0, DD-017 v2.0)
+~~**Dynamic Toolset**~~ - ⏸️ Deferred to V2.0 (DD-016)
+~~**Effectiveness Monitor (Level 2)**~~ - ⏸️ Deferred to V1.1 (DD-017 v2.0 — requires 8+ weeks Level 1 data)
 
 **Execution Engine**:
 - **Tekton Pipelines** - DAG orchestration and parallel execution (Tekton Pipelines or upstream Tekton)
@@ -317,29 +318,33 @@ Kubernaut's V1.0 architecture consists of:
 
 ---
 
-#### ~~6. Effectiveness Monitor Service~~ ⏸️ **Deferred to V1.1**
+#### #### 6. Effectiveness Monitor Service (Level 1 in V1.0)
 
-> **⚠️ DEFERRED TO V1.1** (DD-017, December 1, 2025)
->
-> **Reason**: Year-end timeline constraints + requires 8+ weeks of remediation data for meaningful assessments
-> **V1.1 Timeline**: ~8 weeks post V1.0 GA (Q1 2026)
+> **DD-017 v2.0** (February 2026): Level 1 (automated assessment) reinstated to V1.0. Level 2 (AI-powered analysis) deferred to V1.1 — requires 8+ weeks of Level 1 data.
 >
 > See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
 
-**Purpose**: Performance assessment and oscillation detection
+**Purpose**: Automated effectiveness assessment (Level 1)
 
 **Type**: Stateless HTTP API
 
-**Responsibilities** (V1.1):
-- Real-time effectiveness assessment
+**Responsibilities — Level 1 (V1.0)**:
+- Dual spec hash capture (pre/post remediation state)
+- Health checks (pod running, OOM errors, latency metrics)
+- Metric comparison (pre/post execution)
+- Effectiveness scoring
+- Side-effect detection (oscillation detection)
+
+**Responsibilities — Level 2 (V1.1, deferred)**:
+- HolmesGPT PostExec AI analysis
+- Pattern learning across remediation history
+- Batch processing for high-value cases
 - Long-term effectiveness trend tracking
-- Advanced pattern recognition across remediation history
-- Oscillation detection (prevents remediation loops)
-- Side effect detection and monitoring
+- Advanced pattern recognition
 
 **Port**: 8080 (API/health), 9090 (metrics)
 
-**Business Requirements**: BR-INS-001 to BR-INS-010 (Deferred to V1.1)
+**Business Requirements**: BR-INS-001, BR-INS-002, BR-INS-005: V1.0 (Level 1). BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010: V1.1 (Level 2)
 
 **Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
 
@@ -1883,6 +1888,19 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 
 ## Changelog
 
+### Version 1.3.0 (2026-02)
+
+**DD-017 v2.0 Integration**: Effectiveness Monitor Level 1 reinstated to V1.0.
+
+**Changes**:
+- Effectiveness Monitor Level 1 (automated assessment) in V1.0
+- Effectiveness Monitor Level 2 (AI-powered analysis) remains V1.1 (requires 8+ weeks Level 1 data)
+- Updated service count: 8→10 V1.0 services (5 CRD + 5 stateless)
+- BR-INS-001, BR-INS-002, BR-INS-005: V1.0 (Level 1); BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010: V1.1 (Level 2)
+- Split EM responsibilities: Level 1 vs Level 2 in service descriptions
+
+**Impact**: DD-017 v2.0 partial reinstatement; architecture consistency across documentation.
+
 ### Version 1.2.0 (2025-12-01)
 
 **DD-016 & DD-017 Integration**: Updated V1.0 service count from 11 to 8.
@@ -1931,8 +1949,8 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 
 **Document Status**: ✅ Authoritative Reference
 **Maintainer**: Kubernaut Architecture Team
-**Last Updated**: October 20, 2025
-**Version**: 1.0.0
+**Last Updated**: February 2026
+**Version**: 1.3.0
 
 
 

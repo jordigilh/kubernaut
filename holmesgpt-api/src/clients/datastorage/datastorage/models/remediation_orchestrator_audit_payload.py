@@ -56,13 +56,17 @@ class RemediationOrchestratorAuditPayload(BaseModel):
     sub_reason: Optional[StrictStr] = Field(default=None, description="Sub-categorization of the reason")
     notification_name: Optional[StrictStr] = Field(default=None, description="Associated notification name")
     timeout_config: Optional[TimeoutConfig] = None
-    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name", "timeout_config"]
+    pre_remediation_spec_hash: Optional[StrictStr] = Field(default=None, description="Canonical SHA-256 hash of the target resource's .spec before remediation. Computed using DD-EM-002 canonical spec hash algorithm. Format: \"sha256:<hex>\" ")
+    target_resource: Optional[StrictStr] = Field(default=None, description="Target resource identifier in format \"namespace/Kind/name\" or \"Kind/name\" for cluster-scoped. Used by remediation.workflow_created to capture what resource is being remediated. ")
+    workflow_version: Optional[StrictStr] = Field(default=None, description="Version of the selected workflow")
+    workflow_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries. ")
+    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name", "timeout_config", "pre_remediation_spec_hash", "target_resource", "workflow_version", "workflow_type"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked'):
-            raise ValueError("must be one of enum values ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked')")
+        if value not in ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created'):
+            raise ValueError("must be one of enum values ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created')")
         return value
 
     @field_validator('outcome')
@@ -183,7 +187,11 @@ class RemediationOrchestratorAuditPayload(BaseModel):
             "reason": obj.get("reason"),
             "sub_reason": obj.get("sub_reason"),
             "notification_name": obj.get("notification_name"),
-            "timeout_config": TimeoutConfig.from_dict(obj.get("timeout_config")) if obj.get("timeout_config") is not None else None
+            "timeout_config": TimeoutConfig.from_dict(obj.get("timeout_config")) if obj.get("timeout_config") is not None else None,
+            "pre_remediation_spec_hash": obj.get("pre_remediation_spec_hash"),
+            "target_resource": obj.get("target_resource"),
+            "workflow_version": obj.get("workflow_version"),
+            "workflow_type": obj.get("workflow_type")
         })
         return _obj
 

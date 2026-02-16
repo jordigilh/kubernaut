@@ -151,6 +151,12 @@ const (
 	// is created by the orchestrator.
 	EventReasonNotificationCreated = "NotificationCreated"
 
+	// EventReasonEffectivenessAssessmentCreated is emitted when an EffectivenessAssessment CRD
+	// is created by the orchestrator after successful remediation completion (ADR-EM-001).
+	// Type: Normal
+	// Priority: P2
+	EventReasonEffectivenessAssessmentCreated = "EffectivenessAssessmentCreated"
+
 	// EventReasonCooldownActive is emitted when a remediation is skipped because
 	// the target resource is under active cooldown.
 	EventReasonCooldownActive = "CooldownActive"
@@ -235,6 +241,48 @@ const (
 	// Type: Warning
 	// Priority: P2
 	EventReasonCircuitBreakerOpen = "CircuitBreakerOpen"
+)
+
+// ============================================================
+// Effectiveness Monitor Controller Events
+// ============================================================
+
+const (
+	// EventReasonAssessmentStarted is emitted when an EffectivenessAssessment
+	// transitions from Pending to Assessing (assessment processing begins).
+	// Priority: P1
+	EventReasonAssessmentStarted = "AssessmentStarted"
+
+	// EventReasonEffectivenessAssessed is emitted when the Effectiveness Monitor
+	// completes a post-remediation assessment. The EM emits raw component scores
+	// via audit events; the overall effectiveness determination is computed by
+	// DataStorage on demand (separation of concerns).
+	// Type: Normal
+	// Priority: P1
+	// DD-017 v2.0: Level 1 Automated Assessment
+	EventReasonEffectivenessAssessed = "EffectivenessAssessed"
+
+	// EventReasonAssessmentExpired is emitted when the validity window expires
+	// before the assessment can collect sufficient data. The EA is completed
+	// with reason "expired" and whatever partial data was collected.
+	// Type: Warning
+	// Priority: P1
+	// ADR-EM-001: Validity window enforcement
+	EventReasonAssessmentExpired = "AssessmentExpired"
+
+	// EventReasonComponentAssessed is emitted when an individual component
+	// (health, alert, metrics, hash) completes its assessment. The component
+	// name is included in the event message for differentiation.
+	// Type: Normal (success) or Warning (error)
+	// Priority: P2
+	EventReasonComponentAssessed = "ComponentAssessed"
+
+	// EventReasonSpecDriftDetected is emitted when the target resource's .spec
+	// has changed since the post-remediation hash was computed (DD-EM-002 v1.1).
+	// The assessment is invalidated and completed with reason "spec_drift".
+	// Type: Warning
+	// Priority: P2
+	EventReasonSpecDriftDetected = "SpecDriftDetected"
 )
 
 // ============================================================

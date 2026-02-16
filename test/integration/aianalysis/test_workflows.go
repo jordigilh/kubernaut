@@ -60,6 +60,8 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 	// Mock LLM scenarios defined in test/services/mock-llm/src/server.py
 	// HAPI validates LLM response parameters against workflow schema from DataStorage
 	// If parameters don't match, HAPI returns parameter_validation_failed BEFORE confidence check
+	// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
+	// Actual schema comes from OCI image via pullspec-only registration.
 	baseWorkflows := []TestWorkflow{
 		{
 			WorkflowID:  "oomkill-increase-memory-v1",
@@ -69,12 +71,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
-			// Mock LLM "oomkilled" scenario returns: MEMORY_LIMIT_NEW, TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE
+			// Mock LLM "oomkilled" scenario returns: NAMESPACE, DEPLOYMENT_NAME, MEMORY_INCREASE_PERCENT
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit for the container (e.g., 1Gi)"},
-				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the target resource (e.g., Deployment)"},
-				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the target resource"},
-				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace containing the affected deployment"},
+				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to update memory limits"},
+				{Name: "MEMORY_INCREASE_PERCENT", Type: "integer", Required: false, Description: "Percentage to increase memory limits by"},
 			},
 		},
 		{
@@ -85,10 +86,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "high",
 			Component:   "deployment",
 			Priority:    "P1",
-			// Mock LLM "crashloop" scenario returns: CONFIG_MAP, TARGET_NAMESPACE
+			// Mock LLM "crashloop" scenario returns: NAMESPACE, DEPLOYMENT_NAME
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "CONFIG_MAP", Type: "string", Required: true, Description: "ConfigMap name to fix"},
-				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
+				{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
 			},
 		},
 		{
@@ -99,10 +101,10 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "node",
 			Priority:    "P0",
-			// Mock LLM "node_not_ready" scenario returns: NODE_NAME, GRACE_PERIOD
+			// Mock LLM "node_not_ready" scenario returns: NODE_NAME
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NODE_NAME", Type: "string", Required: true, Description: "Name of the node to drain and reboot"},
-				{Name: "GRACE_PERIOD", Type: "string", Required: true, Description: "Grace period in seconds for pod eviction"},
+				{Name: "DRAIN_TIMEOUT_SECONDS", Type: "integer", Required: false, Description: "Timeout for drain operation in seconds"},
 			},
 		},
 		{
@@ -113,10 +115,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
-			// Mock LLM "recovery" scenario returns: OPTIMIZATION_LEVEL, MEMORY_TARGET
+			// Mock LLM "recovery" scenario returns: NAMESPACE, DEPLOYMENT_NAME
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "OPTIMIZATION_LEVEL", Type: "string", Required: true, Description: "Optimization aggressiveness level"},
-				{Name: "MEMORY_TARGET", Type: "string", Required: true, Description: "Target memory allocation"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to scale"},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Target number of replicas"},
 			},
 		},
 		{
@@ -127,9 +130,10 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "medium",
 			Component:   "deployment",
 			Priority:    "P2",
-			// Mock LLM "low_confidence" scenario returns: ACTION
+			// Mock LLM "low_confidence" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "ACTION", Type: "string", Required: true, Description: "Restart action to perform"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
 			},
 		},
 		{
@@ -140,10 +144,10 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "pod",
 			Priority:    "P1",
-			// Mock LLM "test_signal" scenario returns: TEST_MODE, ACTION
+			// Mock LLM "test_signal" scenario returns: NAMESPACE, POD_NAME
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "TEST_MODE", Type: "string", Required: true, Description: "Test mode flag"},
-				{Name: "ACTION", Type: "string", Required: true, Description: "Action to perform"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to delete"},
 			},
 		},
 	}

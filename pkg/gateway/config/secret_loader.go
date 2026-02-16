@@ -58,25 +58,11 @@ type SecretLoader struct {
 // Example:
 //
 //	loader := config.NewSecretLoader(k8sClient)
-//	redisConfig, err := loader.LoadRedisConfig(ctx, "kubernaut-system", "gateway-redis-secret")
+//	dsConfig, err := loader.LoadDataStorageConfig(ctx, "kubernaut-system", "gateway-ds-secret")
 func NewSecretLoader(k8sClient client.Client) *SecretLoader {
 	return &SecretLoader{
 		k8sClient: k8sClient,
 	}
-}
-
-// RedisConfig contains Redis connection configuration loaded from K8s Secret.
-// BR-GATEWAY-052: Credentials loaded from K8s Secrets.
-type RedisConfig struct {
-	Password string // Redis password (from redis-password key)
-	Host     string // Redis host (from redis-host key)
-	Port     string // Redis port (from redis-port key)
-}
-
-// String returns a safe string representation with redacted password.
-// BR-GATEWAY-052: Secrets must not appear in logs.
-func (r *RedisConfig) String() string {
-	return fmt.Sprintf("RedisConfig{Host: %s, Port: %s, Password: [REDACTED]}", r.Host, r.Port)
 }
 
 // DataStorageConfig contains DataStorage API configuration loaded from K8s Secret.
@@ -91,60 +77,6 @@ type DataStorageConfig struct {
 // BR-GATEWAY-052: Secrets must not appear in logs.
 func (d *DataStorageConfig) String() string {
 	return fmt.Sprintf("DataStorageConfig{URL: %s, Timeout: %s, APIKey: [REDACTED]}", d.URL, d.Timeout)
-}
-
-// LoadRedisConfig loads Redis configuration from a Kubernetes Secret.
-// BR-GATEWAY-052: Load Redis credentials from K8s Secret, not environment variables.
-//
-// Parameters:
-//   - ctx: Context for K8s API call
-//   - namespace: Namespace where Secret exists
-//   - secretName: Name of the Secret
-//
-// Returns:
-//   - *RedisConfig with credentials loaded
-//   - error if Secret not found, missing required fields, or validation fails
-//
-// Required Secret Keys:
-//   - redis-password: Redis password (required)
-//   - redis-host: Redis host (required)
-//   - redis-port: Redis port (required)
-//
-// Example:
-//
-//	redisConfig, err := loader.LoadRedisConfig(ctx, "kubernaut-system", "gateway-redis-secret")
-//	if err != nil {
-//	    return fmt.Errorf("failed to load Redis secret: %w", err)
-//	}
-//	// Use redisConfig.Password, redisConfig.Host, redisConfig.Port
-func (s *SecretLoader) LoadRedisConfig(ctx context.Context, namespace, secretName string) (*RedisConfig, error) {
-	// REFACTOR: Extract common secret fetching logic
-	secret, err := s.getSecret(ctx, namespace, secretName)
-	if err != nil {
-		return nil, err
-	}
-
-	// REFACTOR: Extract field extraction with helper
-	password, err := s.extractRequiredField(secret, "redis-password", namespace, secretName)
-	if err != nil {
-		return nil, err
-	}
-
-	host, err := s.extractRequiredField(secret, "redis-host", namespace, secretName)
-	if err != nil {
-		return nil, err
-	}
-
-	port, err := s.extractRequiredField(secret, "redis-port", namespace, secretName)
-	if err != nil {
-		return nil, err
-	}
-
-	return &RedisConfig{
-		Password: password,
-		Host:     host,
-		Port:     port,
-	}, nil
 }
 
 // LoadDataStorageConfig loads DataStorage API configuration from a Kubernetes Secret.
@@ -212,7 +144,7 @@ func (s *SecretLoader) LoadDataStorageConfig(ctx context.Context, namespace, sec
 // ========================================
 
 // getSecret fetches a Secret from the Kubernetes API.
-// REFACTOR: Eliminates duplication between LoadRedisConfig and LoadDataStorageConfig.
+// REFACTOR: Eliminates duplication in secret fetching logic.
 func (s *SecretLoader) getSecret(ctx context.Context, namespace, secretName string) (*corev1.Secret, error) {
 	var secret corev1.Secret
 	secretKey := types.NamespacedName{

@@ -18,15 +18,12 @@ package infrastructure
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
-	"gopkg.in/yaml.v3"
 )
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
@@ -43,9 +40,17 @@ import (
 // - WorkflowExecution controller resolves bundles via Tekton bundle resolver
 
 const (
-	// TestWorkflowBundleRegistry is the OCI registry for test workflow bundles
+	// TestWorkflowBundleRegistry is the OCI registry for test workflow schema images.
+	// Schema images contain only /workflow-schema.yaml (FROM scratch) and are used
+	// by DataStorage for OCI-based workflow registration (DD-WORKFLOW-017).
 	// Uses quay.io/kubernaut-cicd namespace (multi-arch support: amd64 + arm64)
 	TestWorkflowBundleRegistry = "quay.io/kubernaut-cicd/test-workflows"
+
+	// TestTektonBundleRegistry is the OCI registry for Tekton Pipeline bundles.
+	// Tekton bundles are built with `tkn bundle push` and contain Tekton Pipeline
+	// resources with required annotations (dev.tekton.image.apiVersion, etc.).
+	// Used by WorkflowExecution controller via Tekton's bundle resolver.
+	TestTektonBundleRegistry = "quay.io/kubernaut-cicd/tekton-bundles"
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"
@@ -108,71 +113,11 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 }
 
 // registerTestBundleWorkflow registers a workflow in DataStorage using OpenAPI client
-// POST /api/v1/workflows per DD-WORKFLOW-005 v1.0
-// Uses dsgen.RemediationWorkflow OpenAPI types for compile-time type safety (DD-API-001)
+// DD-WORKFLOW-017: Pullspec-only registration — sends only containerImage.
+// DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
 // Includes DD-AUTH-014 ServiceAccount authentication
 func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, containerImage, description string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
-
-	// ADR-043: Generate valid workflow-schema.yaml content
-	// DataStorage's HandleCreateWorkflow will parse and validate this (BR-HAPI-191)
-	schema := models.WorkflowSchema{
-		APIVersion: "kubernaut.io/v1alpha1",
-		Kind:       "WorkflowSchema",
-		Metadata: models.WorkflowSchemaMetadata{
-			WorkflowID:  workflowName,
-			Version:     version,
-			Description: description,
-		},
-		Labels: models.WorkflowSchemaLabels{
-			SignalType:    "test-signal",
-			Severity:      "low",
-			RiskTolerance: "high",
-			Environment:   "test",
-			Component:     "deployment",
-			Priority:      "p3",
-		},
-		Execution: &models.WorkflowExecution{
-			Engine: "tekton",
-		},
-		Parameters: []models.WorkflowParameter{
-			{
-				Name:        "TARGET_RESOURCE",
-				Type:        "string",
-				Required:    true,
-				Description: "Target resource being remediated",
-			},
-		},
-	}
-	yamlBytes, err := yaml.Marshal(&schema)
-	if err != nil {
-		return fmt.Errorf("failed to generate workflow-schema.yaml for %s: %w", workflowName, err)
-	}
-	content := string(yamlBytes)
-	contentBytes := []byte(content)
-	hash := sha256.Sum256(contentBytes)
-	contentHash := fmt.Sprintf("%x", hash)
-
-	// Build payload using OpenAPI client types (DD-API-001)
-	// CRITICAL: Environment must be []dsgen.MandatoryLabelsEnvironmentItem, not string!
-	workflow := dsgen.RemediationWorkflow{
-		WorkflowName:    workflowName,
-		Version:         version,
-		Name:            fmt.Sprintf("Test Workflow: %s", workflowName),
-		Description:     description,
-		Content:         content,
-		ContentHash:     contentHash,
-		ExecutionEngine: "tekton", // String field, not enum
-		ContainerImage:  dsgen.NewOptString(containerImage),
-		Labels: dsgen.MandatoryLabels{
-			SignalType:  "test-signal",
-			Severity:    dsgen.MandatoryLabelsSeverity_low,
-			Component:   "deployment",
-			Environment: []dsgen.MandatoryLabelsEnvironmentItem{dsgen.MandatoryLabelsEnvironmentItem_test}, // ✅ Array!
-			Priority:    dsgen.MandatoryLabelsPriority_P3,
-		},
-		Status: dsgen.RemediationWorkflowStatusActive,
-	}
+	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) from %s\n", workflowName, version, containerImage)
 
 	// Create authenticated HTTP client (DD-AUTH-014)
 	httpClient := &http.Client{
@@ -185,9 +130,14 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
+	// DD-WORKFLOW-017: Pullspec-only registration request
+	req := &dsgen.CreateWorkflowFromOCIRequest{
+		ContainerImage: containerImage,
+	}
+
 	// Register workflow via OpenAPI client
 	ctx := context.Background()
-	resp, err := client.CreateWorkflow(ctx, &workflow)
+	resp, err := client.CreateWorkflow(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to register workflow: %w", err)
 	}

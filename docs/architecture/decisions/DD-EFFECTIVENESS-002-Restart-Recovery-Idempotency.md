@@ -6,6 +6,8 @@
 **Priority**: CRITICAL
 **Related**: DD-EFFECTIVENESS-001 (Hybrid Approach)
 
+**Note**: Per DD-017 v2.0, this DD applies to EM Level 1 in V1.0 scope.
+
 ---
 
 ## 🎯 **Context and Problem Statement**

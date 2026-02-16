@@ -51,9 +51,6 @@ from holmes.core.investigation import investigate_issues
 # Audit imports (BR-AUDIT-005, ADR-038, DD-AUDIT-002)
 from src.audit import (
     get_audit_store,
-    create_llm_request_event,
-    create_llm_response_event,
-    create_tool_call_event,
     create_validation_attempt_event,
 )
 
@@ -62,9 +59,11 @@ from .prompt_builder import (
     create_incident_investigation_prompt,
     build_validation_error_feedback
 )
-from .result_parser import (
-    parse_and_validate_investigation_result,
-    determine_human_review_reason
+from .result_parser import parse_and_validate_investigation_result
+from src.extensions.investigation_helpers import (
+    audit_llm_request,
+    audit_llm_response_and_tools,
+    handle_validation_exhaustion,
 )
 
 # Import models for type handling
@@ -225,10 +224,33 @@ async def analyze_incident(
 
     # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
     try:
+        # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
+        # Graceful degradation: if DS unavailable or module not yet deployed, context is None
+        remediation_history_context = None
+        try:
+            from src.clients.remediation_history_client import (
+                create_remediation_history_api,
+                fetch_remediation_history_for_request,
+            )
+            rh_api = create_remediation_history_api(app_config)
+            enrichment_results = request_data.get("enrichment_results", {}) or {}
+            current_spec_hash = ""
+            if isinstance(enrichment_results, dict):
+                current_spec_hash = enrichment_results.get("currentSpecHash", "")
+            remediation_history_context = fetch_remediation_history_for_request(
+                api=rh_api,
+                request_data=request_data,
+                current_spec_hash=current_spec_hash,
+            )
+        except (ImportError, Exception) as rh_err:
+            logger.warning({"event": "remediation_history_unavailable", "error": str(rh_err)})
+
         # Create base investigation prompt
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
-        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
+        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(
+            request_data, remediation_history_context=remediation_history_context
+        ))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
@@ -238,7 +260,7 @@ async def analyze_incident(
         from src.extensions.llm_config import (
             get_model_config_for_sdk,
             prepare_toolsets_config_for_sdk,
-            register_workflow_catalog_toolset
+            register_workflow_discovery_toolset
         )
 
         try:
@@ -344,14 +366,18 @@ async def analyze_incident(
                 "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels (100% safe validation)"
             })
 
-        config = register_workflow_catalog_toolset(
+        # DD-HAPI-017: Register three-step workflow discovery toolset
+        # (replaces single search_workflow_catalog tool from DD-WORKFLOW-002)
+        config = register_workflow_discovery_toolset(
             config,
             app_config,
             remediation_id=remediation_id,
             custom_labels=custom_labels,
             detected_labels=detected_labels_for_toolset,
-            source_resource=source_resource,
-            owner_chain=owner_chain
+            severity=request_data.get("severity", ""),
+            component=request_data.get("resource_kind", ""),
+            environment=request_data.get("environment", ""),
+            priority=request_data.get("priority", ""),
         )
 
         # DD-HAPI-002 v1.2: Create Data Storage client for workflow validation
@@ -368,6 +394,7 @@ async def analyze_incident(
         validation_attempts_history: List[Dict[str, Any]] = []  # For response
         last_schema_hint: Optional[str] = None  # BR-HAPI-191: schema hint for self-correction
         result = None
+        workflow_id = None
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
             attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -408,29 +435,9 @@ async def analyze_incident(
             )
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # AUDIT: LLM REQUEST (BR-AUDIT-005)
-            # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
+            # AUDIT: LLM REQUEST (BR-AUDIT-005, ADR-032 §1)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            if audit_store is None:
-                logger.error(
-                    "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                    extra={
-                        "incident_id": incident_id,
-                        "remediation_id": remediation_id,
-                        "adr": "ADR-032 §1",
-                    }
-                )
-                raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
-
-            # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-            audit_store.store_audit(create_llm_request_event(
-                incident_id=incident_id,
-                remediation_id=remediation_id,
-                model=config.model if config else "unknown",
-                prompt=investigation_prompt,
-                toolsets_enabled=list(config.toolsets.keys()) if config and config.toolsets else [],
-                mcp_servers=list(config.mcp_servers.keys()) if config and config.mcp_servers else []
-            ))
+            audit_llm_request(audit_store, incident_id, remediation_id, config, investigation_prompt)
 
             # Call HolmesGPT SDK
             logger.info({
@@ -446,49 +453,9 @@ async def analyze_incident(
             )
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # AUDIT: LLM RESPONSE (BR-AUDIT-005)
-            # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
+            # AUDIT: LLM RESPONSE + TOOL CALLS (BR-AUDIT-005, ADR-032 §1)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            has_analysis = investigation_result and investigation_result.analysis
-            analysis_length = len(investigation_result.analysis) if has_analysis else 0
-            analysis_preview = investigation_result.analysis[:500] + "..." if analysis_length > 500 else (investigation_result.analysis if has_analysis else "")
-            tool_call_count = len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0
-
-            if audit_store is None:
-                logger.error(
-                    "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                    extra={
-                        "incident_id": incident_id,
-                        "remediation_id": remediation_id,
-                        "adr": "ADR-032 §1",
-                    }
-                )
-                raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
-
-            # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-            audit_store.store_audit(create_llm_response_event(
-                incident_id=incident_id,
-                remediation_id=remediation_id,
-                has_analysis=bool(has_analysis),
-                analysis_length=analysis_length,
-                analysis_preview=analysis_preview,
-                tool_call_count=tool_call_count
-            ))
-
-            # Audit tool calls if any
-            if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
-                    for idx, tool_call in enumerate(investigation_result.tool_calls):
-                        tool_name = getattr(tool_call, 'name', 'unknown')
-                        tool_arguments = getattr(tool_call, 'arguments', {})
-                        tool_result = getattr(tool_call, 'result', None)
-                        audit_store.store_audit(create_tool_call_event(
-                            incident_id=incident_id,
-                            remediation_id=remediation_id,
-                            tool_call_index=idx,
-                            tool_name=tool_name,
-                            tool_arguments=tool_arguments,
-                            tool_result=tool_result
-                        ))
+            audit_llm_response_and_tools(audit_store, incident_id, remediation_id, investigation_result)
 
             # Parse and validate investigation result
             result, validation_result = parse_and_validate_investigation_result(
@@ -507,20 +474,7 @@ async def analyze_incident(
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             # AUDIT: VALIDATION ATTEMPT (BR-AUDIT-005, DD-HAPI-002 v1.2)
-            # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            if audit_store is None:
-                logger.error(
-                    "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                    extra={
-                        "incident_id": incident_id,
-                        "remediation_id": remediation_id,
-                        "adr": "ADR-032 §1",
-                    }
-                )
-                raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
-
-            # Non-blocking fire-and-forget audit write (ADR-038 pattern)
             audit_store.store_audit(create_validation_attempt_event(
                 incident_id=incident_id,
                 remediation_id=remediation_id,
@@ -564,56 +518,10 @@ async def analyze_incident(
                 })
 
         # After loop: Check if we exhausted all attempts
-        if validation_errors_history and len(validation_errors_history) >= MAX_VALIDATION_ATTEMPTS:
-            # All attempts failed - set needs_human_review
-            last_errors = validation_errors_history[-1]
-            human_review_reason = determine_human_review_reason(last_errors)
-            result["needs_human_review"] = True
-            result["human_review_reason"] = human_review_reason
-
-            # Build detailed error summary from ALL attempts for operator notification
-            all_errors_summary = []
-            for i, errors in enumerate(validation_errors_history):
-                all_errors_summary.append(f"Attempt {i+1}: {'; '.join(errors)}")
-            result["warnings"].append(
-                f"Workflow validation failed after {MAX_VALIDATION_ATTEMPTS} attempts. " +
-                " | ".join(all_errors_summary)
-            )
-
-            # Final audit with human_review_reason
-            # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
-            if audit_store is None:
-                logger.error(
-                    "CRITICAL: audit_store is None - audit is MANDATORY per ADR-032 §1",
-                    extra={
-                        "incident_id": incident_id,
-                        "remediation_id": remediation_id,
-                        "adr": "ADR-032 §1",
-                    }
-                )
-                raise RuntimeError("audit_store is None - audit is MANDATORY per ADR-032 §1")
-
-            # Non-blocking fire-and-forget audit write (ADR-038 pattern)
-            audit_store.store_audit(create_validation_attempt_event(
-                incident_id=incident_id,
-                remediation_id=remediation_id,
-                attempt=MAX_VALIDATION_ATTEMPTS,
-                max_attempts=MAX_VALIDATION_ATTEMPTS,
-                    is_valid=False,
-                    errors=last_errors,
-                    workflow_id=workflow_id,
-                    human_review_reason=human_review_reason
-                ))
-
-            logger.warning({
-                "event": "workflow_validation_exhausted",
-                "incident_id": incident_id,
-                "total_attempts": MAX_VALIDATION_ATTEMPTS,
-                "all_errors": validation_errors_history,
-                "final_errors": last_errors,
-                "human_review_reason": human_review_reason,
-                "message": "BR-HAPI-197: Max validation attempts exhausted, needs_human_review=True"
-            })
+        handle_validation_exhaustion(
+            result, validation_errors_history, MAX_VALIDATION_ATTEMPTS,
+            audit_store, incident_id, remediation_id, workflow_id
+        )
 
         # Add validation history to response (BR-HAPI-197)
         # E2E-HAPI-003: Only override if LLM didn't provide a history (for max_retries_exhausted simulation)

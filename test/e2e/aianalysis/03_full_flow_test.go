@@ -235,13 +235,13 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					RecoveryAttemptNumber: 3, // 3+ attempts = escalation
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-fingerprint-003",
-							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
-							Environment:      "staging", // Even staging requires approval for 3+ recovery attempts
-							BusinessPriority: "P1",
+						Fingerprint:      "e2e-fingerprint-003",
+						Severity:         "high",    // Must match crashloop-config-fix-v1 catalog entry
+						SignalType:       "CrashLoopBackOff",
+						Environment:      "staging", // Even staging requires approval for 3+ recovery attempts
+						BusinessPriority: "P1",      // Matches crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "critical-app",
 								Namespace: "staging",
 							},

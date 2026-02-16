@@ -160,7 +160,7 @@ func main() {
 		"service", "notification",
 		"metrics_addr", cfg.Controller.MetricsAddr,
 		"health_probe_addr", cfg.Controller.HealthProbeAddr,
-		"data_storage_url", cfg.Infrastructure.DataStorageURL)
+		"data_storage_url", cfg.DataStorage.URL)
 
 	// Set controller-runtime logger (still needed for controller-runtime internals)
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -242,17 +242,22 @@ func main() {
 	// Create Data Storage client with OpenAPI generated client (DD-API-001)
 	// ADR-030: Use data_storage_url from configuration (required by Validate)
 	dataStorageClient, err := audit.NewOpenAPIClientAdapter(
-		cfg.Infrastructure.DataStorageURL,
-		5*time.Second)
+		cfg.DataStorage.URL,
+		cfg.DataStorage.Timeout)
 	if err != nil {
 		logger.Error(err, "Failed to create Data Storage client",
-			"url", cfg.Infrastructure.DataStorageURL)
+			"url", cfg.DataStorage.URL)
 		os.Exit(1)
 	}
 
 	// Create buffered audit store (fire-and-forget pattern, ADR-038)
-	// DD-AUDIT-004: Use recommended config for LOW tier (500 events/day → 20K buffer)
-	auditConfig := audit.RecommendedConfig("notification")
+	// ADR-030: Use buffer config from YAML ConfigMap
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
 
 	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
 	// DD-005 v2.0: pkg/audit uses logr.Logger for unified logging interface

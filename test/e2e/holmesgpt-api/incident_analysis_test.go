@@ -63,6 +63,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod",
 				ErrorMessage:      "No automation available",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -119,6 +124,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-2",
 				ErrorMessage:      "Uncertain root cause",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -170,6 +180,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-3",
 				ErrorMessage:      "Validation failed",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -235,6 +250,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-4",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -286,6 +306,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceKind:      "Pod",
 				ResourceName:      "test-pod-5",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -337,6 +362,11 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				ResourceName:      "test-pod-6",
 				ErrorMessage:      "Container memory limit exceeded",
 				// EnrichmentResults: TODO - complex Opt struct creation
+				Environment:      "production",
+				Priority:         "P1",
+				RiskTolerance:    "medium",
+				BusinessCategory: "standard",
+				ClusterName:      "e2e-test",
 			}
 
 			// ========================================

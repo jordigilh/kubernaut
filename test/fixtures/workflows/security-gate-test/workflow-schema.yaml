@@ -1,0 +1,34 @@
+# Security Gate Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+# This workflow tests context-filter security gate (mismatched labels → 404)
+metadata:
+  workflowId: security-gate-test-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow for security gate context filter validation"
+    whenToUse: "For E2E testing of context-based access control on workflow retrieval"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running"
+
+actionType: ScaleReplicas
+
+labels:
+  signalType: OOMKilled
+  severity: [critical]
+  environment: [production]
+  component: pod
+  priority: P0
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: REPLICA_COUNT
+    type: integer
+    required: false
+    description: "Target replica count"
+    default: 3

@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - rbac/
+  - event-exporter.yaml
+  - datastorage.yaml
+  - gateway.yaml
+  - authwebhook.yaml
+  - signalprocessing.yaml
+  - remediationorchestrator.yaml
+  - aianalysis.yaml
+  - workflowexecution.yaml
+  - notification.yaml
+  - holmesgpt-api.yaml
+  - effectivenessmonitor.yaml

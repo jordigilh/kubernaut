@@ -1,10 +1,20 @@
 # BR-EFFECTIVENESS-003: Trigger Learning Feedback Loops
 
+> **ARCHIVED** (February 2026)
+>
+> This BR describes learning feedback loops that align with EM Level 2 (V1.1), not Level 1.
+> The event publishing and AI subscription design described here may be revisited during V1.1
+> planning, but the implementation approach will be reviewed against DD-017 v2.0's audit-trace
+> architecture.
+>
+> **Authoritative source**: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md` (v2.0)
+> **V1.1 scope**: Level 2 AI-Powered Analysis (HolmesGPT PostExec)
+
 **Business Requirement ID**: BR-EFFECTIVENESS-003
 **Category**: Effectiveness Monitor Service
 **Priority**: P2
 **Target Version**: V2
-**Status**: ✅ Approved
+**Status**: ⚠️ ARCHIVED — Confirmed V1.1 scope, revisit during V1.1 planning
 **Date**: November 5, 2025
 
 ---

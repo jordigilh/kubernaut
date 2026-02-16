@@ -3,7 +3,7 @@
 **Service Name**: Effectiveness Monitor Service
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
 **Docker Image**: `quay.io/jordigilh/monitor-service`
-**V1 Status**: ✅ **INCLUDED IN V1** (Graceful Degradation Mode)
+**V1 Status**: ✅ **V1.0 Level 1: Automated Assessment**. Level 2 (AI): V1.1 (DD-017 v2.0)
 **Type**: Stateless HTTP API Service
 **Last Updated**: October 6, 2025
 
@@ -54,7 +54,7 @@ The Effectiveness Monitor uses a **hybrid approach** combining automated checks 
 - **Scope**:
   - Health checks (pod running, OOM errors, latency metrics)
   - Metric comparisons (pre/post execution)
-  - Basic effectiveness scoring (formula-based)
+  - Component audit events (health, alert, metrics, spec-hash); DataStorage computes weighted effectiveness score on demand
   - Anomaly detection (metric changes > thresholds)
 - **Cost**: Negligible (computational only)
 - **Latency**: <100ms
@@ -152,73 +152,62 @@ WorkflowExecution CRD (completed) → Effectiveness Monitor (8080)
 
 ### **BR-INS-001 to BR-INS-010** (10 Requirements)
 
-| Requirement | Capability | Status |
+| Requirement | Capability | Scope |
 |------------|-----------|--------|
-| **BR-INS-001** | Assess remediation action effectiveness | ✅ Implemented |
-| **BR-INS-002** | Correlate action outcomes with environment improvements | ✅ Implemented |
-| **BR-INS-003** | Track long-term effectiveness trends | ✅ Implemented |
-| **BR-INS-004** | Identify consistently positive actions | ✅ Implemented |
-| **BR-INS-005** | Detect adverse side effects | ✅ Implemented |
-| **BR-INS-006** | Advanced pattern recognition | ✅ Implemented |
-| **BR-INS-007** | Comparative analysis | ✅ Implemented |
-| **BR-INS-008** | Temporal pattern detection | ✅ Implemented |
-| **BR-INS-009** | Seasonal effectiveness variations | ✅ Implemented |
-| **BR-INS-010** | Continuous improvement feedback loop | ✅ Implemented |
+| **BR-INS-001** | Assess remediation action effectiveness | V1.0 (Level 1) |
+| **BR-INS-002** | Correlate action outcomes with environment improvements | V1.0 (Level 1) |
+| **BR-INS-005** | Detect adverse side effects | V1.0 (Level 1) |
+| **BR-INS-003** | Track long-term effectiveness trends | V1.1 (Level 2) |
+| **BR-INS-004** | Identify consistently positive actions | V1.1 (Level 2) |
+| **BR-INS-006** | Advanced pattern recognition | V1.1 (Level 2) |
+| **BR-INS-007** | Comparative analysis | V1.1 (Level 2) |
+| **BR-INS-008** | Temporal pattern detection | V1.1 (Level 2) |
+| **BR-INS-009** | Seasonal effectiveness variations | V1.1 (Level 2) |
+| **BR-INS-010** | Continuous improvement feedback loop | V1.1 (Level 2) |
 
 **Implementation**: `pkg/ai/insights/service.go` (6,295 lines, 98% complete)
 
 ---
 
-## 🎯 **V1 Graceful Degradation Strategy**
+## 🎯 **V1.0 Level 1 vs V1.1 Level 2**
 
-### **Why Graceful Degradation?**
+### **Level 1 (V1.0): Day-1 Value**
 
-Effectiveness assessment requires 8-10 weeks of remediation data for high-confidence analysis. Graceful degradation allows V1 deployment while data accumulates.
+Level 1 automated assessment provides immediate value from the first remediation:
+- Dual spec hash capture, health checks via K8s API, pre/post metric comparison via Prometheus
+- Alert resolution check via AlertManager; EM emits component audit events; DataStorage computes weighted effectiveness score on demand
+- Side-effect detection; EM always emits Normal `EffectivenessAssessed` K8s event on completion
+- **No data dependency**: Works from Day 1 without historical accumulation
 
-### **Progressive Capability Timeline**
+### **Level 2 (V1.1): 8+ Weeks Post V1.0**
 
-| Week | Data Available | Capability | Confidence | Response Behavior |
-|------|---------------|------------|------------|-------------------|
-| **Week 5** | 0 weeks | Service deployed | 20-30% | "Insufficient data for assessment" |
-| **Week 8** | 3 weeks | Basic patterns | 40-50% | Simple effectiveness scores (traditional only) |
-| **Week 10** | 5 weeks | Trend detection | 60-70% | Basic trend analysis, pattern recognition |
-| **Week 13** | 8 weeks | Full capability | 80-95% | Complete multi-dimensional assessment |
+Level 2 AI-powered analysis (HolmesGPT PostExec) requires historical patterns:
+- HolmesGPT PostExec analysis, pattern learning, batch processing
+- Requires 8+ weeks of Level 1 assessment data for high-confidence analysis (80%+)
+- BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010
 
 ### **Example Responses**
 
-**Week 5 Response** (Insufficient Data):
+**Level 1 (V1.0)** — Emitted as `effectiveness.assessment.completed` audit event from Day 1:
 ```json
 {
-  "status": "insufficient_data",
-  "message": "Effectiveness assessment requires minimum 8 weeks of historical data. Current: 0 weeks.",
-  "estimated_availability": "2025-12-01",
-  "partial_assessment": {
-    "immediate_result": "action_succeeded",
-    "note": "Detailed effectiveness assessment pending data accumulation"
-  },
-  "confidence": 0.25
+  "event_type": "effectiveness.assessment.completed",
+  "effectiveness_score": 0.88,
+  "signal_resolved": true,
+  "health_checks": { "pod_running": true, "readiness_pass": true },
+  "metric_deltas": { "cpu_before": 0.95, "cpu_after": 0.92 },
+  "side_effects_detected": []
 }
 ```
 
-**Week 13+ Response** (Full Capability):
+**Level 2 (V1.1)** — Enriched with AI analysis when 8+ weeks of data available:
 ```json
 {
-  "assessment_id": "assess-xyz789",
-  "action_id": "act-abc123",
-  "traditional_score": 0.88,
-  "environmental_impact": {
-    "memory_improvement": 0.35,
-    "cpu_impact": -0.05,
-    "network_stability": 0.92
-  },
-  "confidence": 0.91,
-  "side_effects_detected": true,
-  "side_effect_severity": "low",
-  "trend_direction": "stable",
-  "pattern_insights": [
-    "Similar actions successful in 87% of production cases",
-    "Effectiveness 12% lower during business hours"
-  ]
+  "effectiveness_score": 0.88,
+  "pattern_insights": ["Similar actions successful in 87% of production cases"],
+  "lessons_learned": [...],
+  "root_cause_resolved": true,
+  "oscillation_detected": false
 }
 ```
 

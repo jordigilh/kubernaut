@@ -16,65 +16,91 @@ limitations under the License.
 
 package models
 
+import (
+	"fmt"
+)
+
 // ========================================
-// WORKFLOW SCHEMA MODELS (ADR-043)
+// WORKFLOW SCHEMA MODELS
 // ========================================
-// Authority: ADR-043 (Workflow Schema Definition Standard)
-// Business Requirement: BR-STORAGE-012 (Workflow Semantic Search)
-// Design Decision: DD-WORKFLOW-005 (Automated Schema Extraction)
+// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Design Decision: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // ========================================
 //
 // These types represent the structure of /workflow-schema.yaml
-// as defined in ADR-043. The schema is extracted from workflow
-// container images and stored in the workflow catalog.
+// as defined in BR-WORKFLOW-004. The schema is a plain configuration
+// file (not a Kubernetes resource) extracted from workflow OCI images
+// and stored in the workflow catalog.
 //
-// V1.0: Operators manually extract and POST the schema
-// V1.1: WorkflowRegistration CRD controller extracts automatically
+// Naming: camelCase for all YAML/JSON field names per kubernaut convention.
 //
 // ========================================
 
-// WorkflowSchema represents the complete workflow-schema.yaml structure
-// per ADR-043. This is the authoritative schema format for all Kubernaut
-// remediation workflows.
+// WorkflowSchema represents the complete /workflow-schema.yaml structure
+// per BR-WORKFLOW-004. This is the authoritative schema format for all
+// Kubernaut remediation workflows.
 type WorkflowSchema struct {
-	// APIVersion is the schema version (e.g., "kubernaut.io/v1alpha1")
-	APIVersion string `yaml:"apiVersion" json:"apiVersion" validate:"required"`
-
-	// Kind must be "WorkflowSchema"
-	Kind string `yaml:"kind" json:"kind" validate:"required,eq=WorkflowSchema"`
-
-	// Metadata contains workflow identification information
+	// Metadata contains workflow identification and description
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
 
-	// Labels contains discovery labels for MCP search
-	// DD-WORKFLOW-001 v1.3: 6 mandatory labels + optional custom labels
+	// ActionType is the action type from the taxonomy (PascalCase).
+	// Must match a valid entry in action_type_taxonomy.
+	// DD-WORKFLOW-016: Used as FK for three-step discovery indexing.
+	// Examples: "RestartPod", "ScaleReplicas", "DrainNode"
+	ActionType string `yaml:"actionType" json:"actionType" validate:"required"`
+
+	// Labels contains mandatory matching/filtering criteria for discovery
 	Labels WorkflowSchemaLabels `yaml:"labels" json:"labels" validate:"required"`
 
-	// Execution contains execution engine information (optional in V1.0)
+	// CustomLabels contains operator-defined key-value labels for additional filtering
+	CustomLabels map[string]string `yaml:"customLabels,omitempty" json:"customLabels,omitempty"`
+
+	// Execution contains execution engine configuration (optional)
 	Execution *WorkflowExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
 
-	// Parameters defines the workflow input parameters
+	// Parameters defines the workflow input parameters (at least one required)
 	// These are returned to the LLM for parameter population
 	Parameters []WorkflowParameter `yaml:"parameters" json:"parameters" validate:"required,min=1,dive"`
 
 	// RollbackParameters defines parameters needed for rollback (optional)
-	RollbackParameters []WorkflowParameter `yaml:"rollback_parameters,omitempty" json:"rollback_parameters,omitempty" validate:"omitempty,dive"`
+	RollbackParameters []WorkflowParameter `yaml:"rollbackParameters,omitempty" json:"rollbackParameters,omitempty" validate:"omitempty,dive"`
 }
 
-// WorkflowSchemaMetadata contains workflow identification information
+// WorkflowSchemaMetadata contains workflow identification and description
 type WorkflowSchemaMetadata struct {
 	// WorkflowID is the unique workflow identifier
-	// Format: lowercase alphanumeric with hyphens (e.g., "oomkill-scale-down")
-	WorkflowID string `yaml:"workflow_id" json:"workflow_id" validate:"required,max=255"`
+	// Format: lowercase alphanumeric with hyphens (e.g., "oomkill-restart-pod")
+	WorkflowID string `yaml:"workflowId" json:"workflowId" validate:"required,max=255"`
 
 	// Version is the semantic version (e.g., "1.0.0", "2.1.3")
 	Version string `yaml:"version" json:"version" validate:"required,max=50"`
 
-	// Description is a human-readable description (shown to LLM and operators)
-	Description string `yaml:"description" json:"description" validate:"required,max=500"`
+	// Description is a structured description for LLM and operator consumption
+	// BR-WORKFLOW-004: Uses same format as action_type_taxonomy.description (DD-WORKFLOW-016)
+	Description WorkflowDescription `yaml:"description" json:"description" validate:"required"`
 
 	// Maintainers is optional maintainer information
 	Maintainers []WorkflowMaintainer `yaml:"maintainers,omitempty" json:"maintainers,omitempty" validate:"omitempty,dive"`
+}
+
+// WorkflowDescription provides structured information about a workflow.
+// This is shown to the LLM during workflow selection and to operators in the catalog.
+// Format matches action_type_taxonomy.description (DD-WORKFLOW-016).
+type WorkflowDescription struct {
+	// What describes what this workflow concretely does. One sentence. (REQUIRED)
+	What string `yaml:"what" json:"what" validate:"required"`
+
+	// WhenToUse describes root cause conditions under which this workflow is appropriate. (REQUIRED)
+	WhenToUse string `yaml:"whenToUse" json:"whenToUse" validate:"required"`
+
+	// WhenNotToUse describes specific exclusion conditions. (OPTIONAL)
+	// Only include genuinely useful exclusions. Do not include failure-based exclusions
+	// (handled by remediation history, DD-HAPI-016).
+	WhenNotToUse string `yaml:"whenNotToUse,omitempty" json:"whenNotToUse,omitempty"`
+
+	// Preconditions describes conditions that must be verified through investigation
+	// that cannot be determined by catalog label filtering. (OPTIONAL)
+	Preconditions string `yaml:"preconditions,omitempty" json:"preconditions,omitempty"`
 }
 
 // WorkflowMaintainer contains maintainer contact information
@@ -86,58 +112,52 @@ type WorkflowMaintainer struct {
 	Email string `yaml:"email" json:"email" validate:"required,email"`
 }
 
-// WorkflowSchemaLabels contains discovery labels for MCP search
-// DD-WORKFLOW-001: Mandatory label schema
+// WorkflowSchemaLabels contains mandatory matching/filtering criteria for discovery.
+// These fields are used by the three-step discovery protocol (DD-HAPI-017) to filter
+// workflows for a given incident context. Stored in the labels JSONB column.
+//
+// BR-WORKFLOW-004: severity, environment, component, priority are required.
+// DD-WORKFLOW-016: signalType changed to optional metadata (not used for matching in V1.0).
 type WorkflowSchemaLabels struct {
-	// SignalType is the signal type this workflow handles (REQUIRED)
-	// Examples: "OOMKilled", "CrashLoopBackOff", "HighMemoryUsage"
-	SignalType string `yaml:"signal_type" json:"signal_type" validate:"required"`
+	// SignalType is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
+	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
+	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
+	SignalType string `yaml:"signalType,omitempty" json:"signalType,omitempty" validate:"omitempty"`
 
-	// Severity is the severity level this workflow is designed for (REQUIRED)
+	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
-	Severity string `yaml:"severity" json:"severity" validate:"required,oneof=critical high medium low"`
+	// DD-WORKFLOW-001 v2.7: Always an array in workflow-schema.yaml.
+	// Examples: severity: [critical] or severity: [low, medium, high]
+	Severity []string `yaml:"severity" json:"severity" validate:"required,min=1"`
 
-	// RiskTolerance is the risk tolerance required for this workflow (REQUIRED)
-	// Values: "low", "medium", "high"
-	RiskTolerance string `yaml:"risk_tolerance" json:"risk_tolerance" validate:"required,oneof=low medium high"`
+	// Environment is the target environment(s) (REQUIRED)
+	// DD-WORKFLOW-016: Stored as JSONB array in remediation_workflow_catalog
+	// Examples: ["production"], ["staging", "production"], ["*"] (wildcard for all)
+	Environment []string `yaml:"environment" json:"environment" validate:"required,min=1"`
 
-	// BusinessCategory is an optional custom label for business domain filtering
-	// Per DD-WORKFLOW-001 v1.3: Moved from mandatory to optional custom label
-	// Values: user-defined (e.g., "payment-service", "analytics", "infrastructure")
-	BusinessCategory string `yaml:"business_category,omitempty" json:"business_category,omitempty" validate:"omitempty"`
-
-	// Environment is the target environment (OPTIONAL)
-	// Examples: "production", "staging", "development"
-	Environment string `yaml:"environment,omitempty" json:"environment,omitempty" validate:"omitempty"`
-
-	// Priority is the priority level (OPTIONAL)
-	// Values: "p0", "p1", "p2", "p3", "p4"
-	Priority string `yaml:"priority,omitempty" json:"priority,omitempty" validate:"omitempty,oneof=p0 p1 p2 p3 p4"`
-
-	// Component is the component type (OPTIONAL)
+	// Component is the Kubernetes resource type this workflow remediates (REQUIRED)
 	// Examples: "pod", "deployment", "node", "service"
-	Component string `yaml:"component,omitempty" json:"component,omitempty" validate:"omitempty"`
+	Component string `yaml:"component" json:"component" validate:"required"`
 
-	// CustomLabels contains additional operator-defined labels
-	// No character limits (unlike K8s labels)
-	CustomLabels map[string]string `yaml:"-" json:"-"` // Populated from remaining YAML keys
+	// Priority is the business priority level (REQUIRED)
+	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
+	// Note: ExtractLabels normalizes to uppercase per OpenAPI enum [P0, P1, P2, P3, "*"]
+	Priority string `yaml:"priority" json:"priority" validate:"required"`
 }
 
-// WorkflowExecution contains execution engine information
+// WorkflowExecution contains execution engine configuration
 type WorkflowExecution struct {
 	// Engine is the execution engine type
-	// V1 values: "tekton"
-	// V2 values: "tekton", "ansible", "lambda", "shell"
+	// Values: "tekton", "ansible", "lambda", "shell"
+	// Defaults to "tekton" if not specified.
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty" validate:"omitempty,oneof=tekton ansible lambda shell"`
 
-	// Bundle is the container image or bundle reference
-	// For Tekton: OCI bundle URL
-	// For Ansible: Git repo or container with workflow
+	// Bundle is the execution bundle or container image reference
 	Bundle string `yaml:"bundle,omitempty" json:"bundle,omitempty" validate:"omitempty"`
 }
 
 // WorkflowParameter defines a workflow input parameter
-// Format: JSON Schema compatible subset per ADR-043
+// Format: JSON Schema compatible subset per BR-WORKFLOW-004
 type WorkflowParameter struct {
 	// Name is the parameter name (REQUIRED)
 	// Format: UPPER_SNAKE_CASE per DD-WORKFLOW-003
@@ -147,7 +167,7 @@ type WorkflowParameter struct {
 	// Values: "string", "integer", "boolean", "array"
 	Type string `yaml:"type" json:"type" validate:"required,oneof=string integer boolean array"`
 
-	// Required indicates whether the parameter must be provided (REQUIRED)
+	// Required indicates whether the parameter must be provided
 	Required bool `yaml:"required" json:"required"`
 
 	// Description is a human-readable description for LLM (REQUIRED)
@@ -169,7 +189,7 @@ type WorkflowParameter struct {
 	Default interface{} `yaml:"default,omitempty" json:"default,omitempty" validate:"omitempty"`
 
 	// DependsOn references other parameter names that must be set first (OPTIONAL)
-	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty" validate:"omitempty"`
+	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty" validate:"omitempty"`
 }
 
 // ========================================
@@ -177,16 +197,41 @@ type WorkflowParameter struct {
 // ========================================
 
 // ValidateMandatoryLabels checks if all mandatory labels are present
-// DD-WORKFLOW-001: signal_type, severity, risk_tolerance are required
+// BR-WORKFLOW-004 + DD-WORKFLOW-016: severity, environment, component, priority are required.
+// signalType is optional metadata (DD-WORKFLOW-016).
 func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
-	if l.SignalType == "" {
-		return NewSchemaValidationError("labels.signal_type", "signal_type is required")
+	// Note: signalType intentionally NOT validated -- optional per DD-WORKFLOW-016
+	if len(l.Severity) == 0 {
+		return NewSchemaValidationError("labels.severity", "severity is required (at least one value)")
 	}
-	if l.Severity == "" {
-		return NewSchemaValidationError("labels.severity", "severity is required")
+	// Validate each severity value is in the allowed set
+	allowedSeverities := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
+	for _, sev := range l.Severity {
+		if !allowedSeverities[sev] {
+			return NewSchemaValidationError("labels.severity",
+				fmt.Sprintf("invalid severity %q: must be one of critical, high, medium, low", sev))
+		}
 	}
-	if l.RiskTolerance == "" {
-		return NewSchemaValidationError("labels.risk_tolerance", "risk_tolerance is required")
+	if len(l.Environment) == 0 {
+		return NewSchemaValidationError("labels.environment", "environment is required (at least one value)")
+	}
+	if l.Component == "" {
+		return NewSchemaValidationError("labels.component", "component is required")
+	}
+	if l.Priority == "" {
+		return NewSchemaValidationError("labels.priority", "priority is required")
+	}
+	return nil
+}
+
+// ValidateDescription checks if the structured description has required fields
+// BR-WORKFLOW-004: what and whenToUse are required
+func (d *WorkflowDescription) ValidateDescription() error {
+	if d.What == "" {
+		return NewSchemaValidationError("metadata.description.what", "what is required")
+	}
+	if d.WhenToUse == "" {
+		return NewSchemaValidationError("metadata.description.whenToUse", "whenToUse is required")
 	}
 	return nil
 }

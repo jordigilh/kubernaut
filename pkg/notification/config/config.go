@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
 // ========================================
@@ -51,8 +53,8 @@ type Config struct {
 	// Delivery channel configuration
 	Delivery DeliverySettings `yaml:"delivery"`
 
-	// Infrastructure dependencies (audit, external services)
-	Infrastructure InfrastructureSettings `yaml:"infrastructure"`
+	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 }
 
 // ControllerSettings contains Kubernetes controller configuration.
@@ -99,14 +101,6 @@ type SlackSettings struct {
 	Timeout    time.Duration `yaml:"timeout"`    // Default: 10s
 }
 
-// InfrastructureSettings contains external dependency configuration.
-// Single Responsibility: Infrastructure connections
-type InfrastructureSettings struct {
-	// ADR-032: Data Storage URL for audit event emission (MANDATORY for P0 services)
-	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-	DataStorageURL string `yaml:"dataStorageUrl"`
-}
-
 // LoadFromFile loads configuration from YAML file.
 // This is the primary configuration source (ADR-030).
 func LoadFromFile(path string) (*Config, error) {
@@ -138,9 +132,9 @@ func (c *Config) LoadFromEnv() {
 // Validate validates configuration.
 // ADR-030: Fail fast on invalid configuration.
 func (c *Config) Validate() error {
-	// ADR-032: Data Storage URL is MANDATORY for audit
-	if c.Infrastructure.DataStorageURL == "" {
-		return fmt.Errorf("infrastructure.data_storage_url is required (ADR-032)")
+	// ADR-030: Validate DataStorage section
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
 	}
 
 	// Controller validation
@@ -219,10 +213,7 @@ func DefaultConfig() *Config {
 				Timeout: 10 * time.Second,
 			},
 		},
-		Infrastructure: InfrastructureSettings{
-			// Will be set from config file or env
-			DataStorageURL: "",
-		},
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 	}
 
 	return cfg

@@ -4,11 +4,19 @@
 **Date**: 2025-11-28
 **Deciders**: Architecture Team
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-011, DD-NAMING-001, ADR-041
-**Version**: 1.1
+**Version**: 1.2
 
 ---
 
 ## Changelog
+
+### Version 1.2 (2026-02-13)
+- **BR-WORKFLOW-004**: Removed `apiVersion` and `kind` fields (plain config file, not K8s resource)
+- **BR-WORKFLOW-004**: Renamed field names to camelCase (e.g., `signal_type` -> `signalType`, `workflow_id` -> `workflowId`)
+- **BR-WORKFLOW-004**: Promoted `actionType` from labels to top-level field
+- **BR-WORKFLOW-004**: Made `description` a structured object (`what`, `whenToUse`, `whenNotToUse`, `preconditions`)
+- **BR-WORKFLOW-004**: Deprecated `riskTolerance` (never stored in DB, removed from schema)
+- See `docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md` for authoritative format specification
 
 ### Version 1.1 (2026-02-05)
 - Added `"job"` (Kubernetes Job) as a V1 execution engine value alongside `"tekton"`
@@ -120,9 +128,7 @@ When operators create remediation workflows as OCI bundles containing Tekton Pip
 # Kubernaut Workflow Schema v1.0
 # Authority: ADR-043
 # See: docs/architecture/decisions/ADR-043-workflow-schema-definition-standard.md
-
-apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
+# Format spec: docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md
 
 # ============================================
 # METADATA (Required)
@@ -131,7 +137,7 @@ metadata:
   # Unique workflow identifier (used in catalog and LLM responses)
   # Format: lowercase alphanumeric with hyphens
   # Example: "oomkill-scale-down", "disk-cleanup-v2"
-  workflow_id: string  # REQUIRED
+  workflowId: string  # REQUIRED
 
   # Semantic version (SemVer 2.0)
   # Format: MAJOR.MINOR.PATCH
@@ -154,15 +160,13 @@ metadata:
 labels:
   # Signal type this workflow handles
   # Must match DD-WORKFLOW-001 mandatory labels
-  signal_type: string  # REQUIRED - e.g., "OOMKilled", "CrashLoopBackOff"
+  signalType: string  # REQUIRED - e.g., "OOMKilled", "CrashLoopBackOff"
 
   # Severity level this workflow is designed for
   # Values: "critical", "high", "medium", "low"
   severity: string  # REQUIRED
 
-  # Risk tolerance required for this workflow
-  # Values: "low", "medium", "high"
-  risk_tolerance: string  # REQUIRED
+  # DEPRECATED: riskTolerance removed (BR-WORKFLOW-004)
 
   # Business category for filtering
   # Values: "cost-management", "performance", "availability", "security"
@@ -227,11 +231,8 @@ rollback_parameters:  # OPTIONAL
 # /workflow-schema.yaml
 # OOMKilled Scale Down Workflow - Production Ready
 
-apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-
 metadata:
-  workflow_id: oomkill-scale-down
+  workflowId: oomkill-scale-down
   version: "1.0.0"
   description: >-
     Scale down deployment replicas to reduce memory pressure when OOMKilled
@@ -242,9 +243,9 @@ metadata:
       email: platform@example.com
 
 labels:
-  signal_type: OOMKilled
+  signalType: OOMKilled
   severity: critical
-  risk_tolerance: low
+  # DEPRECATED: riskTolerance removed (BR-WORKFLOW-004)
   business_category: cost-management
   team: platform
   environment: production
@@ -330,6 +331,7 @@ func ValidateWorkflowSchema(schema *WorkflowSchema) error {
     if schema.Labels.Severity == "" {
         errs = append(errs, errors.New("labels.severity is required"))
     }
+    // DEPRECATED: Labels.RiskTolerance removed per BR-WORKFLOW-004 (never stored in DB)
     if schema.Labels.RiskTolerance == "" {
         errs = append(errs, errors.New("labels.risk_tolerance is required"))
     }

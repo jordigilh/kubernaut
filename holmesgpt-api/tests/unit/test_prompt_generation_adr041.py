@@ -292,8 +292,8 @@ class TestADR040MCPIntegration:
     MCP tools for workflow search (ADR-041 lines 186-277).
     """
 
-    def test_prompt_includes_mcp_tool_name(self):
-        """ADR-041: References search_workflow_catalog MCP tool"""
+    def test_prompt_includes_workflow_discovery_tools(self):
+        """DD-HAPI-017: References three-step workflow discovery tools"""
         request_data = {
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -301,8 +301,8 @@ class TestADR040MCPIntegration:
 
         prompt = _create_investigation_prompt(request_data)
 
-        # Should reference MCP tool for workflow search
-        assert "search_workflow_catalog" in prompt or "MCP" in prompt or "tool" in prompt.lower()
+        # Should reference three-step workflow discovery tools (DD-HAPI-017)
+        assert "list_available_actions" in prompt or "list_workflows" in prompt or "get_workflow" in prompt
 
     def test_prompt_clarifies_field_usage_for_rca_vs_workflow_search(self):
         """ADR-041: Clear distinction between RCA fields and workflow search fields"""

@@ -68,6 +68,11 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ResourceKind:      "Pod",
 				ResourceName:      "api-server-abc123",
 				ErrorMessage:      "Predicted memory exhaustion based on trend analysis",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// BR-AI-084: Set signal_mode to predictive
 			req.SignalMode = hapiclient.NewOptNilSignalMode(
@@ -144,6 +149,11 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ResourceKind:      "Pod",
 				ResourceName:      "worker-pod-def456",
 				ErrorMessage:      "Container killed due to OOM",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// Set explicit reactive mode
 			req.SignalMode = hapiclient.NewOptNilSignalMode(
@@ -197,6 +207,11 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				ResourceKind:      "Pod",
 				ResourceName:      "app-pod-ghi789",
 				ErrorMessage:      "Container exceeded memory limit",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 			// signal_mode intentionally NOT set — defaults to reactive
 

@@ -1,0 +1,97 @@
+# AlertManager for routing MemoryExceedsLimit alerts to Gateway webhook
+# Extracted from: test/infrastructure/prometheus_alertmanager_e2e.go:DeployAlertManager
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: kubernaut-system
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 1m
+    route:
+      receiver: 'null'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+      routes:
+      - match:
+          alertname: MemoryExceedsLimit
+        receiver: gateway-webhook
+    receivers:
+    - name: 'null'
+    - name: gateway-webhook
+      webhook_configs:
+      - url: 'http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus'
+        send_resolved: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: kubernaut-system
+  labels:
+    app: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:latest
+          args:
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+            - "--web.listen-address=:9093"
+            - "--log.level=debug"
+          ports:
+            - containerPort: 9093
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9093
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9093
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-svc
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: alertmanager
+  ports:
+    - name: http
+      port: 9093
+      targetPort: 9093
+      protocol: TCP

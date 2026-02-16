@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
 // ServerConfig is the top-level configuration for the Gateway service.
@@ -33,8 +35,8 @@ type ServerConfig struct {
 	// Middleware configuration
 	Middleware MiddlewareSettings `yaml:"middleware"`
 
-	// Infrastructure dependencies
-	Infrastructure InfrastructureSettings `yaml:"infrastructure"`
+	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
 	// Business logic configuration
 	Processing ProcessingSettings `yaml:"processing"`
@@ -59,17 +61,6 @@ type ServerSettings struct {
 type MiddlewareSettings struct {
 	// Empty - rate limiting delegated to proxy (ADR-048)
 	// Future middleware config can be added here
-}
-
-// InfrastructureSettings contains external dependency configuration.
-// Single Responsibility: Infrastructure connections
-type InfrastructureSettings struct {
-	// DD-GATEWAY-012: Redis REMOVED - Gateway is now 100% Kubernetes-native
-	// Deduplication and storm tracking now use RR status (DD-GATEWAY-011)
-
-	// DD-AUDIT-003: Data Storage URL for audit event emission (P0 requirement)
-	// Example: "http://data-storage-service:8080"
-	DataStorageURL string `yaml:"dataStorageUrl"`
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -261,23 +252,13 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 	return &cfg, nil
 }
 
-// LoadFromEnv overrides configuration values with environment variables
-// ADR-030: Environment variables ONLY for secrets (never for functional config)
+// LoadFromEnv overrides configuration values with environment variables.
+// ADR-030: Environment variables ONLY for secrets (never for functional config).
 func (c *ServerConfig) LoadFromEnv() {
-	// No environment variable overrides for server settings per ADR-030
-	// Server configuration (listen_addr, max_concurrent_requests, timeouts) comes from YAML only
+	// ADR-030: DataStorage URL now comes from YAML ConfigMap only (not env vars).
+	// GATEWAY_DATA_STORAGE_URL env override removed -- use datastorage.url in YAML.
 
-	// DD-GATEWAY-012: Redis settings REMOVED
-	// DD-AUDIT-003: Data Storage URL for audit integration
-	if dsURL := os.Getenv("GATEWAY_DATA_STORAGE_URL"); dsURL != "" {
-		c.Infrastructure.DataStorageURL = dsURL
-	}
-
-	// Middleware settings
-	// Rate limiting removed (ADR-048) - delegated to proxy
-	// No environment variables needed for middleware
-
-	// Processing settings
+	// Processing settings (DEPRECATED: TTL has no effect per DD-GATEWAY-011)
 	if dedupTTLStr := os.Getenv("GATEWAY_DEDUP_TTL"); dedupTTLStr != "" {
 		if dedupTTL, err := time.ParseDuration(dedupTTLStr); err == nil {
 			c.Processing.Deduplication.TTL = dedupTTL
@@ -400,10 +381,10 @@ func (c *ServerConfig) Validate() error {
 		return err
 	}
 
-	// DD-GATEWAY-012: Redis validation REMOVED (no longer required)
-	// DD-AUDIT-003: Data Storage URL is OPTIONAL (graceful degradation if not configured)
-	// Audit events will be dropped with warning if DataStorageURL is not set
-	// Note: No validation for DataStorageURL format - URL parsing errors will be caught at runtime
+	// ADR-030: Validate DataStorage section
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
+	}
 
 	// Middleware validation
 	// Rate limiting removed (ADR-048) - delegated to proxy

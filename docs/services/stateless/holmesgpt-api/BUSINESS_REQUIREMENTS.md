@@ -46,14 +46,14 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 ### 📊 Summary
 
 **Total Business Requirements**: 55 essential BRs (139 deferred BRs for v2.0)
-**Categories**: 8 (Investigation, Recovery, Post-Exec, SDK, Health, Auth, HTTP, Observability)
+**Categories**: 9 (Investigation, Recovery, Post-Exec, SDK, Remediation History & Workflow Discovery, Health, Auth, HTTP, Observability)
 **Priority Breakdown**:
 - P0 (Critical): 49 BRs (core business logic + observability metrics + graceful shutdown + LLM sanitization)
 - P1 (High): 6 BRs (RFC 7807 + hot-reload + mock mode + config reload metrics)
 
 **Implementation Status**:
 - ✅ Implemented: 52 BRs (100% of V1.0 scope)
-- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (endpoint not exposed per DD-017)
+- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (PostExec endpoint deferred to V1.1; EM Level 1 exists in V1.0 per DD-017 v2.0 but does not call PostExec; Level 2 (V1.1) is the PostExec consumer)
 - BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
 - BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
 - BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
@@ -72,7 +72,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 |----------|--------|
 | `/api/v1/incident/analyze` | ✅ Available |
 | `/api/v1/recovery/analyze` | ✅ Available |
-| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017) |
+| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017); EM Level 2 consumer |
 
 **Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 
@@ -258,7 +258,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### Category 3: Post-Execution Analysis (BR-HAPI-POSTEXEC-001 to 005)
 
-> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md), the `/postexec/analyze` endpoint is deferred to V1.1. The Effectiveness Monitor service (the only consumer) is not available in V1.0. Implementation exists but endpoint is not exposed.
+> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) v2.0, the PostExec endpoint is deferred to V1.1. EM Level 1 exists in V1.0 but does not call PostExec. EM Level 2 (V1.1) is the PostExec consumer. Implementation exists but endpoint is not exposed.
 
 #### BR-HAPI-POSTEXEC-001: Post-Execution Effectiveness Analysis
 
@@ -288,7 +288,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - Integration: `test_sdk_integration.py` (post-execution analysis)
 - E2E: ⏸️ Skipped in V1.0 (DD-017)
 
-**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0. EM Level 1 (V1.0) does not call PostExec; Level 2 (V1.1) is the PostExec consumer (DD-017 v2.0)
 
 **Related BRs**: BR-HAPI-RECOVERY-001 (Recovery Analysis), BR-HAPI-001 (Investigation)
 
@@ -304,7 +304,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Priority**: P0 (CRITICAL)
 
-**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0 (DD-017)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0. EM Level 1 (V1.0) does not call PostExec; Level 2 (V1.1) is the PostExec consumer (DD-017 v2.0)
 
 **Related BRs**: BR-HAPI-POSTEXEC-001 (Core Post-Execution Analysis)
 
@@ -362,9 +362,74 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-### Category 5: Health & Status (BR-HAPI-016 to 017)
+### Category 5: Remediation History & Workflow Discovery (BR-HAPI-016 to 017)
 
-#### BR-HAPI-016: Kubernetes Health Probes
+#### BR-HAPI-016: Remediation History Context Enrichment
+
+**Description**: The HolmesGPT API Service MUST enrich LLM investigation prompts with remediation history context from the DataStorage service. This enables the LLM to avoid repeating ineffective remediations and to detect configuration regressions.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: When a signal fires for a target resource that has already been remediated, the LLM needs visibility into what was previously attempted. Without this context, the LLM may recommend ScaleUp for HighCPULoad without knowing ScaleUp was already tried twice and failed.
+
+**Implementation**:
+- **Data Source**: DataStorage `GET /api/v1/remediation-history/context` endpoint (DD-HAPI-016)
+- **Integration**: HAPI fetches context before constructing incident/recovery prompts
+- **Prompt Section**: Formatted remediation chain with effectiveness scores, hash match, regression detection
+- **spec_drift Handling**: INCONCLUSIVE semantics per DD-EM-002 v1.1 (see DD-HAPI-016 spec_drift section)
+
+**Acceptance Criteria**:
+- ✅ Fetches remediation history from DS when configured
+- ✅ Gracefully degrades when DS unavailable (prompt valid without history section)
+- ✅ Prompt includes Tier 1 (24h) and Tier 2 (90d) chains when applicable
+- ✅ spec_drift entries rendered as INCONCLUSIVE with appropriate guidance
+
+**Test Coverage**:
+- Unit: `test_remediation_history_prompt.py` (28 tests)
+- Integration: `test_remediation_history_integration.py` (spec_drift flow, graceful degradation)
+
+**Implementation Status**: ✅ Implemented (100%)
+
+**Related BRs**: DD-HAPI-016, DD-EM-002 v1.1, BR-HAPI-017 (workflow discovery)
+
+---
+
+#### BR-HAPI-017: Three-Step Workflow Discovery Protocol
+
+**Description**: The HolmesGPT API Service MUST provide a three-step workflow discovery protocol (list_available_actions → list_workflows → get_workflow) replacing the legacy search_workflow_catalog tool. This enables structured action-type-first discovery aligned with DD-WORKFLOW-016 taxonomy.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: The LLM must first understand what categories of remediation actions are available, then drill into specific workflows within a category. The three-step protocol forces comprehensive review before selection.
+
+**Implementation**:
+- **BR-HAPI-017-001**: ListAvailableActionsTool, ListWorkflowsTool, GetWorkflowTool
+- **BR-HAPI-017-002**: Prompt template update with three-step instructions
+- **BR-HAPI-017-003**: Post-selection validation with context filter security gate
+- **BR-HAPI-017-004**: Recovery flow validation loop (self-correction)
+- **BR-HAPI-017-005**: remediationId propagation for audit correlation
+- **BR-HAPI-017-006**: search_workflow_catalog removal
+
+**Acceptance Criteria**:
+- ✅ Three tools registered in incident and recovery flows
+- ✅ LLM instructed to review ALL workflows before selecting
+- ✅ GetWorkflow returns 404 when context filters mismatch (security gate)
+- ✅ Recovery flow has validation loop matching incident flow
+
+**Test Coverage**:
+- Unit: `test_workflow_discovery_tools.py`
+- Integration: `test_three_step_discovery_integration.py`, `test_workflow_validation_integration.py`, `test_recovery_validation_integration.py`
+- E2E: `three_step_discovery_test.go`
+
+**Implementation Status**: ✅ Implemented (100%)
+
+**Related BRs**: DD-HAPI-017, DD-WORKFLOW-016, BR-HAPI-016 (remediation history)
+
+---
+
+### Category 6: Health & Status (BR-HAPI-018 to 019)
+
+#### BR-HAPI-018: Kubernetes Health Probes
 
 **Description**: The HolmesGPT API Service MUST provide `/healthz` (liveness) and `/readyz` (readiness) endpoints following Kubernetes health check patterns.
 
@@ -399,7 +464,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-017: Configuration Endpoint
+#### BR-HAPI-019: Configuration Endpoint
 
 **Description**: The HolmesGPT API Service MUST provide a `/config` endpoint that returns current service configuration (non-sensitive) for debugging and observability.
 
@@ -422,11 +487,11 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Implementation Status**: ✅ Implemented (100%)
 
-**Related BRs**: BR-HAPI-016 (Health Probes)
+**Related BRs**: BR-HAPI-018 (Health Probes)
 
 ---
 
-### Category 6: Basic Authentication (BR-HAPI-066 to 067)
+### Category 7: Basic Authentication (BR-HAPI-066 to 067)
 
 #### BR-HAPI-066: ServiceAccount Token Authentication
 
@@ -490,7 +555,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-### Category 7: HTTP Server (BR-HAPI-036 to 045)
+### Category 8: HTTP Server (BR-HAPI-036 to 045)
 
 #### BR-HAPI-036: Flask HTTP Server
 
@@ -528,7 +593,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 1. **BR-HAPI-200**: RFC 7807 Error Response Standard (DD-004) - ✅ Implemented
 2. **BR-HAPI-201**: Kubernetes-Aware Graceful Shutdown (DD-007) - ✅ Implemented
 
-**Related BRs**: BR-HAPI-001 (Investigation), BR-HAPI-016 (Health Probes)
+**Related BRs**: BR-HAPI-001 (Investigation), BR-HAPI-018 (Health Probes)
 
 ---
 
@@ -553,7 +618,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-### Category 8: Observability & Metrics (BR-HAPI-301 to 303)
+### Category 9: Observability & Metrics (BR-HAPI-301 to 303)
 
 #### BR-HAPI-301: LLM Observability Metrics
 
@@ -975,7 +1040,7 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
-### Additional Health (BR-HAPI-018 to 025) - 8 BRs
+### Additional Health (BR-HAPI-020 to 027) - 8 BRs
 - Detailed health metrics
 - Dependency health checks
 - Health check aggregation
@@ -1011,8 +1076,9 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
-**Document Version**: 1.3
-**Last Updated**: December 9, 2025
+**Document Version**: 1.4
+**Last Updated**: 2026-02-12
+**Changelog (v1.4)**: DRIFT-HAPI-2: Resolved BR number collision. BR-HAPI-016/017 reassigned to Remediation History Context and Three-Step Workflow Discovery (per codebase usage). Health Probes renumbered to BR-HAPI-018, Configuration Endpoint to BR-HAPI-019. Deferred Additional Health range updated to BR-HAPI-020 to 027.
 **Maintained By**: Kubernaut Architecture Team
 **Status**: 📋 V1.0 In Progress (50 BRs implemented, 1 planned)
 

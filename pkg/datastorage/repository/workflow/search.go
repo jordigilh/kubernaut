@@ -59,23 +59,20 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	// Authority: DD-WORKFLOW-001 v1.6 (5 mandatory labels)
 	// These filters provide the base score of 5.0 (one point per exact match)
 
-	// Mandatory Filter 1: signal_type (exact match)
+	// Mandatory Filter 1: signalType (exact match)
 	if request.Filters.SignalType == "" {
-		return nil, fmt.Errorf("filters.signal_type is required")
+		return nil, fmt.Errorf("filters.signalType is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signal_type' = $%d", argIndex))
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signalType' = $%d", argIndex))
 	args = append(args, request.Filters.SignalType)
 	argIndex++
 
-	// Mandatory Filter 2: severity (supports wildcard matching)
-	// Workflow with severity='*' matches ANY search filter (wildcard)
-	// Workflow with severity='critical' matches only 'critical' (exact)
-	// Wildcard support added because LLM severity assessment is non-deterministic —
-	// the same OOMKill may be classified as "medium", "high", or "critical" across runs.
+	// Mandatory Filter 2: severity (JSONB array, use ? operator)
+	// Workflow with severity=["critical","high"] matches if filter value is in array
 	if request.Filters.Severity == "" {
 		return nil, fmt.Errorf("filters.severity is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("(labels->>'severity' = $%d OR labels->>'severity' = '*')", argIndex))
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->'severity' ? $%d", argIndex))
 	args = append(args, request.Filters.Severity)
 	argIndex++
 
@@ -89,9 +86,8 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	args = append(args, request.Filters.Component)
 	argIndex++
 
-	// Mandatory Filter 4: environment (JSONB array containment)
+	// Mandatory Filter 4: environment (JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec)
 	// DD-WORKFLOW-001 v2.5: Workflows store array, search with single value
-	// SQL: labels->'environment' ? 'production' OR labels->'environment' ? '*'
 	if request.Filters.Environment == "" {
 		return nil, fmt.Errorf("filters.environment is required")
 	}

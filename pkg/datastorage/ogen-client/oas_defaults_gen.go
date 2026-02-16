@@ -23,22 +23,6 @@ func (s *LLMResponsePayload) setDefaults() {
 }
 
 // setDefaults set default value of fields.
-func (s *WorkflowSearchRequest) setDefaults() {
-	{
-		val := int(10)
-		s.TopK.SetTo(val)
-	}
-	{
-		val := float32(0)
-		s.MinScore.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.IncludeDisabled.SetTo(val)
-	}
-}
-
-// setDefaults set default value of fields.
 func (s *WorkflowValidationPayload) setDefaults() {
 	{
 		val := bool(false)

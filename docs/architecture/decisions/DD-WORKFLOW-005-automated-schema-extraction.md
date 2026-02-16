@@ -3,8 +3,10 @@
 **Date**: 2025-11-15
 **Updated**: 2025-11-28
 **Version**: 2.0
-**Status**: ✅ **Updated - Aligned with ADR-043 and DD-NAMING-001**
+**Status**: **SUPERSEDED** by [DD-WORKFLOW-017](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) for V1.0 workflow registration and lifecycle
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-004, ADR-043, DD-NAMING-001
+
+> **Note**: This document is superseded by DD-WORKFLOW-017, which consolidates the end-to-end workflow lifecycle with the `action_type`-based design (DD-WORKFLOW-016). V1.0 registration is now defined in DD-WORKFLOW-017 Phase 1. V1.1 CRD automation (Solution 2 in this document) remains as historical reference for future planning.
 
 ---
 

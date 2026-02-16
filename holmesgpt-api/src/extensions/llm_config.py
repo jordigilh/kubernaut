@@ -280,184 +280,137 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
     return formatted_model, provider
 
 
-def register_workflow_catalog_toolset(
+def register_workflow_discovery_toolset(
     config: Config,
     app_config: Optional[Dict[str, Any]] = None,
     remediation_id: Optional[str] = None,
     custom_labels: Optional[Dict[str, List[str]]] = None,
     detected_labels: Optional[DetectedLabels] = None,
-    source_resource: Optional[Dict[str, str]] = None,
-    owner_chain: Optional[List[Dict[str, str]]] = None
+    severity: str = "",
+    component: str = "",
+    environment: str = "",
+    priority: str = "",
 ) -> Config:
     """
-    Register the workflow catalog toolset with HolmesGPT SDK Config.
+    Register the three-step workflow discovery toolset with HolmesGPT SDK Config.
 
-    Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
-    Business Requirement: BR-AUDIT-001 - Unified audit trail (remediation_id)
-    Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id mandatory
-    Design Decision: DD-HAPI-001 - Custom Labels Auto-Append Architecture
-    Design Decision: DD-WORKFLOW-001 v1.7 - DetectedLabels 100% safe validation
+    Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+    Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+    Business Requirement: BR-HAPI-017-005 (remediationId Propagation)
 
-    CRITICAL: After extensive investigation, the HolmesGPT SDK does NOT support:
-    1. Direct assignment of Toolset instances (causes '.get()' AttributeError during SDK's toolset loading)
-    2. YAML files with Python class references (SDK's YAMLToolset expects tool definitions, not classes)
-    3. Pre-loading custom toolsets before SDK initialization
+    The three-step discovery protocol provides:
+      1. list_available_actions -- Discover action types
+      2. list_workflows -- List workflows for an action type
+      3. get_workflow -- Get full workflow with parameter schema
 
-    SOLUTION: Monkey-patch the ToolsetManager to inject our toolset AFTER SDK loads config toolsets
-    but BEFORE they're used for investigation. This is done by wrapping list_server_toolsets().
+    Signal context filters (severity, component, environment, priority) are
+    set once at toolset creation and propagated to all three tools as query
+    parameters for the DS security gate (DD-HAPI-017).
 
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration (for logging context)
         remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
-                       MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
-                       do NOT use for RCA analysis or workflow matching.
         custom_labels: Custom labels for auto-append (DD-HAPI-001)
-                      Format: map[string][]string (subdomain → list of values)
-                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
-                      Auto-appended to all MCP workflow search calls - invisible to LLM.
-        detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
-                        Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
-                        Only included when relationship to RCA resource is PROVEN.
-        source_resource: Original signal's resource for DetectedLabels validation
-                        Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
-                        Compared against LLM's rca_resource.
-        owner_chain: K8s ownership chain from SignalProcessing enrichment
-                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
-                    Used for PROVEN relationship validation (100% safe).
+        detected_labels: Auto-detected infrastructure labels (DD-HAPI-017, DD-WORKFLOW-001 v2.1)
+        severity: Signal severity (critical/high/medium/low)
+        component: K8s resource kind (pod/deployment/node/etc.)
+        environment: Namespace-derived environment (production/staging/development)
+        priority: Severity-mapped priority (P0/P1/P2/P3)
 
     Returns:
-        The same Config instance with workflow catalog registered via monkey-patch
+        The same Config instance with workflow discovery registered via monkey-patch
     """
-    from src.toolsets.workflow_catalog import WorkflowCatalogToolset
+    from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
+    from src.clients.datastorage_auth_session import create_workflow_discovery_session
 
-    # Create the workflow catalog toolset instance
-    # BR-AUDIT-001: Pass remediation_id for audit correlation
-    # DD-HAPI-001: Pass custom_labels for auto-append to workflow search
-    # DD-WORKFLOW-001 v1.7: Pass detected_labels with source_resource and owner_chain for 100% safe validation
-    workflow_toolset = WorkflowCatalogToolset(
+    # DD-AUTH-005: Create authenticated requests.Session for workflow discovery.
+    # This injects the ServiceAccount token so all three discovery tools
+    # authenticate with DataStorage (fixes 401 Unauthorized on /api/v1/workflows/*).
+    http_session = create_workflow_discovery_session()
+
+    # Create the three-step discovery toolset instance
+    discovery_toolset = WorkflowDiscoveryToolset(
         enabled=True,
         remediation_id=remediation_id,
+        severity=severity,
+        component=component,
+        environment=environment,
+        priority=priority,
         custom_labels=custom_labels,
         detected_labels=detected_labels,
-        source_resource=source_resource,
-        owner_chain=owner_chain
+        http_session=http_session,
     )
 
     # Initialize toolset manager if needed
     if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
         config.toolset_manager = ToolsetManager(toolsets=config.toolsets)
 
-    # BR-HAPI-250: DO NOT add toolset directly to toolsets dict!
-    # The SDK's _load_toolsets_from_config() iterates over toolsets dict
-    # and calls .get('type') on each value, expecting dicts not Toolset instances.
-    # Instead, we inject the toolset through monkey-patched methods below.
-    #
-    # WRONG (causes AttributeError: 'WorkflowCatalogToolset' has no attribute 'get'):
-    #   config.toolset_manager.toolsets["workflow/catalog"] = workflow_toolset
-    #
-    # CORRECT: Only inject through patched methods (see below)
     logger.info(
-        f"BR-HAPI-250: WorkflowCatalogToolset created "
-        f"(enabled={workflow_toolset.enabled}, tools={len(workflow_toolset.tools)}). "
+        f"DD-HAPI-017: WorkflowDiscoveryToolset created "
+        f"(enabled={discovery_toolset.enabled}, tools={len(discovery_toolset.tools)}). "
+        f"Severity={severity}, component={component}, env={environment}, priority={priority}. "
         f"Will inject via monkey-patched methods."
     )
 
-    # BR-HAPI-250: Monkey-patch list_server_toolsets to inject workflow catalog
-    # This is the only reliable way to add custom Python toolsets to the SDK
+    # DD-HAPI-017: Monkey-patch list_server_toolsets to inject discovery toolset
     original_list_server_toolsets = config.toolset_manager.list_server_toolsets
-    workflow_catalog_injected = [False]  # Mutable flag to track injection
+    discovery_injected = [False]
 
     def patched_list_server_toolsets(dal=None, refresh_status=True):
-        """Wrapper that injects workflow catalog toolset into the list"""
-        # Get original toolsets from SDK
+        """Wrapper that injects workflow discovery toolset into the list"""
         toolsets = original_list_server_toolsets(dal=dal, refresh_status=refresh_status)
 
-        # Inject workflow catalog toolset if not already present
-        if not workflow_catalog_injected[0]:
-            # Check if workflow catalog is already in the list
-            has_workflow_catalog = any(t.name == "workflow/catalog" for t in toolsets if hasattr(t, 'name'))
-
-            if not has_workflow_catalog:
-                toolsets.append(workflow_toolset)
-                workflow_catalog_injected[0] = True
+        if not discovery_injected[0]:
+            has_discovery = any(
+                hasattr(t, 'name') and t.name == "workflow/discovery"
+                for t in toolsets
+            )
+            if not has_discovery:
+                toolsets.append(discovery_toolset)
+                discovery_injected[0] = True
                 logger.info(
-                    f"BR-HAPI-250: Injected workflow/catalog toolset into SDK "
-                    f"(total toolsets: {len(toolsets)}, tools: {len(workflow_toolset.tools)})"
+                    f"DD-HAPI-017: Injected workflow/discovery toolset into SDK "
+                    f"(total toolsets: {len(toolsets)}, tools: {len(discovery_toolset.tools)})"
                 )
 
         return toolsets
 
-    # Apply the monkey-patch
     config.toolset_manager.list_server_toolsets = patched_list_server_toolsets
 
-    # BR-HAPI-250 CRITICAL FIX: Also patch create_tool_executor()
-    # Discovery: list_server_toolsets() gets workflow catalog, but create_tool_executor() doesn't use it!
-    # The tool executor is what the LLM actually sees, so we MUST inject there too.
+    # DD-HAPI-017: Also patch create_tool_executor() (same pattern as catalog)
     import types
 
     original_create_tool_executor = config.create_tool_executor
-    workflow_catalog_injected_executor = [False]
+    discovery_injected_executor = [False]
 
     def patched_create_tool_executor(self, dal=None):
-        """Wrapper that injects workflow catalog into tool executor's toolsets list"""
+        """Wrapper that injects workflow discovery into tool executor's toolsets list"""
         tool_executor = original_create_tool_executor(dal=dal)
 
-        # DEBUG: Log state BEFORE injection
-        logger.debug(f"BR-HAPI-250 DEBUG: Tool executor BEFORE injection:")
-        logger.debug(f"  - Total toolsets: {len(tool_executor.toolsets)}")
-        logger.debug(f"  - Toolset names: {[ts.name if hasattr(ts, 'name') else 'unknown' for ts in tool_executor.toolsets]}")
-
-        # Inject workflow catalog into tool executor's toolsets list
-        if not workflow_catalog_injected_executor[0]:
-            # tool_executor.toolsets is a list of Toolset instances
-            has_workflow_catalog = any(
-                hasattr(ts, 'name') and ts.name == "workflow/catalog"
+        if not discovery_injected_executor[0]:
+            has_discovery = any(
+                hasattr(ts, 'name') and ts.name == "workflow/discovery"
                 for ts in tool_executor.toolsets
             )
-
-            logger.debug(f"  - workflow/catalog already present: {has_workflow_catalog}")
-
-            if not has_workflow_catalog:
-                # DEBUG: Log details BEFORE appending
-                logger.debug(f"BR-HAPI-250 DEBUG: About to inject workflow/catalog:")
-                logger.debug(f"  - Toolset type: {type(workflow_toolset).__name__}")
-                logger.debug(f"  - Toolset name: {workflow_toolset.name}")
-                logger.debug(f"  - Enabled: {workflow_toolset.enabled}")
-                logger.debug(f"  - Is Default: {workflow_toolset.is_default}")
-                logger.debug(f"  - Experimental: {workflow_toolset.experimental}")
-                logger.debug(f"  - Tags: {workflow_toolset.tags}")
-                logger.debug(f"  - Tools count: {len(workflow_toolset.tools)}")
-                if workflow_toolset.tools:
-                    logger.debug(f"  - Tool[0] name: {workflow_toolset.tools[0].name}")
-                    logger.debug(f"  - Tool[0] type: {type(workflow_toolset.tools[0]).__name__}")
-                    logger.debug(f"  - Tool[0] description: {workflow_toolset.tools[0].description[:100]}...")
-
-                # Inject
-                tool_executor.toolsets.append(workflow_toolset)
-                workflow_catalog_injected_executor[0] = True
-
-                # DEBUG: Log state AFTER injection
+            if not has_discovery:
+                tool_executor.toolsets.append(discovery_toolset)
+                discovery_injected_executor[0] = True
                 logger.info(
-                    f"BR-HAPI-250 CRITICAL: Injected workflow/catalog into tool_executor.toolsets "
-                    f"(total: {len(tool_executor.toolsets)}). LLM WILL NOW SEE THIS TOOL."
+                    f"DD-HAPI-017: Injected workflow/discovery into tool_executor.toolsets "
+                    f"(total: {len(tool_executor.toolsets)}). LLM WILL NOW SEE THREE-STEP TOOLS."
                 )
-                logger.debug(f"BR-HAPI-250 DEBUG: Tool executor AFTER injection:")
-                logger.debug(f"  - Total toolsets: {len(tool_executor.toolsets)}")
-                logger.debug(f"  - Last 5 toolsets: {[ts.name if hasattr(ts, 'name') else 'unknown' for ts in tool_executor.toolsets[-5:]]}")
 
         # BR-HAPI-211: Wrap ALL tool invocations with credential sanitization
-        # This prevents credentials from leaking to external LLM providers
         _wrap_tool_results_with_sanitization(tool_executor)
 
         return tool_executor
 
-    # Bind the patched method to the config instance using types.MethodType
     object.__setattr__(config, 'create_tool_executor', types.MethodType(patched_create_tool_executor, config))
 
     logger.info(
-        "BR-HAPI-250: Monkey-patched list_server_toolsets() AND create_tool_executor() "
-        "to inject workflow catalog at LLM-visible layer"
+        "DD-HAPI-017: Monkey-patched list_server_toolsets() AND create_tool_executor() "
+        "to inject workflow discovery (three-step protocol) at LLM-visible layer"
     )
 
     return config
@@ -509,15 +462,15 @@ def prepare_toolsets_config_for_sdk(
         elif "enabled" not in toolsets_config[toolset_name]:
             toolsets_config[toolset_name]["enabled"] = default_config["enabled"]
 
-    # BR-HAPI-250: CRITICAL - Remove workflow/catalog from toolsets_config if present
-    # We will add it programmatically as a Toolset instance via register_workflow_catalog_toolset()
-    # This prevents the "dict vs Toolset instance" registration bug
-    if "workflow/catalog" in toolsets_config:
-        logger.info(
-            "BR-HAPI-250: Removing workflow/catalog from toolsets config "
-            "(will be registered programmatically as Toolset instance)"
-        )
-        del toolsets_config["workflow/catalog"]
+    # BR-HAPI-250 / DD-HAPI-017: Remove workflow toolsets from config if present
+    # These are added programmatically as Toolset instances via registration functions
+    for wf_toolset_name in ("workflow/catalog", "workflow/discovery"):
+        if wf_toolset_name in toolsets_config:
+            logger.info(
+                f"Removing {wf_toolset_name} from toolsets config "
+                "(will be registered programmatically as Toolset instance)"
+            )
+            del toolsets_config[wf_toolset_name]
 
     logger.info(f"Prepared toolsets config: {list(toolsets_config.keys())}")
 

@@ -67,24 +67,28 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	)
 
 	BeforeEach(func() {
-		// Create repository with real database
-		// Repository uses process-specific schema (test_process_N) for test isolation
+		// Create repository with real database (shared public schema)
 		workflowRepo = workflow.NewRepository(db, logger)
 
 		// Generate unique test ID for isolation
 		testID = generateTestID()
 
-		// This ensures no leftover data from previous test runs
-		// Clean up ALL test workflows including:
-		// - wf-repo-% (workflow repository tests)
-		// - wf-scoring-% (scoring tests)
-		// - bulk-import-test-% (bulk import tests)
-		// Use TRUNCATE for complete cleanup to avoid LIKE pattern mismatches
-		result, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
-		Expect(err).ToNot(HaveOccurred(), "Global cleanup should succeed")
+		// DS-FLAKY-007: Process-scoped cleanup instead of global TRUNCATE.
+		// TRUNCATE is a global DDL operation that wipes ALL rows from the table,
+		// including rows created by OTHER parallel ginkgo processes sharing the
+		// same database. This causes race conditions:
+		//   - Process A creates a workflow, Process B's BeforeEach TRUNCATEs → A's SELECT finds nothing
+		//   - Process A inserts row #1, Process B TRUNCATEs, Process A inserts row #2 → no unique violation
+		// Fix: Use process-scoped DELETE to only clean up rows created by THIS process.
+		processPrefix := fmt.Sprintf("wf-repo-test-%d-%%", GinkgoParallelProcess())
+		result, err := db.ExecContext(ctx,
+			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
+			processPrefix)
+		Expect(err).ToNot(HaveOccurred(), "Process-scoped cleanup should succeed")
 
 		rowsDeleted, _ := result.RowsAffected()
-		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup (TRUNCATE)\n", rowsDeleted)
+		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in process-scoped cleanup (process %d)\n",
+			rowsDeleted, GinkgoParallelProcess())
 	})
 
 	AfterEach(func() {
@@ -100,9 +104,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	// CREATE METHOD TESTS - COMPOSITE PK VALIDATION
 	// ========================================
 	Describe("Create", func() {
-		// Note: No need for usePublicSchema() - remediation_workflow_catalog IS schema-isolated
-		// Repository creates workflows in test_process_N schema for parallel test isolation
-
 		Context("with valid workflow and all required fields", func() {
 			It("should persist workflow with structured labels and composite PK", func() {
 				// ARRANGE: Create test workflow per DD-STORAGE-008 schema
@@ -113,7 +114,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "prometheus",
-					Severity:    "critical",
+					Severity:    []string{"critical"},
 					Component:   "kube-apiserver",
 					Priority:    "P0",
 					Environment: []string{"production"},
@@ -123,7 +124,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
 					Name:            "Test Workflow",
-					Description:     "Integration test workflow",
+					Description:     models.StructuredDescription{What: "Integration test workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -132,6 +133,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				// ACT: Create workflow
@@ -177,7 +179,10 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
 				Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
 				Expect(dbName).To(Equal("Test Workflow"))
-				Expect(dbDescription).To(Equal("Integration test workflow"))
+				// Description is now StructuredDescription JSONB (BR-WORKFLOW-004, migration 026)
+			var parsedDesc models.StructuredDescription
+			Expect(json.Unmarshal([]byte(dbDescription), &parsedDesc)).To(Succeed())
+			Expect(parsedDesc.What).To(Equal("Integration test workflow"))
 				Expect(dbContent).To(ContainSubstring("scale"))
 				Expect(dbContentHash).To(Equal(contentHash))
 				Expect(dbStatus).To(Equal("active"))
@@ -192,8 +197,9 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			var persistedLabels map[string]interface{}
 			err = json.Unmarshal(dbLabels, &persistedLabels)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(persistedLabels).To(HaveKeyWithValue("signal_type", "prometheus"))
-			Expect(persistedLabels).To(HaveKeyWithValue("severity", "critical"))
+			Expect(persistedLabels).To(HaveKeyWithValue("signalType", "prometheus"))
+			// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
+			Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
 			// Verify environment is an array
 			Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
 			envArray := persistedLabels["environment"].([]interface{})
@@ -211,7 +217,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    "low",
+					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -221,7 +227,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
 					Name:            "Original Workflow",
-					Description:     "First workflow",
+					Description:     models.StructuredDescription{What: "First workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -230,6 +236,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err := workflowRepo.Create(ctx, testWorkflow)
@@ -240,7 +247,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    workflowName, // Same name
 					Version:         "v1.0.0",     // Same version
 					Name:            "Duplicate Workflow",
-					Description:     "Duplicate workflow",
+					Description:     models.StructuredDescription{What: "Duplicate workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -249,6 +256,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          "active",
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err = workflowRepo.Create(ctx, duplicateWorkflow)
@@ -275,7 +283,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    "low",
+				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},
@@ -285,7 +293,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
 				Name:            "Test Workflow Get",
-				Description:     "Test workflow for Get method",
+				Description:     models.StructuredDescription{What: "Test workflow for Get method", WhenToUse: "Testing"},
 				Content:         content,
 				ContentHash:     contentHash,
 				Labels:          labels,
@@ -294,6 +302,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Status:          "active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
+				ActionType:      "ScaleReplicas",
 			}
 
 			err := workflowRepo.Create(ctx, testWorkflow)
@@ -313,7 +322,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
 				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
 				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
-				Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
+				// Description is now StructuredDescription (BR-WORKFLOW-004, migration 026)
+			Expect(retrievedWorkflow.Description.What).To(Equal("Test workflow for Get method"))
 				Expect(retrievedWorkflow.Status).To(Equal("active"))
 				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
@@ -322,7 +332,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// CRITICAL: Verify structured labels deserialized correctly
 			Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
-			Expect(retrievedWorkflow.Labels.Severity).To(Equal("low"))
+			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
 			// DD-WORKFLOW-001 v2.5: Environment is now []string
@@ -335,27 +345,17 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	// LIST METHOD TESTS - FILTERING & PAGINATION
 	// ========================================
 	// ARCHITECTURAL NOTE: Serial Execution Required for List tests
-	// remediation_workflow_catalog is a global table shared by ALL test processes.
-	// List tests verify exact workflow counts (e.g., Expect(len).To(Equal(3)))
-	// Parallel execution causes data contamination:
-	// - Process 1: TRUNCATE → Create 3 workflows → List (expect 3)
-	// - Process 2: Create 200 bulk workflows (during P1's test) → P1 finds 203 ❌
-	// Decision: Serial execution prevents cross-process data contamination for count tests
+	// List tests with nil filters verify exact workflow counts.
+	// Serial execution ensures no concurrent test creates/deletes workflows.
 	Describe("List", Serial, func() {
 		var createdWorkflowNames []string
 
 		BeforeEach(func() {
-			// CRITICAL: Use public schema for workflow catalog tests
-			// remediation_workflow_catalog is NOT schema-isolated - all parallel processes
-			// share the same table. Without usePublicSchema(), each process sees different
-			// data, causing cleanup to be ineffective and tests to see contaminated data.
-			usePublicSchema()
-
 			createdWorkflowNames = []string{} // Reset for each test
 
-			// Cleanup any leftover test workflows from previous runs (data pollution fix)
-			// V1.0 FIX: Correct SQL LIKE pattern - use single % for wildcard
-			_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1`, "wf-repo-%-list-%")
+			// Clean slate: delete ALL workflows so List(nil) returns exact counts.
+			// Safe because Serial guarantees no concurrent access.
+			_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog`)
 
 			// Insert multiple test workflows with different statuses
 			workflows := []struct {
@@ -375,7 +375,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
 					SignalType:  "test",
-					Severity:    "low",
+					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -385,7 +385,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					WorkflowName:    wf.name,
 					Version:         wf.version,
 					Name:            wf.name,
-					Description:     "Test workflow",
+					Description:     models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
 					Content:         content,
 					ContentHash:     contentHash,
 					Labels:          labels,
@@ -394,6 +394,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					Status:          wf.status,
 					ExecutionEngine: "argo-workflows",
 					IsLatestVersion: true,
+					ActionType:      "ScaleReplicas",
 				}
 
 				err := workflowRepo.Create(ctx, testWorkflow)
@@ -513,7 +514,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				SignalType:  "test",
-				Severity:    "low",
+				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",
 				Environment: []string{"test"},
@@ -523,7 +524,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
 				Name:            "Workflow to Update",
-				Description:     "Test workflow for status update",
+				Description:     models.StructuredDescription{What: "Test workflow for status update", WhenToUse: "Testing"},
 				Content:         content,
 				ContentHash:     contentHash,
 				Labels:          labels,
@@ -532,6 +533,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Status:          "active",
 				ExecutionEngine: "argo-workflows",
 				IsLatestVersion: true,
+				ActionType:      "ScaleReplicas",
 			}
 
 			err := workflowRepo.Create(ctx, testWorkflow)

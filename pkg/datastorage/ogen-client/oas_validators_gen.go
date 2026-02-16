@@ -178,6 +178,90 @@ func (s AIAnalysisAuditPayloadPhase) Validate() error {
 	}
 }
 
+func (s *ActionTypeEntry) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.Int{
+			MinSet:        true,
+			Min:           0,
+			MaxSet:        false,
+			Max:           0,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    0,
+			Pattern:       nil,
+		}).Validate(int64(s.WorkflowCount)); err != nil {
+			return errors.Wrap(err, "int")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflowCount",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ActionTypeListResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.ActionTypes == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.ActionTypes {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "actionTypes",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Pagination.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "pagination",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *AuditEvent) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -335,6 +419,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "webhook":
 		return nil
+	case "effectiveness":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -347,7 +433,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -387,8 +473,8 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case WorkflowSearchAuditPayloadAuditEventEventData:
-		if err := s.WorkflowSearchAuditPayload.Validate(); err != nil {
+	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
+		if err := s.WorkflowDiscoveryAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -447,6 +533,11 @@ func (s AuditEventEventData) Validate() error {
 		return nil
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+		if err := s.EffectivenessAssessmentAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -625,6 +716,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "webhook":
 		return nil
+	case "effectiveness":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -637,7 +730,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -677,8 +770,8 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case WorkflowSearchAuditPayloadAuditEventRequestEventData:
-		if err := s.WorkflowSearchAuditPayload.Validate(); err != nil {
+	case AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData:
+		if err := s.WorkflowDiscoveryAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -737,6 +830,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+		if err := s.EffectivenessAssessmentAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -1088,6 +1186,515 @@ func (s DetectedLabelsServiceMesh) Validate() error {
 	}
 }
 
+func (s *EffectivenessAssessmentAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Component.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "component",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Score.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "score",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.AssessmentDurationSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "assessment_duration_seconds",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MetricDeltas.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "metric_deltas",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.AlertResolution.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "alert_resolution",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *EffectivenessAssessmentAuditPayloadAlertResolution) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.ResolutionTimeSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "resolution_time_seconds",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s EffectivenessAssessmentAuditPayloadComponent) Validate() error {
+	switch s {
+	case "health":
+		return nil
+	case "alert":
+		return nil
+	case "metrics":
+		return nil
+	case "hash":
+		return nil
+	case "scheduled":
+		return nil
+	case "completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s EffectivenessAssessmentAuditPayloadEventType) Validate() error {
+	switch s {
+	case "effectiveness.health.assessed":
+		return nil
+	case "effectiveness.hash.computed":
+		return nil
+	case "effectiveness.alert.assessed":
+		return nil
+	case "effectiveness.metrics.assessed":
+		return nil
+	case "effectiveness.assessment.scheduled":
+		return nil
+	case "effectiveness.assessment.completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.CPUBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpu_before",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.CPUAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpu_after",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MemoryBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "memory_before",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MemoryAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "memory_after",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.LatencyP95BeforeMs.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "latency_p95_before_ms",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.LatencyP95AfterMs.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "latency_p95_after_ms",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ErrorRateBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_rate_before",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ErrorRateAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "error_rate_after",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ThroughputBeforeRps.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "throughput_before_rps",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ThroughputAfterRps.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "throughput_after_rps",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *EffectivenessComponents) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.HealthScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "health_score",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.AlertScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "alert_score",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MetricsScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "metrics_score",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *EffectivenessScoreResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Score.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "score",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Components.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "components",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.AssessmentStatus.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "assessment_status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s EffectivenessScoreResponseAssessmentStatus) Validate() error {
+	switch s {
+	case "no_data":
+		return nil
+	case "in_progress":
+		return nil
+	case "full":
+		return nil
+	case "partial":
+		return nil
+	case "spec_drift":
+		return nil
+	case "expired":
+		return nil
+	case "no_execution":
+		return nil
+	case "metrics_timed_out":
+		return nil
+	case "EffectivenessAssessed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ErrorDetails) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1242,6 +1849,36 @@ func (s GatewayAuditPayloadSignalType) Validate() error {
 	case "prometheus-alert":
 		return nil
 	case "kubernetes-event":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s GetWorkflowByIDPriority) Validate() error {
+	switch s {
+	case "P0":
+		return nil
+	case "P1":
+		return nil
+	case "P2":
+		return nil
+	case "P3":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s GetWorkflowByIDSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1763,6 +2400,66 @@ func (s LLMToolCallPayloadEventType) Validate() error {
 	}
 }
 
+func (s ListAvailableActionsPriority) Validate() error {
+	switch s {
+	case "P0":
+		return nil
+	case "P1":
+		return nil
+	case "P2":
+		return nil
+	case "P3":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ListAvailableActionsSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ListWorkflowsByActionTypePriority) Validate() error {
+	switch s {
+	case "P0":
+		return nil
+	case "P1":
+		return nil
+	case "P2":
+		return nil
+	case "P3":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ListWorkflowsByActionTypeSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "high":
+		return nil
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s ListWorkflowsStatus) Validate() error {
 	switch s {
 	case "active":
@@ -1785,8 +2482,33 @@ func (s *MandatoryLabels) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if err := s.Severity.Validate(); err != nil {
-			return err
+		if s.Severity == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Severity)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Severity {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
 		}
 		return nil
 	}(); err != nil {
@@ -1882,7 +2604,7 @@ func (s MandatoryLabelsPriority) Validate() error {
 	}
 }
 
-func (s MandatoryLabelsSeverity) Validate() error {
+func (s MandatoryLabelsSeverityItem) Validate() error {
 	switch s {
 	case "critical":
 		return nil
@@ -1891,8 +2613,6 @@ func (s MandatoryLabelsSeverity) Validate() error {
 	case "medium":
 		return nil
 	case "low":
-		return nil
-	case "*":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2584,6 +3304,81 @@ func (s NotificationAuditStatus) Validate() error {
 	}
 }
 
+func (s *PaginationMetadata) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.Int{
+			MinSet:        true,
+			Min:           0,
+			MaxSet:        false,
+			Max:           0,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    0,
+			Pattern:       nil,
+		}).Validate(int64(s.TotalCount)); err != nil {
+			return errors.Wrap(err, "int")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "totalCount",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.Int{
+			MinSet:        true,
+			Min:           0,
+			MaxSet:        false,
+			Max:           0,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    0,
+			Pattern:       nil,
+		}).Validate(int64(s.Offset)); err != nil {
+			return errors.Wrap(err, "int")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "offset",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.Int{
+			MinSet:        true,
+			Min:           1,
+			MaxSet:        false,
+			Max:           0,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    0,
+			Pattern:       nil,
+		}).Validate(int64(s.Limit)); err != nil {
+			return errors.Wrap(err, "int")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "limit",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s QueryAuditEventsEventOutcome) Validate() error {
 	switch s {
 	case "success":
@@ -2793,6 +3588,510 @@ func (s RemediationApprovalDecisionPayloadEventType) Validate() error {
 	}
 }
 
+func (s *RemediationHistoryContext) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Tier1.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tier1",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Tier2.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tier2",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *RemediationHistoryEntry) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.EffectivenessScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "effectivenessScore",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.HashMatch.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hashMatch",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MetricDeltas.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "metricDeltas",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.AssessmentReason.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "assessmentReason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationHistoryEntryAssessmentReason) Validate() error {
+	switch s {
+	case "full":
+		return nil
+	case "partial":
+		return nil
+	case "spec_drift":
+		return nil
+	case "expired":
+		return nil
+	case "no_execution":
+		return nil
+	case "metrics_timed_out":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationHistoryEntryHashMatch) Validate() error {
+	switch s {
+	case "preRemediation":
+		return nil
+	case "postRemediation":
+		return nil
+	case "none":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationHistorySummary) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.EffectivenessScore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "effectivenessScore",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.HashMatch.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hashMatch",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.AssessmentReason.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "assessmentReason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationHistorySummaryAssessmentReason) Validate() error {
+	switch s {
+	case "full":
+		return nil
+	case "partial":
+		return nil
+	case "spec_drift":
+		return nil
+	case "expired":
+		return nil
+	case "no_execution":
+		return nil
+	case "metrics_timed_out":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationHistorySummaryHashMatch) Validate() error {
+	switch s {
+	case "preRemediation":
+		return nil
+	case "postRemediation":
+		return nil
+	case "none":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationHistoryTier1) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Chain == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Chain {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "chain",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *RemediationHistoryTier2) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Chain == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Chain {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "chain",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *RemediationMetricDeltas) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.CpuBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpuBefore",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.CpuAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cpuAfter",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MemoryBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "memoryBefore",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MemoryAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "memoryAfter",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.LatencyP95BeforeMs.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "latencyP95BeforeMs",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.LatencyP95AfterMs.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "latencyP95AfterMs",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ErrorRateBefore.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "errorRateBefore",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ErrorRateAfter.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "errorRateAfter",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *RemediationOrchestratorAuditPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -2940,6 +4239,8 @@ func (s RemediationOrchestratorAuditPayloadEventType) Validate() error {
 	case "orchestrator.remediation.manual_review":
 		return nil
 	case "orchestrator.routing.blocked":
+		return nil
+	case "remediation.workflow_created":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -4107,6 +5408,158 @@ func (s WorkflowCatalogCreatedPayloadStatus) Validate() error {
 	}
 }
 
+func (s *WorkflowDiscoveryAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Query.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "query",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Results.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "results",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowDiscoveryAuditPayloadEventType) Validate() error {
+	switch s {
+	case "workflow.catalog.actions_listed":
+		return nil
+	case "workflow.catalog.workflows_listed":
+		return nil
+	case "workflow.catalog.workflow_retrieved":
+		return nil
+	case "workflow.catalog.selection_validated":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowDiscoveryEntry) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.ExecutionEngine.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "executionEngine",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkflowDiscoveryEntryExecutionEngine) Validate() error {
+	switch s {
+	case "tekton":
+		return nil
+	case "job":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *WorkflowDiscoveryResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Workflows == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Workflows {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workflows",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Pagination.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "pagination",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *WorkflowExecutionAuditPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -4304,6 +5757,41 @@ func (s WorkflowExecutionWebhookAuditPayloadPreviousState) Validate() error {
 	}
 }
 
+func (s *WorkflowLifecycleRequest) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     1,
+			MinLengthSet:  true,
+			MaxLength:     0,
+			MaxLengthSet:  false,
+			Email:         false,
+			Hostname:      false,
+			Regex:         nil,
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Reason)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "reason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *WorkflowListResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -4362,60 +5850,6 @@ func (s *WorkflowResultAudit) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s *WorkflowSearchAuditPayload) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.EventType.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "event_type",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Query.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "query",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Results.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "results",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s WorkflowSearchAuditPayloadEventType) Validate() error {
-	switch s {
-	case "workflow.catalog.search_completed":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s *WorkflowSearchFilters) Validate() error {
@@ -4556,307 +5990,6 @@ func (s WorkflowSearchFiltersStatusItem) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
-}
-
-func (s *WorkflowSearchRequest) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.Filters.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "filters",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.TopK.Get(); ok {
-			if err := func() error {
-				if err := (validate.Int{
-					MinSet:        true,
-					Min:           1,
-					MaxSet:        true,
-					Max:           100,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    0,
-					Pattern:       nil,
-				}).Validate(int64(value)); err != nil {
-					return errors.Wrap(err, "int")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "top_k",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.MinScore.Get(); ok {
-			if err := func() error {
-				if err := (validate.Float{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        true,
-					Max:           1,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    nil,
-					Pattern:       nil,
-				}).Validate(float64(value)); err != nil {
-					return errors.Wrap(err, "float")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "min_score",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *WorkflowSearchResponse) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		var failures []validate.FieldError
-		for i, elem := range s.Workflows {
-			if err := func() error {
-				if err := elem.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				failures = append(failures, validate.FieldError{
-					Name:  fmt.Sprintf("[%d]", i),
-					Error: err,
-				})
-			}
-		}
-		if len(failures) > 0 {
-			return &validate.Error{Fields: failures}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "workflows",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Filters.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "filters",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *WorkflowSearchResult) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := (validate.Float{
-			MinSet:        true,
-			Min:           0,
-			MaxSet:        true,
-			Max:           1,
-			MinExclusive:  false,
-			MaxExclusive:  false,
-			MultipleOfSet: false,
-			MultipleOf:    nil,
-			Pattern:       nil,
-		}).Validate(float64(s.Confidence)); err != nil {
-			return errors.Wrap(err, "float")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "confidence",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.LabelBoost.Get(); ok {
-			if err := func() error {
-				if err := (validate.Float{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        true,
-					Max:           0.39,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    nil,
-					Pattern:       nil,
-				}).Validate(float64(value)); err != nil {
-					return errors.Wrap(err, "float")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "label_boost",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.LabelPenalty.Get(); ok {
-			if err := func() error {
-				if err := (validate.Float{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        true,
-					Max:           0.2,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    nil,
-					Pattern:       nil,
-				}).Validate(float64(value)); err != nil {
-					return errors.Wrap(err, "float")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "label_penalty",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.Float{
-			MinSet:        true,
-			Min:           0,
-			MaxSet:        true,
-			Max:           1,
-			MinExclusive:  false,
-			MaxExclusive:  false,
-			MultipleOfSet: false,
-			MultipleOf:    nil,
-			Pattern:       nil,
-		}).Validate(float64(s.FinalScore)); err != nil {
-			return errors.Wrap(err, "float")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "final_score",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.Int{
-			MinSet:        true,
-			Min:           1,
-			MaxSet:        false,
-			Max:           0,
-			MinExclusive:  false,
-			MaxExclusive:  false,
-			MultipleOfSet: false,
-			MultipleOf:    0,
-			Pattern:       nil,
-		}).Validate(int64(s.Rank)); err != nil {
-			return errors.Wrap(err, "int")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "rank",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.CustomLabels.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "custom_labels",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.DetectedLabels.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "detected_labels",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
 }
 
 func (s *WorkflowUpdateRequest) Validate() error {

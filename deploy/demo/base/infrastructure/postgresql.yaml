@@ -1,0 +1,97 @@
+# PostgreSQL for DataStorage (audit trail, workflow catalog)
+# Extracted from: test/infrastructure/datastorage.go:deployPostgreSQLInNamespace
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-secret
+  namespace: kubernaut-system
+type: Opaque
+stringData:
+  POSTGRES_USER: slm_user
+  POSTGRES_PASSWORD: test_password
+  POSTGRES_DB: action_history
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: kubernaut-system
+  labels:
+    app: postgresql
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app: postgresql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: kubernaut-system
+  labels:
+    app: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: postgres:16-alpine
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgresql-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: postgresql-data
+          emptyDir: {}

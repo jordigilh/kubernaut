@@ -75,6 +75,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-001",
 				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -142,6 +147,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-002",
 				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -200,6 +210,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-003",
 				ErrorMessage:      "No automation available",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -261,6 +276,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-004",
 				ErrorMessage:      "Uncertain root cause",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -318,6 +338,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-005",
 				ErrorMessage:      "Validation failed",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================
@@ -388,6 +413,11 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				ResourceKind:      "Pod",
 				ResourceName:      "session-pod-006",
 				ErrorMessage:      "Container restarting",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
 			}
 
 			// ========================================

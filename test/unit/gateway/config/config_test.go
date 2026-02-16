@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
@@ -48,33 +49,28 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			// These enable Gateway to fulfill its business purpose:
 			// - Accept webhook requests (Server.ListenAddr)
 			// - Deduplicate alerts (Processing.Deduplication.TTL)
-			// - Persist audit events (Infrastructure.DataStorageURL)
+			// - Persist audit events (DataStorage.URL)
 			Expect(cfg.Server.ListenAddr).ToNot(BeEmpty(), "Listen address required to accept webhook requests")
 			Expect(cfg.Processing.Deduplication.TTL).To(BeNumerically(">", 0), "TTL required for alert deduplication")
-			Expect(cfg.Infrastructure.DataStorageURL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
+			Expect(cfg.DataStorage.URL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
 		})
 
 	It("should support environment variable overrides for deployment flexibility", func() {
 		// BUSINESS OUTCOME: Operators can override config via env vars without rebuilding images
-		// This enables: 12-factor app deployments, multi-environment configurations
-		// NOTE: Per ADR-030, server settings (listen address, timeouts) come from YAML only
-		// Environment overrides are only for infrastructure/processing settings
+		// NOTE: Per ADR-030, DataStorage URL comes from YAML only (not env vars).
+		// Environment overrides are only for deprecated processing settings.
 		cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 		Expect(err).ToNot(HaveOccurred())
 
-		// Override critical settings via environment variables
-		_ = os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
+		// Override deprecated TTL setting via environment variable
 		_ = os.Setenv("GATEWAY_DEDUP_TTL", "10m")
 		defer func() {
-			_ = os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
 			_ = os.Unsetenv("GATEWAY_DEDUP_TTL")
 		}()
 
 		cfg.LoadFromEnv()
 
-		// Verify environment overrides work (enables multi-environment deployments)
-		// NOTE: Server.ListenAddr NOT overridable per ADR-030 (comes from YAML only)
-		Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://datastorage:8080"), "Env override enables service URL customization")
+		// Verify environment override works for deprecated TTL
 		Expect(cfg.Processing.Deduplication.TTL).To(Equal(10*time.Minute), "Env override enables TTL tuning per environment")
 	})
 	})
@@ -147,9 +143,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 						TTL: 300 * time.Second,
 					},
 				},
-				Infrastructure: config.InfrastructureSettings{
-					DataStorageURL: "http://datastorage:8080",
-				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 			}
 
 			previousTTL := validCfg.Processing.Deduplication.TTL

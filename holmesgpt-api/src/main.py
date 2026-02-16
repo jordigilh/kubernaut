@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 # Import extensions
 from src.extensions import recovery, incident, health
-# DD-017: PostExec extension deferred to V1.1 - Effectiveness Monitor not in V1.0
+# DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
 # from src.extensions import postexec
 from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
@@ -405,7 +405,7 @@ def create_app(authenticator=None, authorizer=None):
     # No router.config anti-pattern - tests use mock LLM server instead
     app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
     app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
-    # DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0
+    # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
     # Logic preserved in src/extensions/postexec.py for V1.1
     # app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
     app.include_router(health.router, tags=["Health"])

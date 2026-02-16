@@ -18,36 +18,31 @@ package datastorage
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
 // RFC 9110 Section 15.5.10: Duplicate resources must return 409 Conflict, not 500 Internal Server Error
 // This test validates the fix for HAPI team's bug report
 
-const (
-	// Test constants for workflow creation
-	testContainerImage  = "test:v1.0.0"
-	testContainerDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
-)
-
 var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
 	Context("DS-BUG-001: Duplicate workflow creation", func() {
 		It("should return 409 Conflict when creating duplicate workflow (RFC 9110 compliance)", func() {
 			ctx := context.Background()
 
-			// Step 1: Create a unique workflow (should succeed with 201)
-			uniqueWorkflowName := fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano())
-			workflow := createTestWorkflowRequest(uniqueWorkflowName, "1.0.0")
+			// DD-WORKFLOW-017: Register workflow from OCI image (pullspec-only)
+			_ = fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano()) // for logging
+			workflow := &ogenclient.CreateWorkflowFromOCIRequest{
+				ContainerImage: fmt.Sprintf("%s/duplicate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+			}
 
 			// DD-AUTH-014: Use shared authenticated DSClient with ogenx.ToError() for type-safe error handling
 			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
@@ -57,9 +52,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			createdWorkflow, ok := resp1.(*ogenclient.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Expected RemediationWorkflow for 201 Created")
 			Expect(createdWorkflow.WorkflowID.Set).To(BeTrue(), "Created workflow should have ID")
+			createdWorkflowName := createdWorkflow.WorkflowName
 
 			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
-			GinkgoWriter.Printf("\n🔄 Creating duplicate workflow (expecting 409 Conflict)...\n")
+			GinkgoWriter.Printf("\n Creating duplicate workflow (expecting 409 Conflict)...\n")
 			resp2, err := DSClient.CreateWorkflow(ctx, workflow)
 
 			// DS-BUG-001 FIX VERIFICATION: Use ogenx.ToError() to convert 409 Conflict to error
@@ -76,11 +72,9 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			Expect(httpErr.Title).To(ContainSubstring("Already Exists"),
 				"Problem details 'title' should indicate workflow already exists")
 
-			// Verify error message includes workflow name and version
-			Expect(httpErr.Detail).To(ContainSubstring(uniqueWorkflowName),
+			// Verify error message includes workflow name
+			Expect(httpErr.Detail).To(ContainSubstring(createdWorkflowName),
 				"Error detail should include workflow name")
-			Expect(httpErr.Detail).To(ContainSubstring("1.0.0"),
-				"Error detail should include workflow version")
 
 			// Type assert the response to access RFC 7807 fields directly
 			// CreateWorkflowConflict is an alias for RFC7807Problem
@@ -90,7 +84,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			rfc7807 := (*ogenclient.RFC7807Problem)(conflictResp)
 			Expect(rfc7807.GetStatus()).To(Equal(int32(409)), "RFC 7807 status field should be 409")
 
-			GinkgoWriter.Printf("✅ DS-BUG-001 Fix Verified:\n")
+			GinkgoWriter.Printf("DS-BUG-001 Fix Verified:\n")
 			GinkgoWriter.Printf("   - First creation: 201 Created\n")
 			GinkgoWriter.Printf("   - Duplicate attempt: 409 Conflict (RFC 9110 compliant)\n")
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
@@ -109,7 +103,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			// Count workflows with our unique name
 			matchingWorkflows := 0
 			for _, wf := range listResult.Workflows {
-				if wf.WorkflowName == uniqueWorkflowName {
+				if wf.WorkflowName == createdWorkflowName {
 					matchingWorkflows++
 				}
 			}
@@ -117,17 +111,13 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 				"Duplicate creation should not create additional records")
 		})
 
-		It("should return 500 for other database errors (not duplicate-related)", func() {
+		It("should return error for invalid OCI image reference", func() {
 			ctx := context.Background()
 
-			// This test ensures we didn't break general error handling
-			// We'll test with an invalid workflow that triggers a different database error
-
-			// Create a workflow with extremely long name (exceeds database column limit)
-			invalidWorkflow := createTestWorkflowRequest(
-				string(make([]byte, 1000)), // 1000 characters - exceeds typical VARCHAR limits
-				"1.0.0",
-			)
+			// DD-WORKFLOW-017: Test with empty image reference (should return 400)
+			invalidWorkflow := &ogenclient.CreateWorkflowFromOCIRequest{
+				ContainerImage: "",
+			}
 
 			resp, err := DSClient.CreateWorkflow(ctx, invalidWorkflow)
 			err = ogenx.ToError(resp, err)
@@ -136,12 +126,9 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			httpErr := ogenx.GetHTTPError(err)
 			Expect(httpErr).ToNot(BeNil(), "Error should be HTTPError")
 
-			// Should return 500 for non-duplicate database errors
-			// (or 400 if validation catches it first, which is also acceptable)
-			Expect(httpErr.StatusCode).To(Or(
-				Equal(400),
-				Equal(500),
-			), "Non-duplicate database errors should return 400 or 500, not 409")
+			// Should return 400 for empty image reference
+			Expect(httpErr.StatusCode).To(Equal(400),
+				"Empty image reference should return 400 Bad Request")
 
 			// Verify it's NOT a 409 Conflict
 			Expect(httpErr.StatusCode).ToNot(Equal(409),
@@ -149,65 +136,3 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 		})
 	})
 })
-
-// Helper function to create a test workflow request
-func createTestWorkflowRequest(workflowName, version string) *ogenclient.RemediationWorkflow {
-	name := "Test Duplicate Workflow"
-	description := "Test workflow for duplicate detection"
-	// ADR-043: Full WorkflowSchema format required (rejects minimal/incomplete schemas)
-	content := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
-kind: WorkflowSchema
-metadata:
-  workflow_id: %s
-  version: "%s"
-  description: %s
-labels:
-  signal_type: OOMKilled
-  severity: medium
-  risk_tolerance: medium
-  component: pod
-  environment: test
-  priority: p2
-parameters:
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: Name of the deployment to remediate
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/duplicate-test:%s
-`, workflowName, version, description, version)
-	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-	executionEngine := string(models.ExecutionEngineTekton)
-	status := ogenclient.RemediationWorkflowStatusActive
-	containerImage := testContainerImage
-	containerDigest := testContainerDigest
-
-	// Create mandatory labels (per ADR-033)
-	labels := ogenclient.MandatoryLabels{
-		Component:   "pod",
-		Environment: []ogenclient.MandatoryLabelsEnvironmentItem{ogenclient.MandatoryLabelsEnvironmentItem("test")},
-		Priority:    "P2",
-		Severity:    "medium",
-		SignalType:  "OOMKilled",
-	}
-
-	return &ogenclient.RemediationWorkflow{
-		WorkflowName:    workflowName,
-		Version:         version,
-		Name:            name,
-		Description:     description,
-		Content:         content,
-		ContentHash:     contentHash,
-		Labels:          labels,
-		CustomLabels:    ogenclient.OptCustomLabels{},
-		DetectedLabels:  ogenclient.OptDetectedLabels{},
-		ExecutionEngine: executionEngine,
-		Status:          status,
-		ContainerImage:  ogenclient.NewOptString(containerImage),
-		ContainerDigest: ogenclient.NewOptString(containerDigest),
-	}
-}
-
-// NOTE: Previously used createWorkflowHTTP() helper for raw HTTP calls
-// Now using DSClient.CreateWorkflow() with ogenx.ToError() for type-safe error handling (DD-API-001)

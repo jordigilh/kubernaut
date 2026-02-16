@@ -6,10 +6,11 @@
 **Target Version**: V1.0
 **Status**: ✅ Approved
 **Date**: 2026-02-10
-**Last Updated**: 2026-02-10
+**Last Updated**: 2026-02-15
 
 **Related Design Decisions**:
 - [DD-SEVERITY-001: Severity Determination Refactoring](../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md)
+- [DD-WORKFLOW-001: Mandatory Workflow Label Schema](../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) — Severity stored as JSONB array in workflow labels (v2.7)
 
 **Related Business Requirements**:
 - **BR-SP-105**: Severity Determination via Rego Policy
@@ -177,10 +178,12 @@ This table documents where each component enforces or references the canonical s
 | **HAPI Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `holmesgpt-api/src/extensions/incident/prompt_builder.py` |
 | **HAPI Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `holmesgpt-api/src/extensions/recovery/prompt_builder.py` |
 | **SignalProcessing Rego** | Rego policy output | `critical`, `high`, `medium`, `low`, `unknown` | `config/rego/severity.rego` |
-| **Workflow Catalog** | DataStorage label filter | `critical`, `high`, `medium`, `low` | `api/openapi/data-storage-v1.yaml` |
+| **Workflow Catalog** | DataStorage label filter (JSONB array, ? operator) | `[critical, high, medium, low]` | `api/openapi/data-storage-v1.yaml` |
 | **Prometheus Metrics** | Label cardinality | `critical`, `high`, `medium`, `low`, `unknown` | Various `metrics.go` files |
 
 **Note**: The Workflow Catalog does not use `unknown` because workflows are authored for specific, known conditions. An `unknown` severity assessment triggers human review (BR-HAPI-197), not workflow execution.
+
+**Workflow labels**: In the workflow catalog, severity is stored as a JSONB array (e.g., `["critical"]` or `["critical", "high"]`). A workflow can declare multiple severity levels to indicate it handles signals at any of those levels. The `*` wildcard is not used — to match any severity, list all four levels: `[critical, high, medium, low]`. Search queries use the JSONB `?` operator: `labels->'severity' ? $severity_filter`.
 
 ---
 
@@ -214,6 +217,7 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | AC-4 | SignalProcessing default Rego policy maps to all five levels | Rego unit test |
 | AC-5 | No component uses severity values outside this set (e.g., `warning`, `info`, `error`) | `grep` audit across codebase |
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |
+| AC-7 | Workflow catalog stores severity as a JSONB array in labels; no `*` wildcard; search uses the JSONB `?` operator (DD-WORKFLOW-001 v2.7) | Schema inspection + integration test |
 
 ---
 
@@ -226,6 +230,6 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Author**: AI Assistant (reviewed by Jordi Gil)
 **Next Review**: After E2E severity scenarios (Sprint N+1)

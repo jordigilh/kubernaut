@@ -1,0 +1,38 @@
+# Kind Cluster Configuration for Kubernaut Demo
+# Based on: test/infrastructure/kind-fullpipeline-config.yaml
+# Usage:
+#   kind create cluster --name kubernaut-demo \
+#     --config deploy/demo/overlays/kind/kind-cluster-config.yaml \
+#     --kubeconfig ~/.kube/kubernaut-demo-config
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # Gateway (AlertManager webhook target + external signal ingestion)
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  # DataStorage API (workflow seeding, audit queries)
+  - containerPort: 30081
+    hostPort: 30081
+    protocol: TCP
+  # Prometheus (metric queries)
+  - containerPort: 30190
+    hostPort: 9190
+    protocol: TCP
+  # AlertManager (alert resolution)
+  - containerPort: 30193
+    hostPort: 9193
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        kube-api-qps: "100"
+        kube-api-burst: "200"

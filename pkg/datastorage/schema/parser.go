@@ -19,6 +19,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -26,18 +27,17 @@ import (
 )
 
 // ========================================
-// WORKFLOW SCHEMA PARSER (ADR-043)
+// WORKFLOW SCHEMA PARSER
 // ========================================
-// Authority: ADR-043 (Workflow Schema Definition Standard)
-// Business Requirement: BR-STORAGE-012 (Workflow Semantic Search)
-// Design Decision: DD-WORKFLOW-005 (Automated Schema Extraction)
+// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Design Decision: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // ========================================
 //
-// This package provides parsing and validation for workflow-schema.yaml
-// files as defined in ADR-043.
+// This package provides parsing and validation for /workflow-schema.yaml
+// files as defined in BR-WORKFLOW-004.
 //
-// V1.0: Operators manually extract and POST the schema content
-// V1.1: WorkflowRegistration CRD controller extracts automatically
+// The schema is a plain configuration file (not a Kubernetes resource)
+// using camelCase field names per kubernaut convention.
 //
 // ========================================
 
@@ -50,7 +50,7 @@ func NewParser() *Parser {
 }
 
 // Parse parses workflow-schema.yaml content and returns a WorkflowSchema
-// Returns error if content is invalid YAML or doesn't match ADR-043 structure
+// Returns error if content is invalid YAML or doesn't match the schema structure
 func (p *Parser) Parse(content string) (*models.WorkflowSchema, error) {
 	if content == "" {
 		return nil, fmt.Errorf("content is empty")
@@ -67,8 +67,9 @@ func (p *Parser) Parse(content string) (*models.WorkflowSchema, error) {
 // ParseAndValidate parses and validates workflow-schema.yaml content
 // Validates:
 // - Valid YAML structure
-// - Required fields (apiVersion, kind, metadata, labels, parameters)
-// - Mandatory labels (signal_type, severity, risk_tolerance)
+// - Required fields (metadata, actionType, labels, parameters)
+// - Mandatory labels (signalType, severity, environment, component, priority)
+// - Structured description (what, whenToUse required)
 // Returns error if validation fails
 func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error) {
 	schema, err := p.Parse(content)
@@ -83,34 +84,27 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 	return schema, nil
 }
 
-// Validate validates a WorkflowSchema against ADR-043 requirements
-// Level 2 validation: fields + mandatory labels (per user decision)
+// Validate validates a WorkflowSchema against BR-WORKFLOW-004 requirements
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
-	// Validate APIVersion
-	if schema.APIVersion == "" {
-		return models.NewSchemaValidationError("apiVersion", "apiVersion is required")
-	}
-
-	// Validate Kind
-	if schema.Kind == "" {
-		return models.NewSchemaValidationError("kind", "kind is required")
-	}
-	if schema.Kind != "WorkflowSchema" {
-		return models.NewSchemaValidationError("kind", "kind must be 'WorkflowSchema'")
-	}
-
 	// Validate Metadata
 	if schema.Metadata.WorkflowID == "" {
-		return models.NewSchemaValidationError("metadata.workflow_id", "workflow_id is required")
+		return models.NewSchemaValidationError("metadata.workflowId", "workflowId is required")
 	}
 	if schema.Metadata.Version == "" {
 		return models.NewSchemaValidationError("metadata.version", "version is required")
 	}
-	if schema.Metadata.Description == "" {
-		return models.NewSchemaValidationError("metadata.description", "description is required")
+
+	// Validate structured description
+	if err := schema.Metadata.Description.ValidateDescription(); err != nil {
+		return err
 	}
 
-	// Validate Labels (DD-WORKFLOW-001 v1.3: 6 mandatory labels)
+	// Validate ActionType (top-level, required)
+	if schema.ActionType == "" {
+		return models.NewSchemaValidationError("actionType", "actionType is required")
+	}
+
+	// Validate Labels (mandatory matching criteria)
 	if err := schema.Labels.ValidateMandatoryLabels(); err != nil {
 		return err
 	}
@@ -161,35 +155,41 @@ func (p *Parser) ExtractParameters(schema *models.WorkflowSchema) (json.RawMessa
 }
 
 // ExtractLabels extracts labels from a WorkflowSchema as JSON
-// Returns JSON bytes suitable for storing in the database
+// Returns JSON bytes with camelCase keys, suitable for storing in the labels JSONB column
+// BR-WORKFLOW-004: camelCase keys match the schema field names
 func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("schema is nil")
 	}
 
-	// Build labels map from struct fields
-	labels := map[string]string{
-		"signal_type":    schema.Labels.SignalType,
-		"severity":       schema.Labels.Severity,
-		"risk_tolerance": schema.Labels.RiskTolerance,
+	// Build labels map from label fields (camelCase keys)
+	// DD-WORKFLOW-001 v2.7: severity always stored as JSONB array. No wildcard.
+	// DD-WORKFLOW-016: signalType is optional, environment/severity are []string for JSONB array storage
+	labels := map[string]interface{}{
+		"severity": []string(schema.Labels.Severity),
 	}
 
-	// Add optional labels if present
-	if schema.Labels.BusinessCategory != "" {
-		labels["business_category"] = schema.Labels.BusinessCategory
+	// DD-WORKFLOW-016: signalType is optional metadata -- only include when non-empty
+	if schema.Labels.SignalType != "" {
+		labels["signalType"] = schema.Labels.SignalType
 	}
-	if schema.Labels.Environment != "" {
+
+	// Add required labels
+	if len(schema.Labels.Environment) > 0 {
 		labels["environment"] = schema.Labels.Environment
-	}
-	if schema.Labels.Priority != "" {
-		labels["priority"] = schema.Labels.Priority
 	}
 	if schema.Labels.Component != "" {
 		labels["component"] = schema.Labels.Component
 	}
+	if schema.Labels.Priority != "" {
+		// Normalize priority to uppercase to comply with OpenAPI enum [P0, P1, P2, P3, "*"]
+		// OCI images may contain lowercase values (e.g., "p1") in workflow-schema.yaml
+		// Authority: MandatoryLabels.priority enum in data-storage-v1.yaml
+		labels["priority"] = strings.ToUpper(schema.Labels.Priority)
+	}
 
 	// Add custom labels
-	for k, v := range schema.Labels.CustomLabels {
+	for k, v := range schema.CustomLabels {
 		labels[k] = v
 	}
 
@@ -199,6 +199,21 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	}
 
 	return labelsJSON, nil
+}
+
+// ExtractDescription extracts the structured description as JSON
+// Returns JSON bytes suitable for storing in the description JSONB column
+func (p *Parser) ExtractDescription(schema *models.WorkflowSchema) (json.RawMessage, error) {
+	if schema == nil {
+		return nil, fmt.Errorf("schema is nil")
+	}
+
+	descJSON, err := json.Marshal(schema.Metadata.Description)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal description: %w", err)
+	}
+
+	return descJSON, nil
 }
 
 // ExtractExecutionEngine extracts the execution engine from a WorkflowSchema
@@ -211,7 +226,7 @@ func (p *Parser) ExtractExecutionEngine(schema *models.WorkflowSchema) string {
 }
 
 // ExtractExecutionBundle extracts the execution bundle from a WorkflowSchema
-// Returns nil if not specified (V1.0 behavior)
+// Returns nil if not specified
 func (p *Parser) ExtractExecutionBundle(schema *models.WorkflowSchema) *string {
 	if schema.Execution != nil && schema.Execution.Bundle != "" {
 		return &schema.Execution.Bundle

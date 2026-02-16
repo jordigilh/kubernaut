@@ -87,6 +87,8 @@ var _ = Describe("Audit Manager", func() {
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData:
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData
 			default:
 				// Unknown or not-yet-implemented event type - skip EventData conversion
 				return event
@@ -777,6 +779,94 @@ var _ = Describe("Audit Manager", func() {
 	})
 
 	// ========================================
+	// BuildRemediationWorkflowCreatedEvent Tests
+	// Per DD-EM-002: Pre-remediation spec hash capture
+	// Per ADR-EM-001 v1.5: RO emits remediation.workflow_created audit event
+	// ========================================
+	Describe("BuildRemediationWorkflowCreatedEvent", func() {
+		It("should produce event with event_type = remediation.workflow_created", func() {
+			event, err := manager.BuildRemediationWorkflowCreatedEvent(
+				"correlation-hash-001",
+				"default",
+				"rr-hash-001",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				"default/Deployment/nginx",
+				"wf-scale-001",
+				"1.0.0",
+				"ScaleReplicas",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(event.EventType).To(Equal("remediation.workflow_created"))
+		})
+
+		It("should include pre_remediation_spec_hash, target_resource, workflow_id, workflow_version in payload", func() {
+			event, err := manager.BuildRemediationWorkflowCreatedEvent(
+				"correlation-hash-002",
+				"production",
+				"rr-hash-002",
+				"sha256:1111111111111111111111111111111111111111111111111111111111111111",
+				"production/Deployment/api-server",
+				"wf-restart-pods",
+				"2.1.0",
+				"RestartPod",
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Extract payload from EventData
+			eventDataBytes, _ := json.Marshal(event.EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
+
+			Expect(eventData["pre_remediation_spec_hash"]).To(Equal("sha256:1111111111111111111111111111111111111111111111111111111111111111"))
+			Expect(eventData["target_resource"]).To(Equal("production/Deployment/api-server"))
+			Expect(eventData["workflow_id"]).To(Equal("wf-restart-pods"))
+			Expect(eventData["workflow_version"]).To(Equal("2.1.0"))
+		})
+
+		It("should set event_type discriminator mapping correctly", func() {
+			event, err := manager.BuildRemediationWorkflowCreatedEvent(
+				"correlation-hash-003",
+				"default",
+				"rr-hash-003",
+				"sha256:abcdef",
+				"default/Pod/test",
+				"wf-test",
+				"1.0.0",
+				"ScaleReplicas",
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// F-3 SOC2 Fix: outer event_type must match EventData discriminator
+			Expect(event.EventType).To(Equal(string(event.EventData.Type)),
+				"outer event_type must match EventData discriminator")
+		})
+
+		It("should handle empty workflow version gracefully", func() {
+			event, err := manager.BuildRemediationWorkflowCreatedEvent(
+				"correlation-hash-004",
+				"default",
+				"rr-hash-004",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				"default/Deployment/nginx",
+				"wf-scale-001",
+				"", // empty version
+				"ScaleReplicas",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(event).ToNot(BeNil())
+
+			// Event should still be valid even with empty version
+			eventDataBytes, _ := json.Marshal(event.EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
+
+			// Workflow version should be absent or empty since it was not set
+			// The ogen OptString with empty string won't be serialized
+			Expect(eventData["pre_remediation_spec_hash"]).To(Equal("sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"))
+		})
+	})
+
+	// ========================================
 	// Event Validation Tests
 	// Per DD-AUDIT-002: All events must pass validation
 	// ========================================
@@ -871,22 +961,32 @@ var _ = Describe("Audit Manager", func() {
 						return nil
 					},
 				},
-				{
-					name: "RoutingBlocked",
-					build: func() error {
-						blockData := &prodaudit.RoutingBlockedData{
-							BlockReason:  "CooldownActive",
-							BlockMessage: "Cooldown period active",
-							FromPhase:    "Pending",
-							ToPhase:      "Blocked",
-						}
-						_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
-						if err != nil {
-							return err
-						}
-						return nil
-					},
+			{
+				name: "RoutingBlocked",
+				build: func() error {
+					blockData := &prodaudit.RoutingBlockedData{
+						BlockReason:  "CooldownActive",
+						BlockMessage: "Cooldown period active",
+						FromPhase:    "Pending",
+						ToPhase:      "Blocked",
+					}
+					_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
+					if err != nil {
+						return err
+					}
+					return nil
 				},
+			},
+			{
+				name: "RemediationWorkflowCreated",
+				build: func() error {
+					_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "sha256:abc", "ns/Deploy/x", "wf", "1.0", "ScaleReplicas")
+					if err != nil {
+						return err
+					}
+					return nil
+				},
+			},
 			}
 
 			for _, e := range events {

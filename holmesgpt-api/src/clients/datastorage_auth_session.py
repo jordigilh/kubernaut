@@ -55,11 +55,14 @@ Authority: DD-AUTH-005 (Authoritative client authentication pattern)
 Related: pkg/shared/auth/transport.go (Go equivalent)
 """
 
+import logging
 import os
 import time
 import threading
 from typing import Optional
 import urllib3
+import requests
+from requests.adapters import HTTPAdapter
 
 
 class ServiceAccountAuthPoolManager(urllib3.PoolManager):
@@ -218,6 +221,103 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
                 return None
 
 
+class ServiceAccountAuthSession(requests.Session):
+    """
+    Custom requests.Session that injects ServiceAccount tokens for DataStorage authentication.
+
+    DD-AUTH-005: This session is the requests-based equivalent of
+    ServiceAccountAuthPoolManager (urllib3-based). It is used by components
+    that call DataStorage via plain ``requests.get()`` / ``requests.Session``
+    rather than the OpenAPI-generated client (which uses urllib3 PoolManager).
+
+    Primary consumer: WorkflowDiscoveryToolset (DD-HAPI-017) which uses
+    requests.get() to call the three-step workflow discovery endpoints.
+
+    Behavior:
+    - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
+    - 5-minute cache to avoid filesystem reads on every request
+    - Injects Authorization: Bearer <token> on every request
+    - Graceful degradation: if token file missing, requests proceed without auth
+    - Thread-safe
+
+    ZERO TEST LOGIC: Production code only. For integration tests, use
+    testutil_static_token_session.StaticTokenAuthSession.
+    """
+
+    # Class-level token cache (shared across instances, same as PoolManager variant)
+    _token_cache: Optional[str] = None
+    _token_cache_time: float = 0.0
+    _token_cache_lock = threading.Lock()
+    _cache_ttl_seconds = 300  # 5 minutes
+
+    def __init__(
+        self,
+        token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._token_path = token_path
+
+        # Connection pooling (mirrors ServiceAccountAuthPoolManager settings)
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, pool_block=False)
+        self.mount("http://", adapter)
+        self.mount("https://", adapter)
+
+    def request(self, method, url, **kwargs):
+        """Override to inject Authorization header from ServiceAccount token."""
+        token = self._get_service_account_token()
+        if token:
+            if "headers" not in kwargs:
+                kwargs["headers"] = {}
+            kwargs["headers"]["Authorization"] = f"Bearer {token}"
+
+        # Default timeout if not provided (10s connect, 60s read)
+        if "timeout" not in kwargs or kwargs["timeout"] is None:
+            kwargs["timeout"] = (10.0, 60.0)
+
+        return super().request(method, url, **kwargs)
+
+    def _get_service_account_token(self) -> Optional[str]:
+        """Retrieve ServiceAccount token with 5-minute caching."""
+        with self._token_cache_lock:
+            now = time.time()
+            if (
+                self._token_cache is not None
+                and (now - self._token_cache_time) < self._cache_ttl_seconds
+            ):
+                return self._token_cache
+
+            try:
+                with open(self._token_path, "r") as f:
+                    token = f.read().strip()
+                    self._token_cache = token
+                    self._token_cache_time = now
+                    return token
+            except FileNotFoundError:
+                return None
+            except Exception as e:
+                logging.warning(
+                    f"DD-AUTH-005: Failed to read ServiceAccount token - "
+                    f"path={self._token_path}, error={e}"
+                )
+                return None
+
+
+def create_workflow_discovery_session(
+    token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token",
+) -> ServiceAccountAuthSession:
+    """
+    Factory for creating an authenticated requests.Session for workflow discovery.
+
+    DD-AUTH-005 + DD-HAPI-017: Used by register_workflow_discovery_toolset() to provide
+    authenticated HTTP access to the DataStorage workflow discovery endpoints.
+
+    Returns:
+        ServiceAccountAuthSession with ServiceAccount token injection
+    """
+    return ServiceAccountAuthSession(token_path=token_path)
+
+
 # ========================================
 # USAGE PATTERNS
 # ========================================
@@ -234,6 +334,13 @@ class ServiceAccountAuthPoolManager(urllib3.PoolManager):
 #
 #   audit_api = AuditWriteAPIApi(api_client)
 #   response = audit_api.create_audit_event(request)
+#
+# Workflow Discovery (requests.Session-based):
+#
+#   from datastorage_auth_session import create_workflow_discovery_session
+#
+#   session = create_workflow_discovery_session()
+#   response = session.get("http://data-storage:8080/api/v1/workflows/actions", params={...})
 #
 # Integration Tests (Mock user header, no oauth-proxy):
 #

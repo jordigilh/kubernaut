@@ -57,7 +57,21 @@ func encodeCreateNotificationAuditRequest(
 }
 
 func encodeCreateWorkflowRequest(
-	req *RemediationWorkflow,
+	req *CreateWorkflowFromOCIRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeDeprecateWorkflowRequest(
+	req *WorkflowLifecycleRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -71,19 +85,27 @@ func encodeCreateWorkflowRequest(
 }
 
 func encodeDisableWorkflowRequest(
-	req OptWorkflowDisableRequest,
+	req *WorkflowLifecycleRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
-	if !req.Set {
-		// Keep request with empty body if value is not set.
-		return nil
-	}
 	e := new(jx.Encoder)
 	{
-		if req.Set {
-			req.Encode(e)
-		}
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeEnableWorkflowRequest(
+	req *WorkflowLifecycleRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
 	}
 	encoded := e.Bytes()
 	ht.SetBody(r, bytes.NewReader(encoded), contentType)
@@ -106,20 +128,6 @@ func encodePlaceLegalHoldRequest(
 
 func encodeReleaseLegalHoldRequest(
 	req *ReleaseLegalHoldReq,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeSearchWorkflowsRequest(
-	req *WorkflowSearchRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

@@ -11,8 +11,8 @@ Name | Type | Description | Notes
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
 **signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
-**alert_name** | **str** | Name of the alert | 
-**namespace** | **str** | Kubernetes namespace | 
+**alert_name** | **str** | Name of the original alert that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events.  | 
+**namespace** | **str** | Kubernetes namespace of the EffectivenessAssessment | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
@@ -38,10 +38,14 @@ Name | Type | Description | Notes
 **rejected_by** | **str** | User who rejected the request | [optional] 
 **rejection_reason** | **str** | Reason for rejection | [optional] 
 **message** | **str** | Additional message or context for the event | [optional] 
-**reason** | **str** |  | 
+**reason** | **str** | Assessment completion reason (only for assessment.completed events) | 
 **sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **notification_name** | **str** | Alias for notification_id | [optional] 
 **timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**pre_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
+**target_resource** | **str** | Target resource being remediated | 
+**workflow_version** | **str** | Workflow version | 
+**workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
@@ -73,12 +77,10 @@ Name | Type | Description | Notes
 **confidence** | **float** | Workflow confidence level (optional) | 
 **target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
-**workflow_version** | **str** | Workflow version | 
-**target_resource** | **str** | Target resource being remediated | 
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 
 **started_at** | **datetime** | When the PipelineRun started execution | [optional] 
-**completed_at** | **datetime** | When the PipelineRun finished (success or failure) | [optional] 
+**completed_at** | **datetime** | Timestamp when the assessment completed (EA status.completedAt). Only present for assessment.completed events.  | [optional] 
 **duration** | **str** | Human-readable execution duration | [optional] 
 **failure_message** | **str** | Detailed failure message from Tekton | [optional] 
 **failed_task_name** | **str** | Name of the failed TaskRun (if identified) | [optional] 
@@ -161,6 +163,24 @@ Name | Type | Description | Notes
 **modified_at** | **datetime** | When the modification occurred | 
 **old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**correlation_id** | **str** | Correlation ID (EA spec.correlationID, matches parent RR name) | 
+**ea_name** | **str** | Name of the EffectivenessAssessment CRD | [optional] 
+**component** | **str** | Assessment component that produced this event | 
+**assessed** | **bool** | Whether the component was successfully assessed | [optional] 
+**score** | **float** | Component score (0.0-1.0), null if not assessed | [optional] 
+**details** | **str** | Human-readable details about the assessment result | [optional] 
+**components_assessed** | **List[str]** | List of component names that were assessed (e.g. [\&quot;health\&quot;,\&quot;hash\&quot;,\&quot;alert\&quot;,\&quot;metrics\&quot;]). Only present for assessment.completed events.  | [optional] 
+**assessment_duration_seconds** | **float** | Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events. Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution.  | [optional] 
+**validity_deadline** | **datetime** | Computed validity deadline (only for assessment.scheduled events). EA.creationTimestamp + validityWindow from EM config.  | [optional] 
+**prometheus_check_after** | **datetime** | Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
+**alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
+**validity_window** | **str** | Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability.  | [optional] 
+**stabilization_window** | **str** | Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability.  | [optional] 
+**post_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec AFTER remediation. Computed by EM during assessment using DD-EM-002 canonical hash algorithm. Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 
+**hash_match** | **bool** | Whether the pre and post remediation spec hashes match. true &#x3D; no change detected (remediation may have been reverted or had no effect). false &#x3D; spec changed (expected for successful remediations). Only present for effectiveness.hash.computed events.  | [optional] 
+**health_checks** | [**EffectivenessAssessmentAuditPayloadHealthChecks**](EffectivenessAssessmentAuditPayloadHealthChecks.md) |  | [optional] 
+**metric_deltas** | [**EffectivenessAssessmentAuditPayloadMetricDeltas**](EffectivenessAssessmentAuditPayloadMetricDeltas.md) |  | [optional] 
+**alert_resolution** | [**EffectivenessAssessmentAuditPayloadAlertResolution**](EffectivenessAssessmentAuditPayloadAlertResolution.md) |  | [optional] 
 
 ## Example
 

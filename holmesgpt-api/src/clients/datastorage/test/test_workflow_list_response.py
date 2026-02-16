@@ -40,9 +40,14 @@ class TestWorkflowListResponse(unittest.TestCase):
                     datastorage.models.remediation_workflow.RemediationWorkflow(
                         workflow_id = '', 
                         workflow_name = '', 
+                        action_type = 'ScaleReplicas', 
                         version = '', 
                         name = '', 
-                        description = '', 
+                        description = datastorage.models.structured_description.StructuredDescription(
+                            what = '', 
+                            when_to_use = '', 
+                            when_not_to_use = '', 
+                            preconditions = '', ), 
                         owner = '', 
                         maintainer = '', 
                         content = '', 
@@ -53,7 +58,7 @@ class TestWorkflowListResponse(unittest.TestCase):
                         container_digest = 'sha256:abc123...', 
                         labels = datastorage.models.mandatory_labels.MandatoryLabels(
                             signal_type = 'OOMKilled', 
-                            severity = 'critical', 
+                            severity = ['critical'], 
                             component = 'pod', 
                             environment = ["staging","production"], 
                             priority = 'P0', ), 

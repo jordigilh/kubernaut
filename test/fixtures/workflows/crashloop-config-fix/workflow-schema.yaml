@@ -1,0 +1,39 @@
+# CrashLoop Config Fix Workflow Schema (BR-WORKFLOW-004)
+# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+metadata:
+  workflowId: crashloop-config-fix-v1
+  version: "1.0.0"
+  description:
+    what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"
+    whenToUse: "When pods are in CrashLoopBackOff due to misconfiguration"
+    whenNotToUse: "When crash is caused by a persistent code bug"
+    preconditions: "Pod is managed by a Deployment"
+
+actionType: RestartDeployment
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [high]
+  environment: [production, staging, test]
+  component: deployment
+  priority: P1
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to restart"
+  - name: GRACE_PERIOD_SECONDS
+    type: integer
+    required: false
+    description: "Graceful shutdown period in seconds"
+    default: 30
+    minimum: 0
+    maximum: 300

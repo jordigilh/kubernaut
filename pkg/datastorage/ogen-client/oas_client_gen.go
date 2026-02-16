@@ -63,20 +63,38 @@ type Invoker interface {
 	CreateNotificationAudit(ctx context.Context, request *NotificationAudit) (CreateNotificationAuditRes, error)
 	// CreateWorkflow invokes createWorkflow operation.
 	//
-	// Create a new workflow in the catalog.
-	// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-	// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+	// Register a new workflow by providing an OCI image pullspec.
+	// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+	// validates the schema, and populates all catalog fields from it.
+	// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+	// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 	//
 	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, request *RemediationWorkflow) (CreateWorkflowRes, error)
+	CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
+	// DeprecateWorkflow invokes deprecateWorkflow operation.
+	//
+	// Mark a workflow as deprecated. Deprecated workflows are excluded from
+	// discovery results but remain in the catalog for audit history.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/deprecate
+	DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
 	// DisableWorkflow invokes disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
 	// Sets status to 'disabled' with timestamp and reason.
-	// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+	// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 	//
 	// PATCH /api/v1/workflows/{workflow_id}/disable
-	DisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	DisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
+	// EnableWorkflow invokes enableWorkflow operation.
+	//
+	// Re-enable a previously disabled or deprecated workflow.
+	// Sets status to 'active' with timestamp and reason.
+	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+	//
+	// PATCH /api/v1/workflows/{workflow_id}/enable
+	EnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error)
 	// ExportAuditEvents invokes exportAuditEvents operation.
 	//
 	// Exports audit events matching the specified filters with cryptographic signatures
@@ -110,6 +128,24 @@ type Invoker interface {
 	//
 	// GET /api/v1/audit/export
 	ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (ExportAuditEventsRes, error)
+	// GetEffectivenessScore invokes getEffectivenessScore operation.
+	//
+	// Computes the weighted effectiveness score for a given remediation lifecycle
+	// from component audit events in the audit trail.
+	// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+	// The Effectiveness Monitor emits raw component assessment events; this endpoint
+	// aggregates them and applies the DD-017 v2.1 scoring formula:
+	// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+	// **Business Requirements**: BR-EM-001 to BR-EM-004
+	// **Response includes**:
+	// - Weighted overall score (0.0 to 1.0)
+	// - Individual component scores (health, alert, metrics)
+	// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+	// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	//
+	// GET /api/v1/effectiveness/{correlation_id}
+	GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error)
 	// GetMetrics invokes getMetrics operation.
 	//
 	// Exposes Prometheus metrics in text format.
@@ -121,10 +157,40 @@ type Invoker interface {
 	//
 	// GET /metrics
 	GetMetrics(ctx context.Context) (GetMetricsOK, error)
+	// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
+	//
+	// Returns structured remediation history context for LLM prompt enrichment.
+	// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+	// **Design Document**: DD-HAPI-016
+	// **Behavior**:
+	// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+	// audit events into structured remediation chains for a target resource.
+	// **Two-Tier Query Design**:
+	// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+	// and full effectiveness data for the target resource.
+	// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+	// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+	// regression.
+	// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+	// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+	// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+	// `preRemediationSpecHash` matches `currentSpecHash`.
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	// Integration tests use mock X-Auth-Request-User header.
+	//
+	// GET /api/v1/remediation-history/context
+	GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (GetRemediationHistoryContextRes, error)
 	// GetWorkflowByID invokes getWorkflowByID operation.
 	//
 	// Retrieve a specific workflow by its UUID.
-	// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key).
+	// Step 3 of the three-step workflow discovery protocol when context filters are provided.
+	// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+	// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+	// **Without context filters**: Returns workflow by ID (existing behavior).
+	// **With context filters**: Returns workflow only if it matches the signal context.
+	// Returns 404 if the workflow exists but does not match the context filters
+	// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+	// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
 	//
 	// GET /api/v1/workflows/{workflow_id}
 	GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (GetWorkflowByIDRes, error)
@@ -135,6 +201,22 @@ type Invoker interface {
 	//
 	// GET /health
 	HealthCheck(ctx context.Context) (HealthCheckRes, error)
+	// ListAvailableActions invokes listAvailableActions operation.
+	//
+	// Step 1 of the three-step workflow discovery protocol.
+	// Returns action types from the taxonomy that have active workflows matching
+	// the provided signal context filters.
+	// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+	// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+	// **Behavior**:
+	// - Queries action_type_taxonomy joined with remediation_workflow_catalog
+	// - Filters by active workflows matching signal context (severity, component, environment, priority)
+	// - Returns action types with descriptions and workflow counts
+	// - Paginated (default 10 per page)
+	// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
+	//
+	// GET /api/v1/workflows/actions
+	ListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (ListAvailableActionsRes, error)
 	// ListLegalHolds invokes listLegalHolds operation.
 	//
 	// Returns a list of all active legal holds across all audit events.
@@ -156,6 +238,24 @@ type Invoker interface {
 	//
 	// GET /api/v1/workflows
 	ListWorkflows(ctx context.Context, params ListWorkflowsParams) (ListWorkflowsRes, error)
+	// ListWorkflowsByActionType invokes listWorkflowsByActionType operation.
+	//
+	// Step 2 of the three-step workflow discovery protocol.
+	// Returns all active workflows matching the specified action type and
+	// signal context filters.
+	// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+	// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+	// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+	// before selecting one. Do not select from an incomplete list.
+	// **Behavior**:
+	// - Filters by action_type + signal context (severity, component, environment, priority)
+	// - Excludes disabled and deprecated workflows
+	// - Returns workflow metadata including effectiveness data
+	// - Paginated (default 10 per page)
+	// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
+	//
+	// GET /api/v1/workflows/actions/{action_type}
+	ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (ListWorkflowsByActionTypeRes, error)
 	// LivenessCheck invokes livenessCheck operation.
 	//
 	// Returns 200 if service process is alive.
@@ -236,21 +336,6 @@ type Invoker interface {
 	//
 	// DELETE /api/v1/audit/legal-hold/{correlation_id}
 	ReleaseLegalHold(ctx context.Context, request *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (ReleaseLegalHoldRes, error)
-	// SearchWorkflows invokes searchWorkflows operation.
-	//
-	// Search workflows using label-based matching with wildcard support and weighted scoring.
-	// **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-	// **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-	// **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
-	// **Behavior**:
-	// - Mandatory filters: signal_type, severity, component, environment, priority
-	// - Optional filters: custom_labels, detected_labels
-	// - Wildcard support: "*" matches any non-null value
-	// - Weighted scoring: Exact matches > Wildcard matches
-	// - Returns top_k results sorted by confidence score (0.0-1.0).
-	//
-	// POST /api/v1/workflows/search
-	SearchWorkflows(ctx context.Context, request *WorkflowSearchRequest) (SearchWorkflowsRes, error)
 	// UpdateWorkflow invokes updateWorkflow operation.
 	//
 	// Update mutable workflow fields (status, metrics).
@@ -550,17 +635,19 @@ func (c *Client) sendCreateNotificationAudit(ctx context.Context, request *Notif
 
 // CreateWorkflow invokes createWorkflow operation.
 //
-// Create a new workflow in the catalog.
-// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-// **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration).
+// Register a new workflow by providing an OCI image pullspec.
+// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+// validates the schema, and populates all catalog fields from it.
+// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
 //
 // POST /api/v1/workflows
-func (c *Client) CreateWorkflow(ctx context.Context, request *RemediationWorkflow) (CreateWorkflowRes, error) {
+func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error) {
 	res, err := c.sendCreateWorkflow(ctx, request)
 	return res, err
 }
 
-func (c *Client) sendCreateWorkflow(ctx context.Context, request *RemediationWorkflow) (res CreateWorkflowRes, err error) {
+func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (res CreateWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("createWorkflow"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -626,19 +713,116 @@ func (c *Client) sendCreateWorkflow(ctx context.Context, request *RemediationWor
 	return result, nil
 }
 
+// DeprecateWorkflow invokes deprecateWorkflow operation.
+//
+// Mark a workflow as deprecated. Deprecated workflows are excluded from
+// discovery results but remain in the catalog for audit history.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/deprecate
+func (c *Client) DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error) {
+	res, err := c.sendDeprecateWorkflow(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendDeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (res DeprecateWorkflowRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deprecateWorkflow"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/{workflow_id}/deprecate"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeprecateWorkflowOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/workflows/"
+	{
+		// Encode "workflow_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workflow_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.WorkflowID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/deprecate"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeDeprecateWorkflowRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeprecateWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DisableWorkflow invokes disableWorkflow operation.
 //
 // Convenience endpoint to disable a workflow (soft delete).
 // Sets status to 'disabled' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete).
+// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
 //
 // PATCH /api/v1/workflows/{workflow_id}/disable
-func (c *Client) DisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (DisableWorkflowRes, error) {
+func (c *Client) DisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error) {
 	res, err := c.sendDisableWorkflow(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendDisableWorkflow(ctx context.Context, request OptWorkflowDisableRequest, params DisableWorkflowParams) (res DisableWorkflowRes, err error) {
+func (c *Client) sendDisableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DisableWorkflowParams) (res DisableWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("disableWorkflow"),
 		semconv.HTTPRequestMethodKey.String("PATCH"),
@@ -716,6 +900,103 @@ func (c *Client) sendDisableWorkflow(ctx context.Context, request OptWorkflowDis
 
 	stage = "DecodeResponse"
 	result, err := decodeDisableWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// EnableWorkflow invokes enableWorkflow operation.
+//
+// Re-enable a previously disabled or deprecated workflow.
+// Sets status to 'active' with timestamp and reason.
+// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
+//
+// PATCH /api/v1/workflows/{workflow_id}/enable
+func (c *Client) EnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error) {
+	res, err := c.sendEnableWorkflow(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendEnableWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params EnableWorkflowParams) (res EnableWorkflowRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("enableWorkflow"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/{workflow_id}/enable"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, EnableWorkflowOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/workflows/"
+	{
+		// Encode "workflow_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workflow_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.WorkflowID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/enable"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeEnableWorkflowRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeEnableWorkflowResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -980,6 +1261,109 @@ func (c *Client) sendExportAuditEvents(ctx context.Context, params ExportAuditEv
 	return result, nil
 }
 
+// GetEffectivenessScore invokes getEffectivenessScore operation.
+//
+// Computes the weighted effectiveness score for a given remediation lifecycle
+// from component audit events in the audit trail.
+// **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+// The Effectiveness Monitor emits raw component assessment events; this endpoint
+// aggregates them and applies the DD-017 v2.1 scoring formula:
+// score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+// **Business Requirements**: BR-EM-001 to BR-EM-004
+// **Response includes**:
+// - Weighted overall score (0.0 to 1.0)
+// - Individual component scores (health, alert, metrics)
+// - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+// - Assessment status (no_data, in_progress, EffectivenessAssessed)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// GET /api/v1/effectiveness/{correlation_id}
+func (c *Client) GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error) {
+	res, err := c.sendGetEffectivenessScore(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (res GetEffectivenessScoreRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getEffectivenessScore"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/effectiveness/{correlation_id}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetEffectivenessScoreOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/effectiveness/"
+	{
+		// Encode "correlation_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "correlation_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.CorrelationID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetEffectivenessScoreResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetMetrics invokes getMetrics operation.
 //
 // Exposes Prometheus metrics in text format.
@@ -1058,10 +1442,201 @@ func (c *Client) sendGetMetrics(ctx context.Context) (res GetMetricsOK, err erro
 	return result, nil
 }
 
+// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
+//
+// Returns structured remediation history context for LLM prompt enrichment.
+// **Business Requirements**: BR-HAPI-016 (Remediation history context)
+// **Design Document**: DD-HAPI-016
+// **Behavior**:
+// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+// audit events into structured remediation chains for a target resource.
+// **Two-Tier Query Design**:
+// - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+// and full effectiveness data for the target resource.
+// - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+// historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+// regression.
+// **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+// against `preRemediationSpecHash` and `postRemediationSpecHash`.
+// **Regression Detection**: Sets `regressionDetected: true` if any entry's
+// `preRemediationSpecHash` matches `currentSpecHash`.
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// GET /api/v1/remediation-history/context
+func (c *Client) GetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (GetRemediationHistoryContextRes, error) {
+	res, err := c.sendGetRemediationHistoryContext(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetRemediationHistoryContext(ctx context.Context, params GetRemediationHistoryContextParams) (res GetRemediationHistoryContextRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getRemediationHistoryContext"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/remediation-history/context"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetRemediationHistoryContextOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/remediation-history/context"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "targetKind" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetKind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetKind))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "targetName" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetName",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetName))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "targetNamespace" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "targetNamespace",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.TargetNamespace))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "currentSpecHash" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "currentSpecHash",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.CurrentSpecHash))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "tier1Window" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "tier1Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Tier1Window.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "tier2Window" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "tier2Window",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Tier2Window.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetRemediationHistoryContextResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetWorkflowByID invokes getWorkflowByID operation.
 //
 // Retrieve a specific workflow by its UUID.
-// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key).
+// Step 3 of the three-step workflow discovery protocol when context filters are provided.
+// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+// **Without context filters**: Returns workflow by ID (existing behavior).
+// **With context filters**: Returns workflow only if it matches the signal context.
+// Returns 404 if the workflow exists but does not match the context filters
+// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
 //
 // GET /api/v1/workflows/{workflow_id}
 func (c *Client) GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (GetWorkflowByIDRes, error) {
@@ -1127,6 +1702,129 @@ func (c *Client) sendGetWorkflowByID(ctx context.Context, params GetWorkflowByID
 		pathParts[1] = encoded
 	}
 	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "severity" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Severity.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "component" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Component.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "environment" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Environment.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "priority" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Priority.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "custom_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.CustomLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "detected_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.DetectedLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "remediation_id" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.RemediationID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
 
 	stage = "EncodeRequest"
 	r, err := ht.NewRequest(ctx, "GET", u)
@@ -1217,6 +1915,234 @@ func (c *Client) sendHealthCheck(ctx context.Context) (res HealthCheckRes, err e
 
 	stage = "DecodeResponse"
 	result, err := decodeHealthCheckResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAvailableActions invokes listAvailableActions operation.
+//
+// Step 1 of the three-step workflow discovery protocol.
+// Returns action types from the taxonomy that have active workflows matching
+// the provided signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **Behavior**:
+// - Queries action_type_taxonomy joined with remediation_workflow_catalog
+// - Filters by active workflows matching signal context (severity, component, environment, priority)
+// - Returns action types with descriptions and workflow counts
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions
+func (c *Client) ListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (ListAvailableActionsRes, error) {
+	res, err := c.sendListAvailableActions(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (res ListAvailableActionsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("listAvailableActions"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/actions"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAvailableActionsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/workflows/actions"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "severity" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(string(params.Severity)))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "component" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Component))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "environment" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Environment))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "priority" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(string(params.Priority)))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "custom_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.CustomLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "detected_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.DetectedLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "remediation_id" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.RemediationID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "offset" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "offset",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Offset.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAvailableActionsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1495,6 +2421,254 @@ func (c *Client) sendListWorkflows(ctx context.Context, params ListWorkflowsPara
 
 	stage = "DecodeResponse"
 	result, err := decodeListWorkflowsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListWorkflowsByActionType invokes listWorkflowsByActionType operation.
+//
+// Step 2 of the three-step workflow discovery protocol.
+// Returns all active workflows matching the specified action type and
+// signal context filters.
+// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+// before selecting one. Do not select from an incomplete list.
+// **Behavior**:
+// - Filters by action_type + signal context (severity, component, environment, priority)
+// - Excludes disabled and deprecated workflows
+// - Returns workflow metadata including effectiveness data
+// - Paginated (default 10 per page)
+// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
+//
+// GET /api/v1/workflows/actions/{action_type}
+func (c *Client) ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (ListWorkflowsByActionTypeRes, error) {
+	res, err := c.sendListWorkflowsByActionType(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (res ListWorkflowsByActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("listWorkflowsByActionType"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/workflows/actions/{action_type}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListWorkflowsByActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/workflows/actions/"
+	{
+		// Encode "action_type" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "action_type",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ActionType))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "severity" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "severity",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(string(params.Severity)))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "component" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "component",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Component))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "environment" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "environment",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Environment))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "priority" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "priority",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(string(params.Priority)))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "custom_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "custom_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.CustomLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "detected_labels" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "detected_labels",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.DetectedLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "remediation_id" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "remediation_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.RemediationID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "offset" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "offset",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Offset.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListWorkflowsByActionTypeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2177,91 +3351,6 @@ func (c *Client) sendReleaseLegalHold(ctx context.Context, request *ReleaseLegal
 
 	stage = "DecodeResponse"
 	result, err := decodeReleaseLegalHoldResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// SearchWorkflows invokes searchWorkflows operation.
-//
-// Search workflows using label-based matching with wildcard support and weighted scoring.
-// **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-// **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-// **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
-// **Behavior**:
-// - Mandatory filters: signal_type, severity, component, environment, priority
-// - Optional filters: custom_labels, detected_labels
-// - Wildcard support: "*" matches any non-null value
-// - Weighted scoring: Exact matches > Wildcard matches
-// - Returns top_k results sorted by confidence score (0.0-1.0).
-//
-// POST /api/v1/workflows/search
-func (c *Client) SearchWorkflows(ctx context.Context, request *WorkflowSearchRequest) (SearchWorkflowsRes, error) {
-	res, err := c.sendSearchWorkflows(ctx, request)
-	return res, err
-}
-
-func (c *Client) sendSearchWorkflows(ctx context.Context, request *WorkflowSearchRequest) (res SearchWorkflowsRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("searchWorkflows"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/v1/workflows/search"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, SearchWorkflowsOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/api/v1/workflows/search"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-	if err := encodeSearchWorkflowsRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeSearchWorkflowsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

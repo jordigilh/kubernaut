@@ -83,9 +83,16 @@ tags:
       Implements BR-STORAGE-021.
   - name: Workflow Catalog API
     description: |
-      Workflow catalog management and label-based search.
-      Implements BR-STORAGE-013, BR-STORAGE-014.
-      V1.0: Label-only search (no embeddings/semantic search).
+      Workflow catalog management and three-step discovery protocol.
+      Implements BR-STORAGE-013, BR-STORAGE-014, BR-HAPI-017-001.
+      V1.0: Label-only matching via action_type taxonomy (DD-WORKFLOW-016).
+  - name: Workflow Discovery API
+    description: |
+      Three-step workflow discovery protocol for LLM-driven remediation.
+      Step 1: List available action types (GET /actions)
+      Step 2: List workflows for action type (GET /actions/{action_type})
+      Step 3: Get workflow with security gate (GET /workflows/{id} + context filters)
+      Authority: DD-WORKFLOW-016, DD-HAPI-017.
   - name: Health
     description: Health check endpoints (DD-007 graceful shutdown support)
   - name: Metrics
@@ -94,41 +101,205 @@ tags:
     description: |
       RemediationRequest reconstruction from audit trail.
       Implements BR-AUDIT-006 (SOC2 compliance).
+  - name: Remediation History API
+    description: |
+      Remediation history context for LLM prompt enrichment.
+      Aggregates RO and EM audit events into structured remediation chains.
+      Authority: DD-HAPI-016.
 
 paths:
-  /api/v1/workflows/search:
-    post:
+  /api/v1/workflows/actions:
+    get:
       tags:
-        - Workflow Catalog API
-      summary: Label-based workflow search
+        - Workflow Discovery API
+      summary: List available action types
       description: |
-        Search workflows using label-based matching with wildcard support and weighted scoring.
+        Step 1 of the three-step workflow discovery protocol.
+        Returns action types from the taxonomy that have active workflows matching
+        the provided signal context filters.
 
-        **V1.0 Implementation**: Pure SQL label matching (no embeddings/semantic search)
-
-        **Business Requirement**: BR-STORAGE-013 (Label-Based Workflow Search)
-        **Design Decision**: DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)
+        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
 
         **Behavior**:
-        - Mandatory filters: signal_type, severity, component, environment, priority
-        - Optional filters: custom_labels, detected_labels
-        - Wildcard support: "*" matches any non-null value
-        - Weighted scoring: Exact matches > Wildcard matches
-        - Returns top_k results sorted by confidence score (0.0-1.0)
-      operationId: searchWorkflows
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowSearchRequest'
+        - Queries action_type_taxonomy joined with remediation_workflow_catalog
+        - Filters by active workflows matching signal context (severity, component, environment, priority)
+        - Returns action types with descriptions and workflow counts
+        - Paginated (default 10 per page)
+        - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0)
+      operationId: listAvailableActions
+      parameters:
+        - name: severity
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: Signal severity level
+        - name: component
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Kubernetes resource type (pod, deployment, node, etc.)
+        - name: environment
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Target environment (production, staging, etc.)
+        - name: priority
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: Business priority level
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded custom labels (e.g., {\"constraint\":[\"cost-constrained\"]})"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded detected labels (e.g., {\"gitOpsManaged\":true})"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+          description: Pagination limit (max 100)
       responses:
         '200':
-          description: Workflow search results
+          description: Action types with matching workflow counts
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkflowSearchResponse'
+                $ref: '#/components/schemas/ActionTypeListResponse'
+        '400':
+          description: Validation error (missing required filters)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/actions/{action_type}:
+    get:
+      tags:
+        - Workflow Discovery API
+      summary: List workflows for action type
+      description: |
+        Step 2 of the three-step workflow discovery protocol.
+        Returns all active workflows matching the specified action type and
+        signal context filters.
+
+        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
+        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
+
+        **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
+        before selecting one. Do not select from an incomplete list.
+
+        **Behavior**:
+        - Filters by action_type + signal context (severity, component, environment, priority)
+        - Excludes disabled and deprecated workflows
+        - Returns workflow metadata including effectiveness data
+        - Paginated (default 10 per page)
+        - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0)
+      operationId: listWorkflowsByActionType
+      parameters:
+        - name: action_type
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Action type from taxonomy (e.g., ScaleReplicas, RestartPod)"
+        - name: severity
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: Signal severity level
+        - name: component
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Kubernetes resource type
+        - name: environment
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Target environment
+        - name: priority
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: Business priority level
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded custom labels"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "JSON-encoded detected labels"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+          description: Pagination limit (max 100)
+      responses:
+        '200':
+          description: Workflows for the specified action type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDiscoveryResponse'
         '400':
           description: Validation error
           content:
@@ -146,19 +317,21 @@ paths:
     post:
       tags:
         - Workflow Catalog API
-      summary: Create workflow
+      summary: Register workflow from OCI image
       description: |
-        Create a new workflow in the catalog.
+        Register a new workflow by providing an OCI image pullspec.
+        Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
+        validates the schema, and populates all catalog fields from it.
 
-        **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-        **Design Decision**: DD-WORKFLOW-005 v1.0 (Direct REST API workflow registration)
+        **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+        **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions)
       operationId: createWorkflow
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RemediationWorkflow'
+              $ref: '#/components/schemas/CreateWorkflowFromOCIRequest'
       responses:
         '201':
           description: Workflow created successfully
@@ -167,7 +340,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RemediationWorkflow'
         '400':
-          description: Validation error
+          description: |
+            Validation error - schema invalid, unknown action_type, missing mandatory labels,
+            or missing required fields.
           content:
             application/problem+json:
               schema:
@@ -200,8 +375,22 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        '422':
+          description: |
+            Unprocessable Entity - /workflow-schema.yaml not found in OCI image.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '502':
+          description: |
+            Bad Gateway - OCI image could not be pulled from registry.
           content:
             application/problem+json:
               schema:
@@ -267,11 +456,21 @@ paths:
     get:
       tags:
         - Workflow Catalog API
-      summary: Get workflow by UUID
+        - Workflow Discovery API
+      summary: Get workflow by UUID (with optional security gate)
       description: |
         Retrieve a specific workflow by its UUID.
+        Step 3 of the three-step workflow discovery protocol when context filters are provided.
 
         **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
+        **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
+
+        **Without context filters**: Returns workflow by ID (existing behavior).
+        **With context filters**: Returns workflow only if it matches the signal context.
+        Returns 404 if the workflow exists but does not match the context filters
+        (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
+
+        Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
       operationId: getWorkflowByID
       parameters:
         - name: workflow_id
@@ -280,6 +479,50 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+          description: "Security gate: signal severity level"
+        - name: component
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: Kubernetes resource type"
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: target environment"
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [P0, P1, P2, P3]
+          description: "Security gate: business priority level"
+        - name: custom_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: JSON-encoded custom labels"
+        - name: detected_labels
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Security gate: JSON-encoded detected labels"
+        - name: remediation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Remediation request ID for audit correlation (BR-AUDIT-021)
       responses:
         '200':
           description: Workflow found
@@ -351,7 +594,7 @@ paths:
         Convenience endpoint to disable a workflow (soft delete).
         Sets status to 'disabled' with timestamp and reason.
 
-        **Design Decision**: DD-WORKFLOW-012 (Convenience endpoint for soft-delete)
+        **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4
       operationId: disableWorkflow
       parameters:
         - name: workflow_id
@@ -361,11 +604,11 @@ paths:
             type: string
             format: uuid
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WorkflowDisableRequest'
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
       responses:
         '200':
           description: Workflow disabled
@@ -373,6 +616,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Workflow not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/{workflow_id}/enable:
+    patch:
+      tags:
+        - Workflow Catalog API
+      summary: Enable workflow
+      description: |
+        Re-enable a previously disabled or deprecated workflow.
+        Sets status to 'active' with timestamp and reason.
+
+        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
+      operationId: enableWorkflow
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
+      responses:
+        '200':
+          description: Workflow enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Workflow not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/workflows/{workflow_id}/deprecate:
+    patch:
+      tags:
+        - Workflow Catalog API
+      summary: Deprecate workflow
+      description: |
+        Mark a workflow as deprecated. Deprecated workflows are excluded from
+        discovery results but remain in the catalog for audit history.
+
+        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
+      operationId: deprecateWorkflow
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowLifecycleRequest'
+      responses:
+        '200':
+          description: Workflow deprecated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
+        '400':
+          description: Missing required field (reason)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '404':
           description: Workflow not found
           content:
@@ -1161,6 +1498,183 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+  /api/v1/effectiveness/{correlation_id}:
+    get:
+      tags:
+        - Effectiveness Assessment API
+      summary: Compute weighted effectiveness score on demand
+      description: |
+        Computes the weighted effectiveness score for a given remediation lifecycle
+        from component audit events in the audit trail.
+
+        **Architecture**: Per ADR-EM-001 Principle 5, DataStorage computes the overall score.
+        The Effectiveness Monitor emits raw component assessment events; this endpoint
+        aggregates them and applies the DD-017 v2.1 scoring formula:
+
+          score = (health_score * 0.40 + alert_score * 0.35 + metrics_score * 0.25) / total_weight
+
+        **Business Requirements**: BR-EM-001 to BR-EM-004
+
+        **Response includes**:
+        - Weighted overall score (0.0 to 1.0)
+        - Individual component scores (health, alert, metrics)
+        - Hash comparison data (pre/post remediation spec hash per DD-EM-002)
+        - Assessment status (no_data, in_progress, EffectivenessAssessed)
+
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+      operationId: getEffectivenessScore
+      parameters:
+        - name: correlation_id
+          in: path
+          required: true
+          description: |
+            The correlation ID (typically RemediationRequest name) that links all
+            audit events in a remediation lifecycle.
+          schema:
+            type: string
+            example: "rr-prometheus-alert-highcpu-abc123"
+      responses:
+        '200':
+          description: Effectiveness score computed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectivenessScoreResponse'
+        '404':
+          description: |
+            Not Found - no effectiveness assessment events found for the given correlation_id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                no_events:
+                  summary: No effectiveness events for correlation ID
+                  value:
+                    type: "https://kubernaut.ai/problems/effectiveness/not-found"
+                    title: "Effectiveness Assessment Not Found"
+                    status: 404
+                    detail: "No effectiveness assessment events found for correlation_id: unknown-rr"
+                    instance: "/api/v1/effectiveness/unknown-rr"
+        '500':
+          description: |
+            Internal Server Error - database query or score computation failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/remediation-history/context:
+    get:
+      tags:
+        - Remediation History API
+      summary: Get remediation history context for a target resource
+      description: |
+        Returns structured remediation history context for LLM prompt enrichment.
+
+        **Business Requirements**: BR-HAPI-016 (Remediation history context)
+
+        **Design Document**: DD-HAPI-016
+
+        **Behavior**:
+        Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
+        audit events into structured remediation chains for a target resource.
+
+        **Two-Tier Query Design**:
+        - **Tier 1** (default 24h): Detailed remediation chain with health checks, metric deltas,
+          and full effectiveness data for the target resource.
+        - **Tier 2** (default 90d): Summary chain activated when `currentSpecHash` matches a
+          historical `preRemediationSpecHash` beyond the Tier 1 window, indicating configuration
+          regression.
+
+        **Hash Comparison**: For each entry, performs three-way comparison of `currentSpecHash`
+        against `preRemediationSpecHash` and `postRemediationSpecHash`.
+
+        **Regression Detection**: Sets `regressionDetected: true` if any entry's
+        `preRemediationSpecHash` matches `currentSpecHash`.
+
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+        Integration tests use mock X-Auth-Request-User header.
+      operationId: getRemediationHistoryContext
+      parameters:
+        - name: targetKind
+          in: query
+          required: true
+          description: Kubernetes resource kind (e.g. Deployment, StatefulSet)
+          schema:
+            type: string
+          example: "Deployment"
+        - name: targetName
+          in: query
+          required: true
+          description: Kubernetes resource name
+          schema:
+            type: string
+          example: "my-app"
+        - name: targetNamespace
+          in: query
+          required: true
+          description: Kubernetes resource namespace
+          schema:
+            type: string
+          example: "prod"
+        - name: currentSpecHash
+          in: query
+          required: true
+          description: SHA-256 hash of the current target resource spec (canonical JSON)
+          schema:
+            type: string
+          example: "sha256:aabb112233dd"
+        - name: tier1Window
+          in: query
+          required: false
+          description: Tier 1 lookback window (default 24h). Accepts Go duration strings.
+          schema:
+            type: string
+            default: "24h"
+          example: "24h"
+        - name: tier2Window
+          in: query
+          required: false
+          description: Tier 2 lookback window (default 2160h / 90d). Accepts Go duration strings.
+          schema:
+            type: string
+            default: "2160h"
+          example: "2160h"
+      responses:
+        '200':
+          description: |
+            Remediation history context retrieved successfully.
+            May contain Tier 1 (recent detailed), Tier 2 (historical summary), or both.
+            Empty chains indicate no remediation history for the target.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationHistoryContext'
+        '400':
+          description: |
+            Bad Request - missing required query parameters.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                missing_target_kind:
+                  summary: Missing targetKind parameter
+                  value:
+                    type: "https://kubernaut.ai/problems/remediation-history/missing-parameter"
+                    title: "Missing Required Parameter"
+                    status: 400
+                    detail: "Query parameter 'targetKind' is required"
+                    instance: "/api/v1/remediation-history/context"
+        '500':
+          description: |
+            Internal Server Error - database query failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /health:
     get:
       tags:
@@ -1264,6 +1778,123 @@ paths:
 
 components:
   schemas:
+    # ========================================
+    # Effectiveness Assessment Response
+    # ========================================
+    EffectivenessScoreResponse:
+      type: object
+      description: |
+        On-demand effectiveness score response. DS computes the weighted score
+        from component audit events emitted by the Effectiveness Monitor.
+        Per ADR-EM-001 Principle 5 and DD-017 v2.1 scoring formula.
+      required:
+        - correlation_id
+        - components
+        - assessment_status
+        - computed_at
+      properties:
+        correlation_id:
+          type: string
+          description: The correlation ID linking all audit events in the remediation lifecycle.
+          example: "rr-prometheus-alert-highcpu-abc123"
+        score:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            Weighted effectiveness score (0.0 to 1.0). Null if no component scores available.
+            Formula: (health * 0.40 + alert * 0.35 + metrics * 0.25) / total_assessed_weight
+          example: 0.91
+        components:
+          $ref: '#/components/schemas/EffectivenessComponents'
+        hash_comparison:
+          $ref: '#/components/schemas/HashComparisonData'
+        assessment_status:
+          type: string
+          enum:
+            - no_data
+            - in_progress
+            - full
+            - partial
+            - spec_drift
+            - expired
+            - no_execution
+            - metrics_timed_out
+            - EffectivenessAssessed
+          description: |
+            Current assessment status:
+            - no_data: No component events found
+            - in_progress: Some component events present but assessment not completed
+            - full: All components assessed successfully
+            - partial: Some components assessed, others unavailable
+            - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+            - expired: Assessment timed out before completing
+            - no_execution: No workflow execution found for this correlation ID
+            - metrics_timed_out: Prometheus metrics collection timed out
+            - EffectivenessAssessed: Legacy value (equivalent to "full")
+          example: "full"
+        computed_at:
+          type: string
+          format: date-time
+          description: Timestamp when this score was computed.
+
+    EffectivenessComponents:
+      type: object
+      description: Individual component assessment scores.
+      properties:
+        health_assessed:
+          type: boolean
+          description: Whether health component has been assessed.
+        health_score:
+          type: number
+          format: double
+          nullable: true
+          description: Health pass rate score (0.0 to 1.0).
+        health_details:
+          type: string
+          description: Human-readable health assessment details.
+        alert_assessed:
+          type: boolean
+          description: Whether alert component has been assessed.
+        alert_score:
+          type: number
+          format: double
+          nullable: true
+          description: Alert resolution score (0.0 to 1.0).
+        alert_details:
+          type: string
+          description: Human-readable alert assessment details.
+        metrics_assessed:
+          type: boolean
+          description: Whether metrics component has been assessed.
+        metrics_score:
+          type: number
+          format: double
+          nullable: true
+          description: Metric improvement ratio score (0.0 to 1.0).
+        metrics_details:
+          type: string
+          description: Human-readable metrics assessment details.
+
+    HashComparisonData:
+      type: object
+      description: |
+        Pre/post remediation spec hash comparison data per DD-EM-002.
+        Supplementary signal (not part of scoring formula).
+      properties:
+        pre_remediation_spec_hash:
+          type: string
+          description: Canonical SHA-256 hash of target resource spec before remediation.
+          example: "sha256:abc123..."
+        post_remediation_spec_hash:
+          type: string
+          description: Canonical SHA-256 hash of target resource spec after remediation.
+          example: "sha256:def456..."
+        hash_match:
+          type: boolean
+          nullable: true
+          description: Whether pre and post hashes match (true = no spec change detected).
+
     NotificationAudit:
       type: object
       description: |
@@ -1578,7 +2209,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness]
           description: |
             Service-level event category (ADR-034 v1.7).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
@@ -1593,6 +2224,7 @@ components:
             - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
+            - effectiveness: Effectiveness Monitor Controller (ADR-EM-001)
           example: gateway
         event_action:
           type: string
@@ -1655,7 +2287,7 @@ components:
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalDecisionPayload'
-            - $ref: '#/components/schemas/WorkflowSearchAuditPayload'
+            - $ref: '#/components/schemas/WorkflowDiscoveryAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
             - $ref: '#/components/schemas/AIAnalysisPhaseTransitionPayload'
@@ -1673,6 +2305,7 @@ components:
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
+            - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -1703,12 +2336,16 @@ components:
               'workflowexecution.execution.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005) - ADR-034 v1.5
               'orchestrator.remediation.manual_review': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.routing.blocked': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'remediation.workflow_created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
-              'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
+              'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
+              'workflow.catalog.selection_validated': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
               'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
               'aianalysis.phase.transition': '#/components/schemas/AIAnalysisPhaseTransitionPayload'
@@ -1725,6 +2362,12 @@ components:
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+              'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.metrics.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.assessment.scheduled': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'effectiveness.assessment.completed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -1809,10 +2452,156 @@ components:
               description: "Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage."
 
     # ========================================
-    # WORKFLOW CATALOG SCHEMAS
+    # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)
     # ========================================
-    # Authority: pkg/datastorage/models/workflow.go
-    # V1.0: Label-only search (no embeddings/semantic search)
+    # Three-step discovery protocol response types
+    # Step 1: ActionTypeListResponse (list available actions)
+    # Step 2: WorkflowDiscoveryResponse (list workflows for action type)
+    # Step 3: RemediationWorkflow (get workflow - uses existing schema with security gate)
+
+    ActionTypeListResponse:
+      type: object
+      description: "Response for Step 1: list available action types (DD-WORKFLOW-016)"
+      required:
+        - actionTypes
+        - pagination
+      properties:
+        actionTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionTypeEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    ActionTypeEntry:
+      type: object
+      description: "Single action type with description and workflow count"
+      required:
+        - actionType
+        - description
+        - workflowCount
+      properties:
+        actionType:
+          type: string
+          description: "Action type identifier (e.g., ScaleReplicas, RestartPod)"
+          example: "ScaleReplicas"
+        description:
+          $ref: '#/components/schemas/StructuredDescription'
+        workflowCount:
+          type: integer
+          description: "Number of active workflows matching this action type and context filters"
+          minimum: 0
+
+    WorkflowDiscoveryResponse:
+      type: object
+      description: "Response for Step 2: list workflows for an action type (DD-WORKFLOW-016)"
+      required:
+        - actionType
+        - workflows
+        - pagination
+      properties:
+        actionType:
+          type: string
+          description: "The action type these workflows belong to"
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowDiscoveryEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    WorkflowDiscoveryEntry:
+      type: object
+      description: "Workflow summary for discovery (Step 2) - no parameter schema, no scores"
+      required:
+        - workflowId
+        - workflowName
+        - name
+        - description
+        - version
+        - containerImage
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+          description: "UUID primary key"
+        workflowName:
+          type: string
+          description: "Human-readable workflow identifier (e.g., scale-conservative-v1)"
+        name:
+          type: string
+          description: "Display name"
+        description:
+          $ref: '#/components/schemas/StructuredDescription'
+        version:
+          type: string
+          description: "Semantic version"
+        containerImage:
+          type: string
+          description: "OCI image reference"
+        executionEngine:
+          type: string
+          description: "Execution engine (tekton, job)"
+          enum: [tekton, job]
+        # DD-HAPI-017 v1.1: actualSuccessRate and totalExecutions REMOVED from
+        # LLM-facing discovery response. These global aggregate metrics are
+        # misleading for per-incident workflow selection — the conditions under
+        # which they were collected (different signals, targets, environments)
+        # are not applicable to the current case. Contextual remediation history
+        # via spec-hash matching (DD-HAPI-016) is the correct mechanism.
+        # These fields remain on the full RemediationWorkflow schema for operators.
+
+    StructuredDescription:
+      type: object
+      description: "Structured workflow description for LLM comparison and operator guidance (BR-WORKFLOW-004)"
+      required:
+        - what
+        - whenToUse
+      properties:
+        what:
+          type: string
+          description: "What this workflow concretely does. One sentence."
+        whenToUse:
+          type: string
+          description: "Root cause conditions under which this workflow is appropriate."
+        whenNotToUse:
+          type: string
+          description: "Specific exclusion conditions."
+        preconditions:
+          type: string
+          description: "Conditions that must be verified through investigation."
+
+    PaginationMetadata:
+      type: object
+      description: "Pagination metadata for discovery endpoints (DD-WORKFLOW-016)"
+      required:
+        - totalCount
+        - offset
+        - limit
+        - hasMore
+      properties:
+        totalCount:
+          type: integer
+          description: "Total number of results across all pages"
+          minimum: 0
+        offset:
+          type: integer
+          description: "Current offset (0-based)"
+          minimum: 0
+        limit:
+          type: integer
+          description: "Page size"
+          minimum: 1
+        hasMore:
+          type: boolean
+          description: "True if more pages exist beyond current offset+limit"
+
+    # ========================================
+    # WORKFLOW SEARCH SCHEMAS (DEPRECATED - superseded by DD-WORKFLOW-016)
+    # ========================================
+    # These schemas supported the old POST /api/v1/workflows/search endpoint.
+    # Retained temporarily for reference. Will be removed after all consumers migrate.
+    # Superseded by: ActionTypeListResponse, WorkflowDiscoveryResponse, PaginationMetadata
 
     WorkflowSearchRequest:
       type: object
@@ -1845,7 +2634,6 @@ components:
     WorkflowSearchFilters:
       type: object
       required:
-        - signal_type
         - severity
         - component
         - environment
@@ -1853,7 +2641,7 @@ components:
       properties:
         signal_type:
           type: string
-          description: "Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.)"
+          description: "Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.)"
           example: "OOMKilled"
         severity:
           type: string
@@ -1886,9 +2674,8 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "5 mandatory workflow labels (DD-WORKFLOW-001 v2.5 - Multi-environment support)"
+      description: "4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)"
       required:
-        - signal_type
         - severity
         - component
         - environment
@@ -1896,13 +2683,16 @@ components:
       properties:
         signal_type:
           type: string
-          description: "Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)"
+          description: "Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)"
           example: "OOMKilled"
         severity:
-          type: string
-          description: "Severity level this workflow is designed for ('*' matches any severity)"
-          enum: [critical, high, medium, low, "*"]
-          example: "critical"
+          type: array
+          items:
+            type: string
+            enum: [critical, high, medium, low]
+          minItems: 1
+          description: "Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels."
+          example: [critical]
         component:
           type: string
           description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"
@@ -1992,7 +2782,6 @@ components:
         - workflow_id
         - title
         - description
-        - signal_type
         - confidence
         - final_score
         - rank
@@ -2055,6 +2844,19 @@ components:
           additionalProperties: true
           description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
+    CreateWorkflowFromOCIRequest:
+      type: object
+      required:
+        - container_image
+      properties:
+        container_image:
+          type: string
+          description: |
+            OCI image pullspec. Data Storage pulls this image, extracts
+            /workflow-schema.yaml (ADR-043), validates it, and populates
+            all catalog fields from the extracted schema.
+          example: "quay.io/kubernaut/workflows/scale-replicas:v1.0.0"
+
     RemediationWorkflow:
       type: object
       required:
@@ -2067,6 +2869,7 @@ components:
         - labels
         - execution_engine
         - status
+        - action_type
       properties:
         workflow_id:
           type: string
@@ -2076,6 +2879,10 @@ components:
           type: string
           maxLength: 255
           description: "Workflow name (identifier for versions)"
+        action_type:
+          type: string
+          description: "Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy."
+          example: "ScaleReplicas"
         version:
           type: string
           maxLength: 50
@@ -2085,8 +2892,7 @@ components:
           maxLength: 255
           description: "Human-readable workflow title"
         description:
-          type: string
-          description: "Workflow description"
+          $ref: '#/components/schemas/StructuredDescription'
         owner:
           type: string
           maxLength: 255
@@ -2230,9 +3036,23 @@ components:
           type: string
           description: "Why the workflow was disabled"
 
+    WorkflowLifecycleRequest:
+      type: object
+      description: "Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4."
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: "Why the lifecycle operation is being performed (mandatory)"
+        updated_by:
+          type: string
+          description: "Who is performing the operation"
+
     WorkflowDisableRequest:
       type: object
-      description: "Convenience request to disable a workflow"
+      description: "Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)"
       properties:
         reason:
           type: string
@@ -2531,7 +3351,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2619,6 +3439,32 @@ components:
         timeout_config:
           $ref: '#/components/schemas/TimeoutConfig'
           description: Timeout configuration for RR reconstruction (Gap #8)
+
+        # Pre-remediation hash fields (remediation.workflow_created, DD-EM-002)
+        pre_remediation_spec_hash:
+          type: string
+          description: |
+            Canonical SHA-256 hash of the target resource's .spec before remediation.
+            Computed using DD-EM-002 canonical spec hash algorithm.
+            Format: "sha256:<hex>"
+          example: "sha256:a1b2c3d4e5f6..."
+        target_resource:
+          type: string
+          description: |
+            Target resource identifier in format "namespace/Kind/name" or "Kind/name" for cluster-scoped.
+            Used by remediation.workflow_created to capture what resource is being remediated.
+          example: "payment/Deployment/payment-api"
+        workflow_version:
+          type: string
+          description: Version of the selected workflow
+          example: "1.0.0"
+        workflow_type:
+          type: string
+          description: |
+            Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+            Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
+            Used by DS remediation history to populate workflowType on entries and summaries.
+          example: "ScaleReplicas"
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -3142,6 +3988,292 @@ components:
           description: New timeout configuration after operator modification
 
     # ========================================
+    # Effectiveness Monitor Audit Payloads
+    # From: pkg/effectivenessmonitor/audit/
+    # Authority: ADR-EM-001, DD-AUDIT-003, BR-EM-095
+    # ========================================
+
+    EffectivenessAssessmentAuditPayload:
+      type: object
+      required: [correlation_id, namespace, event_type, component]
+      description: |
+        Type-safe audit event payload for Effectiveness Monitor controller.
+        Covers component-level events (health, alert, metrics, hash),
+        the scheduling event (assessment.scheduled), and the lifecycle
+        completion event (assessment.completed).
+        Per ADR-EM-001: Each component assessment emits its own audit event.
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'effectiveness.health.assessed'
+            - 'effectiveness.hash.computed'
+            - 'effectiveness.alert.assessed'
+            - 'effectiveness.metrics.assessed'
+            - 'effectiveness.assessment.scheduled'
+            - 'effectiveness.assessment.completed'
+          description: Event type for discriminator (matches parent event_type)
+        correlation_id:
+          type: string
+          description: Correlation ID (EA spec.correlationID, matches parent RR name)
+          example: "restart-payment-api-2026-02-12-abc123"
+        namespace:
+          type: string
+          description: Kubernetes namespace of the EffectivenessAssessment
+          example: "production"
+        ea_name:
+          type: string
+          description: Name of the EffectivenessAssessment CRD
+          example: "ea-restart-payment-api-abc123"
+        component:
+          type: string
+          enum: [health, alert, metrics, hash, scheduled, completed]
+          description: Assessment component that produced this event
+          example: "health"
+        assessed:
+          type: boolean
+          description: Whether the component was successfully assessed
+          example: true
+        score:
+          type: number
+          format: double
+          nullable: true
+          description: Component score (0.0-1.0), null if not assessed
+          example: 0.85
+        details:
+          type: string
+          description: Human-readable details about the assessment result
+          example: "1 of 1 replicas ready"
+        reason:
+          type: string
+          description: Assessment completion reason (only for assessment.completed events)
+          example: "full"
+
+        # assessment.completed enrichment fields (ADR-EM-001, Batch 3)
+        alert_name:
+          type: string
+          description: |
+            Name of the original alert that triggered the remediation pipeline.
+            Extracted from EA spec target resource context. Only present for assessment.completed events.
+          example: "HighCPUUsage"
+        components_assessed:
+          type: array
+          items:
+            type: string
+          description: |
+            List of component names that were assessed (e.g. ["health","hash","alert","metrics"]).
+            Only present for assessment.completed events.
+          example: ["health", "hash", "alert"]
+        completed_at:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when the assessment completed (EA status.completedAt).
+            Only present for assessment.completed events.
+          example: "2026-02-12T15:45:00Z"
+        assessment_duration_seconds:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            Seconds from RemediationRequest creation to assessment completion.
+            Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set.
+            Only present for assessment.completed events.
+            Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution.
+          example: 1800.5
+
+        validity_deadline:
+          type: string
+          format: date-time
+          description: |
+            Computed validity deadline (only for assessment.scheduled events).
+            EA.creationTimestamp + validityWindow from EM config.
+          example: "2026-02-12T15:30:00Z"
+        prometheus_check_after:
+          type: string
+          format: date-time
+          description: |
+            Computed earliest time for Prometheus check (only for assessment.scheduled events).
+            EA.creationTimestamp + stabilizationWindow.
+          example: "2026-02-12T15:05:00Z"
+        alertmanager_check_after:
+          type: string
+          format: date-time
+          description: |
+            Computed earliest time for AlertManager check (only for assessment.scheduled events).
+            EA.creationTimestamp + stabilizationWindow.
+          example: "2026-02-12T15:05:00Z"
+        validity_window:
+          type: string
+          description: |
+            Validity window duration from EM config (only for assessment.scheduled events).
+            Included for operational observability.
+          example: "30m0s"
+        stabilization_window:
+          type: string
+          description: |
+            Stabilization window duration from EA spec (only for assessment.scheduled events).
+            Included for operational observability.
+          example: "5m0s"
+
+        # Hash comparison fields (DD-EM-002, effectiveness.hash.computed)
+        pre_remediation_spec_hash:
+          type: string
+          description: |
+            Canonical SHA-256 hash of the target resource's .spec BEFORE remediation.
+            Retrieved from DataStorage audit trail (remediation.workflow_created event).
+            Format: "sha256:<hex>". Only present for effectiveness.hash.computed events.
+          example: "sha256:a1b2c3d4..."
+        post_remediation_spec_hash:
+          type: string
+          description: |
+            Canonical SHA-256 hash of the target resource's .spec AFTER remediation.
+            Computed by EM during assessment using DD-EM-002 canonical hash algorithm.
+            Format: "sha256:<hex>". Only present for effectiveness.hash.computed events.
+          example: "sha256:e5f6a7b8..."
+        hash_match:
+          type: boolean
+          description: |
+            Whether the pre and post remediation spec hashes match.
+            true = no change detected (remediation may have been reverted or had no effect).
+            false = spec changed (expected for successful remediations).
+            Only present for effectiveness.hash.computed events.
+          example: false
+
+        # Typed sub-objects (v2.5, DD-017 v2.5, coordinated with DD-HAPI-016 v1.1)
+        # Each component event carries its typed sub-object alongside the human-readable details string.
+
+        health_checks:
+          type: object
+          description: |
+            Structured health check results from the K8s API assessment.
+            Only present for effectiveness.health.assessed events.
+            Enables downstream consumers (DS, HAPI) to extract typed fields
+            without parsing the human-readable details string.
+          properties:
+            pod_running:
+              type: boolean
+              description: Whether at least one pod exists for the target resource
+              example: true
+            readiness_pass:
+              type: boolean
+              description: Whether all desired replicas are ready (readyReplicas == totalReplicas)
+              example: true
+            total_replicas:
+              type: integer
+              format: int32
+              description: Total number of desired replicas
+              example: 3
+            ready_replicas:
+              type: integer
+              format: int32
+              description: Number of ready replicas
+              example: 3
+            restart_delta:
+              type: integer
+              format: int32
+              description: Total container restart count since remediation
+              example: 0
+            crash_loops:
+              type: boolean
+              description: Whether any container is in CrashLoopBackOff waiting state
+              example: false
+            oom_killed:
+              type: boolean
+              description: Whether any container was terminated with OOMKilled reason since remediation
+              example: false
+            pending_count:
+              type: integer
+              format: int32
+              description: |
+                Number of pods in Pending phase after the stabilization window.
+                Pods still Pending after stabilization indicates scheduling failures,
+                image pull issues, or resource exhaustion. 0 = all pods running or terminated.
+              example: 0
+
+        metric_deltas:
+          type: object
+          description: |
+            Structured pre/post remediation metric comparison results from Prometheus.
+            Only present for effectiveness.metrics.assessed events.
+            Phase A (V1.0): cpu_before/cpu_after populated. Other fields nullable pending
+            Phase B metrics assessor expansion (additional PromQL queries).
+          properties:
+            cpu_before:
+              type: number
+              format: double
+              nullable: true
+              description: CPU utilization before remediation (earliest sample in query range)
+              example: 0.95
+            cpu_after:
+              type: number
+              format: double
+              nullable: true
+              description: CPU utilization after remediation (latest sample in query range)
+              example: 0.72
+            memory_before:
+              type: number
+              format: double
+              nullable: true
+              description: Memory utilization before remediation (Phase B)
+            memory_after:
+              type: number
+              format: double
+              nullable: true
+              description: Memory utilization after remediation (Phase B)
+            latency_p95_before_ms:
+              type: number
+              format: double
+              nullable: true
+              description: Request latency p95 in milliseconds before remediation (Phase B)
+            latency_p95_after_ms:
+              type: number
+              format: double
+              nullable: true
+              description: Request latency p95 in milliseconds after remediation (Phase B)
+            error_rate_before:
+              type: number
+              format: double
+              nullable: true
+              description: Error rate (5xx/total) before remediation (Phase B)
+            error_rate_after:
+              type: number
+              format: double
+              nullable: true
+              description: Error rate (5xx/total) after remediation (Phase B)
+            throughput_before_rps:
+              type: number
+              format: double
+              nullable: true
+              description: Request throughput (requests/second) before remediation
+            throughput_after_rps:
+              type: number
+              format: double
+              nullable: true
+              description: Request throughput (requests/second) after remediation
+
+        alert_resolution:
+          type: object
+          description: |
+            Structured alert resolution check results from AlertManager.
+            Only present for effectiveness.alert.assessed events.
+          properties:
+            alert_resolved:
+              type: boolean
+              description: Whether the triggering alert is no longer active in AlertManager
+              example: true
+            active_count:
+              type: integer
+              format: int32
+              description: Number of matching active alerts found in AlertManager
+              example: 0
+            resolution_time_seconds:
+              type: number
+              format: double
+              nullable: true
+              description: Seconds from remediation completion to alert resolution (null if not resolved)
+
+    # ========================================
     # DataStorage Audit Payloads
     # From: pkg/datastorage/audit/
     # ========================================
@@ -3229,16 +4361,24 @@ components:
           description: Updated description
           example: "Updated workflow description"
 
-    # Workflow Search Events
-    WorkflowSearchAuditPayload:
+    # Workflow Discovery Events (DD-HAPI-017, DD-WORKFLOW-014 v3.0)
+    WorkflowDiscoveryAuditPayload:
       type: object
       required: [event_type, query, results, search_metadata]
-      description: Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
+      description: |
+        Audit event payload for three-step workflow discovery operations.
+        Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+        Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
+        Replaces WorkflowSearchAuditPayload (search endpoint removed).
       properties:
         event_type:
           type: string
-          enum: ['workflow.catalog.search_completed']
-          description: Discriminator for event data union type
+          enum:
+            - 'workflow.catalog.actions_listed'
+            - 'workflow.catalog.workflows_listed'
+            - 'workflow.catalog.workflow_retrieved'
+            - 'workflow.catalog.selection_validated'
+          description: Discriminator for event data union type (matches parent event_type)
         query:
           $ref: '#/components/schemas/QueryMetadata'
         results:
@@ -3636,10 +4776,16 @@ components:
           additionalProperties: false
         selected_workflow:
           type: object
-          description: Selected workflow with workflow_id, containerImage, confidence, parameters (optional)
+          description: Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
           properties:
             workflow_id:
               type: string
+            action_type:
+              type: string
+              description: |
+                Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+                Propagated from HAPI three-step discovery protocol.
+              example: "ScaleReplicas"
             container_image:
               type: string
             confidence:
@@ -3789,7 +4935,7 @@ components:
         tool_name:
           type: string
           description: Name of tool invoked
-          example: "search_workflow_catalog"
+          example: "list_available_actions"
         tool_arguments:
           type: object
           additionalProperties: true
@@ -3847,4 +4993,328 @@ components:
           type: boolean
           default: false
           description: Whether this is the final validation attempt
+
+    # ─── Remediation History Context (DD-HAPI-016) ───
+
+    RemediationHistoryContext:
+      type: object
+      description: |
+        Structured remediation history context for LLM prompt enrichment.
+        Contains two tiers of remediation chain data for a target resource.
+        Authority: DD-HAPI-016.
+      required:
+        - targetResource
+        - currentSpecHash
+        - regressionDetected
+        - tier1
+        - tier2
+      properties:
+        targetResource:
+          type: string
+          description: |
+            Target resource identifier in format "{namespace}/{kind}/{name}".
+            Matches the format used by RO and EM audit events.
+          example: "prod/Deployment/my-app"
+        currentSpecHash:
+          type: string
+          description: |
+            SHA-256 hash of the current target resource spec (echoed from request).
+          example: "sha256:aabb112233dd"
+        regressionDetected:
+          type: boolean
+          description: |
+            True if any remediation entry's preRemediationSpecHash matches
+            currentSpecHash, indicating configuration regression.
+        tier1:
+          $ref: '#/components/schemas/RemediationHistoryTier1'
+        tier2:
+          $ref: '#/components/schemas/RemediationHistoryTier2'
+
+    RemediationHistoryTier1:
+      type: object
+      description: |
+        Tier 1: Detailed remediation chain within the recent window (default 24h).
+        Contains full effectiveness data, health checks, and metric deltas.
+      required:
+        - window
+        - chain
+      properties:
+        window:
+          type: string
+          description: Lookback window used for this tier (e.g. "24h")
+          example: "24h"
+        chain:
+          type: array
+          description: Ordered list of detailed remediation entries (ascending by completedAt)
+          items:
+            $ref: '#/components/schemas/RemediationHistoryEntry'
+
+    RemediationHistoryTier2:
+      type: object
+      description: |
+        Tier 2: Summary remediation chain for historical lookback (default 90d).
+        Activated when currentSpecHash matches a historical preRemediationSpecHash
+        beyond the Tier 1 window. Contains compact entries without health/metric details.
+      required:
+        - window
+        - chain
+      properties:
+        window:
+          type: string
+          description: Lookback window used for this tier (e.g. "2160h")
+          example: "2160h"
+        chain:
+          type: array
+          description: Ordered list of summary remediation entries (ascending by completedAt)
+          items:
+            $ref: '#/components/schemas/RemediationHistorySummary'
+
+    RemediationHistoryEntry:
+      type: object
+      description: |
+        Full remediation history entry for Tier 1.
+        Correlates RO (remediation.workflow_created) and EM (effectiveness.assessment.completed)
+        audit events by remediation_request_uid.
+      required:
+        - remediationUID
+        - completedAt
+      properties:
+        remediationUID:
+          type: string
+          description: RemediationRequest UID (correlation key)
+          example: "rr-abc-123"
+        signalFingerprint:
+          type: string
+          description: Signal fingerprint that triggered the remediation
+          example: "fp-highcpu-123"
+        signalType:
+          type: string
+          description: Type of signal (e.g. HighCPULoad, OOMKilled)
+          example: "HighCPULoad"
+        workflowType:
+          type: string
+          nullable: true
+          description: Workflow type applied (null if escalated to human review)
+          example: "ScaleUp"
+        outcome:
+          type: string
+          description: Remediation outcome (Success, Failed, Escalated)
+          example: "Success"
+        effectivenessScore:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            EM effectiveness score (0.0-1.0). Null if assessment not yet completed
+            or remediation was escalated.
+          minimum: 0
+          maximum: 1
+          example: 0.4
+        signalResolved:
+          type: boolean
+          nullable: true
+          description: Whether the originating signal was resolved after remediation
+          example: false
+        hashMatch:
+          type: string
+          enum:
+            - preRemediation
+            - postRemediation
+            - none
+          description: |
+            Result of three-way hash comparison:
+            - preRemediation: currentSpecHash matches preRemediationSpecHash (regression)
+            - postRemediation: currentSpecHash matches postRemediationSpecHash (unchanged)
+            - none: currentSpecHash matches neither hash
+          example: "postRemediation"
+        preRemediationSpecHash:
+          type: string
+          description: Spec hash captured before remediation was applied
+          example: "sha256:aabb112233dd"
+        postRemediationSpecHash:
+          type: string
+          description: Spec hash captured after remediation was applied
+          example: "sha256:ccdd334455ee"
+        healthChecks:
+          $ref: '#/components/schemas/RemediationHealthChecks'
+        metricDeltas:
+          $ref: '#/components/schemas/RemediationMetricDeltas'
+        sideEffects:
+          type: array
+          description: List of detected side effects from the remediation
+          items:
+            type: string
+          example: []
+        completedAt:
+          type: string
+          format: date-time
+          description: When the remediation was completed
+          example: "2026-02-05T08:00:00Z"
+        assessmentReason:
+          type: string
+          nullable: true
+          enum:
+            - full
+            - partial
+            - spec_drift
+            - expired
+            - no_execution
+            - metrics_timed_out
+          description: |
+            Reason/status of the effectiveness assessment. Null if assessment
+            not yet completed. When "spec_drift", the effectiveness score is
+            unreliable (hard-overridden to 0.0) because the target resource
+            spec was modified during the assessment window (DD-EM-002 v1.1).
+          example: "full"
+        assessedAt:
+          type: string
+          format: date-time
+          description: When the effectiveness assessment was completed
+          example: "2026-02-05T08:05:00Z"
+
+    RemediationHistorySummary:
+      type: object
+      description: |
+        Compact remediation history entry for Tier 2.
+        Contains only essential fields for historical context.
+      required:
+        - remediationUID
+        - completedAt
+      properties:
+        remediationUID:
+          type: string
+          description: RemediationRequest UID (correlation key)
+          example: "rr-old-001"
+        signalType:
+          type: string
+          description: Type of signal
+          example: "HighCPULoad"
+        workflowType:
+          type: string
+          nullable: true
+          description: Workflow type applied (null if escalated)
+          example: "ScaleUp"
+        outcome:
+          type: string
+          description: Remediation outcome
+          example: "Success"
+        effectivenessScore:
+          type: number
+          format: double
+          nullable: true
+          description: EM effectiveness score (0.0-1.0)
+          minimum: 0
+          maximum: 1
+          example: 0.4
+        signalResolved:
+          type: boolean
+          nullable: true
+          description: Whether the originating signal was resolved
+          example: false
+        hashMatch:
+          type: string
+          enum:
+            - preRemediation
+            - postRemediation
+            - none
+          description: Result of three-way hash comparison against currentSpecHash
+          example: "preRemediation"
+        assessmentReason:
+          type: string
+          nullable: true
+          enum:
+            - full
+            - partial
+            - spec_drift
+            - expired
+            - no_execution
+            - metrics_timed_out
+          description: |
+            Reason/status of the effectiveness assessment (same enum as
+            RemediationHistoryEntry). When "spec_drift", effectiveness score
+            is unreliable (DD-EM-002 v1.1).
+          example: "full"
+        completedAt:
+          type: string
+          format: date-time
+          description: When the remediation was completed
+          example: "2026-01-15T10:00:00Z"
+
+    RemediationHealthChecks:
+      type: object
+      description: |
+        Post-remediation health check results from EM assessment.
+      properties:
+        podRunning:
+          type: boolean
+          description: Whether the target pod is running
+          example: true
+        readinessPass:
+          type: boolean
+          description: Whether readiness probes are passing
+          example: true
+        restartDelta:
+          type: integer
+          description: Change in restart count since remediation
+          example: 0
+        crashLoops:
+          type: boolean
+          description: Whether crash loops were detected
+          example: false
+        oomKilled:
+          type: boolean
+          description: Whether OOM kills were detected
+          example: false
+        pendingCount:
+          type: integer
+          description: |
+            Number of pods still in Pending phase after the stabilization window.
+            Non-zero indicates scheduling failures, image pull issues, or resource exhaustion.
+          example: 0
+
+    RemediationMetricDeltas:
+      type: object
+      description: |
+        Metric deltas between pre-remediation and post-remediation measurements.
+      properties:
+        cpuBefore:
+          type: number
+          format: double
+          description: CPU utilization before remediation (0.0-1.0)
+          example: 0.95
+        cpuAfter:
+          type: number
+          format: double
+          description: CPU utilization after remediation (0.0-1.0)
+          example: 0.92
+        memoryBefore:
+          type: number
+          format: double
+          description: Memory utilization before remediation (0.0-1.0)
+          example: 0.60
+        memoryAfter:
+          type: number
+          format: double
+          description: Memory utilization after remediation (0.0-1.0)
+          example: 0.62
+        latencyP95BeforeMs:
+          type: number
+          format: double
+          description: P95 latency before remediation (milliseconds)
+          example: 200
+        latencyP95AfterMs:
+          type: number
+          format: double
+          description: P95 latency after remediation (milliseconds)
+          example: 195
+        errorRateBefore:
+          type: number
+          format: double
+          description: Error rate before remediation (0.0-1.0)
+          example: 0.02
+        errorRateAfter:
+          type: number
+          format: double
+          description: Error rate after remediation (0.0-1.0)
+          example: 0.019
 

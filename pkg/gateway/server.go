@@ -474,14 +474,20 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// ADR-032 §1.5: "Every alert/signal processed (SignalProcessing, Gateway)"
 	// ADR-032 §3: Gateway is P0 (Business-Critical) - MUST crash if audit unavailable
 	var auditStore audit.AuditStore
-	if cfg.Infrastructure.DataStorageURL != "" {
+	if cfg.DataStorage.URL != "" {
 		// DD-API-001: Use OpenAPI generated client (not direct HTTP)
-		dsClient, err := audit.NewOpenAPIClientAdapter(cfg.Infrastructure.DataStorageURL, 5*time.Second)
+		dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 		if err != nil {
 			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
 			return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
 		}
-		auditConfig := audit.RecommendedConfig("gateway") // 2x buffer for high-volume service
+		// ADR-030: Use buffer config from YAML ConfigMap
+		auditConfig := audit.Config{
+			BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+			BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+			FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+			MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+		}
 
 		auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway", logger)
 		if err != nil {
@@ -489,7 +495,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 			return nil, fmt.Errorf("FATAL: failed to create audit store - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
 		}
 		logger.Info("DD-AUDIT-003: Audit store initialized for P0 compliance (ADR-032 §1.5)",
-			"data_storage_url", cfg.Infrastructure.DataStorageURL,
+			"data_storage_url", cfg.DataStorage.URL,
 			"buffer_size", auditConfig.BufferSize)
 	} else {
 		// ADR-032 §1.5: Data Storage URL is MANDATORY for P0 services (Gateway processes alerts/signals)

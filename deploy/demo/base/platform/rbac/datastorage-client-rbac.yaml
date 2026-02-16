@@ -1,0 +1,151 @@
+# DataStorage client ClusterRole + RoleBindings for all services (DD-AUTH-014)
+# Extracted from: deploy/data-storage/client-rbac-v2.yaml
+# Stripped: E2E test RoleBindings (not needed for demo)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-client
+  labels:
+    app: data-storage-service
+    component: rbac
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["create", "get", "list", "update", "delete"]
+---
+# Gateway
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-system
+---
+# SignalProcessing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: signalprocessing-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-controller
+    namespace: kubernaut-system
+---
+# RemediationOrchestrator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remediationorchestrator-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: kubernaut-system
+---
+# AuthWebhook
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authwebhook-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: kubernaut-system
+---
+# WorkflowExecution
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: kubernaut-system
+---
+# HolmesGPT API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: kubernaut-system
+---
+# EffectivenessMonitor
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: effectivenessmonitor-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: kubernaut-system
+---
+# Notification
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-data-storage-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: kubernaut-system
+---
+# DataStorage self-access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datastorage-self-client
+  namespace: kubernaut-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: kubernaut-system

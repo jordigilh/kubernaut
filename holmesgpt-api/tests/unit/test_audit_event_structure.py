@@ -217,7 +217,7 @@ class TestAuditEventStructure:
             incident_id="inc-123",
             remediation_id="rem-456",
             tool_call_index=0,
-            tool_name="search_workflow_catalog",
+            tool_name="list_available_actions",
             tool_arguments={"query": "OOMKilled critical"},
             tool_result={"workflows": []}
         )

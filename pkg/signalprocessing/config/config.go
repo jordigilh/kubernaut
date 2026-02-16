@@ -19,7 +19,7 @@ limitations under the License.
 // Configuration Structure:
 //   - EnrichmentConfig: K8s context enrichment settings (cache TTL, timeout)
 //   - ClassifierConfig: Rego-based classification settings (ConfigMap, hot-reload)
-//   - AuditConfig: Audit trail buffering settings (buffer size, flush interval)
+//   - DataStorageConfig: Data Storage connectivity (ADR-030)
 //   - ControllerConfig: Controller runtime settings (metrics, health probes, leader election)
 //
 // All configuration values are validated via Config.Validate() before use.
@@ -31,42 +31,41 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
 // Config holds the complete configuration for the SignalProcessing controller.
+// ADR-030: YAML-based configuration with camelCase field names.
 type Config struct {
-	Enrichment EnrichmentConfig
-	Classifier ClassifierConfig
-	Audit      AuditConfig
+	Enrichment  EnrichmentConfig              `yaml:"enrichment"`
+	Classifier  ClassifierConfig              `yaml:"classifier"`
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
+	Controller  ControllerConfig              `yaml:"controller"`
 }
 
 // EnrichmentConfig holds settings for K8s context enrichment.
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
 type EnrichmentConfig struct {
-	CacheTTL time.Duration
-	Timeout  time.Duration
+	CacheTTL time.Duration `yaml:"cacheTtl"`
+	Timeout  time.Duration `yaml:"timeout"`
 }
 
 // ClassifierConfig holds settings for Rego-based classification.
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
 type ClassifierConfig struct {
-	RegoConfigMapName string
-	RegoConfigMapKey  string
-	HotReloadInterval time.Duration
-}
-
-// AuditConfig holds settings for audit trail buffering.
-type AuditConfig struct {
-	DataStorageURL string
-	Timeout        time.Duration
-	BufferSize     int
-	FlushInterval  time.Duration
+	RegoConfigMapName string        `yaml:"regoConfigMapName"`
+	RegoConfigMapKey  string        `yaml:"regoConfigMapKey"`
+	HotReloadInterval time.Duration `yaml:"hotReloadInterval"`
 }
 
 // ControllerConfig holds controller runtime settings.
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
 type ControllerConfig struct {
-	MetricsAddr      string
-	HealthProbeAddr  string
-	LeaderElection   bool
-	LeaderElectionID string
+	MetricsAddr      string `yaml:"metricsAddr"`
+	HealthProbeAddr  string `yaml:"healthProbeAddr"`
+	LeaderElection   bool   `yaml:"leaderElection"`
+	LeaderElectionID string `yaml:"leaderElectionId"`
 }
 
 // DefaultControllerConfig returns the default controller configuration.
@@ -76,6 +75,23 @@ func DefaultControllerConfig() *ControllerConfig {
 		HealthProbeAddr:  ":8081",
 		LeaderElection:   false,
 		LeaderElectionID: "signalprocessing.kubernaut.ai",
+	}
+}
+
+// DefaultConfig returns the default SignalProcessing controller configuration.
+func DefaultConfig() *Config {
+	return &Config{
+		Enrichment: EnrichmentConfig{
+			CacheTTL: 5 * time.Minute,
+			Timeout:  10 * time.Second,
+		},
+		Classifier: ClassifierConfig{
+			RegoConfigMapName: "signalprocessing-rego-policy",
+			RegoConfigMapKey:  "policy.rego",
+			HotReloadInterval: 30 * time.Second,
+		},
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Controller:  *DefaultControllerConfig(),
 	}
 }
 
@@ -105,11 +121,9 @@ func (c *Config) Validate() error {
 	if c.Classifier.HotReloadInterval <= 0 {
 		return fmt.Errorf("hot-reload interval must be positive, got %v", c.Classifier.HotReloadInterval)
 	}
-	if c.Audit.BufferSize <= 0 {
-		return fmt.Errorf("audit buffer size must be positive, got %d", c.Audit.BufferSize)
-	}
-	if c.Audit.FlushInterval <= 0 {
-		return fmt.Errorf("audit flush interval must be positive, got %v", c.Audit.FlushInterval)
+	// ADR-030: Validate DataStorage section
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
 	}
 	return nil
 }

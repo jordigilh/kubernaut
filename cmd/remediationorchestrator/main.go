@@ -32,6 +32,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -39,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/config"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	//+kubebuilder:scaffold:imports
 )
@@ -55,6 +57,7 @@ func init() {
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
 	utilruntime.Must(notificationv1.AddToScheme(scheme))
+	utilruntime.Must(eav1.AddToScheme(scheme)) // ADR-EM-001: EA CRD scheme for EA creation on terminal phases
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -129,24 +132,23 @@ func main() {
 	// ========================================
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// ADR-030: Use DataStorage URL from YAML config (not CLI flag or env var)
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.Audit.DataStorageURL, cfg.Audit.Timeout)
+	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "Failed to create Data Storage client",
-			"url", cfg.Audit.DataStorageURL,
-			"timeout", cfg.Audit.Timeout)
+			"url", cfg.DataStorage.URL,
+			"timeout", cfg.DataStorage.Timeout)
 		os.Exit(1)
 	}
 	setupLog.Info("Data Storage client initialized",
-		"url", cfg.Audit.DataStorageURL,
-		"timeout", cfg.Audit.Timeout)
+		"url", cfg.DataStorage.URL,
+		"timeout", cfg.DataStorage.Timeout)
 
 	// Create buffered audit store (fire-and-forget pattern, ADR-038)
-	// CRITICAL: FlushInterval from YAML config (was hardcoded to 5s, now 1s default)
 	auditConfig := audit.Config{
-		BufferSize:    cfg.Audit.Buffer.BufferSize,
-		BatchSize:     cfg.Audit.Buffer.BatchSize,
-		FlushInterval: cfg.Audit.Buffer.FlushInterval, // From YAML: 1s (not 5s hardcoded!)
-		MaxRetries:    cfg.Audit.Buffer.MaxRetries,
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
 
 	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
@@ -165,7 +167,7 @@ func main() {
 	}
 
 	setupLog.Info("Audit store initialized",
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 		"bufferSize", auditConfig.BufferSize,
 		"batchSize", auditConfig.BatchSize,
 		"flushInterval", auditConfig.FlushInterval, // CRITICAL: Log to verify YAML config loaded
@@ -179,7 +181,7 @@ func main() {
 		"processingTimeout", processingTimeout,
 		"analyzingTimeout", analyzingTimeout,
 		"executingTimeout", executingTimeout,
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
 	// ========================================
@@ -190,8 +192,19 @@ func main() {
 	roMetrics := rometrics.NewMetrics()
 	setupLog.Info("RemediationOrchestrator metrics initialized and registered")
 
+	// ADR-EM-001: Create EA creator for EffectivenessAssessment CRD creation on terminal phases
+	eaCreator := creator.NewEffectivenessAssessmentCreator(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		roMetrics,
+		mgr.GetEventRecorderFor("remediationorchestrator-controller"),
+		cfg.EA.StabilizationWindow,
+	)
+	setupLog.Info("EffectivenessAssessment creator initialized (ADR-EM-001)",
+		"stabilizationWindow", cfg.EA.StabilizationWindow)
+
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
-	if err = controller.NewReconciler(
+	roReconciler := controller.NewReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		mgr.GetScheme(),
@@ -204,8 +217,12 @@ func main() {
 			Analyzing:  analyzingTimeout,
 			Executing:  executingTimeout,
 		},
-		nil, // Use default routing engine (production)
-	).SetupWithManager(mgr); err != nil {
+		nil,       // Use default routing engine (production)
+		eaCreator, // ADR-EM-001: EA creation on terminal phases
+	)
+	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
+	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}

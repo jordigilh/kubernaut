@@ -155,26 +155,26 @@ determine_severity := "critical" if {
 			//
 			// ESTIMATED COST SAVINGS: $50K (avoiding infrastructure reconfiguration)
 
-			// Load enterprise-aware policy (DD-SEVERITY-001 REFACTOR: lowercase after case normalization)
+			// Load enterprise-aware policy matching original casing from external systems
 			enterprisePolicy := `
 package signalprocessing.severity
 
 determine_severity := "critical" if {
-	input.signal.severity == "sev1"
+	input.signal.severity == "Sev1"
 } else := "critical" if {
-	input.signal.severity == "p0"
+	input.signal.severity == "P0"
 } else := "critical" if {
-	input.signal.severity == "p1"
+	input.signal.severity == "P1"
 } else := "high" if {
-	input.signal.severity == "sev2"
+	input.signal.severity == "Sev2"
 } else := "medium" if {
-	input.signal.severity == "sev3"
+	input.signal.severity == "Sev3"
 } else := "high" if {
-	input.signal.severity == "p2"
+	input.signal.severity == "P2"
 } else := "low" if {
-	input.signal.severity == "sev4"
+	input.signal.severity == "Sev4"
 } else := "low" if {
-	input.signal.severity == "p3"
+	input.signal.severity == "P3"
 } else := "critical" if {
 	# Fallback: unmapped → critical (conservative)
 	true
@@ -258,14 +258,14 @@ determine_severity := "critical" if {
 				{"MINOR", "low", "Legacy monitoring uses 'MINOR' for tracking"},
 			}
 
-			// GIVEN: Operator has loaded custom Rego policy with their mappings (DD-SEVERITY-001 REFACTOR: lowercase keys)
+			// GIVEN: Operator has loaded custom Rego policy with their mappings (original casing)
 			customPolicy := `
 package signalprocessing.severity
 
 severity_map := {
-	"severe": "critical",
-	"moderate": "medium",
-	"minor": "low"
+	"SEVERE": "critical",
+	"MODERATE": "medium",
+	"MINOR": "low"
 }
 
 determine_severity := result if {
@@ -482,7 +482,7 @@ determine_severity := {
 package signalprocessing.severity
 
 determine_severity := "critical" if {
-	input.signal.severity == "sev1"
+	input.signal.severity == "Sev1"
 } else := "low" if {
 	true
 }
@@ -495,9 +495,9 @@ determine_severity := "critical" if {
 			err = severityClassifier.LoadRegoPolicy(invalidPolicy)
 			Expect(err).To(HaveOccurred(), "Invalid policy should be rejected")
 
-			// THEN: System continues using previous valid policy (case-insensitive after REFACTOR)
+			// THEN: System continues using previous valid policy
 			sp := createTestSignalProcessing("test-recovery", "default")
-			sp.Spec.Signal.Severity = "Sev1" // Normalized to "sev1" by classifier
+			sp.Spec.Signal.Severity = "Sev1"
 
 			result, err := severityClassifier.ClassifySeverity(ctx, sp)
 			Expect(err).ToNot(HaveOccurred(), "Classification should still work with previous policy")

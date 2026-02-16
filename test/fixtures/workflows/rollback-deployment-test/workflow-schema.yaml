@@ -1,0 +1,32 @@
+# Rollback Deployment Test Workflow Schema (BR-WORKFLOW-004)
+# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+metadata:
+  workflowId: rollback-deployment-test-v1
+  version: "1.0.0"
+  description:
+    what: "Rolls back a deployment to a previous revision"
+    whenToUse: "When a deployment update causes failures and needs rollback"
+    whenNotToUse: "When the issue is not caused by the latest deployment change"
+    preconditions: "Deployment has previous revisions available"
+
+actionType: RollbackDeployment
+
+labels:
+  signalType: DeploymentFailed
+  severity: [high]
+  environment: [production, staging, test]
+  component: deployment
+  priority: P1
+
+execution:
+  engine: tekton
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the deployment"
+  - name: DEPLOYMENT_NAME
+    type: string
+    required: true
+    description: "Name of the deployment to roll back"

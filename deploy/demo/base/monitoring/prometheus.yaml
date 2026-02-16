@@ -1,0 +1,171 @@
+# Prometheus for cAdvisor metrics and MemoryExceedsLimit alert
+# Extracted from: test/infrastructure/prometheus_alertmanager_e2e.go:DeployPrometheus
+# Adapted: namespace filter changed from fp-am-* to demo-workloads
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "nodes/metrics", "pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: kubernaut-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: kubernaut-system
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    scrape_configs:
+    - job_name: 'kubelet-cadvisor'
+      scrape_interval: 10s
+      kubernetes_sd_configs:
+      - role: node
+      scheme: https
+      tls_config:
+        insecure_skip_verify: true
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabel_configs:
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+      metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|spec_memory_limit_bytes)'
+        action: keep
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets: ['alertmanager-svc.kubernaut-system.svc.cluster.local:9093']
+    rule_files:
+    - /etc/prometheus/rules/*.yml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: kubernaut-system
+data:
+  memory-eater.yml: |
+    groups:
+    - name: memory-eater-oom.rules
+      interval: 10s
+      rules:
+      - alert: MemoryExceedsLimit
+        expr: |
+          (container_memory_working_set_bytes{namespace="demo-workloads", pod=~"memory-eater-.*"}
+           / container_spec_memory_limit_bytes{namespace="demo-workloads", pod=~"memory-eater-.*"}) >= 0.90
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container memory exceeds limit"
+          description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: kubernaut-system
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--web.enable-remote-write-receiver"
+            - "--web.enable-otlp-receiver"
+            - "--storage.tsdb.retention.time=1h"
+            - "--storage.tsdb.min-block-duration=5m"
+            - "--web.listen-address=:9090"
+          ports:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: rules
+              mountPath: /etc/prometheus/rules
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-svc
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+      protocol: TCP

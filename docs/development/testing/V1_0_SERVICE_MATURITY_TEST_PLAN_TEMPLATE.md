@@ -43,6 +43,7 @@ This template provides a standardized approach for testing all V1.0 maturity fea
   - `WE` - Workflow Execution
   - `DS` - Data Storage
   - `SP` - Signal Processing
+  - `EM` - Effectiveness Monitor
   - `WF` - Workflow (generic)
 
 - **BR_NUMBER**: Business requirement number (e.g., `197` from BR-HAPI-197)

@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
@@ -254,10 +255,11 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 
 		// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
 
-		// DD-GATEWAY-012: Redis REMOVED
-		// DD-AUDIT-003: Data Storage URL for audit event emission
-		Infrastructure: config.InfrastructureSettings{
-			DataStorageURL: dataStorageURL,
+		// ADR-030: DataStorage connectivity
+		DataStorage: sharedconfig.DataStorageConfig{
+			URL:     dataStorageURL,
+			Timeout: 10 * time.Second,
+			Buffer:  sharedconfig.DefaultDataStorageConfig().Buffer,
 		},
 
 		Processing: config.ProcessingSettings{
@@ -1295,8 +1297,10 @@ func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
 		Server: config.ServerSettings{
 			ListenAddr: ":0", // Random port (we don't use HTTP in integration tests)
 		},
-		Infrastructure: config.InfrastructureSettings{
-			DataStorageURL: dataStorageURL,
+		DataStorage: sharedconfig.DataStorageConfig{
+			URL:     dataStorageURL,
+			Timeout: 10 * time.Second,
+			Buffer:  sharedconfig.DefaultDataStorageConfig().Buffer,
 		},
 		Processing: config.ProcessingSettings{
 			Retry: config.DefaultRetrySettings(), // Enable K8s API retry (3 attempts)

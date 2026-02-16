@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gatewaypkg "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
@@ -113,8 +114,8 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					WriteTimeout: 30 * time.Second,
 					IdleTimeout:  120 * time.Second,
 				},
-				Infrastructure: config.InfrastructureSettings{
-					DataStorageURL: "http://127.0.0.1:8080",
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL: "http://127.0.0.1:8080",
 				},
 				Processing: config.ProcessingSettings{
 					Deduplication: config.DeduplicationSettings{
@@ -184,8 +185,8 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					WriteTimeout: 30 * time.Second,
 					IdleTimeout:  120 * time.Second,
 				},
-				Infrastructure: config.InfrastructureSettings{
-					DataStorageURL: "http://127.0.0.1:8080",
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL: "http://127.0.0.1:8080",
 				},
 				Processing: config.ProcessingSettings{
 					Deduplication: config.DeduplicationSettings{
@@ -236,8 +237,8 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 					WriteTimeout: 30 * time.Second,
 					IdleTimeout:  120 * time.Second,
 				},
-				Infrastructure: config.InfrastructureSettings{
-					DataStorageURL: "http://127.0.0.1:8080",
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL: "http://127.0.0.1:8080",
 				},
 				Processing: config.ProcessingSettings{
 					Deduplication: config.DeduplicationSettings{

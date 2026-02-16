@@ -11,10 +11,15 @@ server:
 middleware:
   # Rate limiting removed (ADR-048) - delegated to proxy
 
-infrastructure:
-  # DD-GATEWAY-012: Redis REMOVED - Gateway uses K8s status for state
-  # DD-AUDIT-003: Data Storage URL for audit event emission
-  dataStorageUrl: "http://data-storage-service:8080"
+datastorage:
+  # ADR-030: DataStorage connectivity (audit trail + workflow catalog)
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 
 processing:
   deduplication:

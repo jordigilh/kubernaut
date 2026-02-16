@@ -24,6 +24,7 @@ from pydantic import Field
 from typing_extensions import Annotated
 from datastorage.models.detected_labels import DetectedLabels
 from datastorage.models.mandatory_labels import MandatoryLabels
+from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
@@ -35,9 +36,10 @@ class RemediationWorkflow(BaseModel):
     """ # noqa: E501
     workflow_id: Optional[StrictStr] = Field(default=None, description="Unique workflow identifier (UUID, auto-generated)")
     workflow_name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Workflow name (identifier for versions)")
+    action_type: StrictStr = Field(description="Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.")
     version: Annotated[str, Field(strict=True, max_length=50)] = Field(description="Semantic version (e.g., v1.0.0)")
     name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Human-readable workflow title")
-    description: StrictStr = Field(description="Workflow description")
+    description: StructuredDescription
     owner: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow owner")
     maintainer: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow maintainer email")
     content: StrictStr = Field(description="YAML workflow definition")
@@ -69,7 +71,7 @@ class RemediationWorkflow(BaseModel):
     updated_at: Optional[datetime] = None
     created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "workflow_name", "version", "name", "description", "owner", "maintainer", "content", "content_hash", "parameters", "execution_engine", "container_image", "container_digest", "labels", "custom_labels", "detected_labels", "status", "disabled_at", "disabled_by", "disabled_reason", "is_latest_version", "previous_version", "deprecation_notice", "version_notes", "change_summary", "approved_by", "approved_at", "expected_success_rate", "expected_duration_seconds", "actual_success_rate", "total_executions", "successful_executions", "created_at", "updated_at", "created_by", "updated_by"]
+    __properties: ClassVar[List[str]] = ["workflow_id", "workflow_name", "action_type", "version", "name", "description", "owner", "maintainer", "content", "content_hash", "parameters", "execution_engine", "container_image", "container_digest", "labels", "custom_labels", "detected_labels", "status", "disabled_at", "disabled_by", "disabled_reason", "is_latest_version", "previous_version", "deprecation_notice", "version_notes", "change_summary", "approved_by", "approved_at", "expected_success_rate", "expected_duration_seconds", "actual_success_rate", "total_executions", "successful_executions", "created_at", "updated_at", "created_by", "updated_by"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -115,6 +117,9 @@ class RemediationWorkflow(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of description
+        if self.description:
+            _dict['description'] = self.description.to_dict()
         # override the default output from pydantic by calling `to_dict()` of labels
         if self.labels:
             _dict['labels'] = self.labels.to_dict()
@@ -135,9 +140,10 @@ class RemediationWorkflow(BaseModel):
         _obj = cls.model_validate({
             "workflow_id": obj.get("workflow_id"),
             "workflow_name": obj.get("workflow_name"),
+            "action_type": obj.get("action_type"),
             "version": obj.get("version"),
             "name": obj.get("name"),
-            "description": obj.get("description"),
+            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "owner": obj.get("owner"),
             "maintainer": obj.get("maintainer"),
             "content": obj.get("content"),

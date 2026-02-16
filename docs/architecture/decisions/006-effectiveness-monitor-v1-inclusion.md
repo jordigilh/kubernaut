@@ -1,16 +1,20 @@
 # Effectiveness Logic Service - Clarification Report
 
-> **⚠️ SUPERSEDED BY DD-017** (December 1, 2025)
+> **ARCHIVED** (February 2026)
 >
-> This document concluded Effectiveness Monitor should be included in V1.0.
-> **DD-017-effectiveness-monitor-v1.1-deferral.md** has SUPERSEDED this decision.
+> This document has been through two supersessions:
+> 1. Originally concluded EM should be included in V1.0 (October 2025)
+> 2. Superseded by DD-017 v1.0 which deferred EM to V1.1 (December 2025)
+> 3. DD-017 v2.0 partially reinstated EM: Level 1 in V1.0, Level 2 in V1.1 (February 2026)
 >
-> **New Decision**: Effectiveness Monitor deferred to V1.1 due to year-end timeline constraints.
-> See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
+> The architecture described here (Context API integration, pattern learning) is outdated.
+> DD-017 v2.0 is the authoritative source for the EM design.
+>
+> **Authoritative source**: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md` (v2.0)
 
 **Date**: October 6, 2025
 **Question**: "Which service of the existing ones in docs/services/stateless contains the effectiveness logic? Do we need a new service?"
-**Status**: ⚠️ **SUPERSEDED** (see DD-017)
+**Status**: ⚠️ **ARCHIVED** — See DD-017 v2.0
 
 ---
 

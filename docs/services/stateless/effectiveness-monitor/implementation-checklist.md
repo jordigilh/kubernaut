@@ -112,7 +112,7 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 
 ### **Context Understanding**
 
-- [ ] **Business Context**: Map BR-INS-001 to BR-INS-010
+- [ ] **Business Context**: Map BR-INS-001 to BR-INS-010 (Phase 1: BR-INS-001, BR-INS-002, BR-INS-005; Phase 2: BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010)
 - [ ] **Technical Context**: Search existing implementations
   ```bash
   codebase_search "effectiveness implementations in pkg/"
@@ -123,14 +123,14 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
   ```bash
   grep -r "EffectivenessMonitor" cmd/ --include="*.go"
   ```
-- [ ] **V1 Strategy**: Understand graceful degradation (Week 5: insufficient data → Week 13+: full capability)
+- [ ] **V1 Strategy**: Understand DD-017 v2.0: Level 1 (V1.0) Day-1 value; Level 2 (V1.1) requires 8+ weeks of data
 
 ### **Analysis Deliverables**
 
-- [ ] Business requirement mapping (BR-INS-001 to BR-INS-010)
+- [ ] Business requirement mapping (Phase 1: BR-INS-001, BR-INS-002, BR-INS-005; Phase 2: BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010)
 - [ ] Dependency analysis (Data Storage, Infrastructure Monitoring)
 - [ ] Integration points identified (Context API, HolmesGPT API)
-- [ ] Graceful degradation timeline understood (8-10 weeks for full confidence)
+- [ ] Level 1 vs Level 2 scope understood (DD-017 v2.0: Level 1 Day-1; Level 2 requires 8+ weeks)
 
 ---
 
@@ -152,7 +152,7 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 
 ### **Write Failing Tests First**
 
-#### **Day 1: Effectiveness Calculation Tests (BR-INS-001)**
+#### **Day 1: Effectiveness Calculation Tests (BR-INS-001) — Level 1 (V1.0)**
 
 - [ ] Create `test/unit/effectiveness/calculator_test.go`
 - [ ] Test: Traditional effectiveness score calculation
@@ -160,7 +160,7 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 - [ ] Test: Insufficient data response (< 8 weeks)
 - [ ] **Validation**: All tests FAIL
 
-#### **Day 2: Side Effect & Trend Tests (BR-INS-003, BR-INS-005)**
+#### **Day 2: Side Effect & Trend Tests (BR-INS-003, BR-INS-005) — Side effects: Level 1 (V1.0); Trends: Level 2 (V1.1)**
 
 - [ ] Create `test/unit/effectiveness/side_effects_test.go`
 - [ ] Test: Side effect detection (CPU, memory, network)
@@ -201,13 +201,13 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 
 ### **Enhance Existing Code**
 
-#### **Day 1: Multi-Dimensional Assessment (BR-INS-002)**
+#### **Day 1: Multi-Dimensional Assessment (BR-INS-002) — Level 1 (V1.0)**
 
 - [ ] Add environmental impact correlation (memory, CPU, network)
 - [ ] Enhance confidence calculation with data quality metrics
 - [ ] Add pattern detection (business hours correlation)
 
-#### **Day 2: Advanced Analysis (BR-INS-006, BR-INS-008)**
+#### **Day 2: Advanced Analysis (BR-INS-006, BR-INS-008) — Level 2 (V1.1)**
 
 - [ ] Implement side effect detection algorithms
 - [ ] Add trend analysis (improving/declining/stable)
@@ -260,7 +260,7 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 
 - [ ] Business requirements met (BR-INS-001 to BR-INS-010)
 - [ ] Performance targets: < 5s p95 assessment latency
-- [ ] Graceful degradation working (Week 5 vs Week 13+ responses)
+- [ ] Level 1 assessment working (Day-1 value); Level 2 when 8+ weeks data available
 - [ ] Test coverage: 70%+ unit tests, >50% integration tests
 - [ ] Lint clean: `golangci-lint run`
 - [ ] Confidence: ≥ 80% with 8+ weeks of data

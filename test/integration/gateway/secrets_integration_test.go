@@ -47,45 +47,6 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 	})
 
 	// ========================================
-	// GW-INT-SEC-001: Load Redis Secret from K8s
-	// ========================================
-	It("GW-INT-SEC-001: should load Redis password from Kubernetes Secret", func() {
-		// Given: Kubernetes Secret with Redis credentials
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "gateway-redis-secret",
-				Namespace: namespace,
-			},
-			Type: corev1.SecretTypeOpaque,
-			Data: map[string][]byte{
-				"redis-password": []byte("test-redis-password-123"),
-				"redis-host":     []byte("redis.default.svc.cluster.local"),
-				"redis-port":     []byte("6379"),
-			},
-		}
-		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
-
-		// Wait for secret to be available
-		Eventually(func() error {
-			var retrieved corev1.Secret
-			return k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &retrieved)
-		}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
-
-		// When: Config loader reads secret
-		secretLoader := config.NewSecretLoader(k8sClient)
-		redisConfig, err := secretLoader.LoadRedisConfig(ctx, namespace, "gateway-redis-secret")
-
-		// Then: Credentials loaded correctly
-		Expect(err).ToNot(HaveOccurred(), "BR-GATEWAY-052: Must load secrets from K8s")
-		Expect(redisConfig.Password).To(Equal("test-redis-password-123"))
-		Expect(redisConfig.Host).To(Equal("redis.default.svc.cluster.local"))
-		Expect(redisConfig.Port).To(Equal("6379"))
-
-		GinkgoWriter.Printf("✅ GW-INT-SEC-001: Secret loaded: host=%s, password=[REDACTED]\n",
-			redisConfig.Host)
-	})
-
-	// ========================================
 	// GW-INT-SEC-002: Load DataStorage Secret from K8s
 	// ========================================
 	It("GW-INT-SEC-002: should load DataStorage credentials from Kubernetes Secret", func() {
@@ -126,6 +87,7 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 	// ========================================
 	// GW-INT-SEC-003: Missing Secret Error Handling
+	// DD-GATEWAY-012: Updated to use DataStorage secret (Redis removed)
 	// ========================================
 	It("GW-INT-SEC-003: should return error when secret does not exist", func() {
 		// Given: No secret exists
@@ -133,7 +95,7 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 		// When: Config loader attempts to read non-existent secret
 		secretLoader := config.NewSecretLoader(k8sClient)
-		_, err := secretLoader.LoadRedisConfig(ctx, namespace, nonExistentSecretName)
+		_, err := secretLoader.LoadDataStorageConfig(ctx, namespace, nonExistentSecretName)
 
 		// Then: Error returned with clear message
 		Expect(err).To(HaveOccurred(), "BR-GATEWAY-052: Must fail gracefully when secret missing")
@@ -145,9 +107,10 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 	// ========================================
 	// GW-INT-SEC-004: Incomplete Secret Validation
+	// DD-GATEWAY-012: Updated to use DataStorage secret (Redis removed)
 	// ========================================
 	It("GW-INT-SEC-004: should return error when secret is missing required field", func() {
-		// Given: Secret missing required 'redis-password' field
+		// Given: Secret missing required 'datastorage-api-key' field
 		incompleteSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "gateway-incomplete-secret",
@@ -155,9 +118,9 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: map[string][]byte{
-				"redis-host": []byte("redis.default.svc.cluster.local"),
-				"redis-port": []byte("6379"),
-				// Missing: redis-password
+				"datastorage-url":     []byte("http://datastorage:8080"),
+				"datastorage-timeout": []byte("30s"),
+				// Missing: datastorage-api-key
 			},
 		}
 		Expect(k8sClient.Create(ctx, incompleteSecret)).To(Succeed())
@@ -170,11 +133,11 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 		// When: Config loader reads incomplete secret
 		secretLoader := config.NewSecretLoader(k8sClient)
-		_, err := secretLoader.LoadRedisConfig(ctx, namespace, "gateway-incomplete-secret")
+		_, err := secretLoader.LoadDataStorageConfig(ctx, namespace, "gateway-incomplete-secret")
 
 		// Then: Validation error returned
 		Expect(err).To(HaveOccurred(), "BR-GATEWAY-052: Must validate required secret fields")
-		Expect(err.Error()).To(ContainSubstring("redis-password"))
+		Expect(err.Error()).To(ContainSubstring("datastorage-api-key"))
 		Expect(err.Error()).To(ContainSubstring("required field missing"))
 
 		GinkgoWriter.Printf("✅ GW-INT-SEC-004: Correctly detected missing field: %v\n", err)
@@ -182,19 +145,20 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 	// ========================================
 	// GW-INT-SEC-005: Secret Rotation Without Restart
+	// DD-GATEWAY-012: Updated to use DataStorage secret (Redis removed)
 	// ========================================
 	It("GW-INT-SEC-005: should handle secret update without service restart", func() {
 		// Given: Initial secret with credentials
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "gateway-redis-secret-rotation",
+				Name:      "gateway-ds-secret-rotation",
 				Namespace: namespace,
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: map[string][]byte{
-				"redis-password": []byte("initial-password"),
-				"redis-host":     []byte("redis.default.svc.cluster.local"),
-				"redis-port":     []byte("6379"),
+				"datastorage-url":     []byte("http://datastorage:8080"),
+				"datastorage-api-key": []byte("initial-api-key"),
+				"datastorage-timeout": []byte("30s"),
 			},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -207,33 +171,34 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 		// When: Load initial config
 		secretLoader := config.NewSecretLoader(k8sClient)
-		initialConfig, err := secretLoader.LoadRedisConfig(ctx, namespace, "gateway-redis-secret-rotation")
+		initialConfig, err := secretLoader.LoadDataStorageConfig(ctx, namespace, "gateway-ds-secret-rotation")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(initialConfig.Password).To(Equal("initial-password"))
+		Expect(initialConfig.APIKey).To(Equal("initial-api-key"))
 
 		// And: Secret is rotated (updated)
 		var updatedSecret corev1.Secret
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &updatedSecret)).To(Succeed())
-		updatedSecret.Data["redis-password"] = []byte("rotated-password-456")
+		updatedSecret.Data["datastorage-api-key"] = []byte("rotated-api-key-456")
 		Expect(k8sClient.Update(ctx, &updatedSecret)).To(Succeed())
 
 		// Wait for update to propagate
 		Eventually(func() string {
 			var retrieved corev1.Secret
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &retrieved)
-			return string(retrieved.Data["redis-password"])
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal("rotated-password-456"))
+			return string(retrieved.Data["datastorage-api-key"])
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal("rotated-api-key-456"))
 
 		// Then: Reloading config returns new credentials
-		rotatedConfig, err := secretLoader.LoadRedisConfig(ctx, namespace, "gateway-redis-secret-rotation")
+		rotatedConfig, err := secretLoader.LoadDataStorageConfig(ctx, namespace, "gateway-ds-secret-rotation")
 		Expect(err).ToNot(HaveOccurred(), "BR-GATEWAY-052: Must support secret rotation")
-		Expect(rotatedConfig.Password).To(Equal("rotated-password-456"))
+		Expect(rotatedConfig.APIKey).To(Equal("rotated-api-key-456"))
 
 		GinkgoWriter.Printf("✅ GW-INT-SEC-005: Secret rotation successful: initial=[REDACTED] → rotated=[REDACTED]\n")
 	})
 
 	// ========================================
 	// GW-INT-SEC-006: Secret Redaction in Logs
+	// DD-GATEWAY-012: Updated to use DataStorage secret (Redis removed)
 	// ========================================
 	It("GW-INT-SEC-006: should not expose secrets in logs or error messages", func() {
 		// Given: Secret with sensitive data
@@ -244,9 +209,9 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: map[string][]byte{
-				"redis-password": []byte("super-secret-password-xyz"),
-				"redis-host":     []byte("redis.default.svc.cluster.local"),
-				"redis-port":     []byte("6379"),
+				"datastorage-url":     []byte("http://datastorage:8080"),
+				"datastorage-api-key": []byte("super-secret-api-key-xyz"),
+				"datastorage-timeout": []byte("30s"),
 			},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -259,12 +224,12 @@ var _ = Describe("BR-GATEWAY-052: Secret Management Integration", func() {
 
 		// When: Config loaded and logged
 		secretLoader := config.NewSecretLoader(k8sClient)
-		redisConfig, err := secretLoader.LoadRedisConfig(ctx, namespace, "gateway-sensitive-secret")
+		dsConfig, err := secretLoader.LoadDataStorageConfig(ctx, namespace, "gateway-sensitive-secret")
 		Expect(err).ToNot(HaveOccurred())
 
-		// Then: String representation does not contain password
-		configString := redisConfig.String() // Should use custom String() method
-		Expect(configString).ToNot(ContainSubstring("super-secret-password-xyz"),
+		// Then: String representation does not contain API key
+		configString := dsConfig.String() // Should use custom String() method
+		Expect(configString).ToNot(ContainSubstring("super-secret-api-key-xyz"),
 			"BR-GATEWAY-052: Secrets must not appear in logs")
 		Expect(configString).To(ContainSubstring("[REDACTED]"),
 			"BR-GATEWAY-052: Secrets must be redacted in output")

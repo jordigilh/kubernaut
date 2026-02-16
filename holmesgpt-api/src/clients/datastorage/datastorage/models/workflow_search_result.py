@@ -35,7 +35,7 @@ class WorkflowSearchResult(BaseModel):
     workflow_id: StrictStr = Field(description="UUID primary key (DD-WORKFLOW-002 v3.0)")
     title: StrictStr = Field(description="Human-readable workflow name")
     description: StrictStr = Field(description="Workflow description")
-    signal_type: StrictStr = Field(description="Signal type this workflow handles")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles")
     container_image: Optional[StrictStr] = Field(default=None, description="OCI image reference")
     container_digest: Optional[StrictStr] = Field(default=None, description="OCI image digest")
     confidence: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Normalized label score (0.0-1.0)")

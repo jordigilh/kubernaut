@@ -146,11 +146,10 @@ func newMinimalWorkflowPayload(workflowID string) dsgen.AuditEventRequestEventDa
 }
 
 func newMinimalGenericPayload() dsgen.AuditEventRequestEventData {
-	// Use WorkflowSearchAuditPayload as a minimal generic payload for testing
-	return dsgen.AuditEventRequestEventData{
-		Type: dsgen.WorkflowSearchAuditPayloadAuditEventRequestEventData,
-		WorkflowSearchAuditPayload: dsgen.WorkflowSearchAuditPayload{
-			EventType: dsgen.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+	// Use WorkflowDiscoveryAuditPayload as a minimal generic payload for testing
+	return dsgen.NewAuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData(
+		dsgen.WorkflowDiscoveryAuditPayload{
+			EventType: dsgen.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed,
 			Query: dsgen.QueryMetadata{
 				TopK: 10,
 			},
@@ -163,7 +162,7 @@ func newMinimalGenericPayload() dsgen.AuditEventRequestEventData {
 				DurationMs: 100,
 			},
 		},
-	}
+	)
 }
 
 // createAuditEventOpenAPI creates an audit event using the OpenAPI client (type-safe)
