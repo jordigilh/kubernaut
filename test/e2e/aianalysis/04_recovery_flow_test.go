@@ -63,6 +63,27 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					RemediationID:         "e2e-recovery-rem-001",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
+					PreviousExecutions: []aianalysisv1alpha1.PreviousExecution{
+						{
+							WorkflowExecutionRef: "workflow-exec-initial",
+							OriginalRCA: aianalysisv1alpha1.OriginalRCA{
+								Summary:    "Pod OOMKilled due to insufficient memory limits",
+								SignalType: "OOMKilled",
+								Severity:   "critical",
+							},
+							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
+								WorkflowID:     "oomkill-increase-memory-v1",
+								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								Rationale:      "Increase memory limits for OOMKilled pod",
+							},
+							Failure: aianalysisv1alpha1.ExecutionFailure{
+								Reason:        "WorkflowFailed",
+								Message:       "Memory increase insufficient",
+								FailedAt:      metav1.Now(),
+								ExecutionTime: "45s",
+							},
+						},
+					},
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-recovery-fp-001",

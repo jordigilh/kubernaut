@@ -300,7 +300,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 						Environment:      "production",
 						BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
+								Kind:      "Deployment", // Must match workflow component label "deployment"
 								Name:      "app-pod",
 								Namespace: testNamespace,
 							},
