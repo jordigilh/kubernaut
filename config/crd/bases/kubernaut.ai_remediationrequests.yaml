@@ -11,6 +11,8 @@ spec:
     kind: RemediationRequest
     listKind: RemediationRequestList
     plural: remediationrequests
+    shortNames:
+    - rr
     singular: remediationrequest
   scope: Namespaced
   versions:

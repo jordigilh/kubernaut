@@ -11,6 +11,8 @@ spec:
     kind: SignalProcessing
     listKind: SignalProcessingList
     plural: signalprocessings
+    shortNames:
+    - sp
     singular: signalprocessing
   scope: Namespaced
   versions:
