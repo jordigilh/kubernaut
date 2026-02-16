@@ -3,11 +3,8 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  # Choose ONE memory-eater variant to deploy:
+  # Memory-eater workloads that generate signals for the demo:
   # - OOMKill: triggers K8s OOMKill events -> Event Exporter -> Gateway
-  # - HighUsage: triggers Prometheus alert -> AlertManager -> Gateway
-  #
-  # Default: OOMKill variant (faster trigger, simpler demo flow)
+  # - HighUsage: triggers Prometheus alert -> AlertManager -> Gateway (~30s)
   - memory-eater-oomkill.yaml
-  # Uncomment below and comment above for Prometheus alert demo:
-  # - memory-eater-high-usage.yaml
+  - memory-eater-high-usage.yaml
