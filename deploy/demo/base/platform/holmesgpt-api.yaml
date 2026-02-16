@@ -75,6 +75,8 @@ data:
       provider: ""
       model: ""
       endpoint: ""
+      gcp_project_id: ""
+      gcp_region: ""
       max_retries: 3
       timeout_seconds: 120
       temperature: 0.7
