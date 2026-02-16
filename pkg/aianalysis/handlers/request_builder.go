@@ -293,6 +293,19 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 		result.KubernetesContext.SetToNull() // Mark as present but empty for now
 	}
 
+	// Map OwnerChain if present (Issue #97: enables remediation history + affectedResource)
+	if len(enrichment.OwnerChain) > 0 {
+		entries := make([]client.OwnerChainEntry, len(enrichment.OwnerChain))
+		for i, entry := range enrichment.OwnerChain {
+			entries[i] = client.OwnerChainEntry{
+				Kind:      entry.Kind,
+				Name:      entry.Name,
+				Namespace: client.NewOptString(entry.Namespace),
+			}
+		}
+		result.OwnerChain = client.NewOptNilOwnerChainEntryArray(entries)
+	}
+
 	// EnrichmentQuality is not set (removed per Dec 2, 2025 decision)
 
 	return result

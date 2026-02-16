@@ -24,6 +24,11 @@ rules:
     resources: ["events"]
     verbs: ["get", "list"]
 
+  # Issue #97: Read-only access to apps/v1 for owner chain spec hash computation
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

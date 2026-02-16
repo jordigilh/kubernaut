@@ -11,8 +11,6 @@ spec:
     kind: AIAnalysis
     listKind: AIAnalysisList
     plural: aianalyses
-    shortNames:
-    - aia
     singular: aianalysis
   scope: Namespaced
   versions:
