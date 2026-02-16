@@ -80,16 +80,19 @@ data:
         timeout: 10s                       # HTTP timeout for webhook calls
 
     # ========================================
-    # INFRASTRUCTURE SECTION (MANDATORY - ADR-030)
-    # ADR-032: Audit integration dependencies
+    # DATASTORAGE SECTION (MANDATORY - ADR-030)
+    # Audit trail + workflow catalog connectivity
     # ========================================
-    # External service dependencies and endpoints
-    infrastructure:
-      # Data Storage service URL (REQUIRED by ADR-032 for audit)
-      # Used for audit event emission and persistent storage
-      # Format: http://{service}.{namespace}.svc.cluster.local:{port}
+    datastorage:
+      # Data Storage service URL (REQUIRED by ADR-030)
       # NOTE: ${NAMESPACE} is substituted by envsubst during deployment
-      dataStorageUrl: "http://data-storage-service.${NAMESPACE}.svc.cluster.local:8080"
+      url: "http://data-storage-service.${NAMESPACE}.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 
 # ========================================
 # Deployment Integration (ADR-030 Pattern)

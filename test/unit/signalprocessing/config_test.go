@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 )
 
@@ -44,12 +45,7 @@ var _ = Describe("Config.Validate", func() {
 				RegoConfigMapKey:  "policy.rego",
 				HotReloadInterval: 30 * time.Second,
 			},
-			Audit: config.AuditConfig{
-				DataStorageURL: "http://data-storage:8080",
-				Timeout:        5 * time.Second,
-				BufferSize:     1000,
-				FlushInterval:  5 * time.Second,
-			},
+			DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		}
 		err := cfg.Validate()
 		Expect(err).NotTo(HaveOccurred())
@@ -68,12 +64,7 @@ var _ = Describe("Config.Validate", func() {
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "http://data-storage:8080",
-					Timeout:        5 * time.Second,
-					BufferSize:     1000,
-					FlushInterval:  5 * time.Second,
-				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 			}
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -94,12 +85,7 @@ var _ = Describe("Config.Validate", func() {
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "http://data-storage:8080",
-					Timeout:        5 * time.Second,
-					BufferSize:     1000,
-					FlushInterval:  5 * time.Second,
-				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 			}
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -120,12 +106,7 @@ var _ = Describe("Config.Validate", func() {
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 0, // Invalid
 				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "http://data-storage:8080",
-					Timeout:        5 * time.Second,
-					BufferSize:     1000,
-					FlushInterval:  5 * time.Second,
-				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 			}
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -133,8 +114,33 @@ var _ = Describe("Config.Validate", func() {
 		})
 	})
 
-	// Test 5: Error handling for zero buffer size
-	Context("when audit buffer size is invalid", func() {
+	// Test 5: Error handling for empty DataStorage URL
+	Context("when DataStorage URL is empty", func() {
+		It("should return error for empty DataStorage URL", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL:     "", // Invalid
+					Timeout: 10 * time.Second,
+					Buffer:  sharedconfig.DefaultDataStorageConfig().Buffer,
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("datastorage.url"))
+		})
+	})
+
+	// Test 6: Error handling for zero buffer size
+	Context("when DataStorage buffer size is invalid", func() {
 		It("should return error for zero buffer size", func() {
 			cfg := &config.Config{
 				Enrichment: config.EnrichmentConfig{
@@ -146,42 +152,20 @@ var _ = Describe("Config.Validate", func() {
 					RegoConfigMapKey:  "policy.rego",
 					HotReloadInterval: 30 * time.Second,
 				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "http://data-storage:8080",
-					Timeout:        5 * time.Second,
-					BufferSize:     0, // Invalid
-					FlushInterval:  5 * time.Second,
+				DataStorage: sharedconfig.DataStorageConfig{
+					URL:     "http://data-storage:8080",
+					Timeout: 10 * time.Second,
+					Buffer: sharedconfig.BufferConfig{
+						BufferSize:    0, // Invalid
+						BatchSize:     100,
+						FlushInterval: 1 * time.Second,
+						MaxRetries:    3,
+					},
 				},
 			}
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("buffer size"))
-		})
-	})
-
-	// Test 6: Error handling for zero flush interval
-	Context("when audit flush interval is invalid", func() {
-		It("should return error for zero flush interval", func() {
-			cfg := &config.Config{
-				Enrichment: config.EnrichmentConfig{
-					CacheTTL: 5 * time.Minute,
-					Timeout:  2 * time.Second,
-				},
-				Classifier: config.ClassifierConfig{
-					RegoConfigMapName: "signalprocessing-rego-policies",
-					RegoConfigMapKey:  "policy.rego",
-					HotReloadInterval: 30 * time.Second,
-				},
-				Audit: config.AuditConfig{
-					DataStorageURL: "http://data-storage:8080",
-					Timeout:        5 * time.Second,
-					BufferSize:     1000,
-					FlushInterval:  0, // Invalid
-				},
-			}
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("flush interval"))
+			Expect(err.Error()).To(ContainSubstring("bufferSize"))
 		})
 	})
 })
@@ -216,17 +200,20 @@ var _ = Describe("LoadFromFile", func() {
 	It("CFG-02: should load config from valid YAML file", func() {
 		configYAML := `
 enrichment:
-  cachettl: 5m
+  cacheTtl: 5m
   timeout: 2s
 classifier:
-  regoconfigmapname: signalprocessing-rego-policies
-  regoconfigmapkey: policy.rego
-  hotreloadinterval: 30s
-audit:
-  datastorageurl: http://data-storage:8080
-  timeout: 5s
-  buffersize: 1000
-  flushinterval: 5s
+  regoConfigMapName: signalprocessing-rego-policies
+  regoConfigMapKey: policy.rego
+  hotReloadInterval: 30s
+datastorage:
+  url: http://data-storage:8080
+  timeout: 10s
+  buffer:
+    bufferSize: 1000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 `
 		configPath := filepath.Join(tempDir, "config.yaml")
 		err := os.WriteFile(configPath, []byte(configYAML), 0644)
@@ -236,7 +223,7 @@ audit:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 		Expect(cfg.Classifier.RegoConfigMapName).To(Equal("signalprocessing-rego-policies"))
-		Expect(cfg.Audit.BufferSize).To(Equal(1000))
+		Expect(cfg.DataStorage.Buffer.BufferSize).To(Equal(1000))
 	})
 
 	It("CFG-03: should return error for missing file", func() {
