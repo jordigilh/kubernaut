@@ -68,6 +68,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var holmesGPTURL string
+	var holmesGPTTimeout time.Duration
 	var regoPolicyPath string
 	var dataStorageURL string
 
@@ -75,6 +76,7 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
+	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-timeout", 180*time.Second, "HolmesGPT API HTTP client timeout.")
 	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
 	flag.StringVar(&dataStorageURL, "datastorage-url", getEnvOrDefault("DATASTORAGE_URL", "http://datastorage:8080"), "Data Storage Service URL for audit events.")
 
@@ -109,11 +111,13 @@ func main() {
 	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
 	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
 	// ========================================
-	// BR-AA-HAPI-064: With async session mode, per-request HTTP timeout defaults to 60s
-	// (via client.defaultTimeout). The RO enforces phase-level timeout via TimeoutConfig.Analyzing.
-	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL)
+	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
+	// With asyncio.to_thread on the HAPI side, 202 responses are instant,
+	// but a generous timeout guards against network latency edge cases.
+	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL, "timeout", holmesGPTTimeout)
 	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
 		BaseURL: holmesGPTURL,
+		Timeout: holmesGPTTimeout,
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create HolmesGPT-API client")
