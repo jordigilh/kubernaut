@@ -2684,6 +2684,11 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	// Create phase-specific timeout notification (non-blocking)
 	r.createPhaseTimeoutNotification(ctx, rr, phase, timeout)
 
+	// ADR-EM-001: Create EffectivenessAssessment CRD for all terminal phases (non-fatal).
+	// Phase timeout is a terminal transition (TimedOut), so EA must be created for
+	// audit completeness. The EM handles "no workflow" via the no_execution path.
+	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
 	return nil
 }
 
