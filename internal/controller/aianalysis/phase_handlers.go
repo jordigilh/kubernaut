@@ -107,7 +107,6 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
 		// AA-BUG-007: Use optimistic locking with idempotency check
-		// Handler runs INSIDE updateFunc, checked AFTER each atomic refetch
 
 		var phaseBefore string
 		var result ctrl.Result
@@ -117,13 +116,15 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
 		// ========================================
+		// Status writes (PollCount, LastPolled) are allowed here. The informer
+		// predicate (aiAnalysisUpdatePredicate) filters out poll-tracking-only
+		// updates, so they don't trigger re-reconciles. Only phase changes and
+		// session creation pass the predicate filter.
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
 			// Capture phase after ATOMIC refetch
 			phaseBefore = analysis.Status.Phase
 
-		// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
-			// InvestigationTime > 0 means handler already executed for this Investigating phase
-			// This prevents duplicate holmesgpt.call audit events from concurrent reconciles
+			// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
 			if phaseBefore != PhaseInvestigating {
 				log.Info("AA-HAPI-001: Phase already changed, skipping handler",
 					"expected", PhaseInvestigating, "actual", phaseBefore,
@@ -146,6 +147,7 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			if handlerErr != nil {
 				return handlerErr
 			}
+
 			return nil
 		}); err != nil {
 			log.Error(err, "Failed to atomically update status after Investigating phase")
