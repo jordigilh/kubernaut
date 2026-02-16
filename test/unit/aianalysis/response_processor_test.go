@@ -30,6 +30,7 @@ package aianalysis
 import (
 	"context"
 
+	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -638,6 +639,91 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 // ═══════════════════════════════════════════════════════════════════════════
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Issue #97: ExtractRootCauseAnalysis helper tests
+// Validates centralized RCA extraction including affectedResource
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _ = Describe("ExtractRootCauseAnalysis", func() {
+	Context("with standard RCA fields", func() {
+		It("should extract summary, severity, and contributing factors", func() {
+			rcaData := client.IncidentResponseRootCauseAnalysis{
+				"summary":              jx.Raw(`"OOM caused by memory leak"`),
+				"severity":             jx.Raw(`"high"`),
+				"contributing_factors": jx.Raw(`["Memory leak in main container","No resource limits set"]`),
+			}
+
+			rca := handlers.ExtractRootCauseAnalysis(rcaData)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.Summary).To(Equal("OOM caused by memory leak"))
+			Expect(rca.Severity).To(Equal("high"))
+			Expect(rca.ContributingFactors).To(HaveLen(2))
+			Expect(rca.ContributingFactors).To(ContainElement("Memory leak in main container"))
+			Expect(rca.AffectedResource).To(BeNil(), "No affectedResource in input")
+		})
+	})
+
+	Context("with affectedResource present", func() {
+		It("should extract affectedResource from RCA", func() {
+			rcaData := client.IncidentResponseRootCauseAnalysis{
+				"summary":  jx.Raw(`"OOM caused by memory leak"`),
+				"severity": jx.Raw(`"critical"`),
+				"affectedResource": jx.Raw(`{
+					"kind": "Deployment",
+					"name": "api-server",
+					"namespace": "production"
+				}`),
+			}
+
+			rca := handlers.ExtractRootCauseAnalysis(rcaData)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.AffectedResource).NotTo(BeNil())
+			Expect(rca.AffectedResource.Kind).To(Equal("Deployment"))
+			Expect(rca.AffectedResource.Name).To(Equal("api-server"))
+			Expect(rca.AffectedResource.Namespace).To(Equal("production"))
+		})
+	})
+
+	Context("with empty or nil RCA data", func() {
+		It("should return nil for nil input", func() {
+			rca := handlers.ExtractRootCauseAnalysis(nil)
+			Expect(rca).To(BeNil())
+		})
+
+		It("should return empty RCA for empty map (callers guard with len check)", func() {
+			rca := handlers.ExtractRootCauseAnalysis(client.IncidentResponseRootCauseAnalysis{})
+			// Note: ExtractRootCauseAnalysis returns non-nil with empty fields
+			// because GetMapFromOptNil succeeds with {}. All callers guard with
+			// `if len(resp.RootCauseAnalysis) > 0` before calling.
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.Summary).To(BeEmpty())
+			Expect(rca.AffectedResource).To(BeNil())
+		})
+	})
+
+	Context("with affectedResource missing required fields", func() {
+		It("should not populate affectedResource when kind is empty", func() {
+			rcaData := client.IncidentResponseRootCauseAnalysis{
+				"summary":  jx.Raw(`"test summary"`),
+				"severity": jx.Raw(`"low"`),
+				"affectedResource": jx.Raw(`{
+					"kind": "",
+					"name": "api-server",
+					"namespace": "production"
+				}`),
+			}
+
+			rca := handlers.ExtractRootCauseAnalysis(rcaData)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.AffectedResource).To(BeNil(),
+				"affectedResource should be nil when kind is empty")
+		})
+	})
+})
 
 // createAnalysisForRecovery creates an AIAnalysis for recovery testing
 func createAnalysisForRecovery() *aianalysisv1.AIAnalysis {

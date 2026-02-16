@@ -123,16 +123,11 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		analysis.Status.TargetInOwnerChain = &targetInChain
 	}
 
-	// Store root cause analysis (if present) - convert from map[string]jx.Raw
+	// Store root cause analysis (if present) - Issue #97: uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCause = GetStringFromMap(rcaMap, "summary")
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCause = rca.Summary
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -434,15 +429,10 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		}
 	}
 
-	// Preserve RCA if available
+	// Preserve RCA if available - Issue #97: uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -478,15 +468,10 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 
 	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA if available
+	// Store RCA if available - Issue #97: uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -525,15 +510,10 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA if available (for human review context)
+	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -603,15 +583,10 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 		}
 	}
 
-	// Store RCA if available (for human review context)
+	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -931,3 +906,35 @@ func mapWarningsToSubReason(warnings []string) string {
 	}
 }
 
+// ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including affectedResource.
+// Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions) and adds
+// affectedResource extraction so RO's resolveEffectivenessTarget can target the correct resource.
+func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
+	rcaMap := GetMapFromOptNil(rcaData)
+	if rcaMap == nil {
+		return nil
+	}
+	rca := &aianalysisv1.RootCauseAnalysis{
+		Summary:             GetStringFromMap(rcaMap, "summary"),
+		Severity:            GetStringFromMap(rcaMap, "severity"),
+		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
+	}
+
+	// Issue #97: Extract affectedResource from RCA (populated by HAPI from owner chain)
+	if arRaw, ok := rcaMap["affectedResource"]; ok {
+		if arMap, ok := arRaw.(map[string]interface{}); ok {
+			kind, _ := arMap["kind"].(string)
+			name, _ := arMap["name"].(string)
+			ns, _ := arMap["namespace"].(string)
+			if kind != "" && name != "" {
+				rca.AffectedResource = &aianalysisv1.AffectedResource{
+					Kind:      kind,
+					Name:      name,
+					Namespace: ns,
+				}
+			}
+		}
+	}
+
+	return rca
+}

@@ -287,6 +287,8 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
     # NOTE: Workflow discovery is handled by WorkflowDiscoveryToolset registered via
     # register_workflow_discovery_toolset() - LLM calls three-step tools during investigation
     # per DD-HAPI-017
+    # Issue #97: root_owner is declared here so it's accessible in the outer scope
+    root_owner = {}
     try:
         # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
         # Graceful degradation: if DS unavailable or module not yet deployed, context is None
@@ -296,13 +298,51 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
                 create_remediation_history_api,
                 fetch_remediation_history_for_request,
             )
+            from src.clients.k8s_client import get_k8s_client, resolve_root_owner
+
             rh_api = create_remediation_history_api(app_config)
-            current_spec_hash = ""
+
+            # Issue #97: Resolve root owner from owner chain (conditional)
+            owner_chain_for_history = None
             if isinstance(enrichment_results, dict):
-                current_spec_hash = enrichment_results.get("currentSpecHash", "")
+                owner_chain_for_history = enrichment_results.get("ownerChain")
+            elif hasattr(enrichment_results, "ownerChain"):
+                owner_chain_for_history = enrichment_results.ownerChain
+
+            signal_target = {
+                "kind": request_data.get("resource_kind", ""),
+                "name": request_data.get("resource_name", ""),
+                "namespace": request_data.get("resource_namespace", ""),
+            }
+            root_owner = resolve_root_owner(owner_chain_for_history, signal_target)
+
+            # Issue #97: Compute spec hash from root owner via K8s API
+            current_spec_hash = ""
+            if root_owner.get("kind") and root_owner.get("name"):
+                try:
+                    k8s = get_k8s_client()
+                    current_spec_hash = await k8s.compute_spec_hash(
+                        kind=root_owner["kind"],
+                        name=root_owner["name"],
+                        namespace=root_owner.get("namespace", ""),
+                    )
+                except Exception as hash_err:
+                    logger.warning({
+                        "event": "spec_hash_computation_failed",
+                        "incident_id": incident_id,
+                        "error": str(hash_err),
+                    })
+
+            # Issue #97: Pass root owner identity for remediation history query
+            history_request_data = dict(request_data)
+            if root_owner.get("kind") and root_owner.get("name"):
+                history_request_data["resource_kind"] = root_owner["kind"]
+                history_request_data["resource_name"] = root_owner["name"]
+                history_request_data["resource_namespace"] = root_owner.get("namespace", "")
+
             remediation_history_context = fetch_remediation_history_for_request(
                 api=rh_api,
-                request_data=request_data,
+                request_data=history_request_data,
                 current_spec_hash=current_spec_hash,
             )
         except (ImportError, Exception) as rh_err:

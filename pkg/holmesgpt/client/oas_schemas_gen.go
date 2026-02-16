@@ -193,8 +193,8 @@ func (s *DetectedLabels) SetServiceMesh(val OptString) {
 }
 
 // Enrichment results from SignalProcessing.
-// Contains Kubernetes context, auto-detected labels, and custom labels
-// that are used for workflow filtering and LLM context.
+// Contains Kubernetes context, auto-detected labels, custom labels, and owner chain
+// that are used for workflow filtering, LLM context, and remediation history.
 // Design Decision: DD-RECOVERY-003, DD-HAPI-001
 // Custom Labels (DD-HAPI-001):
 // - Format: map[string][]string (subdomain → list of values)
@@ -213,6 +213,10 @@ type EnrichmentResults struct {
 	CustomLabels OptNilEnrichmentResultsCustomLabels `json:"customLabels"`
 	// Quality score of enrichment (0-1).
 	EnrichmentQuality OptFloat64 `json:"enrichmentQuality"`
+	// Kubernetes owner chain from signal target to root controller. Conditional: empty for bare Pods,
+	// Nodes, or resources without controllers. Last entry is the root owner (e.g., Deployment). Issue
+	// #97.
+	OwnerChain OptNilOwnerChainEntryArray `json:"ownerChain"`
 }
 
 // GetKubernetesContext returns the value of KubernetesContext.
@@ -235,6 +239,11 @@ func (s *EnrichmentResults) GetEnrichmentQuality() OptFloat64 {
 	return s.EnrichmentQuality
 }
 
+// GetOwnerChain returns the value of OwnerChain.
+func (s *EnrichmentResults) GetOwnerChain() OptNilOwnerChainEntryArray {
+	return s.OwnerChain
+}
+
 // SetKubernetesContext sets the value of KubernetesContext.
 func (s *EnrichmentResults) SetKubernetesContext(val OptNilEnrichmentResultsKubernetesContext) {
 	s.KubernetesContext = val
@@ -253,6 +262,11 @@ func (s *EnrichmentResults) SetCustomLabels(val OptNilEnrichmentResultsCustomLab
 // SetEnrichmentQuality sets the value of EnrichmentQuality.
 func (s *EnrichmentResults) SetEnrichmentQuality(val OptFloat64) {
 	s.EnrichmentQuality = val
+}
+
+// SetOwnerChain sets the value of OwnerChain.
+func (s *EnrichmentResults) SetOwnerChain(val OptNilOwnerChainEntryArray) {
+	s.OwnerChain = val
 }
 
 type EnrichmentResultsCustomLabels map[string][]string
@@ -2205,6 +2219,69 @@ func (o OptNilInt) Or(d int) int {
 	return d
 }
 
+// NewOptNilOwnerChainEntryArray returns new OptNilOwnerChainEntryArray with value set to v.
+func NewOptNilOwnerChainEntryArray(v []OwnerChainEntry) OptNilOwnerChainEntryArray {
+	return OptNilOwnerChainEntryArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilOwnerChainEntryArray is optional nullable []OwnerChainEntry.
+type OptNilOwnerChainEntryArray struct {
+	Value []OwnerChainEntry
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilOwnerChainEntryArray was set.
+func (o OptNilOwnerChainEntryArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilOwnerChainEntryArray) Reset() {
+	var v []OwnerChainEntry
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilOwnerChainEntryArray) SetTo(v []OwnerChainEntry) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilOwnerChainEntryArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilOwnerChainEntryArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []OwnerChainEntry
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilOwnerChainEntryArray) Get() (v []OwnerChainEntry, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilOwnerChainEntryArray) Or(d []OwnerChainEntry) []OwnerChainEntry {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPreviousExecution returns new OptNilPreviousExecution with value set to v.
 func NewOptNilPreviousExecution(v PreviousExecution) OptNilPreviousExecution {
 	return OptNilPreviousExecution{
@@ -2835,6 +2912,47 @@ func (s *OriginalRCA) SetSeverity(val Severity) {
 // SetContributingFactors sets the value of ContributingFactors.
 func (s *OriginalRCA) SetContributingFactors(val []string) {
 	s.ContributingFactors = val
+}
+
+// An entry in the Kubernetes owner chain. Issue #97.
+// Ref: #/components/schemas/OwnerChainEntry
+type OwnerChainEntry struct {
+	// Kubernetes resource kind (e.g., Pod, ReplicaSet, Deployment).
+	Kind string `json:"kind"`
+	// Resource name.
+	Name string `json:"name"`
+	// Resource namespace (empty for cluster-scoped).
+	Namespace OptString `json:"namespace"`
+}
+
+// GetKind returns the value of Kind.
+func (s *OwnerChainEntry) GetKind() string {
+	return s.Kind
+}
+
+// GetName returns the value of Name.
+func (s *OwnerChainEntry) GetName() string {
+	return s.Name
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *OwnerChainEntry) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// SetKind sets the value of Kind.
+func (s *OwnerChainEntry) SetKind(val string) {
+	s.Kind = val
+}
+
+// SetName sets the value of Name.
+func (s *OwnerChainEntry) SetName(val string) {
+	s.Name = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *OwnerChainEntry) SetNamespace(val OptString) {
+	s.Namespace = val
 }
 
 // Complete context about the previous execution attempt that failed.

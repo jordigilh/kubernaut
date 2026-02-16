@@ -938,11 +938,49 @@
             "title": "Enrichmentquality",
             "description": "Quality score of enrichment (0-1)",
             "default": 0.0
+          },
+          "ownerChain": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OwnerChainEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerchain",
+            "description": "Kubernetes owner chain from signal target to root controller. Conditional: empty for bare Pods, Nodes, or resources without controllers. Last entry is the root owner (e.g., Deployment). Issue #97."
           }
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, and custom labels\nthat are used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, custom labels, and owner chain\nthat are used for workflow filtering, LLM context, and remediation history.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+      },
+      "OwnerChainEntry": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Kubernetes resource kind (e.g., Pod, ReplicaSet, Deployment)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Resource name"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "description": "Resource namespace (empty for cluster-scoped)"
+          }
+        },
+        "required": ["kind", "name"],
+        "type": "object",
+        "title": "OwnerChainEntry",
+        "description": "An entry in the Kubernetes owner chain. Issue #97."
       },
       "ExecutionFailure": {
         "properties": {
