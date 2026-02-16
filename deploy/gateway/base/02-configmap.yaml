@@ -29,11 +29,15 @@ data:
     # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free (K8s-native)
     # All deduplication and storm state managed via RR status fields
 
-    # Infrastructure configuration
-    infrastructure:
-      # DD-AUDIT-003: Data Storage URL for audit event emission
-      # Gateway emits audit events for signal processing (signal.received, signal.deduplicated, storm.detected)
-      dataStorageUrl: "http://data-storage-service:8080"
+    # ADR-030: DataStorage connectivity (audit trail + workflow catalog)
+    datastorage:
+      url: "http://data-storage-service:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 
     # Business logic configuration
     processing:
