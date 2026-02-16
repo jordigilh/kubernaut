@@ -100,6 +100,8 @@ After stabilization, the EM queries the K8s API for the target resource and emit
 - **oom_killed** (bool): Any container terminated with OOMKilled reason since remediation (v2.5)
 - **pending_count** (int): Number of pods still in Pending phase after stabilization window (v2.5). Non-zero after stabilization indicates scheduling failures, image pull issues, or resource exhaustion.
 
+> **Kind-aware health check**: The EM health checker is Kind-aware: workload kinds (Deployment/ReplicaSet/StatefulSet/DaemonSet) → list pods by `app` label; Pod → direct `client.Get`; other kinds (ConfigMap, Secret, Node) → `HealthNotApplicable: true` → scorer returns `Assessed=true, Score=nil`, no health audit event emitted. Pre/post hash capture uses the same AI-resolved target (AffectedResource when available).
+
 #### 3. Pre/Post Metric Comparison (Prometheus)
 
 The EM queries Prometheus for key metrics and emits a typed `metric_deltas` sub-object in the `effectiveness.metrics.assessed` audit event. Metrics are compared as pre-remediation (earliest sample) vs. post-remediation (latest sample) within a query range window.

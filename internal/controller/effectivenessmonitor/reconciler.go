@@ -413,7 +413,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		ea.Status.Components.HealthScore = healthResult.Component.Score
 		componentsChanged = true
 		r.Metrics.RecordComponentAssessment("health", resultStatus(healthResult.Component), time.Since(startTime).Seconds(), healthResult.Component.Score)
-		r.emitHealthEvent(ctx, ea, healthResult)
+		// Skip health audit event when score is nil (N/A for non-pod resources).
+		// The component is marked Assessed=true so allComponentsDone sees it as complete,
+		// but there is no meaningful health data to emit in the audit trail.
+		if healthResult.Component.Score != nil {
+			r.emitHealthEvent(ctx, ea, healthResult)
+		}
 	}
 
 	// Alert check (BR-EM-002) - skip if disabled or client unavailable
@@ -834,18 +839,52 @@ func (r *Reconciler) executeMetricQuery(ctx context.Context, spec metricQuerySpe
 // ============================================================================
 
 // getTargetHealthStatus queries the K8s API for the target resource health.
+// Kind-aware: uses label-based listing for workload resources (Deployment,
+// ReplicaSet, StatefulSet, DaemonSet) and direct pod lookup for Pod targets.
+// Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
+// existence only — they have no pod health to assess.
 func (r *Reconciler) getTargetHealthStatus(ctx context.Context, ea *eav1.EffectivenessAssessment) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
-	// Look up pods matching the target resource in the target namespace
-	podList := &corev1.PodList{}
-	err := r.List(ctx, podList,
-		client.InNamespace(ea.Spec.TargetResource.Namespace),
-		client.MatchingLabels{"app": ea.Spec.TargetResource.Name},
-	)
-	if err != nil {
-		logger.Error(err, "Failed to list pods for target resource")
-		return health.TargetStatus{TargetExists: false}
+	targetKind := ea.Spec.TargetResource.Kind
+	targetName := ea.Spec.TargetResource.Name
+	targetNs := ea.Spec.TargetResource.Namespace
+
+	var podList *corev1.PodList
+
+	switch targetKind {
+	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
+		// Workload resources: list pods by app label (standard convention)
+		podList = &corev1.PodList{}
+		err := r.List(ctx, podList,
+			client.InNamespace(targetNs),
+			client.MatchingLabels{"app": targetName},
+		)
+		if err != nil {
+			logger.Error(err, "Failed to list pods for target resource",
+				"kind", targetKind, "name", targetName)
+			return health.TargetStatus{TargetExists: false}
+		}
+
+	case "Pod":
+		// Direct pod target: fetch the specific pod by name
+		pod := &corev1.Pod{}
+		err := r.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
+		if err != nil {
+			logger.V(1).Info("Target pod not found", "name", targetName, "error", err)
+			return health.TargetStatus{TargetExists: false}
+		}
+		podList = &corev1.PodList{Items: []corev1.Pod{*pod}}
+
+	default:
+		// Non-pod-owning resources (ConfigMap, Secret, Node, etc.)
+		// Health scoring is not applicable — signal N/A to the scorer.
+		logger.V(1).Info("Target resource kind has no pod health to assess",
+			"kind", targetKind, "name", targetName)
+		return health.TargetStatus{
+			TargetExists:        true,
+			HealthNotApplicable: true,
+		}
 	}
 
 	if len(podList.Items) == 0 {

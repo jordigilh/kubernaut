@@ -179,10 +179,11 @@ sequenceDiagram
     AA->>DS: audit: aianalysis.analysis.completed
 
     Note over RO,WFE: Phase 5 — Execution
-    RO->>K8s: GET target resource .spec (uncached, direct API)
+    RO->>RO: resolveEffectivenessTarget(rr, ai) — prefer AffectedResource (BR-HAPI-191)
+    RO->>K8s: GET AI-resolved target resource .spec (uncached, direct API)
     RO->>RO: Compute SHA-256 pre-remediation hash
     RO->>K8s: Store hash on RR.Status.PreRemediationSpecHash (immutable CEL)
-    RO->>DS: audit: remediation.workflow_created (with pre_remediation_spec_hash)
+    RO->>DS: audit: remediation.workflow_created (preHash passed from caller, no redundant API call)
     RO->>WFE: Create WorkflowExecution CRD
     WFE->>K8s: Create Job or PipelineRun
     WFE->>DS: audit: workflowexecution.workflow.started (with parameters)
@@ -526,6 +527,8 @@ The `health_check_pass_rate` uses a decision-tree algorithm that evaluates condi
 
 The health checks reported in the `health_checks` typed sub-object include: `pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `total_replicas`, `ready_replicas`, `pending_count`. All checks are evaluated and emitted regardless of which branch determines the score, providing full observability.
 
+> **Kind-aware behavior**: The EM health checker is Kind-aware: `Deployment`/`ReplicaSet`/`StatefulSet`/`DaemonSet` → list pods by `app` label (existing behavior); `Pod` → direct `client.Get` by name; other kinds (ConfigMap, Secret, Node) → `HealthNotApplicable: true` → scorer returns `Assessed=true, Score=nil, Details="health not applicable"` — no health audit event emitted.
+
 > **Implementation note (v1.7)**: The original ADR v1.0–v1.6 specified a weighted formula (`pod_running` 0.30, `readiness_pass` 0.30, `restart_delta` 0.15, `no_crash_loops` 0.15, `no_oom_killed` 0.10). This was replaced during implementation with the decision-tree above. See `pkg/effectivenessmonitor/health/health.go`.
 
 #### Metric Improvement Scoring
@@ -697,8 +700,8 @@ This is a **new audit event** emitted by the Remediation Orchestrator when it cr
 | `event_type` | string | Yes | `"remediation.workflow_created"` |
 | `correlation_id` | string | Yes | `RR.Name` |
 | `service` | string | Yes | `"remediationorchestrator"` |
-| `target_resource` | string | Yes | `"Kind/Namespace/Name"` (e.g., `"Deployment/prod/my-app"`) |
-| `pre_remediation_spec_hash` | string | Yes | SHA-256 of target resource `.spec` before remediation |
+| `target_resource` | string | Yes | `"Kind/Namespace/Name"` — AI-resolved target (AffectedResource when available, else RR.Spec.TargetResource) |
+| `pre_remediation_spec_hash` | string | Yes | SHA-256 of AI-resolved target resource `.spec` before remediation. PreHash is passed from the caller (no redundant API call in `emitWorkflowCreatedAudit`). |
 | `workflow_id` | string | Yes | Workflow catalog ID |
 | `workflow_version` | string | Yes | Workflow version |
 | `workflow_type` | string | Yes | DD-WORKFLOW-016 action type (e.g., `"ScaleReplicas"`, `"RestartPod"`). Populated from `AIAnalysis.Status.SelectedWorkflow.ActionType`. |
@@ -859,6 +862,7 @@ spec:
     kind: Deployment
     name: my-app
     namespace: prod
+  # TargetResource is resolved from AI AffectedResource when available (BR-HAPI-191), falling back to RR.Spec.TargetResource — same logic as WorkflowExecution creator (resolveEffectivenessTarget in RO reconciler).
   config:
     stabilizationWindow: 5m
 status:

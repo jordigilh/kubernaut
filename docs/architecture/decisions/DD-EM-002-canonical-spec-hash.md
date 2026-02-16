@@ -15,7 +15,7 @@
 
 The Effectiveness Monitor (EM) compares the target resource's `.spec` before and after remediation to detect whether the workflow's changes are still in effect (configuration drift detection, BR-EM-004). This requires two hashes:
 
-1. **Pre-remediation hash**: Captured by the Remediation Orchestrator (RO) before creating the WorkflowExecution CRD. Emitted in the `remediation.workflow_created` audit event and stored in DataStorage.
+1. **Pre-remediation hash**: Captured by the Remediation Orchestrator (RO) before creating the WorkflowExecution CRD. Emitted in the `remediation.workflow_created` audit event and stored in DataStorage. The hash is captured for the **AI-resolved target resource** (AffectedResource when available from AIAnalysis.Status.RootCauseAnalysis, else RR.Spec.TargetResource), not RR.Spec.TargetResource directly.
 
 2. **Post-remediation hash**: Captured by the EM after the stabilization window passes. Compared against the pre-hash to produce the `effectiveness.hash.computed` audit event.
 
@@ -126,7 +126,7 @@ Both the RO and EM import `pkg/shared/hash` to compute their respective hashes.
 
 | Consumer | Usage | Phase |
 |----------|-------|-------|
-| **Remediation Orchestrator** | `CanonicalSpecHash(targetResource.spec)` before WFE creation. Result stored in `remediation.workflow_created` audit event as `pre_remediation_spec_hash`. | RO Analyzing phase |
+| **Remediation Orchestrator** | `CanonicalSpecHash(targetResource.spec)` before WFE creation, targeting the AI-resolved resource (`resolveEffectivenessTarget` — `AffectedResource` when available, else `RR.Spec.TargetResource`; BR-HAPI-191). Hash stored on `RR.Status.PreRemediationSpecHash` and passed to `emitWorkflowCreatedAudit` as a parameter (no redundant API call). Emitted in `remediation.workflow_created` audit event as `pre_remediation_spec_hash`. | RO Analyzing phase |
 | **Effectiveness Monitor** | `CanonicalSpecHash(targetResource.spec)` after stabilization window. Compared against pre-hash from DS audit trail. Result emitted in `effectiveness.hash.computed` audit event. | EM assessment Step 4 |
 | **DataStorage** | Stores both hashes in audit events. Returns pre-hash to EM via `queryAuditEvents` API. May use `hash_match` boolean in effectiveness score computation. | Audit storage + query |
 

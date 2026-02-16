@@ -51,6 +51,10 @@ type TargetStatus struct {
 	OOMKilled bool
 	// PendingCount is the number of pods still in Pending phase after stabilization (DD-017 v2.5).
 	PendingCount int32
+	// HealthNotApplicable indicates the target resource Kind does not own pods
+	// (e.g., ConfigMap, Secret, Node). Health scoring is not meaningful for these
+	// resources — the scorer returns Assessed=true with a nil Score.
+	HealthNotApplicable bool
 }
 
 // Scorer evaluates the health of a target resource and produces a score.
@@ -80,6 +84,15 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 	result := types.ComponentResult{
 		Component: types.ComponentHealth,
 		Assessed:  true,
+	}
+
+	// Non-pod-owning resource (ConfigMap, Secret, Node, etc.) → N/A
+	// Health scoring only applies to resources that own pods.
+	// Assessed=true (we evaluated and determined N/A), Score=nil (no score to give).
+	if status.HealthNotApplicable {
+		result.Score = nil
+		result.Details = "health not applicable for target resource kind"
+		return result
 	}
 
 	// Target not found -> 0.0

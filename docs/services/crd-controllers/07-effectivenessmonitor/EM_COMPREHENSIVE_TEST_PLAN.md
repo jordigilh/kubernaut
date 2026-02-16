@@ -152,6 +152,8 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | IT-EM-HC-004 | EA target pod has restart delta > 0 -> restart_delta sub-score < 1.0 | | X | | envtest: pod with restartCount |
 | IT-EM-HC-005 | Health event payload verified in DS (correlation_id, sub-checks, score) | | X | | Query DS API, verify structure |
 | IT-EM-HC-006 | Target resource deleted between EA creation and assessment -> health score 0.0 | | X | | envtest: delete pod mid-reconcile |
+| IT-EM-HC-007 | EA target Kind=Pod -> direct client.Get by name (no label list) | | X | | Kind-aware: Pod path |
+| IT-EM-HC-008 | EA target Kind=ConfigMap/Secret/Node -> HealthNotApplicable, no health event emitted | | X | | Kind-aware: N/A path, scorer returns Assessed=true Score=nil |
 | E2E-EM-HC-001 | Target pod not running post-remediation -> health score 0.0 in DS | | | X | Unhealthy target |
 
 ### Alert Resolution (AR)
@@ -200,13 +202,13 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 
 | ID | Scenario | Unit | Integration | E2E | Notes |
 |----|----------|------|-------------|-----|-------|
-| UT-EM-SH-001 | Hash changed (spec modified by remediation) -> spec_changed = true | X | | | |
-| UT-EM-SH-002 | Hash unchanged (spec not modified) -> spec_changed = false | X | | | |
+| UT-EM-SH-001 | Hash changed (spec modified by remediation) -> hash_match = false | X | | | |
+| UT-EM-SH-002 | Hash unchanged (spec not modified) -> hash_match = true | X | | | |
 | UT-EM-SH-003 | No pre-remediation hash available (legacy RR) -> skip hash comparison | X | | | |
 | UT-EM-SH-004 | Hash computation is deterministic for same spec | X | | | |
 | IT-EM-SH-001 | Hash computed -> hash event emitted to DS with pre/post hashes | | X | | |
-| IT-EM-SH-002 | No pre-remediation hash (legacy) -> hash event with spec_changed=nil, skip | | X | | Missing workflow_created audit event |
-| IT-EM-SH-003 | Hash event payload verified in DS (correlation_id, pre/post hash, changed) | | X | | Query DS API, verify structure |
+| IT-EM-SH-002 | No pre-remediation hash (legacy) -> hash event with hash_match=nil, skip | | X | | Missing workflow_created audit event |
+| IT-EM-SH-003 | Hash event payload verified in DS (correlation_id, pre/post hash, hash_match) | | X | | Query DS API, verify structure |
 | E2E-EM-SH-001 | Full pipeline -> hash event in DS matches actual spec change | | | X | |
 
 ### Validity Window (VW)
@@ -252,7 +254,7 @@ The EM does not have standalone BR-EFFECTIVENESS-xxx requirements (these were ar
 | ID | Scenario | Unit | Integration | E2E | Notes |
 |----|----------|------|-------------|-----|-------|
 | UT-EM-AE-001 | Health event payload: correct fields (health_score, sub-checks, correlation_id) | X | | | |
-| UT-EM-AE-002 | Hash event payload: correct fields (pre/post hash, spec_changed) | X | | | |
+| UT-EM-AE-002 | Hash event payload: correct fields (pre/post hash, hash_match) | X | | | |
 | UT-EM-AE-003 | Alert event payload: correct fields (signal_resolved, alert_score) | X | | | |
 | UT-EM-AE-004 | Metrics event payload: correct fields (cpu_before/after, metrics_score) | X | | | |
 | UT-EM-AE-005 | Completed event payload: lifecycle marker, no score, components_assessed list | X | | | |
@@ -410,7 +412,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | Domain | Scenarios | Integration Code Exercised |
 |--------|-----------|---------------------------|
 | Reconciler (RC) | 9 | reconciler/ (full Reconcile loop: create, update, error, GC, idempotency) |
-| Health Check (HC) | 6 | client/ (K8s pod queries), status/ (health score write) |
+| Health Check (HC) | 8 | client/ (K8s pod queries), status/ (health score write); includes Kind-aware (Pod direct get, ConfigMap/Secret/Node N/A) |
 | Alert Resolution (AR) | 6 | client/ (AM HTTP client: resolved, firing, error, disabled paths) |
 | Metric Comparison (MC) | 8 | client/ (Prom HTTP client: query, error, disabled, partial) |
 | Spec Hash (SH) | 3 | client/ (DS audit query for pre-hash), status/ (hash write) |
@@ -422,7 +424,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | Operational Metrics (OM) | 3 | reconciler/ (controller-runtime metrics wiring) |
 | Restart Recovery (RR) | 3 | reconciler/ (re-list EAs, status.components check, skip logic) |
 | Graceful Shutdown (GS) | 3 | cmd/ + internal/controller/ (shutdown ordering, audit flush to DS) |
-| **Total** | **65** | |
+| **Total** | **67** | |
 
 ### E2E Tests (Tier 3)
 
@@ -439,7 +441,7 @@ Code under test: `client/` (Prom/AM/DS HTTP clients), `status/` (EA status updat
 | Graceful Shutdown (GS) | 1 | SIGTERM within timeout |
 | **Total** | **11** | |
 
-### Grand Total: 149 test scenarios
+### Grand Total: 151 test scenarios
 
 ---
 
@@ -659,6 +661,7 @@ Missing IT scenarios: IT-EM-RC-004, -008, -009; all HC (6); IT-EM-AR-001 to -004
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3.1 | 2026-02-15 | AI Assistant | Added Kind-aware health scenarios: IT-EM-HC-007 (Pod direct get), IT-EM-HC-008 (ConfigMap/Secret/Node → HealthNotApplicable, no event); grand total 149→151 |
 | 1.3.0 | 2026-02-14 | AI Assistant | Re-tiered 5 config-disable scenarios from IT to UT (UT-EM-CF-009 to -013); reverted anti-pattern INT commit (separate envtest, Ordered container, direct Reconcile()); rewrote as unit tests with fake.NewClientBuilder(); IT total 67→62, UT total ~75→~80 |
 | 1.2.0 | 2026-02-14 | AI Assistant | Added Spec Drift Guard (SD) domain: 11 UT (conditions) + 3 UT (DS scoring) + 3 IT = 17 scenarios (DD-EM-002 v1.1, DD-CRD-002-EA); covers conditions infrastructure, DS score=0.0 short-circuit, reconciler drift detection |
 | 1.1.1 | 2026-02-13 | AI Assistant | Removed ScoringThreshold: UT-EM-CF-008, IT-EM-CF-004; removed RemediationIneffective: UT-EM-KE-002, IT-EM-KE-003; EM always emits Normal EffectivenessAssessed; DS computes score on demand; grand total 149 scenarios |

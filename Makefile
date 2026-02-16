@@ -883,3 +883,107 @@ lint-business-integration: ## Check business code integration in main applicatio
 lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
 	@echo "🔍 Checking TDD compliance..."
 	@./scripts/validation/check-tdd-compliance.sh
+
+##@ Demo Deployment (Issue #94)
+
+# Demo image registry and tag (override for pre-built images)
+DEMO_REGISTRY ?= quay.io/kubernaut-ai
+DEMO_TAG ?= demo-v1.0
+DEMO_CLUSTER_NAME ?= kubernaut-demo
+DEMO_KUBECONFIG ?= $(HOME)/.kube/kubernaut-demo-config
+DEMO_KIND_PROVIDER ?= $(shell command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker")
+
+# Go service → Dockerfile mapping (matches CI pipeline)
+DEMO_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+DEMO_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
+DEMO_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+DEMO_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
+DEMO_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
+DEMO_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+DEMO_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
+DEMO_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
+DEMO_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
+DEMO_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
+
+# _demo_build_one builds a single demo service image.
+# Usage: $(call _demo_build_one,<service>,<dockerfile>)
+define _demo_build_one
+	@echo "  Building $(1) from $(2)..."
+	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/$(1):$(DEMO_TAG) -f $(2) .
+endef
+
+.PHONY: demo-build-images
+demo-build-images: generate ## Build all demo service images locally
+	@echo "🐳 Building demo images ($(DEMO_REGISTRY):$(DEMO_TAG))..."
+	$(foreach svc,$(DEMO_SERVICES),$(call _demo_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	@echo "  Building holmesgpt-api..."
+	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) -f holmesgpt-api/Dockerfile.e2e .
+
+.PHONY: demo-create-cluster
+demo-create-cluster: ## Create Kind cluster for demo
+	@echo "🏗️  Creating Kind cluster '$(DEMO_CLUSTER_NAME)'..."
+	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind create cluster \
+		--name $(DEMO_CLUSTER_NAME) \
+		--config deploy/demo/overlays/kind/kind-cluster-config.yaml \
+		--kubeconfig $(DEMO_KUBECONFIG)
+	@echo "  Cluster created. KUBECONFIG=$(DEMO_KUBECONFIG)"
+
+.PHONY: demo-load-images
+demo-load-images: ## Load demo images into Kind cluster
+	@echo "📦 Loading images into Kind cluster..."
+	@for svc in $(DEMO_SERVICES); do \
+		echo "  Loading $${svc}..."; \
+		KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
+			$(DEMO_REGISTRY)/$${svc}:$(DEMO_TAG) \
+			--name $(DEMO_CLUSTER_NAME) ; \
+	done
+	@echo "  Loading holmesgpt-api..."
+	@KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
+		$(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) \
+		--name $(DEMO_CLUSTER_NAME)
+	@echo "  All images loaded."
+
+.PHONY: demo-deploy
+demo-deploy: ## Deploy Kubernaut platform to Kind cluster
+	@echo "🚀 Deploying Kubernaut demo..."
+	@echo "  Applying CRDs..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f config/crd/bases/
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -k deploy/demo/overlays/kind/
+	@echo "  Waiting for PostgreSQL..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod -l app=postgresql \
+		-n kubernaut-system --timeout=120s
+	@echo "  Applying migrations..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/apply-migrations.sh
+	@echo "  Generating AuthWebhook TLS certs..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/generate-webhook-certs.sh
+	@echo "  Waiting for all pods to be ready..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod --all \
+		-n kubernaut-system --timeout=300s || true
+	@echo "  Seeding workflow catalog..."
+	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/seed-workflows.sh
+	@echo ""
+	@echo "✅ Kubernaut demo deployed!"
+	@echo "   Gateway:      http://localhost:30080"
+	@echo "   DataStorage:  http://localhost:30081"
+	@echo "   Prometheus:   http://localhost:9190"
+	@echo "   AlertManager: http://localhost:9193"
+
+.PHONY: demo-setup
+demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)
+	@echo ""
+	@echo "🎉 Demo environment ready!"
+	@echo "   Apply LLM credentials:  kubectl apply -f deploy/demo/credentials/vertex-ai-example.yaml"
+	@echo "   Trigger workloads:       kubectl apply -k deploy/demo/base/workloads/"
+
+.PHONY: demo-teardown
+demo-teardown: ## Destroy demo Kind cluster
+	@echo "🧹 Tearing down demo cluster '$(DEMO_CLUSTER_NAME)'..."
+	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind delete cluster --name $(DEMO_CLUSTER_NAME)
+	rm -f $(DEMO_KUBECONFIG)
+	@echo "  Demo cluster removed."
+
+.PHONY: demo-status
+demo-status: ## Show demo cluster status
+	@echo "📊 Demo cluster status:"
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true
