@@ -19,12 +19,17 @@ data:
         requestsPerMinute: 100
         burst: 10
 
-    infrastructure:
-      # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
-      # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
+    datastorage:
+      # ADR-030: DataStorage connectivity (audit trail + workflow catalog)
       # Service name: data-storage-service (matches production, required for SAR)
       # Port: 8080 (Service port) - DataStorage container listens on 8081, Service exposes as 8080
-      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 
     processing:
       # NOTE: Deduplication is now status-based (DD-GATEWAY-011)

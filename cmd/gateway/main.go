@@ -92,7 +92,7 @@ func main() {
 
 	logger.Info("Configuration loaded successfully",
 		"listen_addr", serverCfg.Server.ListenAddr,
-		"data_storage_url", serverCfg.Infrastructure.DataStorageURL)
+		"data_storage_url", serverCfg.DataStorage.URL)
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))

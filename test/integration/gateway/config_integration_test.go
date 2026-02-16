@@ -63,8 +63,14 @@ var _ = Describe("Gateway Configuration", Label("integration", "config"), func()
 			minimalConfig := `
 server:
   listenAddr: ":8080"
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 `
 			configPath := filepath.Join(tempDir, "minimal-config.yaml")
 			err := os.WriteFile(configPath, []byte(minimalConfig), 0644)
@@ -90,7 +96,7 @@ infrastructure:
 				"BR-GATEWAY-111: Default max backoff must be 5s")
 
 			By("5. Verify DataStorage URL preserved")
-			Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://data-storage:8080"),
+			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage:8080"),
 				"BR-GATEWAY-019: DataStorage URL must be preserved")
 
 			By("6. Validate config passes validation")
@@ -112,8 +118,14 @@ infrastructure:
 			invalidRetryConfig := `
 server:
   listenAddr: ":8080"
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 processing:
   retry:
     maxAttempts: 15
@@ -142,8 +154,14 @@ processing:
 			invalidBackoffConfig := `
 server:
   listenAddr: ":8080"
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 processing:
   retry:
     maxAttempts: 3
@@ -169,8 +187,14 @@ processing:
 			invalidMaxBackoffConfig := `
 server:
   listenAddr: ":8080"
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 processing:
   retry:
     maxAttempts: 3
@@ -197,8 +221,14 @@ processing:
 server:
   listenAddr: ":8080"
   readTimeout: 1s
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 `
 			configPath = filepath.Join(tempDir, "invalid-timeout.yaml")
 			err = os.WriteFile(configPath, []byte(invalidTimeoutConfig), 0644)
@@ -219,8 +249,14 @@ infrastructure:
 
 			By("6. Test missing required field (listenAddr)")
 			invalidMissingConfig := `
-infrastructure:
-  dataStorageUrl: "http://data-storage:8080"
+datastorage:
+  url: "http://data-storage:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 `
 			configPath = filepath.Join(tempDir, "invalid-missing.yaml")
 			err = os.WriteFile(configPath, []byte(invalidMissingConfig), 0644)

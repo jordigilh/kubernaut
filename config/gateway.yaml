@@ -1,64 +1,31 @@
 # Gateway Service Configuration
-# This file is loaded as a ConfigMap in Kubernetes
-# Environment variables can override these values (see ADR-030)
+# ADR-030: Service Configuration Management
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 
 server:
   listenAddr: ":8080"
-  maxConcurrentRequests: 100  # ADR-048-ADDENDUM-001: Defense-in-depth with Nginx/HAProxy (0 = unlimited)
-  readTimeout: "30s"
-  writeTimeout: "30s"
-  idleTimeout: "120s"
+  maxConcurrentRequests: 100
+  readTimeout: 30s
+  writeTimeout: 30s
+  idleTimeout: 120s
 
 middleware:
-  rateLimit:
-    requestsPerMinute: 100
-    burst: 10
+  # Rate limiting delegated to proxy (ADR-048)
 
-infrastructure:
-  redis:
-    addr: "redis-gateway:6379"
-    db: 0
-    password: ""  # Set via GATEWAY_REDIS_PASSWORD environment variable
-    dialTimeout: "5s"
-    readTimeout: "3s"
-    writeTimeout: "3s"
-    poolSize: 10
-    minIdleConns: 2
+# ADR-030: DataStorage connectivity (audit trail + workflow catalog)
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 
 processing:
   deduplication:
-    ttl: "5m"
-
-  storm:
-    # ===== EXISTING FIELDS (Storm Detection) =====
-    rateThreshold: 10        # alerts/minute for rate-based detection
-    patternThreshold: 5      # similar alerts for pattern-based detection
-    aggregationWindow: "1m"  # DEPRECATED: Use inactivityTimeout for DD-GATEWAY-008
-
-    # ===== NEW FIELDS (DD-GATEWAY-008: Buffered First-Alert Aggregation) =====
-    # Buffered first-alert configuration (BR-GATEWAY-016)
-    bufferThreshold: 5       # Alerts to buffer before creating window (default: 5)
-
-    # Sliding window configuration (BR-GATEWAY-008)
-    inactivityTimeout: "60s" # Sliding window timeout (resets on each alert)
-    maxWindowDuration: "5m" # Maximum window duration (safety limit)
-
-    # Multi-tenant isolation configuration (BR-GATEWAY-011)
-    defaultMaxSize: 1000    # Default namespace buffer size
-    globalMaxSize: 5000     # Global buffer limit across all namespaces
-    # perNamespaceLimits:   # Optional per-namespace overrides
-    #   prod-api: 2000        # Example: prod-api gets 2000 buffer size
-    #   dev-test: 500         # Example: dev-test gets 500 buffer size
-
-    # Overflow handling configuration (BR-GATEWAY-011)
-    samplingThreshold: 0.95  # Utilization to trigger sampling (95%)
-    samplingRate: 0.5        # Sample rate when threshold reached (50%)
-
-  environment:
-    cacheTtl: "30s"
-    configmapNamespace: "kubernaut-system"
-    configmapName: "kubernaut-environment-overrides"
-
-  priority:
-    policyPath: "/etc/gateway/policies/priority.rego"
-
+    ttl: 5m  # DEPRECATED: No effect (DD-GATEWAY-011)
+  retry:
+    maxAttempts: 3
+    initialBackoff: 100ms
+    maxBackoff: 5s

@@ -740,11 +740,15 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
 
-    infrastructure:
-      # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
-      # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
-      # DD-GATEWAY-012: Redis REMOVED - Gateway is 100%% Kubernetes-native
-      dataStorageUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+    datastorage:
+      # ADR-030: DataStorage connectivity (audit trail + workflow catalog)
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 
     processing:
       deduplication:
