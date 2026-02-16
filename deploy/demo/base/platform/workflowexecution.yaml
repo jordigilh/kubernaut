@@ -62,6 +62,33 @@ subjects:
     name: workflowexecution-controller
     namespace: kubernaut-system
 ---
+# RBAC for kubernaut-workflow-runner SA (used by remediation Jobs)
+# Allows remediation jobs to read and patch workloads in target namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-workflow-runner
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-workflow-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-workflow-runner
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-workflow-runner
+    namespace: kubernaut-workflows
+---
 # ADR-030: ConfigMap-based YAML configuration
 apiVersion: v1
 kind: ConfigMap

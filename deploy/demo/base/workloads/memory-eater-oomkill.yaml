@@ -4,6 +4,9 @@
 #
 # Behavior: allocates 40Mi, grows to 60Mi, but limit is 50Mi -> OOMKilled (exit 137)
 # The remediation workflow (oomkill-increase-memory-job) fixes this by increasing the limit.
+#
+# After remediation (limit increased), the process completes its allocation and holds
+# memory for ~indefinitely (hold_duration=999999s), keeping the pod Running.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,7 +31,9 @@ spec:
           image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
           imagePullPolicy: IfNotPresent
           # Args: initial_memory initial_duration target_memory target_duration hold_duration
-          args: ["40Mi", "1", "60Mi", "1", "0"]
+          # - 50Mi limit: OOMKilled at 60Mi target (proper OOMKilled event, PID 1)
+          # - 128Mi limit (post-remediation): succeeds, holds memory for ~11.5 days → pod stays Running
+          args: ["40Mi", "1", "60Mi", "1", "999999"]
           resources:
             limits:
               memory: "50Mi"

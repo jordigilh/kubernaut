@@ -48,13 +48,18 @@ data:
     maxEventAgeSeconds: 300
     kubeQPS: 50
     kubeBurst: 100
+    namespace: "demo-workloads"
     route:
       routes:
         - match:
-            - namespace: "demo-workloads"
-          receiver: gateway-webhook
+            - receiver: gateway-webhook
           drop:
             - type: "Normal"
+            - kind: "RemediationRequest"
+            - kind: "SignalProcessing"
+            - kind: "AIAnalysis"
+            - kind: "EffectivenessAssessment"
+            - kind: "NotificationRequest"
     receivers:
       - name: gateway-webhook
         webhook:

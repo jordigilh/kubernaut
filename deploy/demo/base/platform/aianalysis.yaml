@@ -88,7 +88,7 @@ data:
       format: "json"
     holmesgpt:
       url: "http://holmesgpt-api:8080"
-      timeout: "60s"
+      timeout: "180s"  # LLM RCA + 3-step workflow discovery can take 2-3 min with real Vertex AI
     datastorage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: "60s"
@@ -192,6 +192,8 @@ spec:
         - name: aianalysis
           image: quay.io/kubernaut-ai/aianalysis:demo-v1.0
           imagePullPolicy: IfNotPresent
+          args:
+            - "--holmesgpt-timeout=180s"
           ports:
             - containerPort: 8080
             - containerPort: 9090

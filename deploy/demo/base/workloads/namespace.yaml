@@ -7,3 +7,4 @@ metadata:
   name: demo-workloads
   labels:
     kubernaut.ai/managed: "true"
+    kubernaut.ai/environment: "staging"
