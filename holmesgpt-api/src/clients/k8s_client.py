@@ -36,7 +36,7 @@ from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 
-from holmesgpt_api.src.utils.canonical_hash import canonical_spec_hash
+from utils.canonical_hash import canonical_spec_hash
 
 logger = logging.getLogger(__name__)
 
