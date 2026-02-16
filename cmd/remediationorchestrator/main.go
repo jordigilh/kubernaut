@@ -132,24 +132,23 @@ func main() {
 	// ========================================
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// ADR-030: Use DataStorage URL from YAML config (not CLI flag or env var)
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.Audit.DataStorageURL, cfg.Audit.Timeout)
+	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "Failed to create Data Storage client",
-			"url", cfg.Audit.DataStorageURL,
-			"timeout", cfg.Audit.Timeout)
+			"url", cfg.DataStorage.URL,
+			"timeout", cfg.DataStorage.Timeout)
 		os.Exit(1)
 	}
 	setupLog.Info("Data Storage client initialized",
-		"url", cfg.Audit.DataStorageURL,
-		"timeout", cfg.Audit.Timeout)
+		"url", cfg.DataStorage.URL,
+		"timeout", cfg.DataStorage.Timeout)
 
 	// Create buffered audit store (fire-and-forget pattern, ADR-038)
-	// CRITICAL: FlushInterval from YAML config (was hardcoded to 5s, now 1s default)
 	auditConfig := audit.Config{
-		BufferSize:    cfg.Audit.Buffer.BufferSize,
-		BatchSize:     cfg.Audit.Buffer.BatchSize,
-		FlushInterval: cfg.Audit.Buffer.FlushInterval, // From YAML: 1s (not 5s hardcoded!)
-		MaxRetries:    cfg.Audit.Buffer.MaxRetries,
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
 
 	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
@@ -168,7 +167,7 @@ func main() {
 	}
 
 	setupLog.Info("Audit store initialized",
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 		"bufferSize", auditConfig.BufferSize,
 		"batchSize", auditConfig.BatchSize,
 		"flushInterval", auditConfig.FlushInterval, // CRITICAL: Log to verify YAML config loaded
@@ -182,7 +181,7 @@ func main() {
 		"processingTimeout", processingTimeout,
 		"analyzingTimeout", analyzingTimeout,
 		"executingTimeout", executingTimeout,
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
 	// ========================================

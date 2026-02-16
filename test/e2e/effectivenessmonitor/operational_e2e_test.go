@@ -122,8 +122,8 @@ data:
       stabilizationWindow: 30s
       validityWindow: 90s
       scoringThreshold: 0.5
-    audit:
-      dataStorageUrl: http://data-storage-service.kubernaut-system:8080
+    datastorage:
+      url: http://data-storage-service.kubernaut-system:8080
       timeout: 5s
       buffer:
         bufferSize: 10

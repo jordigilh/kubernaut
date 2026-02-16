@@ -1,36 +1,24 @@
 # RemediationOrchestrator Integration Test Configuration
-# Per DS Team Response (2025-12-27): Fast flush for integration tests
-# See: docs/handoff/DS_RESPONSE_AUDIT_BUFFER_FLUSH_TIMING_DEC_27_2025.md
+# ADR-030: camelCase YAML fields
 
 # ========================================
-# AUDIT CONFIGURATION (Integration Tests)
+# DATASTORAGE CONNECTIVITY (Integration Tests)
 # ========================================
-audit:
+datastorage:
   # Use local DataStorage container (started by integration test infrastructure)
-  # Container name: ro-e2e-datastorage (defined in test/infrastructure/remediationorchestrator.go)
-  datastorage_url: http://ro-e2e-datastorage:8080
-
-  # Timeout for audit API calls
+  url: http://ro-e2e-datastorage:8080
   timeout: 10s
-
-  # CRITICAL: Fast flush for integration tests!
-  # Per DS Team: 1s flush enables test event visibility within 5-10 seconds
-  # DD-AUDIT-004: MEDIUM tier buffer (1200 events/day → 30K for burst handling)
   buffer:
-    buffer_size: 30000      # DD-AUDIT-004: Match production config
-    batch_size: 1000        # DD-AUDIT-004: Match production config
-    flush_interval: 1s      # Fast feedback for tests (was 5s hardcoded, caused delays)
-    max_retries: 3
+    bufferSize: 30000
+    batchSize: 1000
+    flushInterval: 1s
+    maxRetries: 3
 
 # ========================================
 # CONTROLLER RUNTIME (Integration Tests)
 # ========================================
 controller:
-  metrics_addr: :9090
-  health_probe_addr: :8081
-  leader_election: false
-  leader_election_id: remediationorchestrator.kubernaut.ai
-
-
-
-
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: remediationorchestrator.kubernaut.ai

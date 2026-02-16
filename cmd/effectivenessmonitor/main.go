@@ -113,22 +113,22 @@ func main() {
 	// ========================================
 	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
 	// ========================================
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.Audit.DataStorageURL, cfg.Audit.Timeout)
+	dataStorageClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "Failed to create Data Storage client",
-			"url", cfg.Audit.DataStorageURL,
-			"timeout", cfg.Audit.Timeout)
+			"url", cfg.DataStorage.URL,
+			"timeout", cfg.DataStorage.Timeout)
 		os.Exit(1)
 	}
 	setupLog.Info("Data Storage client initialized",
-		"url", cfg.Audit.DataStorageURL,
-		"timeout", cfg.Audit.Timeout)
+		"url", cfg.DataStorage.URL,
+		"timeout", cfg.DataStorage.Timeout)
 
 	auditConfig := audit.Config{
-		BufferSize:    cfg.Audit.Buffer.BufferSize,
-		BatchSize:     cfg.Audit.Buffer.BatchSize,
-		FlushInterval: cfg.Audit.Buffer.FlushInterval,
-		MaxRetries:    cfg.Audit.Buffer.MaxRetries,
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
 
 	zapLogger, err := zaplog.NewProduction()
@@ -145,7 +145,7 @@ func main() {
 	}
 
 	setupLog.Info("Audit store initialized",
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 		"bufferSize", auditConfig.BufferSize,
 		"batchSize", auditConfig.BatchSize,
 		"flushInterval", auditConfig.FlushInterval,
@@ -166,7 +166,7 @@ func main() {
 		"validityWindow", cfg.Assessment.ValidityWindow,
 		"prometheusEnabled", cfg.External.PrometheusEnabled,
 		"alertManagerEnabled", cfg.External.AlertManagerEnabled,
-		"dataStorageURL", cfg.Audit.DataStorageURL,
+		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
 	// ========================================
@@ -242,9 +242,9 @@ func main() {
 	// DS QUERIER INITIALIZATION (DD-EM-002: pre-remediation hash lookup)
 	// ========================================
 	var dsQuerier emclient.DataStorageQuerier
-	dsQuerier = emclient.NewDataStorageHTTPQuerier(cfg.Audit.DataStorageURL)
+	dsQuerier = emclient.NewDataStorageHTTPQuerier(cfg.DataStorage.URL)
 	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup",
-		"url", cfg.Audit.DataStorageURL)
+		"url", cfg.DataStorage.URL)
 
 	// ========================================
 	// CONTROLLER SETUP

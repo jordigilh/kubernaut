@@ -31,11 +31,11 @@ type EMConfig struct {
 	// Assessment configuration (BR-EM-006, BR-EM-007, BR-EM-008)
 	Assessment EMAssessmentConfig `yaml:"assessment"`
 
-	// Audit configuration (ADR-032, DD-AUDIT-002)
-	Audit AuditConfig `yaml:"audit"`
-
 	// Controller runtime configuration (DD-005)
 	Controller ControllerConfig `yaml:"controller"`
+
+	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
+	DataStorage DataStorageConfig `yaml:"datastorage"`
 
 	// External service configuration
 	External EMExternalConfig `yaml:"external"`
@@ -82,16 +82,7 @@ func DefaultEMConfig() *EMConfig {
 			StabilizationWindow: 5 * time.Minute,
 			ValidityWindow:      30 * time.Minute,
 		},
-		Audit: AuditConfig{
-			DataStorageURL: "http://data-storage-service:8080",
-			Timeout:        10 * time.Second,
-			Buffer: BufferConfig{
-				BufferSize:    10000,
-				BatchSize:     100,
-				FlushInterval: 1 * time.Second,
-				MaxRetries:    3,
-			},
-		},
+		DataStorage: DefaultDataStorageConfig(),
 		Controller: ControllerConfig{
 			MetricsAddr:      ":9090",
 			HealthProbeAddr:  ":8081",
@@ -154,24 +145,9 @@ func (c *EMConfig) Validate() error {
 			c.Assessment.StabilizationWindow, c.Assessment.ValidityWindow)
 	}
 
-	// Validate audit config (reuse common patterns)
-	if c.Audit.DataStorageURL == "" {
-		return fmt.Errorf("audit.dataStorageUrl is required")
-	}
-	if c.Audit.Timeout <= 0 {
-		return fmt.Errorf("audit.timeout must be positive")
-	}
-	if c.Audit.Buffer.BufferSize <= 0 {
-		return fmt.Errorf("audit.buffer.bufferSize must be positive")
-	}
-	if c.Audit.Buffer.BatchSize <= 0 {
-		return fmt.Errorf("audit.buffer.batchSize must be positive")
-	}
-	if c.Audit.Buffer.FlushInterval <= 0 {
-		return fmt.Errorf("audit.buffer.flushInterval must be positive")
-	}
-	if c.Audit.Buffer.MaxRetries < 0 {
-		return fmt.Errorf("audit.buffer.maxRetries must be non-negative")
+	// Validate DataStorage config (ADR-030)
+	if err := ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
 	}
 
 	// Validate controller config

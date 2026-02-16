@@ -487,8 +487,8 @@ data:
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
     # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
-    audit:
-      dataStorageUrl: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
+    datastorage:
+      url: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
       timeout: 10s
       buffer:
         bufferSize: 10000
