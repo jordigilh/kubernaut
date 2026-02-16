@@ -445,6 +445,8 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/effectivenessmonitor
+        - name: coverdata
+          mountPath: /coverdata
         env:
         - name: GOCOVERDIR
           value: /coverdata
@@ -459,6 +461,10 @@ spec:
       - name: config
         configMap:
           name: effectivenessmonitor-config
+      - name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate
 `, namespace, imageName, pullPolicy)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
