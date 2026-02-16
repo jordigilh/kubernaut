@@ -13,8 +13,6 @@ Name | Type | Description | Notes
 **version** | **str** | Semantic version | 
 **container_image** | **str** | OCI image reference | 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 
-**actual_success_rate** | **float** | Historical success rate (0.0-1.0) | [optional] 
-**total_executions** | **int** | Total times this workflow has been executed | [optional] 
 
 ## Example
 

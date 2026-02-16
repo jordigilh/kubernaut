@@ -1245,25 +1245,25 @@ var eventTypeCatalog = []eventTypeTestCase{
 	},
 	{
 		Service:       "aianalysis",
-		EventType:     "aianalysis.holmesgpt.call",
+		EventType:     "aianalysis.aiagent.call",
 		EventCategory: ogenclient.AuditEventRequestEventCategoryAnalysis,
-		EventAction:   "holmesgpt_call",
+		EventAction:   "aiagent_call",
 		CreateEvent: func() ogenclient.AuditEventRequest {
-			analysisName := fmt.Sprintf("aa-test-holmesgpt-call-%s", uuid.New().String()[:8])
-			correlationID := fmt.Sprintf("test-gap-1.1-ai-holmesgpt-%s", uuid.New().String()[:8])
+			analysisName := fmt.Sprintf("aa-test-aiagent-call-%s", uuid.New().String()[:8])
+			correlationID := fmt.Sprintf("test-gap-1.1-ai-aiagent-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
-				EventType:      "aianalysis.holmesgpt.call",
+				EventType:      "aianalysis.aiagent.call",
 				EventTimestamp: time.Now().UTC(),
 				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
-				EventAction:    "holmesgpt_call",
+				EventAction:    "aiagent_call",
 				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 				ActorType:      ogenclient.NewOptString("service"),
 				ActorID:        ogenclient.NewOptString("aianalysis-service"),
 				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
 				ResourceID:     ogenclient.NewOptString(analysisName),
 				CorrelationID:  correlationID,
-				EventData: ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(ogenclient.AIAnalysisHolmesGPTCallPayload{
+				EventData: ogenclient.NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData(ogenclient.AIAnalysisAIAgentCallPayload{
 					Endpoint:       "/api/v1/analyze", // REQUIRED
 					HTTPStatusCode: 200,               // REQUIRED
 					DurationMs:     150,               // REQUIRED

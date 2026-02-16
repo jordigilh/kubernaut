@@ -2291,7 +2291,7 @@ components:
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
             - $ref: '#/components/schemas/AIAnalysisPhaseTransitionPayload'
-            - $ref: '#/components/schemas/AIAnalysisHolmesGPTCallPayload'
+            - $ref: '#/components/schemas/AIAnalysisAIAgentCallPayload'
             - $ref: '#/components/schemas/AIAnalysisApprovalDecisionPayload'
             - $ref: '#/components/schemas/AIAnalysisRegoEvaluationPayload'
             - $ref: '#/components/schemas/AIAnalysisErrorPayload'
@@ -2349,7 +2349,10 @@ components:
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
               'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
               'aianalysis.phase.transition': '#/components/schemas/AIAnalysisPhaseTransitionPayload'
-              'aianalysis.holmesgpt.call': '#/components/schemas/AIAnalysisHolmesGPTCallPayload'
+              'aianalysis.aiagent.call': '#/components/schemas/AIAnalysisAIAgentCallPayload'
+              'aianalysis.aiagent.submit': '#/components/schemas/AIAnalysisAIAgentCallPayload'
+              'aianalysis.aiagent.result': '#/components/schemas/AIAnalysisAIAgentCallPayload'
+              'aianalysis.aiagent.session_lost': '#/components/schemas/AIAnalysisAIAgentCallPayload'
               'aianalysis.approval.decision': '#/components/schemas/AIAnalysisApprovalDecisionPayload'
               'aianalysis.rego.evaluation': '#/components/schemas/AIAnalysisRegoEvaluationPayload'
               'aianalysis.error.occurred': '#/components/schemas/AIAnalysisErrorPayload'
@@ -4505,10 +4508,10 @@ components:
           description: New phase
           example: "Analyzing"
 
-    AIAnalysisHolmesGPTCallPayload:
+    AIAnalysisAIAgentCallPayload:
       type: object
       required: [endpoint, http_status_code, duration_ms]
-      description: HolmesGPT API call event payload (aianalysis.holmesgpt.call)
+      description: AI agent call event payload (aianalysis.aiagent.call)
       properties:
         endpoint:
           type: string

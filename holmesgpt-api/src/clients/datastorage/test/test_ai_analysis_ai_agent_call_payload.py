@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.ai_analysis_holmes_gpt_call_payload import AIAnalysisHolmesGPTCallPayload
+from datastorage.models.ai_analysis_ai_agent_call_payload import AIAnalysisAIAgentCallPayload
 
-class TestAIAnalysisHolmesGPTCallPayload(unittest.TestCase):
-    """AIAnalysisHolmesGPTCallPayload unit test stubs"""
+class TestAIAnalysisAIAgentCallPayload(unittest.TestCase):
+    """AIAnalysisAIAgentCallPayload unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,30 +26,30 @@ class TestAIAnalysisHolmesGPTCallPayload(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> AIAnalysisHolmesGPTCallPayload:
-        """Test AIAnalysisHolmesGPTCallPayload
+    def make_instance(self, include_optional) -> AIAnalysisAIAgentCallPayload:
+        """Test AIAnalysisAIAgentCallPayload
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `AIAnalysisHolmesGPTCallPayload`
+        # uncomment below to create an instance of `AIAnalysisAIAgentCallPayload`
         """
-        model = AIAnalysisHolmesGPTCallPayload()
+        model = AIAnalysisAIAgentCallPayload()
         if include_optional:
-            return AIAnalysisHolmesGPTCallPayload(
+            return AIAnalysisAIAgentCallPayload(
                 endpoint = '/api/v1/investigate',
                 http_status_code = 200,
                 duration_ms = 1500
             )
         else:
-            return AIAnalysisHolmesGPTCallPayload(
+            return AIAnalysisAIAgentCallPayload(
                 endpoint = '/api/v1/investigate',
                 http_status_code = 200,
                 duration_ms = 1500,
         )
         """
 
-    def testAIAnalysisHolmesGPTCallPayload(self):
-        """Test AIAnalysisHolmesGPTCallPayload"""
+    def testAIAnalysisAIAgentCallPayload(self):
+        """Test AIAnalysisAIAgentCallPayload"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

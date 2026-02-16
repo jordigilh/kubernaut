@@ -26,9 +26,9 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class AIAnalysisHolmesGPTCallPayload(BaseModel):
+class AIAnalysisAIAgentCallPayload(BaseModel):
     """
-    HolmesGPT API call event payload (aianalysis.holmesgpt.call)
+    AI agent call event payload (aianalysis.aiagent.call)
     """ # noqa: E501
     endpoint: StrictStr = Field(description="API endpoint called")
     http_status_code: StrictInt = Field(description="HTTP status code")
@@ -53,7 +53,7 @@ class AIAnalysisHolmesGPTCallPayload(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of AIAnalysisHolmesGPTCallPayload from a JSON string"""
+        """Create an instance of AIAnalysisAIAgentCallPayload from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -76,7 +76,7 @@ class AIAnalysisHolmesGPTCallPayload(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of AIAnalysisHolmesGPTCallPayload from a dict"""
+        """Create an instance of AIAnalysisAIAgentCallPayload from a dict"""
         if obj is None:
             return None
 

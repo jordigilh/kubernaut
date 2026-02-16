@@ -172,10 +172,10 @@ Class | Method | HTTP request | Description
 ## Documentation For Models
 
  - [AIAgentResponsePayload](docs/AIAgentResponsePayload.md)
+ - [AIAnalysisAIAgentCallPayload](docs/AIAnalysisAIAgentCallPayload.md)
  - [AIAnalysisApprovalDecisionPayload](docs/AIAnalysisApprovalDecisionPayload.md)
  - [AIAnalysisAuditPayload](docs/AIAnalysisAuditPayload.md)
  - [AIAnalysisErrorPayload](docs/AIAnalysisErrorPayload.md)
- - [AIAnalysisHolmesGPTCallPayload](docs/AIAnalysisHolmesGPTCallPayload.md)
  - [AIAnalysisPhaseTransitionPayload](docs/AIAnalysisPhaseTransitionPayload.md)
  - [AIAnalysisRegoEvaluationPayload](docs/AIAnalysisRegoEvaluationPayload.md)
  - [ActionTypeEntry](docs/ActionTypeEntry.md)

@@ -18,10 +18,9 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
-from typing_extensions import Annotated
 from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
@@ -39,9 +38,7 @@ class WorkflowDiscoveryEntry(BaseModel):
     version: StrictStr = Field(description="Semantic version")
     container_image: StrictStr = Field(description="OCI image reference", alias="containerImage")
     execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
-    actual_success_rate: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="Historical success rate (0.0-1.0)", alias="actualSuccessRate")
-    total_executions: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Total times this workflow has been executed", alias="totalExecutions")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "containerImage", "executionEngine", "actualSuccessRate", "totalExecutions"]
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "containerImage", "executionEngine"]
 
     @field_validator('execution_engine')
     def execution_engine_validate_enum(cls, value):
@@ -111,9 +108,7 @@ class WorkflowDiscoveryEntry(BaseModel):
             "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "version": obj.get("version"),
             "containerImage": obj.get("containerImage"),
-            "executionEngine": obj.get("executionEngine"),
-            "actualSuccessRate": obj.get("actualSuccessRate"),
-            "totalExecutions": obj.get("totalExecutions")
+            "executionEngine": obj.get("executionEngine")
         })
         return _obj
 

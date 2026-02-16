@@ -73,7 +73,7 @@ type sessionLostEvent struct {
 	generation int32
 }
 
-func (s *sessionAuditSpy) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (s *sessionAuditSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 }
 func (s *sessionAuditSpy) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
 }
@@ -85,17 +85,17 @@ func (s *sessionAuditSpy) RecordAnalysisFailed(ctx context.Context, analysis *ai
 }
 func (s *sessionAuditSpy) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
 }
-func (s *sessionAuditSpy) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (s *sessionAuditSpy) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.submitEvents = append(s.submitEvents, sessionSubmitEvent{analysis: analysis, sessionID: sessionID})
 }
-func (s *sessionAuditSpy) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+func (s *sessionAuditSpy) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resultEvents = append(s.resultEvents, sessionResultEvent{analysis: analysis, investigationTime: investigationTimeMs})
 }
-func (s *sessionAuditSpy) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (s *sessionAuditSpy) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionLostEvents = append(s.sessionLostEvents, sessionLostEvent{analysis: analysis, generation: generation})
@@ -192,7 +192,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				// Result: RequeueAfter: 10s (non-blocking return for polling)
 				Expect(result.RequeueAfter).To(Equal(10 * time.Second), "Should requeue after 10s for first poll")
 
-				// Audit side effect: exactly 1 holmesgpt.submit event
+				// Audit side effect: exactly 1 aiagent.submit event
 				Expect(auditSpy.submitEvents).To(HaveLen(1), "Should record exactly 1 submit audit event")
 				Expect(auditSpy.submitEvents[0].sessionID).To(Equal("session-uuid-001"))
 
@@ -324,7 +324,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(), "SelectedWorkflow should be populated from result")
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
 
-				// Audit side effect: exactly 1 holmesgpt.result event
+				// Audit side effect: exactly 1 aiagent.result event
 				Expect(auditSpy.resultEvents).To(HaveLen(1), "Should record exactly 1 result audit event")
 				Expect(auditSpy.resultEvents[0].investigationTime).To(BeNumerically(">", 0), "Investigation time should be positive")
 			})
@@ -425,7 +425,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				// Result: immediate resubmit (no delay)
 				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should requeue immediately for resubmit")
 
-				// Audit side effect: exactly 1 holmesgpt.session_lost event
+				// Audit side effect: exactly 1 aiagent.session_lost event
 				Expect(auditSpy.sessionLostEvents).To(HaveLen(1), "Should record exactly 1 session_lost audit event")
 				Expect(auditSpy.sessionLostEvents[0].generation).To(Equal(int32(1)))
 

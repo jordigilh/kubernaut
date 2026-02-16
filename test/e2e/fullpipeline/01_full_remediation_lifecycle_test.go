@@ -476,7 +476,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"signalprocessing.phase.transition",          // pkg/signalprocessing/audit: RecordPhaseTransition
 			// AI Analysis
 			"aianalysis.phase.transition",    // pkg/aianalysis/audit: RecordPhaseTransition
-			"aianalysis.holmesgpt.call",      // pkg/aianalysis/audit: RecordHolmesGPTCall
+			"aianalysis.aiagent.call",        // pkg/aianalysis/audit: RecordAIAgentCall
 			"aianalysis.rego.evaluation",     // pkg/aianalysis/audit: RecordRegoEvaluation
 			"aianalysis.analysis.completed",  // pkg/aianalysis/audit: RecordAnalysisComplete
 			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
@@ -1181,7 +1181,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"signalprocessing.signal.processed",
 			"signalprocessing.phase.transition",
 			"aianalysis.phase.transition",
-			"aianalysis.holmesgpt.call",
+			"aianalysis.aiagent.call",
 			"aianalysis.rego.evaluation",
 			"aianalysis.analysis.completed",
 			string(ogenclient.LLMRequestPayloadAuditEventEventData),
