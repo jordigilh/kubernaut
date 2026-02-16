@@ -13,10 +13,10 @@ actionType: RestartDeployment
 
 labels:
   signalType: CrashLoopBackOff
-  severity: [high]
+  severity: [high, medium]
   environment: [production, staging, test]
-  component: deployment
-  priority: P1
+  component: "*"
+  priority: "*"
 
 execution:
   engine: job
