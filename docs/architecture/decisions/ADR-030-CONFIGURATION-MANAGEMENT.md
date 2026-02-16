@@ -4,6 +4,7 @@
 **Status**: ✅ **AUTHORITATIVE STANDARD - MANDATORY**
 **Priority**: CRITICAL (Affects all services)
 **Enforcement**: Non-negotiable - all services MUST comply
+**Last Updated**: February 12, 2026 (datastorage section, camelCase alignment)
 
 ---
 
@@ -77,7 +78,7 @@ func main() {
     }
 
     logger.Info("Configuration loaded successfully",
-        "metrics_addr", cfg.Controller.MetricsAddr)
+        "metricsAddr", cfg.Controller.MetricsAddr)
 
     // Start service with validated configuration
     // ...
@@ -159,10 +160,10 @@ All service configurations MUST have these three top-level sections:
 ```yaml
 # MANDATORY: Controller runtime settings
 controller:
-  metrics_addr: ":9090"               # Prometheus metrics endpoint
-  health_probe_addr: ":8081"          # Health/readiness probes
-  leader_election: false              # Enable for HA deployments
-  leader_election_id: "{service}.kubernaut.ai"
+  metricsAddr: ":9090"               # Prometheus metrics endpoint
+  healthProbeAddr: ":8081"           # Health/readiness probes
+  leaderElection: false              # Enable for HA deployments
+  leaderElectionId: "{service}.kubernaut.ai"
 
 # SERVICE-SPECIFIC: Business/processing logic settings
 # Name this section based on service purpose:
@@ -174,10 +175,15 @@ controller:
   # Service-specific settings
   # ...
 
-# MANDATORY: Infrastructure dependencies
-infrastructure:
-  data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
-  # Other service URLs, endpoints, etc.
+# MANDATORY: Data Storage service connectivity (audit trail + workflow catalog)
+datastorage:
+  url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 ```
 
 ### Controller Section (MANDATORY)
@@ -186,38 +192,61 @@ infrastructure:
 
 ```yaml
 controller:
-  metrics_addr: string       # REQUIRED: Prometheus metrics bind address (default: ":9090")
-  health_probe_addr: string  # REQUIRED: Health probe bind address (default: ":8081")
-  leader_election: bool      # REQUIRED: Enable leader election (default: false)
-  leader_election_id: string # REQUIRED: Leader election ID (default: "{service}.kubernaut.ai")
+  metricsAddr: string       # REQUIRED: Prometheus metrics bind address (default: ":9090")
+  healthProbeAddr: string   # REQUIRED: Health probe bind address (default: ":8081")
+  leaderElection: bool      # REQUIRED: Enable leader election (default: false)
+  leaderElectionId: string  # REQUIRED: Leader election ID (default: "{service}.kubernaut.ai")
 ```
 
 **Field Requirements**:
-- `metrics_addr`: Port must not conflict with health_probe_addr
-- `health_probe_addr`: Port must not conflict with metrics_addr
-- `leader_election`: Set to `true` for multi-replica deployments
-- `leader_election_id`: Must be unique per service, format: `{service}.kubernaut.ai`
+- `metricsAddr`: Port must not conflict with healthProbeAddr
+- `healthProbeAddr`: Port must not conflict with metricsAddr
+- `leaderElection`: Set to `true` for multi-replica deployments
+- `leaderElectionId`: Must be unique per service, format: `{service}.kubernaut.ai`
 
 ---
 
-### Infrastructure Section (MANDATORY)
+### DataStorage Section (MANDATORY)
 
-**All services MUST include**:
+**All non-DS services MUST include** this section for Data Storage connectivity.
+DataStorage serves both **audit trail** and **workflow catalog** APIs.
 
 ```yaml
-infrastructure:
-  data_storage_url: string  # REQUIRED: Data Storage service URL for audit (ADR-032)
-  # Optional: Other infrastructure dependencies
-  # redis_url: string
-  # database_url: string
-  # etc.
+datastorage:
+  url: string             # REQUIRED: Data Storage service URL (ADR-032)
+  timeout: duration       # REQUIRED: API call timeout (default: 10s)
+  buffer:                 # REQUIRED: Client-side event buffering
+    bufferSize: int       #   Max events in memory before blocking (default: 10000)
+    batchSize: int        #   Events per batch write (default: 100)
+    flushInterval: duration #   Max time before partial flush (default: 1s)
+    maxRetries: int       #   Retry attempts for failed writes (default: 3)
 ```
 
 **Field Requirements**:
-- `data_storage_url`: MUST be a valid HTTP/HTTPS URL
+- `url`: MUST be a valid HTTP/HTTPS URL
 - MUST include protocol (`http://` or `https://`)
 - SHOULD use Kubernetes service DNS names in cluster deployments
-- Example: `http://datastorage.kubernaut-system.svc.cluster.local:8080`
+- Example: `http://data-storage-service.kubernaut-system.svc.cluster.local:8080`
+
+**Shared Go Type** (`internal/config/datastorage.go`):
+
+```go
+type DataStorageConfig struct {
+    URL     string        `yaml:"url"`
+    Timeout time.Duration `yaml:"timeout"`
+    Buffer  BufferConfig  `yaml:"buffer"`
+}
+
+type BufferConfig struct {
+    BufferSize    int           `yaml:"bufferSize"`
+    BatchSize     int           `yaml:"batchSize"`
+    FlushInterval time.Duration `yaml:"flushInterval"`
+    MaxRetries    int           `yaml:"maxRetries"`
+}
+```
+
+All services MUST use this shared type from `internal/config/` to ensure consistency.
+Use `DefaultDataStorageConfig()` for defaults and `ValidateDataStorageConfig()` for validation.
 
 ---
 
@@ -232,6 +261,7 @@ infrastructure:
 | SignalProcessing | `processing` | Signal classification settings |
 | WorkflowExecution | `execution` | Workflow execution settings |
 | DataStorage | `storage` | Storage backend settings |
+| AuthWebhook | `webhook` | Webhook server settings |
 
 **Example: Notification Service**
 
@@ -241,7 +271,7 @@ delivery:
     enabled: bool           # Enable console delivery
 
   file:
-    output_dir: string      # Directory for file delivery
+    outputDir: string       # Directory for file delivery
     format: string          # File format (json, yaml, text)
     timeout: duration       # Write timeout
 
@@ -250,7 +280,7 @@ delivery:
     format: string          # Log format (json, text)
 
   slack:
-    webhook_url: string     # Slack webhook (from env via LoadFromEnv)
+    webhookUrl: string      # Slack webhook (from env via LoadFromEnv)
     timeout: duration       # HTTP timeout
 ```
 
@@ -294,6 +324,11 @@ settings:
 - Examples: `"30s"`, `"5m"`, `"100ms"`, `"1h30m"`
 - Parse in Go with: `time.ParseDuration(value)`
 
+**YAML Field Naming** (MANDATORY):
+- All YAML keys MUST use **camelCase** per `CRD_FIELD_NAMING_CONVENTION.md`
+- Examples: `metricsAddr`, `healthProbeAddr`, `leaderElection`, `bufferSize`
+- Go struct tags: `yaml:"metricsAddr"` (NOT `yaml:"metrics_addr"`)
+
 ---
 
 ## Configuration Package Structure
@@ -329,6 +364,8 @@ import (
     "time"
 
     "gopkg.in/yaml.v3"
+
+    sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
 // ========================================
@@ -337,20 +374,20 @@ import (
 // ========================================
 
 // Config is the top-level configuration structure
-// MANDATORY: Must have Controller, {ServiceLogic}, Infrastructure sections
+// MANDATORY: Must have Controller, {ServiceLogic}, DataStorage sections
 type Config struct {
-    Controller     ControllerSettings     `yaml:"controller"`
-    {ServiceLogic} {ServiceLogic}Settings `yaml:"{service_logic}"`
-    Infrastructure InfrastructureSettings `yaml:"infrastructure"`
+    Controller     ControllerSettings            `yaml:"controller"`
+    {ServiceLogic} {ServiceLogic}Settings        `yaml:"{service_logic}"`
+    DataStorage    sharedconfig.DataStorageConfig `yaml:"datastorage"`
 }
 
 // ControllerSettings contains Kubernetes controller configuration
 // MANDATORY: All services must have these exact fields
 type ControllerSettings struct {
-    MetricsAddr      string `yaml:"metrics_addr"`       // Default: ":9090"
-    HealthProbeAddr  string `yaml:"health_probe_addr"`  // Default: ":8081"
-    LeaderElection   bool   `yaml:"leader_election"`    // Default: false
-    LeaderElectionID string `yaml:"leader_election_id"` // Default: "{service}.kubernaut.ai"
+    MetricsAddr      string `yaml:"metricsAddr"`       // Default: ":9090"
+    HealthProbeAddr  string `yaml:"healthProbeAddr"`    // Default: ":8081"
+    LeaderElection   bool   `yaml:"leaderElection"`     // Default: false
+    LeaderElectionID string `yaml:"leaderElectionId"`   // Default: "{service}.kubernaut.ai"
 }
 
 // {ServiceLogic}Settings contains service-specific configuration
@@ -358,13 +395,6 @@ type ControllerSettings struct {
 type {ServiceLogic}Settings struct {
     // Service-specific fields
     // ...
-}
-
-// InfrastructureSettings contains external dependency configuration
-// MANDATORY: Must have DataStorageURL for audit (ADR-032)
-type InfrastructureSettings struct {
-    DataStorageURL string `yaml:"data_storage_url"` // REQUIRED
-    // Optional: Other infrastructure dependencies
 }
 
 // ========================================
@@ -398,7 +428,7 @@ func (c *Config) LoadFromEnv() {
 
     // Example:
     // if apiKey := os.Getenv("API_KEY"); apiKey != "" {
-    //     c.Infrastructure.APIKey = apiKey
+    //     c.{ServiceLogic}.APIKey = apiKey
     // }
 }
 
@@ -407,18 +437,18 @@ func (c *Config) LoadFromEnv() {
 func (c *Config) Validate() error {
     // MANDATORY: Validate Controller section
     if c.Controller.MetricsAddr == "" {
-        return fmt.Errorf("controller.metrics_addr required")
+        return fmt.Errorf("controller.metricsAddr required")
     }
     if c.Controller.HealthProbeAddr == "" {
-        return fmt.Errorf("controller.health_probe_addr required")
+        return fmt.Errorf("controller.healthProbeAddr required")
     }
     if c.Controller.LeaderElectionID == "" {
-        return fmt.Errorf("controller.leader_election_id required")
+        return fmt.Errorf("controller.leaderElectionId required")
     }
 
-    // MANDATORY: Validate Infrastructure section
-    if c.Infrastructure.DataStorageURL == "" {
-        return fmt.Errorf("infrastructure.data_storage_url required (ADR-032)")
+    // MANDATORY: Validate DataStorage section
+    if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+        return err
     }
 
     // SERVICE-SPECIFIC: Validate service logic settings
@@ -439,6 +469,12 @@ func (c *Config) applyDefaults() {
     }
     if c.Controller.LeaderElectionID == "" {
         c.Controller.LeaderElectionID = "{service}.kubernaut.ai"
+    }
+
+    // DataStorage defaults
+    if c.DataStorage.URL == "" {
+        ds := sharedconfig.DefaultDataStorageConfig()
+        c.DataStorage = ds
     }
 
     // SERVICE-SPECIFIC: Apply service logic defaults
@@ -477,9 +513,9 @@ func (c *Config) applyDefaults() {
 
 ```go
 type Config struct {
-    Controller     ControllerSettings     `yaml:"controller"`
-    Delivery       DeliverySettings       `yaml:"delivery"`
-    Infrastructure InfrastructureSettings `yaml:"infrastructure"`
+    Controller  ControllerSettings            `yaml:"controller"`
+    Delivery    DeliverySettings              `yaml:"delivery"`
+    DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 }
 
 type DeliverySettings struct {
@@ -490,7 +526,7 @@ type DeliverySettings struct {
 }
 
 type FileSettings struct {
-    OutputDir string        `yaml:"output_dir"`
+    OutputDir string        `yaml:"outputDir"`
     Format    string        `yaml:"format"`  // json, yaml, text
     Timeout   time.Duration `yaml:"timeout"`
 }
@@ -506,17 +542,17 @@ metadata:
 data:
   config.yaml: |
     controller:
-      metrics_addr: ":9090"
-      health_probe_addr: ":8081"
-      leader_election: false
-      leader_election_id: "notification.kubernaut.ai"
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "notification.kubernaut.ai"
 
     delivery:
       console:
         enabled: true
 
       file:
-        output_dir: "/tmp/notifications"
+        outputDir: "/tmp/notifications"
         format: "json"
         timeout: 5s
 
@@ -527,8 +563,14 @@ data:
       slack:
         timeout: 10s
 
-    infrastructure:
-      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 ```
 
 **Deployment**: `test/e2e/notification/manifests/notification-deployment.yaml`
@@ -566,10 +608,10 @@ volumes:
 
 ```go
 type ServerConfig struct {
-    Server         ServerSettings         `yaml:"server"`
-    Middleware     MiddlewareSettings     `yaml:"middleware"`
-    Infrastructure InfrastructureSettings `yaml:"infrastructure"`
-    Processing     ProcessingSettings     `yaml:"processing"`
+    Server      ServerSettings                `yaml:"server"`
+    Middleware  MiddlewareSettings            `yaml:"middleware"`
+    DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
+    Processing  ProcessingSettings            `yaml:"processing"`
 }
 ```
 
@@ -583,12 +625,18 @@ metadata:
 data:
   config.yaml: |
     server:
-      listen_addr: ":8080"
-      read_timeout: 30s
-      write_timeout: 30s
+      listenAddr: ":8080"
+      readTimeout: 30s
+      writeTimeout: 30s
 
-    infrastructure:
-      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
 
     processing:
       deduplication:
@@ -615,7 +663,7 @@ timeout := os.Getenv("TIMEOUT")
 # ConfigMap
 delivery:
   file:
-    output_dir: "/tmp/notifications"
+    outputDir: "/tmp/notifications"
   log:
     enabled: true
   timeout: 30s
@@ -677,6 +725,32 @@ if err := cfg.Validate(); err != nil {
 
 ---
 
+### ❌ **Anti-Pattern 5: Using `audit` or `infrastructure` for DataStorage Config**
+
+**DON'T DO THIS**:
+```yaml
+audit:
+  dataStorageUrl: "http://data-storage-service:8080"
+infrastructure:
+  dataStorageUrl: "http://data-storage-service:8080"
+```
+
+**WHY**: DataStorage serves more than just audit (also workflow catalog). Use the standard `datastorage` section.
+
+**DO THIS**:
+```yaml
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
+```
+
+---
+
 ## Compliance Checklist
 
 Before merging configuration changes, verify ALL items:
@@ -697,7 +771,8 @@ Before merging configuration changes, verify ALL items:
 - [ ] ConfigMap has `config.yaml` key with YAML content
 - [ ] YAML has `controller` section with all required fields
 - [ ] YAML has service-specific section (delivery/processing/execution/storage)
-- [ ] YAML has `infrastructure` section with `data_storage_url`
+- [ ] YAML has `datastorage` section with `url`, `timeout`, and `buffer`
+- [ ] All YAML keys use camelCase (per CRD_FIELD_NAMING_CONVENTION.md)
 - [ ] All durations use Go format (`30s`, `5m`, `1h`)
 - [ ] No secrets in ConfigMap YAML
 
@@ -728,29 +803,35 @@ Before merging configuration changes, verify ALL items:
 
 | Service | Current State | Action Required | ETA |
 |---------|---------------|-----------------|-----|
-| DataStorage | Env var only | Migrate to flag + K8s substitution | 30 min |
-| Gateway | Flag (different style) | Standardize flag name, add K8s substitution | 20 min |
-| WorkflowExecution | Flag (different name) | Rename flag to `config`, add K8s substitution | 20 min |
-| SignalProcessing | Flag (different default) | Standardize default, add K8s substitution | 20 min |
-| Notification | Individual env vars | Full migration (IN PROGRESS) | 2-3 hours |
+| RemediationOrchestrator | `audit.*` section | Rename to `datastorage.*`, use shared type | 30 min |
+| EffectivenessMonitor | `audit.*` section | Rename to `datastorage.*`, use shared type | 30 min |
+| WorkflowExecution | `audit.*` section (no buffer) | Rename to `datastorage.*`, add buffer support | 30 min |
+| Gateway | `infrastructure.*` section | Rename to `datastorage.*`, use shared type | 30 min |
+| Notification | `infrastructure.*` section | Rename to `datastorage.*`, use shared type | 30 min |
+| SignalProcessing | Config struct unused | Full ADR-030 migration with `datastorage` | 2 hours |
+| AuthWebhook | CLI flags + env vars only | Full ADR-030 migration with `datastorage` | 2 hours |
 
-**Total Migration Effort**: ~4 hours for all existing services
+**Total Migration Effort**: ~6 hours for all existing services
 
 ---
 
 ## Authoritative References
 
 ### Current Compliant Implementations
-1. **DataStorage**: `pkg/datastorage/config/config.go` - Comprehensive example
-2. **Gateway**: `pkg/gateway/config/config.go` - Multi-section structure
-3. **Notification**: `pkg/notification/config/config.go` - NEW reference (in progress)
+1. **RemediationOrchestrator**: `internal/config/remediationorchestrator.go` - Reference for CRD controllers
+2. **DataStorage**: `pkg/datastorage/config/config.go` - Reference for storage service
+3. **Gateway**: `pkg/gateway/config/config.go` - Reference for HTTP services
+
+### Shared Types
+1. **DataStorageConfig**: `internal/config/datastorage.go` - Shared across all non-DS services
+2. **ControllerConfig**: `internal/config/remediationorchestrator.go` - Shared by RO/EM
 
 ### Deployment Examples
 1. **Gateway E2E**: `test/e2e/gateway/gateway-deployment.yaml` - ConfigMap + deployment
-2. **Notification E2E**: `test/e2e/notification/manifests/` - Complete example (in progress)
+2. **Notification E2E**: `test/e2e/notification/manifests/` - Complete example
 
 ### Related Decisions
-- **ADR-032**: Audit Trail (requires `data_storage_url`)
+- **ADR-032**: Audit Trail (requires DataStorage connectivity)
 - **DD-005**: Observability (metrics configuration in Controller)
 
 ---
@@ -761,7 +842,7 @@ Before merging configuration changes, verify ALL items:
 **A**: YES. Standardization requires exact flag name: `-config`
 
 ### Q: Can I skip the Controller section if my service doesn't need it?
-**A**: NO. All services MUST have Controller, ServiceLogic, Infrastructure sections.
+**A**: NO. All services MUST have Controller, ServiceLogic, and DataStorage sections.
 
 ### Q: Where do secrets go?
 **A**: Environment variables ONLY. Load them in `LoadFromEnv()`, NEVER in ConfigMap.
@@ -779,11 +860,14 @@ Before merging configuration changes, verify ALL items:
 **A**: NO. MUST use `kubelog.NewLogger()`, NOT `zap` directly.
 
 ### Q: What about backwards compatibility?
-**A**: Migration plan provided above. 4 hours total for all services.
+**A**: Migration plan provided above. ~6 hours total for all services.
+
+### Q: Why `datastorage` instead of `audit` or `infrastructure`?
+**A**: DataStorage serves both **audit trail** and **workflow catalog** APIs. The name `audit` was misleading (too narrow), and `infrastructure` was too generic. The `datastorage` section clearly identifies the dependency regardless of what the caller uses it for.
 
 ---
 
 **Status**: ✅ **AUTHORITATIVE STANDARD - MANDATORY**
 **Exceptions**: NONE - all services must comply
-**Last Updated**: December 22, 2025
+**Last Updated**: February 12, 2026
 **Enforcement**: Non-negotiable architectural requirement
