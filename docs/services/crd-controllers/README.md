@@ -1,14 +1,14 @@
 # CRD Controllers Documentation
 
-**Last Updated**: 2025-10-12
-**Structure Version**: 1.0
+**Last Updated**: 2026-02-12
+**Structure Version**: 1.1
 **Documentation Status**: ✅ Active
 
 ---
 
 ## 📋 Overview
 
-This directory contains comprehensive documentation for all **6 CRD controller services** in Kubernaut V1. Each service has its own self-contained directory with 13-15 focused documents following a consistent structure.
+This directory contains comprehensive documentation for all **7 CRD controller services** in Kubernaut V1. Each service has its own self-contained directory with 13-15 focused documents following a consistent structure.
 
 ---
 
@@ -24,12 +24,13 @@ This directory contains comprehensive documentation for all **6 CRD controller s
 | **Kubernetes Executor** | [04-kubernetesexecutor/](./04-kubernetesexecutor/) | ✅ Active | Safe Kubernetes action execution |
 | **Remediation Orchestrator** | [05-remediationorchestrator/](./05-remediationorchestrator/) | ✅ Active | Multi-CRD lifecycle coordination |
 | **Notification** | [06-notification/](./06-notification/) | 🚧 In Development | Multi-channel notification delivery with CRD persistence |
+| **Effectiveness Monitor** | [07-effectivenessmonitor/](./07-effectivenessmonitor/) | ✅ Active (V1.0) | Post-remediation effectiveness assessment (health, alerts, metrics, spec drift). Defense-in-depth testing (unit/integration/E2E) with binary code coverage. Docs: test plan only; 14-file structure pending. |
 
 ---
 
 ## 📖 How to Navigate Service Documentation
 
-Each service directory follows a **consistent 14-file structure** for easy navigation:
+Each service directory follows a **consistent 14-file structure** for easy navigation (services 01-06; 07-effectivenessmonitor has a test plan only — full docs pending):
 
 ### **Standard Files in Each Service** (Common Pattern)
 
@@ -120,7 +121,7 @@ Meta-documentation and administrative records:
 
 ### **Analysis & Triage Reports**
 
-Analysis documents that assess all 6 CRD controllers collectively:
+Analysis documents that assess all 7 CRD controllers collectively:
 
 - **[CRD Controllers Triage Report](../../analysis/CRD_CONTROLLERS_TRIAGE_REPORT.md)**
   Identifies inconsistencies, risks, pitfalls, and gaps across all controllers
@@ -284,5 +285,6 @@ Common patterns duplicated with clear markers for easy maintenance.
 **Last Restructure**: 2025-01-15
 **Relocation Update**: 2025-10-12
 **Document Reorganization**: 2025-10-14 (85% reduction in root-level files)
+**EM V1.0 Integration**: 2026-02-12 (7th service: Effectiveness Monitor with full coverage)
 **Status**: ✅ Active and maintained
 
