@@ -1,0 +1,9 @@
+# Kubernaut platform namespace
+# BR-SCOPE-002: Infrastructure namespaces must NOT have kubernaut.ai/managed=true
+# Only application/workload namespaces get that label.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-system
+  labels:
+    app.kubernetes.io/part-of: kubernaut

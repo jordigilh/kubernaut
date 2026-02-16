@@ -1,0 +1,148 @@
+# DataStorage Service
+# Extracted from: test/infrastructure/datastorage.go
+# Stripped: coverage volumes, NodePort (use Kind overlay)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    service:
+      name: data-storage
+      metricsPort: 9181
+      logLevel: debug
+      shutdownTimeout: 30s
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      read_timeout: 30s
+      write_timeout: 30s
+    database:
+      host: postgresql.kubernaut-system.svc.cluster.local
+      port: 5432
+      name: action_history
+      user: slm_user
+      sslMode: disable
+      maxOpenConns: 50
+      maxIdleConns: 10
+      connMaxLifetime: 1h
+      connMaxIdleTime: 10m
+      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+      usernameKey: "username"
+      passwordKey: "password"
+    redis:
+      addr: redis.kubernaut-system.svc.cluster.local:6379
+      db: 0
+      dlqStreamName: dlq-stream
+      dlqMaxLen: 1000
+      dlqConsumerGroup: dlq-group
+      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      passwordKey: "password"
+    logging:
+      level: debug
+      format: json
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-secret
+  namespace: kubernaut-system
+stringData:
+  db-secrets.yaml: |
+    username: slm_user
+    password: test_password
+  redis-secrets.yaml: |
+    password: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  namespace: kubernaut-system
+  labels:
+    app: datastorage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+    spec:
+      serviceAccountName: data-storage-sa
+      containers:
+        - name: datastorage
+          image: quay.io/kubernaut-ai/datastorage:demo-v1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9181
+          env:
+            - name: CONFIG_PATH
+              value: /etc/datastorage/config.yaml
+            - name: POD_NAMESPACE
+              value: kubernaut-system
+          volumeMounts:
+            - name: config
+              mountPath: /etc/datastorage
+              readOnly: true
+            - name: secrets
+              mountPath: /etc/datastorage/secrets
+              readOnly: true
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: datastorage-config
+        - name: secrets
+          secret:
+            secretName: datastorage-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-storage-service
+  namespace: kubernaut-system
+  labels:
+    app: datastorage
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: metrics
+      port: 9181
+      targetPort: 9181
+      protocol: TCP
+  selector:
+    app: datastorage
