@@ -182,6 +182,10 @@ spec:
     metadata:
       labels:
         app: aianalysis-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
       containers:

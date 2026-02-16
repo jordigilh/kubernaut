@@ -109,6 +109,10 @@ spec:
     metadata:
       labels:
         app: workflowexecution-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: workflowexecution-controller
       containers:

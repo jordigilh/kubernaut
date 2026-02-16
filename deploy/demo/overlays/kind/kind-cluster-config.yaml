@@ -25,6 +25,10 @@ nodes:
   - containerPort: 30193
     hostPort: 9193
     protocol: TCP
+  # Grafana (operational dashboard)
+  - containerPort: 30300
+    hostPort: 3000
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
