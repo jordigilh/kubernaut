@@ -1,92 +1,42 @@
 # WorkflowExecution Controller Configuration
 # ADR-030: Service Configuration Management
-# See: docs/architecture/decisions/ADR-030-service-configuration-management.md
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 
 # ========================================
 # EXECUTION SETTINGS (DD-WE-001, DD-WE-002)
 # ========================================
 execution:
-  # Namespace where Tekton PipelineRuns are created (DD-WE-002)
-  # Default: kubernaut-workflows
   namespace: kubernaut-workflows
-
-  # ServiceAccount for PipelineRuns (BR-WE-007)
-  # Must have permissions to create and monitor PipelineRuns
-  # Default: kubernaut-workflow-runner
-  service_account: kubernaut-workflow-runner
-
-  # Cooldown period between workflow executions on same target (DD-WE-001)
-  # Prevents redundant sequential workflows
-  # Format: duration string (e.g., "5m", "300s")
-  # Default: 5m
-  cooldown_period: 5m
+  serviceAccount: kubernaut-workflow-runner
+  cooldownPeriod: 5m
 
 # ========================================
 # EXPONENTIAL BACKOFF (DD-WE-004, BR-WE-012)
 # ========================================
 backoff:
-  # Base cooldown for exponential backoff calculation
-  # Formula: Cooldown = base_cooldown * 2^(min(failures-1, max_exponent))
-  # Format: duration string (e.g., "60s", "1m")
-  # Default: 60s
-  base_cooldown: 60s
-
-  # Maximum cooldown period (caps exponential growth)
-  # Prevents excessive wait times before retry
-  # Format: duration string (e.g., "10m", "600s")
-  # Default: 10m
-  max_cooldown: 10m
-
-  # Maximum exponent for backoff calculation
-  # Limits growth: max multiplier = 2^max_exponent
-  # Example: 4 means max multiplier is 2^4 = 16x
-  # Range: 1-10
-  # Default: 4
-  max_exponent: 4
-
-  # Maximum consecutive pre-execution failures before auto-fail
-  # After this many consecutive failures, workflow gets ExhaustedRetries condition
-  # Must be positive integer
-  # Default: 5
-  max_consecutive_failures: 5
+  baseCooldown: 60s
+  maxCooldown: 10m
+  maxExponent: 4
+  maxConsecutiveFailures: 5
 
 # ========================================
-# AUDIT CONFIGURATION (BR-WE-005, ADR-032)
+# DATASTORAGE CONNECTIVITY (ADR-030)
+# Audit trail + workflow catalog
 # ========================================
-audit:
-  # Data Storage Service URL for audit events
-  # REQUIRED: Audit is mandatory per ADR-032 (P0 service)
-  # Format: HTTP(S) URL
-  # Default: http://datastorage-service:8080
-  datastorage_url: http://datastorage-service:8080
-
-  # Timeout for audit API calls
-  # Format: duration string (e.g., "10s", "5s")
-  # Default: 10s
+datastorage:
+  url: http://data-storage-service:8080
   timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
 
 # ========================================
 # CONTROLLER RUNTIME (DD-005)
 # ========================================
 controller:
-  # Prometheus metrics endpoint address
-  # Format: :port or host:port
-  # Default: :9090
-  metrics_addr: :9090
-
-  # Health and readiness probes endpoint address
-  # Format: :port or host:port
-  # Default: :8081
-  health_probe_addr: :8081
-
-  # Enable leader election for multi-replica deployments
-  # Set to true for HA deployments (only one active controller)
-  # Default: false
-  leader_election: false
-
-  # Leader election ID (must be unique across cluster)
-  # Default: workflowexecution.kubernaut.ai
-  leader_election_id: workflowexecution.kubernaut.ai
-
-
-
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: workflowexecution.kubernaut.ai
