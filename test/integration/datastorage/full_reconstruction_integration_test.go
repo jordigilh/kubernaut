@@ -277,8 +277,8 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// Gap #4: Provider data
 			Expect(rr.Spec.ProviderData).ToNot(BeNil(), "Gap #4: ProviderData should be populated")
 			Expect(rr.Spec.ProviderData).ToNot(BeEmpty(), "Gap #4: ProviderData should not be empty")
-			// ProviderData is stored as JSON []byte - contains ProviderResponseSummary fields
-			Expect(string(rr.Spec.ProviderData)).To(ContainSubstring("incident-memory-high"), "Gap #4: incident_id from aianalysis.analysis.completed")
+			// ProviderData is stored as JSON string (issue #96) - contains ProviderResponseSummary fields
+			Expect(rr.Spec.ProviderData).To(ContainSubstring("incident-memory-high"), "Gap #4: incident_id from aianalysis.analysis.completed")
 			Expect(string(rr.Spec.ProviderData)).To(ContainSubstring("Memory leak detected"), "Gap #4: analysis_preview from aianalysis.analysis.completed")
 
 			// Gap #5: Workflow selection

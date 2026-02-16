@@ -342,7 +342,7 @@ type RemediationRequestSpec struct {
 	//
 	// For Datadog (targetType="datadog"):
 	//   {"monitorId": 123, "host": "...", "tags": [...], "metricQuery": "...", ...}
-	ProviderData []byte `json:"providerData,omitempty"`
+	ProviderData string `json:"providerData,omitempty"`
 
 	// ========================================
 	// AUDIT/DEBUG
@@ -350,7 +350,7 @@ type RemediationRequestSpec struct {
 
 	// Complete original webhook payload for debugging and audit
 	// Stored as []byte to preserve exact format
-	OriginalPayload []byte `json:"originalPayload,omitempty"`
+	OriginalPayload string `json:"originalPayload,omitempty"`
 
 	// ========================================
 	// WORKFLOW CONFIGURATION

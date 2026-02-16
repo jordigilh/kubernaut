@@ -378,10 +378,12 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalAnnotations: c.truncateAnnotationValues(signal.Annotations),
 
 			// Provider-specific data (structured JSON for downstream services)
-			ProviderData: c.buildProviderData(signal),
+			// Issue #96: string type eliminates unnecessary base64 encoding layer
+			ProviderData: string(c.buildProviderData(signal)),
 
 			// Original payload for audit trail
-			OriginalPayload: signal.RawPayload,
+			// Issue #96: string type preserves raw JSON text without base64 encoding
+			OriginalPayload: string(signal.RawPayload),
 
 			// DD-GATEWAY-011: Deduplication REMOVED from Spec (moved to Status)
 			// Gateway now owns status.deduplication (initialized by StatusUpdater)

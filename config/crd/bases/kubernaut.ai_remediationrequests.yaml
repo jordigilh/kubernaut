@@ -11,8 +11,6 @@ spec:
     kind: RemediationRequest
     listKind: RemediationRequestList
     plural: remediationrequests
-    shortNames:
-    - rr
     singular: remediationrequest
   scope: Namespaced
   versions:
@@ -126,7 +124,6 @@ spec:
                 description: |-
                   Complete original webhook payload for debugging and audit
                   Stored as []byte to preserve exact format
-                format: byte
                 type: string
               providerData:
                 description: |-
@@ -142,7 +139,6 @@ spec:
 
                   For Datadog (targetType="datadog"):
                     {"monitorId": 123, "host": "...", "tags": [...], "metricQuery": "...", ...}
-                format: byte
                 type: string
               receivedTime:
                 description: When Gateway received the signal

@@ -124,8 +124,8 @@ type SignalData struct {
 	// When Gateway received the signal
 	ReceivedTime metav1.Time `json:"receivedTime"`
 
-	// Provider-specific fields in raw JSON format
-	ProviderData []byte `json:"providerData,omitempty"`
+	// Provider-specific fields in raw JSON format (issue #96: string to avoid base64)
+	ProviderData string `json:"providerData,omitempty"`
 }
 
 // ResourceIdentifier identifies the target resource for remediation.

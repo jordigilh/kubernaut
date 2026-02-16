@@ -462,7 +462,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// CORRECTNESS: ProviderData does NOT duplicate resource info
 			var providerData map[string]interface{}
-			err = json.Unmarshal(crd.Spec.ProviderData, &providerData)
+			err = json.Unmarshal([]byte(crd.Spec.ProviderData), &providerData)
 			Expect(err).NotTo(HaveOccurred(), "ProviderData should be valid JSON")
 			Expect(providerData).NotTo(HaveKey("resource"),
 				"ProviderData should NOT contain resource{} - data is in spec.targetResource")
