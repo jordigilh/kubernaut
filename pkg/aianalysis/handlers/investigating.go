@@ -149,7 +149,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
+		h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -202,7 +202,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
+		h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -455,7 +455,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 	aianalysis.SetInvestigationSessionReady(analysis, true, condReason, condMsg)
 
 	// DD-AUDIT-003: Record submit audit event
-	h.auditClient.RecordHolmesGPTSubmit(ctx, analysis, sessionID)
+	h.auditClient.RecordAIAgentSubmit(ctx, analysis, sessionID)
 
 	// DD-EVENT-001: Emit SessionCreated K8s event for observability
 	if h.recorder != nil {
@@ -510,19 +510,20 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 // BR-AA-HAPI-064.8: Exponential backoff (10s base, 2x multiplier, 30s cap)
 //
 // Updates PollCount and LastPolled in the CRD status for observability.
-// The informer-triggered re-reconcile from the status write is handled by
-// the throttle in handleSessionPoll, which checks LastPolled and short-circuits
-// if we polled too recently.
+// The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
+// so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
+
+	// Compute backoff interval BEFORE incrementing PollCount.
+	// PollCount=0 → 10s, PollCount=1 → 20s, PollCount=2+ → 30s (capped).
+	// This ensures the first poll happens 10s after session creation (not 20s).
+	interval := h.computePollBackoff(session.PollCount)
 
 	// Update poll tracking fields for observability
 	session.PollCount++
 	now := metav1.Now()
 	session.LastPolled = &now
-
-	// Compute backoff interval from updated poll count
-	interval := h.computePollBackoff(session.PollCount)
 
 	h.log.Info("Session still in progress, requeuing",
 		"status", status.Status,
@@ -568,7 +569,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	analysis.Status.ObservedGeneration = analysis.Generation
 
 	// DD-AUDIT-003: Record result retrieval audit event
-	h.auditClient.RecordHolmesGPTResult(ctx, analysis, investigationTime)
+	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
 
 	if resp == nil {
 		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API session %s", session.ID))
@@ -596,7 +597,7 @@ func (h *InvestigatingHandler) handleSessionRecoveryResult(ctx context.Context, 
 	analysis.Status.ObservedGeneration = analysis.Generation
 
 	// DD-AUDIT-003: Record result retrieval audit event
-	h.auditClient.RecordHolmesGPTResult(ctx, analysis, investigationTime)
+	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
 
 	// BR-AI-082: Populate RecoveryStatus from recovery_analysis
 	if resp != nil {
@@ -680,7 +681,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 	)
 
 	// DD-AUDIT-003: Record session lost event
-	h.auditClient.RecordHolmesGPTSessionLost(ctx, analysis, session.Generation)
+	h.auditClient.RecordAIAgentSessionLost(ctx, analysis, session.Generation)
 
 	// DD-EVENT-001: Emit SessionLost K8s event for observability
 	if h.recorder != nil {

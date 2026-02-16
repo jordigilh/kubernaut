@@ -37,15 +37,15 @@ const (
 	EventTypeAnalysisCompleted = "aianalysis.analysis.completed"
 	EventTypeAnalysisFailed    = "aianalysis.analysis.failed"
 	EventTypePhaseTransition   = "aianalysis.phase.transition"
-	EventTypeHolmesGPTCall     = "aianalysis.holmesgpt.call"
-	EventTypeApprovalDecision  = "aianalysis.approval.decision"
-	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
-	EventTypeError             = "aianalysis.error.occurred"
+	EventTypeAIAgentCall      = "aianalysis.aiagent.call"
+	EventTypeApprovalDecision = "aianalysis.approval.decision"
+	EventTypeRegoEvaluation   = "aianalysis.rego.evaluation"
+	EventTypeError            = "aianalysis.error.occurred"
 
 	// Session audit event types (BR-AA-HAPI-064)
-	EventTypeHolmesGPTSubmit      = "aianalysis.holmesgpt.submit"
-	EventTypeHolmesGPTResult      = "aianalysis.holmesgpt.result"
-	EventTypeHolmesGPTSessionLost = "aianalysis.holmesgpt.session_lost"
+	EventTypeAIAgentSubmit      = "aianalysis.aiagent.submit"
+	EventTypeAIAgentResult      = "aianalysis.aiagent.result"
+	EventTypeAIAgentSessionLost = "aianalysis.aiagent.session_lost"
 )
 
 // Event category constant (per DD-AUDIT-003)
@@ -60,7 +60,7 @@ const (
 	EventActionAnalysisFailed   = "analysis_failed"
 	EventActionPhaseTransition  = "phase_transition"
 	EventActionError            = "error"
-	EventActionHolmesGPTCall    = "holmesgpt_call"
+	EventActionAIAgentCall      = "aiagent_call"
 	EventActionApprovalDecision = "approval_decision"
 	EventActionPolicyEvaluation = "policy_evaluation"
 )
@@ -255,12 +255,12 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 	}
 }
 
-// RecordHolmesGPTCall records a HolmesGPT-API call event
+// RecordAIAgentCall records an AI agent call event
 //
 // Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
-func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (c *AuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 	// Build structured payload using OpenAPI-generated type
-	payload := &ogenclient.AIAnalysisHolmesGPTCallPayload{
+	payload := &ogenclient.AIAnalysisAIAgentCallPayload{
 		Endpoint:       endpoint,
 		HTTPStatusCode: int32(statusCode),
 		DurationMs:     int32(durationMs),
@@ -277,9 +277,9 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, EventTypeHolmesGPTCall)
+	audit.SetEventType(event, EventTypeAIAgentCall)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, EventActionHolmesGPTCall) // Fixed: Must match test contract
+	audit.SetEventAction(event, EventActionAIAgentCall) // Fixed: Must match test contract
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
@@ -289,10 +289,10 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	audit.SetNamespace(event, analysis.Namespace)
 	audit.SetDuration(event, durationMs)
 	// Use ogen union constructor (OGEN-MIGRATION)
-	event.EventData = ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(*payload)
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData(*payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write HolmesGPT call audit")
+		c.log.Error(err, "Failed to write AI agent call audit")
 	}
 }
 
@@ -445,75 +445,96 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 // Stubs for async submit/poll audit events - implementation in GREEN phase
 // ========================================
 
-// RecordHolmesGPTSubmit records an async HAPI submit event with session ID.
+// RecordAIAgentSubmit records an async HAPI submit event with session ID.
 // BR-AA-HAPI-064: Audit trail for session creation
-func (c *AuditClient) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+	payload := ogenclient.AIAnalysisAIAgentCallPayload{
+		Endpoint:       "session_submit",
+		HTTPStatusCode: 200,
+		DurationMs:     0,
+	}
+
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, EventTypeHolmesGPTSubmit)
+	audit.SetEventType(event, EventTypeAIAgentSubmit)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, "holmesgpt_submit")
+	audit.SetEventAction(event, "aiagent_submit")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write HolmesGPT submit audit", "sessionID", sessionID)
+		c.log.Error(err, "Failed to write AI agent submit audit", "sessionID", sessionID)
 	}
 }
 
-// RecordHolmesGPTResult records an async HAPI result retrieval with investigation time.
+// RecordAIAgentResult records an async HAPI result retrieval with investigation time.
 // BR-AA-HAPI-064: Audit trail for result retrieval.
 //
 // For backward compatibility with existing audit tests (DD-AUDIT-003), this also
-// emits an EventTypeHolmesGPTCall event, which is the sync-era equivalent of
+// emits an EventTypeAIAgentCall event, which is the sync-era equivalent of
 // "HAPI was called and returned a result." This ensures tests that expect
-// aianalysis.holmesgpt.call events continue to pass in session mode.
-func (c *AuditClient) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+// aianalysis.aiagent.call events continue to pass in session mode.
+func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 	// Emit the session-specific result event
+	payload := ogenclient.AIAnalysisAIAgentCallPayload{
+		Endpoint:       "session_result",
+		HTTPStatusCode: 200,
+		DurationMs:     int32(investigationTimeMs),
+	}
+
 	resultEvent := audit.NewAuditEventRequest()
 	resultEvent.Version = "1.0"
-	audit.SetEventType(resultEvent, EventTypeHolmesGPTResult)
+	audit.SetEventType(resultEvent, EventTypeAIAgentResult)
 	audit.SetEventCategory(resultEvent, EventCategoryAIAnalysis)
-	audit.SetEventAction(resultEvent, "holmesgpt_result")
+	audit.SetEventAction(resultEvent, "aiagent_result")
 	audit.SetEventOutcome(resultEvent, audit.OutcomeSuccess)
 	audit.SetActor(resultEvent, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(resultEvent, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(resultEvent, getCorrelationID(analysis))
 	audit.SetNamespace(resultEvent, analysis.Namespace)
 	audit.SetDuration(resultEvent, int(investigationTimeMs))
+	resultEvent.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, resultEvent); err != nil {
-		c.log.Error(err, "Failed to write HolmesGPT result audit")
+		c.log.Error(err, "Failed to write AI agent result audit")
 	}
 
-	// Backward compatibility: emit holmesgpt.call event (DD-AUDIT-003)
+	// Backward compatibility: emit aiagent.call event (DD-AUDIT-003)
 	// Determines endpoint from recovery status
 	endpoint := "/api/v1/incident/analyze"
 	if analysis.Spec.IsRecoveryAttempt {
 		endpoint = "/api/v1/recovery/analyze"
 	}
-	c.RecordHolmesGPTCall(ctx, analysis, endpoint, 200, int(investigationTimeMs))
+	c.RecordAIAgentCall(ctx, analysis, endpoint, 200, int(investigationTimeMs))
 }
 
-// RecordHolmesGPTSessionLost records a session lost event with generation count.
+// RecordAIAgentSessionLost records a session lost event with generation count.
 // BR-AA-HAPI-064: Audit trail for session regeneration
-func (c *AuditClient) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (c *AuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+	payload := ogenclient.AIAnalysisAIAgentCallPayload{
+		Endpoint:       "session_lost",
+		HTTPStatusCode: 0,
+		DurationMs:     0,
+	}
+
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, EventTypeHolmesGPTSessionLost)
+	audit.SetEventType(event, EventTypeAIAgentSessionLost)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, "holmesgpt_session_lost")
+	audit.SetEventAction(event, "aiagent_session_lost")
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write HolmesGPT session lost audit", "generation", generation)
+		c.log.Error(err, "Failed to write AI agent session lost audit", "generation", generation)
 	}
 }
 

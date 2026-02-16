@@ -90,15 +90,15 @@ func (m *Manager) RecordOperationTiming(ctx context.Context, analysis *aianalysi
 	}
 }
 
-// RecordHolmesGPTCallWithTiming records a HolmesGPT API call with timing.
+// RecordAIAgentCallWithTiming records an AI agent API call with timing.
 //
-// This helper ensures HolmesGPT calls are audited consistently with:
+// This helper ensures AI agent calls are audited consistently with:
 // - API endpoint
 // - HTTP status code
 // - Call duration
-func (m *Manager) RecordHolmesGPTCallWithTiming(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, startTime time.Time) {
+func (m *Manager) RecordAIAgentCallWithTiming(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, startTime time.Time) {
 	durationMs := int(time.Since(startTime).Milliseconds())
-	m.client.RecordHolmesGPTCall(ctx, analysis, endpoint, statusCode, durationMs)
+	m.client.RecordAIAgentCall(ctx, analysis, endpoint, statusCode, durationMs)
 }
 
 // RecordApprovalDecisionWithMetadata records an approval decision with full metadata.

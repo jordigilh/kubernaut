@@ -41,7 +41,7 @@ import (
 // noopAuditClient is a no-op implementation of AuditClientInterface for unit tests.
 type noopAuditClient struct{}
 
-func (n *noopAuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (n *noopAuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 	// No-op: Unit tests don't need audit recording
 }
 
@@ -59,13 +59,13 @@ func (n *noopAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *
 }
 
 // BR-AA-HAPI-064: Session audit no-ops
-func (n *noopAuditClient) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (n *noopAuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 }
 
-func (n *noopAuditClient) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+func (n *noopAuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 }
 
-func (n *noopAuditClient) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (n *noopAuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 }
 
 // auditClientSpy is a spy implementation that records audit events for validation.
@@ -79,7 +79,7 @@ type failedAnalysisEvent struct {
 	err      error
 }
 
-func (s *auditClientSpy) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (s *auditClientSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 	// Not tracked in spy for Gap #7 tests
 }
 
@@ -100,15 +100,15 @@ func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *a
 }
 
 // BR-AA-HAPI-064: Session audit spy methods
-func (s *auditClientSpy) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (s *auditClientSpy) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	// Not tracked in spy for Gap #7 tests
 }
 
-func (s *auditClientSpy) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+func (s *auditClientSpy) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 	// Not tracked in spy for Gap #7 tests
 }
 
-func (s *auditClientSpy) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (s *auditClientSpy) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 	// Not tracked in spy for Gap #7 tests
 }
 

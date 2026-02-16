@@ -196,6 +196,136 @@ func (s *AIAgentResponsePayloadEventType) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAnalysisAIAgentCallPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAnalysisAIAgentCallPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("endpoint")
+		e.Str(s.Endpoint)
+	}
+	{
+		e.FieldStart("http_status_code")
+		e.Int32(s.HTTPStatusCode)
+	}
+	{
+		e.FieldStart("duration_ms")
+		e.Int32(s.DurationMs)
+	}
+}
+
+var jsonFieldsNameOfAIAnalysisAIAgentCallPayload = [3]string{
+	0: "endpoint",
+	1: "http_status_code",
+	2: "duration_ms",
+}
+
+// Decode decodes AIAnalysisAIAgentCallPayload from json.
+func (s *AIAnalysisAIAgentCallPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAnalysisAIAgentCallPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "endpoint":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Endpoint = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"endpoint\"")
+			}
+		case "http_status_code":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int32()
+				s.HTTPStatusCode = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"http_status_code\"")
+			}
+		case "duration_ms":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int32()
+				s.DurationMs = int32(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"duration_ms\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAnalysisAIAgentCallPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAnalysisAIAgentCallPayload) {
+					name = jsonFieldsNameOfAIAnalysisAIAgentCallPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAnalysisAIAgentCallPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAnalysisAIAgentCallPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAnalysisApprovalDecisionPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -934,136 +1064,6 @@ func (s *AIAnalysisErrorPayload) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AIAnalysisErrorPayload) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *AIAnalysisHolmesGPTCallPayload) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *AIAnalysisHolmesGPTCallPayload) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("endpoint")
-		e.Str(s.Endpoint)
-	}
-	{
-		e.FieldStart("http_status_code")
-		e.Int32(s.HTTPStatusCode)
-	}
-	{
-		e.FieldStart("duration_ms")
-		e.Int32(s.DurationMs)
-	}
-}
-
-var jsonFieldsNameOfAIAnalysisHolmesGPTCallPayload = [3]string{
-	0: "endpoint",
-	1: "http_status_code",
-	2: "duration_ms",
-}
-
-// Decode decodes AIAnalysisHolmesGPTCallPayload from json.
-func (s *AIAnalysisHolmesGPTCallPayload) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode AIAnalysisHolmesGPTCallPayload to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "endpoint":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := d.Str()
-				s.Endpoint = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"endpoint\"")
-			}
-		case "http_status_code":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Int32()
-				s.HTTPStatusCode = int32(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"http_status_code\"")
-			}
-		case "duration_ms":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Int32()
-				s.DurationMs = int32(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"duration_ms\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode AIAnalysisHolmesGPTCallPayload")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00000111,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfAIAnalysisHolmesGPTCallPayload) {
-					name = jsonFieldsNameOfAIAnalysisHolmesGPTCallPayload[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *AIAnalysisHolmesGPTCallPayload) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *AIAnalysisHolmesGPTCallPayload) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3135,11 +3135,23 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.NewPhase)
 			}
 		}
-	case AIAnalysisHolmesGPTCallPayloadAuditEventEventData:
-		e.FieldStart("event_type")
-		e.Str("aianalysis.holmesgpt.call")
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+		switch s.Type {
+		case AuditEventEventDataAianalysisAiagentCallAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.call")
+		case AuditEventEventDataAianalysisAiagentResultAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.result")
+		case AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.session_lost")
+		case AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.submit")
+		}
 		{
-			s := s.AIAnalysisHolmesGPTCallPayload
+			s := s.AIAnalysisAIAgentCallPayload
 			{
 				e.FieldStart("endpoint")
 				e.Str(s.Endpoint)
@@ -3915,8 +3927,17 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aianalysis.phase.transition":
 					s.Type = AIAnalysisPhaseTransitionPayloadAuditEventEventData
 					found = true
-				case "aianalysis.holmesgpt.call":
-					s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventEventData
+				case "aianalysis.aiagent.call":
+					s.Type = AuditEventEventDataAianalysisAiagentCallAuditEventEventData
+					found = true
+				case "aianalysis.aiagent.result":
+					s.Type = AuditEventEventDataAianalysisAiagentResultAuditEventEventData
+					found = true
+				case "aianalysis.aiagent.session_lost":
+					s.Type = AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData
+					found = true
+				case "aianalysis.aiagent.submit":
+					s.Type = AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData
 					found = true
 				case "aianalysis.approval.decision":
 					s.Type = AIAnalysisApprovalDecisionPayloadAuditEventEventData
@@ -4041,8 +4062,8 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisPhaseTransitionPayload.Decode(d); err != nil {
 			return err
 		}
-	case AIAnalysisHolmesGPTCallPayloadAuditEventEventData:
-		if err := s.AIAnalysisHolmesGPTCallPayload.Decode(d); err != nil {
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+		if err := s.AIAnalysisAIAgentCallPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAnalysisApprovalDecisionPayloadAuditEventEventData:
@@ -5573,11 +5594,23 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.NewPhase)
 			}
 		}
-	case AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData:
-		e.FieldStart("event_type")
-		e.Str("aianalysis.holmesgpt.call")
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+		switch s.Type {
+		case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.call")
+		case AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.result")
+		case AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.session_lost")
+		case AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("aianalysis.aiagent.submit")
+		}
 		{
-			s := s.AIAnalysisHolmesGPTCallPayload
+			s := s.AIAnalysisAIAgentCallPayload
 			{
 				e.FieldStart("endpoint")
 				e.Str(s.Endpoint)
@@ -6353,8 +6386,17 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aianalysis.phase.transition":
 					s.Type = AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData
 					found = true
-				case "aianalysis.holmesgpt.call":
-					s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData
+				case "aianalysis.aiagent.call":
+					s.Type = AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData
+					found = true
+				case "aianalysis.aiagent.result":
+					s.Type = AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData
+					found = true
+				case "aianalysis.aiagent.session_lost":
+					s.Type = AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData
+					found = true
+				case "aianalysis.aiagent.submit":
+					s.Type = AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData
 					found = true
 				case "aianalysis.approval.decision":
 					s.Type = AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData
@@ -6479,8 +6521,8 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisPhaseTransitionPayload.Decode(d); err != nil {
 			return err
 		}
-	case AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData:
-		if err := s.AIAnalysisHolmesGPTCallPayload.Decode(d); err != nil {
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+		if err := s.AIAnalysisAIAgentCallPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData:

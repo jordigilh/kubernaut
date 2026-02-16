@@ -101,6 +101,47 @@ func (s *AIAgentResponsePayloadEventType) UnmarshalText(data []byte) error {
 	}
 }
 
+// AI agent call event payload (aianalysis.aiagent.call).
+// Ref: #/components/schemas/AIAnalysisAIAgentCallPayload
+type AIAnalysisAIAgentCallPayload struct {
+	// API endpoint called.
+	Endpoint string `json:"endpoint"`
+	// HTTP status code.
+	HTTPStatusCode int32 `json:"http_status_code"`
+	// Call duration in milliseconds.
+	DurationMs int32 `json:"duration_ms"`
+}
+
+// GetEndpoint returns the value of Endpoint.
+func (s *AIAnalysisAIAgentCallPayload) GetEndpoint() string {
+	return s.Endpoint
+}
+
+// GetHTTPStatusCode returns the value of HTTPStatusCode.
+func (s *AIAnalysisAIAgentCallPayload) GetHTTPStatusCode() int32 {
+	return s.HTTPStatusCode
+}
+
+// GetDurationMs returns the value of DurationMs.
+func (s *AIAnalysisAIAgentCallPayload) GetDurationMs() int32 {
+	return s.DurationMs
+}
+
+// SetEndpoint sets the value of Endpoint.
+func (s *AIAnalysisAIAgentCallPayload) SetEndpoint(val string) {
+	s.Endpoint = val
+}
+
+// SetHTTPStatusCode sets the value of HTTPStatusCode.
+func (s *AIAnalysisAIAgentCallPayload) SetHTTPStatusCode(val int32) {
+	s.HTTPStatusCode = val
+}
+
+// SetDurationMs sets the value of DurationMs.
+func (s *AIAnalysisAIAgentCallPayload) SetDurationMs(val int32) {
+	s.DurationMs = val
+}
+
 // Approval decision event payload (aianalysis.approval.decision).
 // Ref: #/components/schemas/AIAnalysisApprovalDecisionPayload
 type AIAnalysisApprovalDecisionPayload struct {
@@ -510,47 +551,6 @@ func (s *AIAnalysisErrorPayload) SetPhase(val string) {
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *AIAnalysisErrorPayload) SetErrorMessage(val string) {
 	s.ErrorMessage = val
-}
-
-// HolmesGPT API call event payload (aianalysis.holmesgpt.call).
-// Ref: #/components/schemas/AIAnalysisHolmesGPTCallPayload
-type AIAnalysisHolmesGPTCallPayload struct {
-	// API endpoint called.
-	Endpoint string `json:"endpoint"`
-	// HTTP status code.
-	HTTPStatusCode int32 `json:"http_status_code"`
-	// Call duration in milliseconds.
-	DurationMs int32 `json:"duration_ms"`
-}
-
-// GetEndpoint returns the value of Endpoint.
-func (s *AIAnalysisHolmesGPTCallPayload) GetEndpoint() string {
-	return s.Endpoint
-}
-
-// GetHTTPStatusCode returns the value of HTTPStatusCode.
-func (s *AIAnalysisHolmesGPTCallPayload) GetHTTPStatusCode() int32 {
-	return s.HTTPStatusCode
-}
-
-// GetDurationMs returns the value of DurationMs.
-func (s *AIAnalysisHolmesGPTCallPayload) GetDurationMs() int32 {
-	return s.DurationMs
-}
-
-// SetEndpoint sets the value of Endpoint.
-func (s *AIAnalysisHolmesGPTCallPayload) SetEndpoint(val string) {
-	s.Endpoint = val
-}
-
-// SetHTTPStatusCode sets the value of HTTPStatusCode.
-func (s *AIAnalysisHolmesGPTCallPayload) SetHTTPStatusCode(val int32) {
-	s.HTTPStatusCode = val
-}
-
-// SetDurationMs sets the value of DurationMs.
-func (s *AIAnalysisHolmesGPTCallPayload) SetDurationMs(val int32) {
-	s.DurationMs = val
 }
 
 // Phase transition event payload (aianalysis.phase.transition).
@@ -1105,7 +1105,7 @@ type AuditEventEventData struct {
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisHolmesGPTCallPayload         AIAnalysisHolmesGPTCallPayload
+	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
 	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
 	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
 	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
@@ -1167,7 +1167,10 @@ const (
 	WorkflowCatalogCreatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventEventData                          AuditEventEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventEventData                            AuditEventEventDataType = "aianalysis.holmesgpt.call"
+	AuditEventEventDataAianalysisAiagentCallAuditEventEventData                  AuditEventEventDataType = "aianalysis.aiagent.call"
+	AuditEventEventDataAianalysisAiagentResultAuditEventEventData                AuditEventEventDataType = "aianalysis.aiagent.result"
+	AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData           AuditEventEventDataType = "aianalysis.aiagent.session_lost"
+	AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData                AuditEventEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventEventData                         AuditEventEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventEventData                           AuditEventEventDataType = "aianalysis.rego.evaluation"
 	AIAnalysisErrorPayloadAuditEventEventData                                    AuditEventEventDataType = "aianalysis.error.occurred"
@@ -1289,9 +1292,14 @@ func (s AuditEventEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 	return s.Type == AIAnalysisPhaseTransitionPayloadAuditEventEventData
 }
 
-// IsAIAnalysisHolmesGPTCallPayload reports whether AuditEventEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventEventData) IsAIAnalysisHolmesGPTCallPayload() bool {
-	return s.Type == AIAnalysisHolmesGPTCallPayloadAuditEventEventData
+// IsAIAnalysisAIAgentCallPayload reports whether AuditEventEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventEventData) IsAIAnalysisAIAgentCallPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAIAnalysisApprovalDecisionPayload reports whether AuditEventEventData is AIAnalysisApprovalDecisionPayload.
@@ -1859,24 +1867,49 @@ func NewAIAnalysisPhaseTransitionPayloadAuditEventEventData(v AIAnalysisPhaseTra
 	return s
 }
 
-// SetAIAnalysisHolmesGPTCallPayload sets AuditEventEventData to AIAnalysisHolmesGPTCallPayload.
-func (s *AuditEventEventData) SetAIAnalysisHolmesGPTCallPayload(v AIAnalysisHolmesGPTCallPayload) {
-	s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventEventData
-	s.AIAnalysisHolmesGPTCallPayload = v
+// SetAIAnalysisAIAgentCallPayload sets AuditEventEventData to AIAnalysisAIAgentCallPayload.
+// panics if `t` is not associated with AIAnalysisAIAgentCallPayload
+func (s *AuditEventEventData) SetAIAnalysisAIAgentCallPayload(t AuditEventEventDataType, v AIAnalysisAIAgentCallPayload) {
+	s.Type = t
+	s.AIAnalysisAIAgentCallPayload = v
+	if !s.IsAIAnalysisAIAgentCallPayload() {
+		panic(fmt.Errorf("invariant: %v is not AIAnalysisAIAgentCallPayload", t))
+	}
 }
 
-// GetAIAnalysisHolmesGPTCallPayload returns AIAnalysisHolmesGPTCallPayload and true boolean if AuditEventEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventEventData) GetAIAnalysisHolmesGPTCallPayload() (v AIAnalysisHolmesGPTCallPayload, ok bool) {
-	if !s.IsAIAnalysisHolmesGPTCallPayload() {
+// GetAIAnalysisAIAgentCallPayload returns AIAnalysisAIAgentCallPayload and true boolean if AuditEventEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventEventData) GetAIAnalysisAIAgentCallPayload() (v AIAnalysisAIAgentCallPayload, ok bool) {
+	if !s.IsAIAnalysisAIAgentCallPayload() {
 		return v, false
 	}
-	return s.AIAnalysisHolmesGPTCallPayload, true
+	return s.AIAnalysisAIAgentCallPayload, true
 }
 
-// NewAIAnalysisHolmesGPTCallPayloadAuditEventEventData returns new AuditEventEventData from AIAnalysisHolmesGPTCallPayload.
-func NewAIAnalysisHolmesGPTCallPayloadAuditEventEventData(v AIAnalysisHolmesGPTCallPayload) AuditEventEventData {
+// NewAuditEventEventDataAianalysisAiagentCallAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentCallAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetAIAnalysisHolmesGPTCallPayload(v)
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentCallAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentResultAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentResultAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentResultAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentSubmitAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentSubmitAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData, v)
 	return s
 }
 
@@ -2608,7 +2641,7 @@ type AuditEventRequestEventData struct {
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisHolmesGPTCallPayload         AIAnalysisHolmesGPTCallPayload
+	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
 	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
 	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
 	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
@@ -2670,7 +2703,10 @@ const (
 	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aianalysis.holmesgpt.call"
+	AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData                  AuditEventRequestEventDataType = "aianalysis.aiagent.call"
+	AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData                AuditEventRequestEventDataType = "aianalysis.aiagent.result"
+	AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData           AuditEventRequestEventDataType = "aianalysis.aiagent.session_lost"
+	AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData                AuditEventRequestEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "aianalysis.rego.evaluation"
 	AIAnalysisErrorPayloadAuditEventRequestEventData                                           AuditEventRequestEventDataType = "aianalysis.error.occurred"
@@ -2792,9 +2828,14 @@ func (s AuditEventRequestEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 	return s.Type == AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData
 }
 
-// IsAIAnalysisHolmesGPTCallPayload reports whether AuditEventRequestEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventRequestEventData) IsAIAnalysisHolmesGPTCallPayload() bool {
-	return s.Type == AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData
+// IsAIAnalysisAIAgentCallPayload reports whether AuditEventRequestEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventRequestEventData) IsAIAnalysisAIAgentCallPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAIAnalysisApprovalDecisionPayload reports whether AuditEventRequestEventData is AIAnalysisApprovalDecisionPayload.
@@ -3362,24 +3403,49 @@ func NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(v AIAnalysisP
 	return s
 }
 
-// SetAIAnalysisHolmesGPTCallPayload sets AuditEventRequestEventData to AIAnalysisHolmesGPTCallPayload.
-func (s *AuditEventRequestEventData) SetAIAnalysisHolmesGPTCallPayload(v AIAnalysisHolmesGPTCallPayload) {
-	s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData
-	s.AIAnalysisHolmesGPTCallPayload = v
+// SetAIAnalysisAIAgentCallPayload sets AuditEventRequestEventData to AIAnalysisAIAgentCallPayload.
+// panics if `t` is not associated with AIAnalysisAIAgentCallPayload
+func (s *AuditEventRequestEventData) SetAIAnalysisAIAgentCallPayload(t AuditEventRequestEventDataType, v AIAnalysisAIAgentCallPayload) {
+	s.Type = t
+	s.AIAnalysisAIAgentCallPayload = v
+	if !s.IsAIAnalysisAIAgentCallPayload() {
+		panic(fmt.Errorf("invariant: %v is not AIAnalysisAIAgentCallPayload", t))
+	}
 }
 
-// GetAIAnalysisHolmesGPTCallPayload returns AIAnalysisHolmesGPTCallPayload and true boolean if AuditEventRequestEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventRequestEventData) GetAIAnalysisHolmesGPTCallPayload() (v AIAnalysisHolmesGPTCallPayload, ok bool) {
-	if !s.IsAIAnalysisHolmesGPTCallPayload() {
+// GetAIAnalysisAIAgentCallPayload returns AIAnalysisAIAgentCallPayload and true boolean if AuditEventRequestEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventRequestEventData) GetAIAnalysisAIAgentCallPayload() (v AIAnalysisAIAgentCallPayload, ok bool) {
+	if !s.IsAIAnalysisAIAgentCallPayload() {
 		return v, false
 	}
-	return s.AIAnalysisHolmesGPTCallPayload, true
+	return s.AIAnalysisAIAgentCallPayload, true
 }
 
-// NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisHolmesGPTCallPayload.
-func NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(v AIAnalysisHolmesGPTCallPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetAIAnalysisHolmesGPTCallPayload(v)
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData, v)
 	return s
 }
 

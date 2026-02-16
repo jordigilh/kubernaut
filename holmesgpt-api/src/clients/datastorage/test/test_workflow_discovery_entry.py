@@ -46,9 +46,7 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                     preconditions = '', ),
                 version = '',
                 container_image = '',
-                execution_engine = 'tekton',
-                actual_success_rate = 0.0,
-                total_executions = 0
+                execution_engine = 'tekton'
             )
         else:
             return WorkflowDiscoveryEntry(

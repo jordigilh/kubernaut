@@ -22,10 +22,10 @@ datastorage/models/__init__.py
 datastorage/models/action_type_entry.py
 datastorage/models/action_type_list_response.py
 datastorage/models/ai_agent_response_payload.py
+datastorage/models/ai_analysis_ai_agent_call_payload.py
 datastorage/models/ai_analysis_approval_decision_payload.py
 datastorage/models/ai_analysis_audit_payload.py
 datastorage/models/ai_analysis_error_payload.py
-datastorage/models/ai_analysis_holmes_gpt_call_payload.py
 datastorage/models/ai_analysis_phase_transition_payload.py
 datastorage/models/ai_analysis_rego_evaluation_payload.py
 datastorage/models/async_acceptance_response.py
@@ -121,10 +121,10 @@ datastorage/models/workflow_validation_payload.py
 datastorage/py.typed
 datastorage/rest.py
 docs/AIAgentResponsePayload.md
+docs/AIAnalysisAIAgentCallPayload.md
 docs/AIAnalysisApprovalDecisionPayload.md
 docs/AIAnalysisAuditPayload.md
 docs/AIAnalysisErrorPayload.md
-docs/AIAnalysisHolmesGPTCallPayload.md
 docs/AIAnalysisPhaseTransitionPayload.md
 docs/AIAnalysisRegoEvaluationPayload.md
 docs/ActionTypeEntry.md
@@ -237,10 +237,10 @@ test/__init__.py
 test/test_action_type_entry.py
 test/test_action_type_list_response.py
 test/test_ai_agent_response_payload.py
+test/test_ai_analysis_ai_agent_call_payload.py
 test/test_ai_analysis_approval_decision_payload.py
 test/test_ai_analysis_audit_payload.py
 test/test_ai_analysis_error_payload.py
-test/test_ai_analysis_holmes_gpt_call_payload.py
 test/test_ai_analysis_phase_transition_payload.py
 test/test_ai_analysis_rego_evaluation_payload.py
 test/test_async_acceptance_response.py
