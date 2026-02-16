@@ -110,11 +110,6 @@ func main() {
 		"metricsAddr", cfg.Controller.MetricsAddr,
 		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
 		"dataStorageURL", cfg.DataStorage.URL,
-		// DD-WE-004: Exponential Backoff Configuration
-		"baseCooldown", cfg.Backoff.BaseCooldown,
-		"maxCooldown", cfg.Backoff.MaxCooldown,
-		"maxBackoffExponent", cfg.Backoff.MaxExponent,
-		"maxConsecutiveFailures", cfg.Backoff.MaxConsecutiveFailures,
 	)
 
 	// ========================================
@@ -213,12 +208,6 @@ func main() {
 		PhaseManager:       phaseManager, // P0: Phase State Machine (validated transitions)
 		AuditManager:       auditManager,    // P3: Audit Manager (typed audit methods)
 		ExecutorRegistry:   executorRegistry, // BR-WE-014: Strategy pattern dispatch
-		// DD-WE-004: Exponential Backoff Configuration (BR-WE-012)
-		// V1.0: DEPRECATED - Routing moved to RO per DD-RO-002 Phase 3 (Dec 19, 2025)
-		BaseCooldownPeriod:     cfg.Backoff.BaseCooldown,
-		MaxCooldownPeriod:      cfg.Backoff.MaxCooldown,
-		MaxBackoffExponent:     cfg.Backoff.MaxExponent,
-		MaxConsecutiveFailures: cfg.Backoff.MaxConsecutiveFailures,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)

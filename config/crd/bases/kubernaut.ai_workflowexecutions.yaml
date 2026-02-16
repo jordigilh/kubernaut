@@ -296,15 +296,6 @@ spec:
                   - type
                   type: object
                 type: array
-              consecutiveFailures:
-                description: |-
-                  ConsecutiveFailures tracks pre-execution failures for this target resource
-                  DEPRECATED (V1.0): Routing state moved to RR.Status.ConsecutiveFailureCount per DD-RO-002 Phase 3
-                  This field is NO LONGER UPDATED by WE controller as of V1.0
-                  Use RR.Status.ConsecutiveFailureCount for routing decisions
-                  Will be REMOVED in V2.0
-                format: int32
-                type: integer
               duration:
                 description: Duration of the execution
                 type: string
@@ -429,15 +420,6 @@ spec:
                 description: |-
                   FailureReason explains why execution failed (if applicable)
                   DEPRECATED: Use FailureDetails for structured failure information
-                type: string
-              nextAllowedExecution:
-                description: |-
-                  NextAllowedExecution is the timestamp when next execution is allowed
-                  DEPRECATED (V1.0): Routing state moved to RR.Status.NextAllowedExecution per DD-RO-002 Phase 3
-                  This field is NO LONGER UPDATED by WE controller as of V1.0
-                  Use RR.Status.NextAllowedExecution for routing decisions
-                  Will be REMOVED in V2.0
-                format: date-time
                 type: string
               observedGeneration:
                 description: |-

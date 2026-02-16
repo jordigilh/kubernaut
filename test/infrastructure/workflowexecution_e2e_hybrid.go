@@ -1095,11 +1095,6 @@ execution:
   namespace: kubernaut-workflows
   cooldownPeriod: 1m
   serviceAccount: kubernaut-workflow-runner
-backoff:
-  baseCooldown: 1m
-  maxCooldown: 10m
-  maxExponent: 4
-  maxConsecutiveFailures: 5
 datastorage:
   url: "http://data-storage-service.kubernaut-system:8080"
   timeout: 10s

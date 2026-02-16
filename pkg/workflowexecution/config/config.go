@@ -18,7 +18,7 @@ limitations under the License.
 //
 // Configuration Structure (ADR-030):
 //   - ExecutionConfig: PipelineRun execution settings (namespace, service account, cooldown)
-//   - BackoffConfig: Exponential backoff settings (DD-WE-004, BR-WE-012)
+//   - (BackoffConfig removed in V1.0 per DD-RO-002 Phase 3)
 //   - DataStorageConfig: Data Storage connectivity (BR-WE-005, ADR-030)
 //   - ControllerConfig: Controller runtime settings (metrics, health probes, leader election)
 //
@@ -39,9 +39,9 @@ import (
 )
 
 // Config holds the complete configuration for the WorkflowExecution controller.
+// Issue #99: BackoffConfig removed (DD-RO-002 Phase 3 -- RO handles all routing/backoff)
 type Config struct {
 	Execution   ExecutionConfig              `yaml:"execution" validate:"required"`
-	Backoff     BackoffConfig                `yaml:"backoff" validate:"required"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
 }
@@ -61,28 +61,6 @@ type ExecutionConfig struct {
 
 	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
 	CooldownPeriod time.Duration `yaml:"cooldownPeriod" validate:"required,gt=0"`
-}
-
-// BackoffConfig holds exponential backoff settings.
-//
-// Business Requirements:
-// - BR-WE-012: Exponential backoff for pre-execution failures
-// - DD-WE-004: Exponential backoff strategy
-//
-// Formula: Cooldown = BaseCooldown * 2^(min(failures-1, MaxExponent))
-// Capped at: MaxCooldown
-type BackoffConfig struct {
-	// BaseCooldown is the initial cooldown for exponential backoff
-	BaseCooldown time.Duration `yaml:"baseCooldown" validate:"required,gt=0"`
-
-	// MaxCooldown caps the exponential backoff
-	MaxCooldown time.Duration `yaml:"maxCooldown" validate:"required,gt=0,gtefield=BaseCooldown"`
-
-	// MaxExponent limits exponential growth (e.g., 4 means max multiplier is 2^4 = 16x)
-	MaxExponent int `yaml:"maxExponent" validate:"required,gte=1,lte=10"`
-
-	// MaxConsecutiveFailures before auto-failing with ExhaustedRetries
-	MaxConsecutiveFailures int `yaml:"maxConsecutiveFailures" validate:"required,gt=0"`
 }
 
 // ControllerConfig holds controller runtime settings.
@@ -115,12 +93,6 @@ func DefaultConfig() *Config {
 			Namespace:      "kubernaut-workflows",
 			ServiceAccount: "kubernaut-workflow-runner",
 			CooldownPeriod: 5 * time.Minute,
-		},
-		Backoff: BackoffConfig{
-			BaseCooldown:           60 * time.Second,
-			MaxCooldown:            10 * time.Minute,
-			MaxExponent:            4,
-			MaxConsecutiveFailures: 5,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Controller: ControllerConfig{
@@ -159,18 +131,7 @@ func LoadFromFile(path string) (*Config, error) {
 	if cfg.Execution.CooldownPeriod == 0 {
 		cfg.Execution.CooldownPeriod = 5 * time.Minute
 	}
-	if cfg.Backoff.BaseCooldown == 0 {
-		cfg.Backoff.BaseCooldown = 60 * time.Second
-	}
-	if cfg.Backoff.MaxCooldown == 0 {
-		cfg.Backoff.MaxCooldown = 10 * time.Minute
-	}
-	if cfg.Backoff.MaxExponent == 0 {
-		cfg.Backoff.MaxExponent = 4
-	}
-	if cfg.Backoff.MaxConsecutiveFailures == 0 {
-		cfg.Backoff.MaxConsecutiveFailures = 5
-	}
+	// Issue #99: BackoffConfig defaults removed (DD-RO-002 Phase 3)
 	if cfg.DataStorage.URL == "" {
 		ds := sharedconfig.DefaultDataStorageConfig()
 		cfg.DataStorage = ds
@@ -193,8 +154,7 @@ func LoadFromFile(path string) (*Config, error) {
 // Validation Rules:
 // - Execution namespace must not be empty
 // - Cooldown periods must be positive
-// - Backoff exponent must be reasonable (1-10)
-// - Max consecutive failures must be positive
+// - (Backoff validation removed in V1.0 per DD-RO-002 Phase 3)
 // - Data Storage URL must not be empty
 //
 // Returns error if validation fails.
@@ -204,7 +164,7 @@ func LoadFromFile(path string) (*Config, error) {
 // - BR-WE-003: Execution namespace must be set (`validate:"required"`)
 // - BR-WE-007: Service account must be specified (`validate:"required"`)
 // - DD-WE-001: Cooldown period must be positive (`validate:"gt=0"`)
-// - DD-WE-004: Backoff settings must be valid (`validate:"gte=1,lte=10"`, `gtefield`)
+// - (DD-WE-004: Backoff validation removed in V1.0 per DD-RO-002 Phase 3)
 // - BR-WE-005, ADR-032: Audit configuration must be complete (`validate:"required,url"`)
 // - DD-005: Controller observability settings must be present (`validate:"required"`)
 //

@@ -285,28 +285,6 @@ type WorkflowExecutionStatus struct {
 	// ========================================
 
 	// ========================================
-	// EXPONENTIAL BACKOFF (v4.1) - DEPRECATED V1.0
-	// DD-RO-002 Phase 3: Routing state moved to RemediationRequest.Status
-	// WE is now a pure executor - routing logic owned by RO
-	// ========================================
-
-	// ConsecutiveFailures tracks pre-execution failures for this target resource
-	// DEPRECATED (V1.0): Routing state moved to RR.Status.ConsecutiveFailureCount per DD-RO-002 Phase 3
-	// This field is NO LONGER UPDATED by WE controller as of V1.0
-	// Use RR.Status.ConsecutiveFailureCount for routing decisions
-	// Will be REMOVED in V2.0
-	// +optional
-	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
-
-	// NextAllowedExecution is the timestamp when next execution is allowed
-	// DEPRECATED (V1.0): Routing state moved to RR.Status.NextAllowedExecution per DD-RO-002 Phase 3
-	// This field is NO LONGER UPDATED by WE controller as of V1.0
-	// Use RR.Status.NextAllowedExecution for routing decisions
-	// Will be REMOVED in V2.0
-	// +optional
-	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
-
-	// ========================================
 	// AUDIT-TRACKED EXECUTION BLOCK CLEARING (v4.2)
 	// BR-WE-013: SOC2 Type II Compliance Requirement (v1.0)
 	// Tracks operator clearing of PreviousExecutionFailed blocks
