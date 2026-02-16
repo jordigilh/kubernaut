@@ -979,8 +979,40 @@ demo-deploy: ## Deploy Kubernaut platform to Kind cluster (DEMO_TAG=<tag> DEMO_R
 demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)
 	@echo ""
 	@echo "🎉 Demo environment ready!"
-	@echo "   Apply LLM credentials:  kubectl apply -f deploy/demo/credentials/vertex-ai-example.yaml"
-	@echo "   Trigger workloads:       kubectl apply -k deploy/demo/base/workloads/"
+	@echo "   Apply LLM credentials:  kubectl --kubeconfig $(DEMO_KUBECONFIG) apply -f deploy/demo/credentials/<your-provider>.yaml"
+	@echo "   Trigger OOMKill demo:    make demo-trigger-oomkill"
+	@echo "   Trigger high-usage demo: make demo-trigger-high-usage"
+	@echo "   Reset workloads:         make demo-reset-workloads"
+
+.PHONY: demo-trigger-oomkill
+demo-trigger-oomkill: ## Deploy memory-eater OOMKill workload (triggers remediation pipeline)
+	@echo "💥 Deploying memory-eater (OOMKill variant) to demo-workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
+	@echo "  Deployed. Watch the pipeline:"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get pods -n demo-workloads -w"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
+
+.PHONY: demo-trigger-high-usage
+demo-trigger-high-usage: ## Deploy memory-eater high-usage workload (Prometheus alert path)
+	@echo "📈 Deploying memory-eater (high-usage variant) to demo-workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-high-usage.yaml
+	@echo "  Deployed. Watch Prometheus alerts:"
+	@echo "    curl -s http://localhost:9190/api/v1/alerts | jq '.data.alerts[] | {alertname: .labels.alertname, state}'"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
+
+.PHONY: demo-reset-workloads
+demo-reset-workloads: ## Remove demo workloads (clean slate for re-triggering)
+	@echo "🧹 Removing demo workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-oomkill.yaml --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-high-usage.yaml --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete remediationrequests --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete signalprocessings --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete aianalyses --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete workflowexecutions --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete effectivenessassessments --all -n demo-workloads --ignore-not-found
+	@echo "  Workloads removed. Ready to re-trigger."
 
 .PHONY: demo-teardown
 demo-teardown: ## Destroy demo Kind cluster

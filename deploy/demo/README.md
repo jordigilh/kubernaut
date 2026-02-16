@@ -139,16 +139,26 @@ kubectl --kubeconfig ~/.kube/kubernaut-demo-config rollout restart deployment/no
 
 ### 6. Deploy Demo Workloads
 
-Two workload variants are available:
+Two workload variants are available via Make targets:
 
 **OOMKill scenario** (Kubernetes Event Exporter signal):
 ```bash
-kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
+make demo-trigger-oomkill
 ```
 
 **High memory usage scenario** (Prometheus AlertManager signal):
 ```bash
-kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-high-usage.yaml
+make demo-trigger-high-usage
+```
+
+**Reset workloads** (clean slate for re-triggering):
+```bash
+make demo-reset-workloads
+```
+
+You can also apply manifests directly:
+```bash
+kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
 ```
 
 ## Expected Remediation Flow
