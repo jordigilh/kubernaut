@@ -31,6 +31,8 @@ spec:
         - name: authwebhook
           image: quay.io/jordigilh/kubernaut-authwebhook:latest
           imagePullPolicy: Always
+          args:
+            - -config=/etc/authwebhook/authwebhook.yaml
           ports:
             - name: webhook
               containerPort: 9443
@@ -39,16 +41,8 @@ spec:
               containerPort: 8081
               protocol: TCP
           env:
-            # Webhook Configuration
-            - name: WEBHOOK_PORT
-              value: "9443"
             - name: LOG_LEVEL
               value: "info"  # Production log level
-
-            # Data Storage Configuration (SOC2 CC8.1 - Audit trail integration)
-            - name: DATA_STORAGE_URL
-              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-
             # Kubernetes API Configuration
             - name: KUBERNETES_SERVICE_HOST
               valueFrom:
@@ -57,6 +51,9 @@ spec:
           volumeMounts:
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: config
+              mountPath: /etc/authwebhook
               readOnly: true
           resources:
             requests:
@@ -94,5 +91,8 @@ spec:
           secret:
             secretName: authwebhook-tls
             defaultMode: 0400
+        - name: config
+          configMap:
+            name: authwebhook-config
 
 

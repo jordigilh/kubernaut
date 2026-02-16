@@ -1,0 +1,20 @@
+# AuthWebhook ConfigMap (ADR-030: YAML-based configuration)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authwebhook-config
+  namespace: kubernaut-system
+data:
+  authwebhook.yaml: |
+    webhook:
+      port: 9443
+      certDir: /tmp/k8s-webhook-server/serving-certs
+      healthProbeAddr: ":8081"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 30s
+      buffer:
+        bufferSize: 1000
+        batchSize: 100
+        flushInterval: 5s
+        maxRetries: 3

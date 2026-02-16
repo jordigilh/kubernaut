@@ -60,6 +60,26 @@ spec:
       nodePort: 30443  # Per DD-TEST-001: AuthWebhook E2E NodePort
   type: NodePort
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authwebhook-config
+  namespace: ${WEBHOOK_NAMESPACE}
+data:
+  authwebhook.yaml: |
+    webhook:
+      port: 9443
+      certDir: /tmp/k8s-webhook-server/serving-certs
+      healthProbeAddr: ":8081"
+    datastorage:
+      url: "http://data-storage-service:8080"
+      timeout: 30s
+      buffer:
+        bufferSize: 1000
+        batchSize: 100
+        flushInterval: 5s
+        maxRetries: 3
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,6 +107,8 @@ spec:
         - name: authwebhook
           image: authwebhook:e2e-test  # Replaced by infrastructure setup (service binary is 'webhooks')
           imagePullPolicy: Never
+          args:
+            - -config=/etc/authwebhook/authwebhook.yaml
           ports:
             - name: webhook
               containerPort: 9443
@@ -95,20 +117,17 @@ spec:
               containerPort: 8081
               protocol: TCP
           env:
-            # Webhook Configuration
-            - name: WEBHOOK_PORT
-              value: "9443"
             - name: LOG_LEVEL
               value: "debug"
-            # Data Storage Configuration
-            - name: DATA_STORAGE_URL
-              value: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
             # Coverage Configuration (DD-TEST-007)
             - name: GOCOVERDIR
               value: "/coverdata"
           volumeMounts:
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: config
+              mountPath: /etc/authwebhook
               readOnly: true
             - name: coverdata
               mountPath: /coverdata
@@ -141,6 +160,9 @@ spec:
         - name: webhook-certs
           secret:
             secretName: authwebhook-tls
+        - name: config
+          configMap:
+            name: authwebhook-config
         - name: coverdata
           hostPath:
             path: /coverdata
