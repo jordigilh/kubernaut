@@ -586,4 +586,72 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(cond.Message).To(ContainSubstring("ea-"+rrName),
 			"Message should reference the EA name")
 	})
+
+	// ========================================
+	// UT-RO-EA-011: Phase timeout creates EA (ADR-EM-001 gap fix)
+	// BR: ADR-EM-001 (EA for ALL terminal phases), BR-ORCH-028 (per-phase timeouts)
+	//
+	// Business outcome: Phase timeouts are terminal transitions (→ TimedOut).
+	// ADR-EM-001 mandates EA creation for all terminal phases so the EM can
+	// record the assessment outcome (no_execution if no WE existed).
+	// This test validates the gap fix in handlePhaseTimeout.
+	// ========================================
+	It("UT-RO-EA-011: should create EA when RR transitions to TimedOut via phase timeout", func() {
+		rrName := "rr-ea-011"
+		namespace := "test-ns"
+
+		// RR in Processing phase with phase start time 10 minutes ago.
+		// Global timeout is 1 hour (not exceeded), but Processing phase timeout is 5 minutes (exceeded).
+		rr := newRemediationRequestWithTimeout(rrName, namespace, remediationv1.PhaseProcessing, -5*time.Minute)
+		// Set ProcessingStartTime far enough in the past to exceed the 5-minute phase timeout
+		processingStart := metav1.NewTime(time.Now().Add(-10 * time.Minute))
+		rr.Status.ProcessingStartTime = &processingStart
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{
+				Global:     1 * time.Hour,
+				Processing: 5 * time.Minute,
+				Analyzing:  10 * time.Minute,
+				Executing:  30 * time.Minute,
+			},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify RR transitioned to TimedOut (via phase timeout, not global timeout)
+		fetchedRR := &remediationv1.RemediationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseTimedOut),
+			"RR should have transitioned to TimedOut via phase timeout")
+		Expect(*fetchedRR.Status.TimeoutPhase).To(Equal("Processing"),
+			"TimeoutPhase should indicate which phase timed out")
+
+		// Verify EA was created (ADR-EM-001: EA for all terminal phases)
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created on phase timeout (ADR-EM-001)")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"),
+			"EA should record TimedOut as the RR terminal phase")
+		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
+	})
 })
