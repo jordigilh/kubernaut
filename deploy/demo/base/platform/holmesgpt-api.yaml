@@ -75,6 +75,8 @@ data:
       provider: "vertex_ai"
       model: "claude-sonnet-4"
       endpoint: "https://us-east5-aiplatform.googleapis.com"
+      gcp_project_id: "itpc-gcp-eco-eng-claude"
+      gcp_region: "us-east5"
       max_retries: 3
       timeout_seconds: 120
       temperature: 0.7
