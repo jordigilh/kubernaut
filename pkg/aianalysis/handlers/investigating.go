@@ -475,6 +475,10 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 
 // handleSessionPoll polls the status of an active HAPI session.
 // BR-AA-HAPI-064.2: Poll session status (pending/investigating/completed/failed)
+//
+// Poll-tracking status writes (PollCount, LastPolled) are filtered by the
+// informer predicate (aiAnalysisUpdatePredicate) so they don't trigger
+// re-reconciles. Only RequeueAfter controls the next poll timing.
 func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
@@ -504,22 +508,23 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 
 // handleSessionPollPending handles poll results where investigation is still in progress.
 // BR-AA-HAPI-064.8: Exponential backoff (10s base, 2x multiplier, 30s cap)
+//
+// Updates PollCount and LastPolled in the CRD status for observability.
+// The informer-triggered re-reconcile from the status write is handled by
+// the throttle in handleSessionPoll, which checks LastPolled and short-circuits
+// if we polled too recently.
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
-	// Compute backoff interval from poll count
-	interval := h.computePollBackoff(session.PollCount)
-
-	// Update poll tracking
+	// Update poll tracking fields for observability
+	session.PollCount++
 	now := metav1.Now()
 	session.LastPolled = &now
-	session.PollCount++
 
-	// Set condition: SessionActive
-	aianalysis.SetInvestigationSessionReady(analysis, true, aianalysis.ReasonSessionActive,
-		fmt.Sprintf("Session active, polling (status: %s, poll #%d)", status.Status, session.PollCount))
+	// Compute backoff interval from updated poll count
+	interval := h.computePollBackoff(session.PollCount)
 
-	h.log.V(1).Info("Session still in progress, requeuing",
+	h.log.Info("Session still in progress, requeuing",
 		"status", status.Status,
 		"nextPollIn", interval,
 		"pollCount", session.PollCount,
