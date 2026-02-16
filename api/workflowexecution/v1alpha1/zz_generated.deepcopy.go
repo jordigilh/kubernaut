@@ -212,10 +212,6 @@ func (in *WorkflowExecutionStatus) DeepCopyInto(out *WorkflowExecutionStatus) {
 		*out = new(FailureDetails)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.NextAllowedExecution != nil {
-		in, out := &in.NextAllowedExecution, &out.NextAllowedExecution
-		*out = (*in).DeepCopy()
-	}
 	if in.BlockClearance != nil {
 		in, out := &in.BlockClearance, &out.BlockClearance
 		*out = new(BlockClearanceDetails)
