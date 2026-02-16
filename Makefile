@@ -968,6 +968,7 @@ demo-deploy: ## Deploy Kubernaut platform to Kind cluster
 	@echo "   DataStorage:  http://localhost:30081"
 	@echo "   Prometheus:   http://localhost:9190"
 	@echo "   AlertManager: http://localhost:9193"
+	@echo "   Grafana:      http://localhost:3000  (admin/kubernaut)"
 
 .PHONY: demo-setup
 demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)

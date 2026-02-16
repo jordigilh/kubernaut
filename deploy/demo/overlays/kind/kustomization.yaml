@@ -73,6 +73,19 @@ patches:
         path: /spec/ports/0/nodePort
         value: 30120
 
+  # Grafana Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: grafana-svc
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30300
+
   # All Deployments: imagePullPolicy IfNotPresent -> Never (local builds)
   - target:
       kind: Deployment
