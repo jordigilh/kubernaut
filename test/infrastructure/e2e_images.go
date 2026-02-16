@@ -175,6 +175,10 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	if cfg.BuildContextPath == "" {
 		cfg.BuildContextPath = projectRoot
+	} else if !filepath.IsAbs(cfg.BuildContextPath) {
+		// Resolve relative BuildContextPath against project root
+		// (ginkgo CWD is the test suite directory, not the project root)
+		cfg.BuildContextPath = filepath.Join(projectRoot, cfg.BuildContextPath)
 	}
 
 	// Generate DD-TEST-001 v1.3 compliant tag
