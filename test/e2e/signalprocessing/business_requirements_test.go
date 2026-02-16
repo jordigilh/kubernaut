@@ -359,8 +359,8 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			helpers.DeleteTestNamespace(ctx, k8sClient, devNs)
 		})
 
-		// TDD RED: This test will FAIL until controller assigns P2 priority
-		It("BR-SP-070: should assign P2 to staging critical alerts (medium urgency)", func() {
+		// Issue #98: Score-based policy assigns P1 to staging+critical (severity 3 + env 2 = composite 5)
+		It("BR-SP-070: should assign P1 to staging critical alerts (high urgency)", func() {
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-p2",
@@ -399,7 +399,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					return ""
 				}
 				return updated.Status.PriorityAssignment.Priority
-			}, timeout, interval).Should(Equal("P2"))
+			}, timeout, interval).Should(Equal("P1"))
 		})
 
 		// TDD RED: This test will FAIL until controller assigns P3 priority
