@@ -24,6 +24,7 @@ This module contains the main recovery analysis logic, Holmes SDK integration,
 and configuration management.
 """
 
+import asyncio
 import os
 import logging
 from typing import Dict, Any, Optional, List
@@ -407,10 +408,13 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
                 "attempt": attempt + 1,
                 "max_attempts": MAX_VALIDATION_ATTEMPTS
             })
-            investigation_result = investigate_issues(
+            # DD-AA-HAPI-064: Offload sync Holmes SDK call to thread pool
+            # to keep the event loop responsive for session submit/poll requests
+            investigation_result = await asyncio.to_thread(
+                investigate_issues,
                 investigate_request=investigation_request,
                 dal=dal,
-                config=config
+                config=config,
             )
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
