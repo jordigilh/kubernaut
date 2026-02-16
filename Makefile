@@ -18,7 +18,8 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
-CONTAINER_TOOL ?= docker
+# Auto-detect: prefer podman if available, fall back to docker.
+CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 SHELL = /usr/bin/env bash -o pipefail
@@ -987,3 +988,61 @@ demo-status: ## Show demo cluster status
 	@echo "📊 Demo cluster status:"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true
+
+##@ Multi-Architecture Image Build & Push
+
+# Registry and tag for multi-arch images (override via env or CLI)
+IMAGE_REGISTRY ?= quay.io/kubernaut-ai
+IMAGE_TAG ?= latest
+IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
+
+# All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
+IMAGE_SERVICES := $(DEMO_SERVICES)
+
+# _image_build_one builds a multi-arch manifest for a single service.
+# Usage: $(call _image_build_one,<service>,<dockerfile>)
+define _image_build_one
+	@echo "  Building $(1) [$(IMAGE_PLATFORMS)]..."
+	@$(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG) 2>/dev/null || true
+	@$(CONTAINER_TOOL) build \
+		--platform $(IMAGE_PLATFORMS) \
+		--manifest $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG) \
+		-f $(2) .
+
+endef
+
+# _image_push_one pushes a multi-arch manifest for a single service.
+# Usage: $(call _image_push_one,<service>)
+define _image_push_one
+	@echo "  Pushing $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)..."
+	@$(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG) docker://$(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)
+
+endef
+
+.PHONY: image-build
+image-build: generate ## Build multi-arch images for all services (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
+	@echo "🐳 Building multi-arch images ($(IMAGE_PLATFORMS))..."
+	@echo "   Registry: $(IMAGE_REGISTRY)"
+	@echo "   Tag:      $(IMAGE_TAG)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	@echo "  Building holmesgpt-api [$(IMAGE_PLATFORMS)]..."
+	@$(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG) 2>/dev/null || true
+	@$(CONTAINER_TOOL) build \
+		--platform $(IMAGE_PLATFORMS) \
+		--manifest $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG) \
+		-f holmesgpt-api/Dockerfile .
+	@echo ""
+	@echo "✅ All multi-arch images built."
+	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
+
+.PHONY: image-push
+image-push: ## Push multi-arch images to registry (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
+	@echo "📤 Pushing multi-arch images to $(IMAGE_REGISTRY)..."
+	@echo "   Tag: $(IMAGE_TAG)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
+	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)..."
+	@$(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG) docker://$(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)
+	@echo ""
+	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)."
