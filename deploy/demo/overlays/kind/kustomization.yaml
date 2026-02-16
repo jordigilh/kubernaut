@@ -4,6 +4,31 @@ kind: Kustomization
 resources:
   - ../../base/
 
+# Override image tags for all Kubernaut services.
+# Usage: kustomize edit set image quay.io/kubernaut-ai/*:newTag
+# or set DEMO_TAG in Makefile which patches this via sed.
+images:
+  - name: quay.io/kubernaut-ai/datastorage
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/gateway
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/aianalysis
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/authwebhook
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/notification
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/remediationorchestrator
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/signalprocessing
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/workflowexecution
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/effectivenessmonitor
+    newTag: demo-v1.0
+  - name: quay.io/kubernaut-ai/holmesgpt-api
+    newTag: demo-v1.0
+
 patches:
   # Gateway Service: ClusterIP -> NodePort
   - target:
@@ -86,7 +111,7 @@ patches:
         path: /spec/ports/0/nodePort
         value: 30300
 
-  # All Deployments: imagePullPolicy IfNotPresent -> Never (local builds)
+  # All Deployments in kubernaut-system: schedule on control-plane node (Kind)
   - target:
       kind: Deployment
       namespace: kubernaut-system

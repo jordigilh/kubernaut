@@ -945,10 +945,15 @@ demo-load-images: ## Load demo images into Kind cluster
 	@echo "  All images loaded."
 
 .PHONY: demo-deploy
-demo-deploy: ## Deploy Kubernaut platform to Kind cluster
+demo-deploy: ## Deploy Kubernaut platform to Kind cluster (DEMO_TAG=<tag> DEMO_REGISTRY=<registry>)
 	@echo "🚀 Deploying Kubernaut demo..."
 	@echo "  Applying CRDs..."
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f config/crd/bases/
+	@echo "  Setting image tags to $(DEMO_REGISTRY)/*:$(DEMO_TAG)..."
+	@cd deploy/demo/overlays/kind && \
+	for svc in $(DEMO_SERVICES) holmesgpt-api; do \
+	    kustomize edit set image $(DEMO_REGISTRY)/$$svc:$(DEMO_TAG); \
+	done
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -k deploy/demo/overlays/kind/
 	@echo "  Waiting for PostgreSQL..."
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod -l app=postgresql \
