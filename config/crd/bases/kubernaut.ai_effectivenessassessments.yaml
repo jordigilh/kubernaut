@@ -11,6 +11,8 @@ spec:
     kind: EffectivenessAssessment
     listKind: EffectivenessAssessmentList
     plural: effectivenessassessments
+    shortNames:
+    - ea
     singular: effectivenessassessment
   scope: Namespaced
   versions:
