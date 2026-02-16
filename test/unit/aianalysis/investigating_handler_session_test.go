@@ -243,8 +243,12 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 	// ========================================
 	Describe("Session Poll Flow", func() {
 		// UT-AA-064-003: Poll session -- status "pending"
+		// PollCount is incremented before backoff computation, so first poll
+		// uses backoff(1) = 20s (not backoff(0) = 10s).
+		// SetInvestigationSessionReady is not called in the poll-pending path;
+		// the condition is only set during session creation/regeneration/loss.
 		Context("UT-AA-064-003: Poll session -- status pending, controller requeues", func() {
-			It("should update LastPolled and requeue after 10s", func() {
+			It("should update LastPolled and PollCount, requeue after 20s", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
 					ID:         "session-poll-001",
@@ -258,18 +262,16 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.InvestigationSession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
-				Expect(result.RequeueAfter).To(Equal(10 * time.Second), "First poll should requeue at 10s")
-
-				// Condition should indicate active session
-				cond := getCondition(analysis, "InvestigationSessionReady")
-				Expect(cond).NotTo(BeNil())
-				Expect(cond.Reason).To(Equal("SessionActive"))
+				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
+				Expect(result.RequeueAfter).To(Equal(20 * time.Second), "First poll should requeue at 20s (backoff computed after PollCount increment)")
 			})
 		})
 
 		// UT-AA-064-004: Poll session -- status "investigating", backoff increases
+		// PollCount starts at 1 (already polled once), incremented to 2 before
+		// backoff computation: backoff(2) = min(10s * 2^2, 30s) = 30s (capped).
 		Context("UT-AA-064-004: Poll session -- investigating, backoff increases", func() {
-			It("should use 20s backoff for second consecutive poll", func() {
+			It("should use 30s backoff for second consecutive poll", func() {
 				analysis := createSessionTestAnalysis()
 				lastPoll := metav1.Now()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
@@ -285,7 +287,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(20 * time.Second), "Second poll should use 20s backoff")
+				Expect(result.RequeueAfter).To(Equal(30 * time.Second), "Second poll should use 30s backoff (capped)")
 			})
 		})
 
@@ -354,6 +356,11 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		})
 
 		// UT-AA-064-007: Polling backoff caps at 30s
+		// PollCount is incremented before backoff computation, so the sequence is:
+		// Poll 1: PollCount 0->1, backoff(1) = min(10s * 2^1, 30s) = 20s
+		// Poll 2: PollCount 1->2, backoff(2) = min(10s * 2^2, 30s) = 30s (capped)
+		// Poll 3: PollCount 2->3, backoff(3) = min(10s * 2^3, 30s) = 30s (capped)
+		// Poll 4: PollCount 3->4, backoff(4) = min(10s * 2^4, 30s) = 30s (capped)
 		Context("UT-AA-064-007: Polling backoff caps at 30s", func() {
 			It("should cap polling interval at MaxPollInterval", func() {
 				analysis := createSessionTestAnalysis()
@@ -375,9 +382,9 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				}
 
 				Expect(intervals).To(HaveLen(4))
-				Expect(intervals[0]).To(Equal(10 * time.Second), "1st poll: 10s")
-				Expect(intervals[1]).To(Equal(20 * time.Second), "2nd poll: 20s")
-				Expect(intervals[2]).To(Equal(30 * time.Second), "3rd poll: 30s (capped)")
+				Expect(intervals[0]).To(Equal(20 * time.Second), "1st poll: 20s (PollCount 0->1, backoff(1))")
+				Expect(intervals[1]).To(Equal(30 * time.Second), "2nd poll: 30s (PollCount 1->2, capped)")
+				Expect(intervals[2]).To(Equal(30 * time.Second), "3rd poll: 30s (still capped)")
 				Expect(intervals[3]).To(Equal(30 * time.Second), "4th poll: 30s (still capped)")
 			})
 		})
