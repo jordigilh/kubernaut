@@ -1100,8 +1100,8 @@ backoff:
   maxCooldown: 10m
   maxExponent: 4
   maxConsecutiveFailures: 5
-audit:
-  dataStorageUrl: "http://data-storage-service.kubernaut-system:8080"
+datastorage:
+  url: "http://data-storage-service.kubernaut-system:8080"
   timeout: 10s
   buffer:
     bufferSize: 10000
