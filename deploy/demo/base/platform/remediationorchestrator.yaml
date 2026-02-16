@@ -112,6 +112,10 @@ spec:
     metadata:
       labels:
         app: remediationorchestrator-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9093"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
       containers:

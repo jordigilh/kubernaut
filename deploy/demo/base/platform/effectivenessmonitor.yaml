@@ -85,6 +85,10 @@ spec:
     metadata:
       labels:
         app: effectivenessmonitor-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: effectivenessmonitor-controller
       containers:

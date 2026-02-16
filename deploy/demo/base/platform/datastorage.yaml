@@ -61,6 +61,10 @@ spec:
     metadata:
       labels:
         app: datastorage
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9181"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
       containers:

@@ -43,6 +43,7 @@ data:
       scrape_interval: 15s
       evaluation_interval: 15s
     scrape_configs:
+    # cAdvisor metrics for container resource usage and MemoryExceedsLimit alert
     - job_name: 'kubelet-cadvisor'
       scrape_interval: 10s
       kubernetes_sd_configs:
@@ -62,6 +63,34 @@ data:
       - source_labels: [__name__]
         regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|spec_memory_limit_bytes)'
         action: keep
+    # Kubernaut service application metrics (Grafana dashboard)
+    - job_name: 'kubernaut-services'
+      scrape_interval: 15s
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['kubernaut-system']
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: 'true'
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: (.+)
+        replacement: ${1}
+      - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: (.+);(.+)
+        replacement: ${1}:${2}
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: replace
+        target_label: service
     alerting:
       alertmanagers:
       - static_configs:
