@@ -1,58 +1,27 @@
 # RemediationOrchestrator Controller Configuration
 # ADR-030: Service Configuration Management
-# Per DS Team Response (2025-12-27): YAML-based audit buffer configuration
-# See: docs/handoff/DS_RESPONSE_AUDIT_BUFFER_FLUSH_TIMING_DEC_27_2025.md
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 
 # ========================================
-# AUDIT CONFIGURATION (BR-ORCH-041, ADR-032)
+# DATASTORAGE CONNECTIVITY (ADR-030)
+# Audit trail + workflow catalog
 # ========================================
-audit:
-  # Data Storage Service URL for audit events
-  # REQUIRED: Audit is mandatory per ADR-032 (P0 service)
-  datastorage_url: http://datastorage-service:8080
-
-  # Timeout for audit API calls
+datastorage:
+  # Data Storage Service URL (REQUIRED: P0 service per ADR-032)
+  url: http://data-storage-service:8080
   timeout: 10s
-
-  # Audit buffer configuration (DD-AUDIT-002, DD-AUDIT-004)
-  # Controls client-side buffering behavior
-  # CRITICAL: FlushInterval directly affects audit event visibility timing
   buffer:
-    # Max events to buffer in memory before blocking
     # DD-AUDIT-004: MEDIUM tier (1200 events/day → 30K for burst handling)
-    # Sized for 10x burst traffic + 1.5x safety margin
-    # See: docs/architecture/decisions/DD-AUDIT-004-buffer-sizing-strategy.md
-    buffer_size: 30000  # DD-AUDIT-004: MEDIUM tier (was 10000)
-
-    # Events per batch write to DataStorage
-    # Lower = more frequent writes, Higher = more efficient batching
-    batch_size: 1000
-
-    # Max time before partial batch flush
-    # CHANGED from 5s hardcoded to 1s (matches pkg/audit default)
-    # Per DS Team: Default is 1s, NOT 60s (server-side writes immediately)
-    # Production: 1s provides good balance of latency and efficiency
-    flush_interval: 1s
-
-    # Retry attempts for failed writes (DLQ fallback after exhaustion)
-    max_retries: 3
+    bufferSize: 30000
+    batchSize: 1000
+    flushInterval: 1s
+    maxRetries: 3
 
 # ========================================
 # CONTROLLER RUNTIME (DD-005)
 # ========================================
 controller:
-  # Prometheus metrics endpoint address
-  metrics_addr: :9090
-
-  # Health and readiness probes endpoint address
-  health_probe_addr: :8081
-
-  # Enable leader election for multi-replica deployments
-  leader_election: false
-
-  # Leader election ID (must be unique across cluster)
-  leader_election_id: remediationorchestrator.kubernaut.ai
-
-
-
-
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: remediationorchestrator.kubernaut.ai

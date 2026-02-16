@@ -342,8 +342,8 @@ data:
     assessment:
       stabilizationWindow: 30s
       validityWindow: 120s
-    audit:
-      dataStorageUrl: http://data-storage-service:8080
+    datastorage:
+      url: http://data-storage-service:8080
       timeout: 10s
       buffer:
         bufferSize: 100
