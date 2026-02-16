@@ -14,62 +14,34 @@ data:
     import rego.v1
 
     default require_approval := false
-    default reason := "Auto-approved"
 
-    require_approval if {
-        input.environment == "production"
-    }
+    require_approval if { input.environment == "production" }
+    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
+    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
+    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
 
-    require_approval if {
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number >= 3
-    }
-
-    require_approval if {
-        input.environment == "production"
-        count(input.warnings) > 0
-    }
-
-    require_approval if {
-        input.environment == "production"
-        count(input.failed_detections) > 0
-    }
-
-    reason := msg if {
-        require_approval
+    # Scored risk factors for reason generation
+    risk_factors contains {"score": 100, "reason": msg} if {
         input.is_recovery_attempt == true
         input.recovery_attempt_number >= 3
         msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
     }
-
-    reason := "Data quality warnings in production environment" if {
-        require_approval
+    risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
         input.environment == "production"
         count(input.warnings) > 0
-        not input.is_recovery_attempt
     }
-
-    reason := "Data quality issues detected in production environment" if {
-        require_approval
+    risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
         input.environment == "production"
         count(input.failed_detections) > 0
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
+    }
+    risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
+        input.environment == "production"
     }
 
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
-    }
-
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number < 3
-    }
+    all_scores contains f.score if { some f in risk_factors }
+    max_risk_score := max(all_scores) if { count(all_scores) > 0 }
+    reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
+    default reason := "Auto-approved"
 ---
 apiVersion: v1
 kind: ConfigMap

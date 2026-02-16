@@ -1,6 +1,7 @@
-# AI Analysis Approval Policy
+# AI Analysis Approval Policy — Scored Risk Factors
 # DD-WORKFLOW-001 v2.2: Approval determination based on environment and data quality
 # Business Requirements: BR-AI-011 (policy evaluation), BR-AI-013 (approval scenarios), BR-AI-014 (graceful degradation)
+# Issue #98: Refactored from exclusion chains to scored risk factors
 
 package aianalysis.approval
 
@@ -84,7 +85,7 @@ is_multiple_recovery if {
 }
 
 # ========================================
-# APPROVAL RULES (Prioritized)
+# APPROVAL RULES (unchanged — independent boolean checks)
 # ========================================
 
 # Multiple recovery attempts require approval (any environment)
@@ -122,63 +123,57 @@ require_approval if {
 }
 
 # ========================================
-# REASON GENERATION (Prioritized - first match wins)
+# SCORED RISK FACTORS FOR REASON GENERATION
 # ========================================
+# Each risk factor independently contributes a scored entry.
+# The highest-scored reason wins. No exclusion chains needed —
+# adding a new factor is a single rule addition.
 
-# Priority 1: Multiple recovery attempts (most critical)
-reason := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number]) if {
-    require_approval
+risk_factors contains {"score": 100, "reason": msg} if {
     is_multiple_recovery
+    msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
 }
 
-# Priority 2: Production + unvalidated target
-reason := "Production environment with unvalidated target - requires manual approval" if {
-    require_approval
+risk_factors contains {"score": 80, "reason": "Production environment with unvalidated target - requires manual approval"} if {
     is_production
-    not is_multiple_recovery
     not target_validated
 }
 
-# Priority 3: Production + failed detections
-reason := "Production environment with failed detections - requires manual approval" if {
-    require_approval
+risk_factors contains {"score": 70, "reason": "Production environment with failed detections - requires manual approval"} if {
     is_production
-    not is_multiple_recovery
-    target_validated
     has_failed_detections
 }
 
-# Priority 4: Production + warnings
-reason := "Production environment with warnings - requires manual approval" if {
-    require_approval
+risk_factors contains {"score": 60, "reason": "Production environment with warnings - requires manual approval"} if {
     is_production
-    not is_multiple_recovery
-    target_validated
-    not has_failed_detections
     has_warnings
 }
 
-# Priority 5: Production + stateful workload
-reason := "Production environment with Stateful workload - requires manual approval" if {
-    require_approval
+risk_factors contains {"score": 50, "reason": "Production environment with Stateful workload - requires manual approval"} if {
     is_production
-    not is_multiple_recovery
-    target_validated
-    not has_failed_detections
-    not has_warnings
     is_stateful
 }
 
-# Priority 6: Production (general)
-reason := "Production environment requires manual approval" if {
-    require_approval
+risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
     is_production
-    not is_multiple_recovery
-    target_validated
-    not has_failed_detections
-    not has_warnings
-    not is_stateful
 }
 
+# ========================================
+# REASON AGGREGATION: Highest score wins
+# ========================================
 
+# Collect all scores from risk factors
+all_scores contains f.score if {
+    some f in risk_factors
+}
 
+# Find the maximum score among all risk factors
+max_risk_score := max(all_scores) if {
+    count(all_scores) > 0
+}
+
+# Select the reason with the highest score
+reason := f.reason if {
+    some f in risk_factors
+    f.score == max_risk_score
+}

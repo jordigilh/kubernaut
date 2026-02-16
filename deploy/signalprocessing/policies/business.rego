@@ -19,7 +19,7 @@
 #   "business_unit": "platform",
 #   "service_owner": "team-a",
 #   "criticality": "high",
-#   "sla_tier": "tier-1",
+#   "sla": "tier-1",
 #   "source": "namespace-labels"
 # }
 
@@ -36,7 +36,7 @@ result := {
     "business_unit": bu,
     "service_owner": owner,
     "criticality": crit,
-    "sla_tier": sla,
+    "sla": sla,
     "source": "namespace-labels"
 } if {
     bu := object.get(input.namespace.labels, "kubernaut.ai/business-unit", "")
@@ -72,7 +72,6 @@ default result := {
     "business_unit": "",
     "service_owner": "",
     "criticality": "",
-    "sla_tier": "",
+    "sla": "",
     "source": "unclassified"
 }
-
