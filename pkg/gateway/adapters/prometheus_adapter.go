@@ -73,11 +73,23 @@ func (a *PrometheusAdapter) GetRoute() string {
 	return "/api/v1/signals/prometheus"
 }
 
-// ReplayValidator returns header-based replay prevention middleware (BR-GATEWAY-074).
-// Prometheus AlertManager webhook sources include X-Timestamp header with
-// a fresh Unix epoch timestamp on each request.
+// ReplayValidator returns hybrid replay prevention middleware (BR-GATEWAY-074).
+//
+// Strategy: Header-first with body-fallback (AlertManagerFreshnessValidator).
+//   - If X-Timestamp header is present → strict header-based validation
+//     (for direct API clients, tests, external integrations).
+//   - If X-Timestamp header is absent → body-based validation using
+//     alerts[].startsAt (for real AlertManager webhooks that cannot set
+//     custom HTTP headers).
+//
+// Design Decision (Feb 2026):
+// AlertManager's standard webhook format does NOT support custom HTTP headers.
+// The previous header-only approach (TimestampValidator) rejected all legitimate
+// AlertManager webhooks with "missing timestamp header". This hybrid strategy
+// maintains strict validation for direct callers while enabling real AlertManager
+// deployments.
 func (a *PrometheusAdapter) ReplayValidator(tolerance time.Duration) func(http.Handler) http.Handler {
-	return middleware.TimestampValidator(tolerance)
+	return middleware.AlertManagerFreshnessValidator(tolerance)
 }
 
 // GetSourceService returns the monitoring system name (BR-GATEWAY-027)
