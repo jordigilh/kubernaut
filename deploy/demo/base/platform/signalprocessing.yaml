@@ -1,0 +1,293 @@
+# SignalProcessing Controller
+# Extracted from: test/infrastructure/signalprocessing_e2e_hybrid.go
+# Stripped: coverage volumes, NodePort (use Kind overlay)
+---
+# 1. Environment Classification Policy (BR-SP-051)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-environment-policy
+  namespace: kubernaut-system
+data:
+  environment.rego: |
+    package signalprocessing.environment
+    default result := {"environment": "unknown", "source": "default"}
+    result := {"environment": env, "source": "namespace-labels"} if {
+      env := input.namespace.labels["kubernaut.ai/environment"]
+      env != ""
+    }
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "production"
+    }
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "prod"
+    }
+    result := {"environment": "staging", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "staging"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "development"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "dev"
+    }
+---
+# 2. Priority Assignment Policy (BR-SP-070)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-priority-policy
+  namespace: kubernaut-system
+data:
+  priority.rego: |
+    package signalprocessing.priority
+    default result := {"priority": "P3", "confidence": 0.6}
+    result := {"priority": "P0", "confidence": 0.9} if {
+      input.environment == "production"
+      input.signal.severity == "critical"
+    }
+    result := {"priority": "P1", "confidence": 0.9} if {
+      input.environment == "production"
+      input.signal.severity == "high"
+    }
+    result := {"priority": "P2", "confidence": 0.9} if {
+      input.environment == "staging"
+      input.signal.severity == "critical"
+    }
+    result := {"priority": "P2", "confidence": 0.9} if {
+      input.environment == "staging"
+      input.signal.severity == "high"
+    }
+    result := {"priority": "P3", "confidence": 0.9} if {
+      input.environment == "development"
+    }
+---
+# 3. Business Classification Policy (BR-SP-071)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-business-policy
+  namespace: kubernaut-system
+data:
+  business.rego: |
+    package signalprocessing.business
+    import rego.v1
+    default result := {"business_unit": "unknown", "confidence": 0.0, "policy_name": "operator-default"}
+    result := {"business_unit": input.namespace.labels["kubernaut.io/business-unit"], "confidence": 0.95, "policy_name": "namespace-label"} if {
+      input.namespace.labels["kubernaut.io/business-unit"]
+    }
+---
+# 4. Severity Determination Policy (BR-SP-105, DD-SEVERITY-001)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-severity-policy
+  namespace: kubernaut-system
+data:
+  severity.rego: |
+    package signalprocessing.severity
+    import rego.v1
+    determine_severity := "critical" if {
+      lower(input.signal.severity) == "sev1"
+    } else := "critical" if {
+      lower(input.signal.severity) == "p0"
+    } else := "critical" if {
+      lower(input.signal.severity) == "p1"
+    } else := "critical" if {
+      lower(input.signal.severity) == "error"
+    } else := "high" if {
+      lower(input.signal.severity) == "sev2"
+    } else := "high" if {
+      lower(input.signal.severity) == "p2"
+    } else := "high" if {
+      lower(input.signal.severity) == "warning"
+    } else := "medium" if {
+      lower(input.signal.severity) == "sev3"
+    } else := "low" if {
+      lower(input.signal.severity) == "p3"
+    } else := "unknown" if {
+      true
+    }
+---
+# 5. Custom Labels Extraction Policy (BR-SP-071)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-customlabels-policy
+  namespace: kubernaut-system
+data:
+  customlabels.rego: |
+    package signalprocessing.customlabels
+    import rego.v1
+    default result := {"labels": {}, "policy_name": "operator-default"}
+    result := {"labels": extracted, "policy_name": "namespace-annotations"} if {
+      input.namespace.annotations
+      extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
+      count(extracted) > 0
+    }
+---
+# 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-predictive-signal-mappings
+  namespace: kubernaut-system
+data:
+  predictive-signal-mappings.yaml: |
+    predictive_signal_mappings:
+      PredictedOOMKill: OOMKilled
+      PredictedCPUThrottling: CPUThrottling
+      PredictedDiskPressure: DiskPressure
+      PredictedNodeNotReady: NodeNotReady
+---
+# SignalProcessing RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: signalprocessing-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: signalprocessing-controller
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings", "remediationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings/status", "signalprocessings/finalizers"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: signalprocessing-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: signalprocessing-controller
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-controller
+    namespace: kubernaut-system
+---
+# SignalProcessing Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signalprocessing-controller
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: signalprocessing-controller
+  template:
+    metadata:
+      labels:
+        app: signalprocessing-controller
+    spec:
+      serviceAccountName: signalprocessing-controller
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: controller
+          image: quay.io/kubernaut-ai/signalprocessing:demo-v1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DATA_STORAGE_URL
+              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+          ports:
+            - containerPort: 9090
+              name: metrics
+            - containerPort: 8081
+              name: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: policies
+              mountPath: /etc/signalprocessing/policies
+              readOnly: true
+            - name: predictive-signal-mappings
+              mountPath: /etc/signalprocessing/predictive-signal-mappings.yaml
+              subPath: predictive-signal-mappings.yaml
+              readOnly: true
+      volumes:
+        - name: policies
+          projected:
+            sources:
+              - configMap:
+                  name: signalprocessing-environment-policy
+              - configMap:
+                  name: signalprocessing-priority-policy
+              - configMap:
+                  name: signalprocessing-business-policy
+              - configMap:
+                  name: signalprocessing-severity-policy
+              - configMap:
+                  name: signalprocessing-customlabels-policy
+        - name: predictive-signal-mappings
+          configMap:
+            name: signalprocessing-predictive-signal-mappings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signalprocessing-controller-metrics
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing-controller
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: metrics
+  selector:
+    app: signalprocessing-controller

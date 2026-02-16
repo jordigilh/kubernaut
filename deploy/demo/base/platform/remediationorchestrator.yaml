@@ -1,0 +1,164 @@
+# RemediationOrchestrator Controller
+# Extracted from: test/infrastructure/remediationorchestrator_e2e_hybrid.go
+# Stripped: coverage volumes, NodePort
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remediationorchestrator-config
+  namespace: kubernaut-system
+data:
+  remediationorchestrator.yaml: |
+    datastorage:
+      url: http://data-storage-service:8080
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: 100ms
+        maxRetries: 3
+    controller:
+      metricsAddr: :9093
+      healthProbeAddr: :8084
+      leaderElection: false
+      leaderElectionId: remediationorchestrator.kubernaut.ai
+    effectivenessAssessment:
+      stabilizationWindow: 10s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: remediationorchestrator-controller
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests", "remediationapprovalrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/status"]
+    verbs: ["get"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "configmaps", "secrets", "namespaces", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: remediationorchestrator-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: remediationorchestrator-controller
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: kubernaut-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: remediationorchestrator-controller
+  template:
+    metadata:
+      labels:
+        app: remediationorchestrator-controller
+    spec:
+      serviceAccountName: remediationorchestrator-controller
+      containers:
+        - name: controller
+          image: quay.io/kubernaut-ai/remediationorchestrator:demo-v1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/config/remediationorchestrator.yaml
+          ports:
+            - containerPort: 8084
+              name: health
+              protocol: TCP
+            - containerPort: 9093
+              name: metrics
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: remediationorchestrator-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9093
+      targetPort: 9093
+      protocol: TCP
+      name: metrics
+  selector:
+    app: remediationorchestrator-controller

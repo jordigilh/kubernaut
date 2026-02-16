@@ -1,0 +1,90 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base/
+
+patches:
+  # Gateway Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: gateway-service
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
+      - op: add
+        path: /spec/ports/1/nodePort
+        value: 30090
+
+  # DataStorage Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: data-storage-service
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30081
+
+  # Prometheus Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: prometheus-svc
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30190
+
+  # AlertManager Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: alertmanager-svc
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30193
+
+  # HolmesGPT API Service: ClusterIP -> NodePort
+  - target:
+      kind: Service
+      name: holmesgpt-api
+      namespace: kubernaut-system
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30120
+
+  # All Deployments: imagePullPolicy IfNotPresent -> Never (local builds)
+  - target:
+      kind: Deployment
+      namespace: kubernaut-system
+    patch: |
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          node-role.kubernetes.io/control-plane: ""
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule

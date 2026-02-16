@@ -1,0 +1,36 @@
+# Memory Eater: OOMKill variant
+# Triggers OOMKill events that Event Exporter forwards to Gateway.
+# Extracted from: test/infrastructure/fullpipeline_e2e.go:DeployMemoryEater
+#
+# Behavior: allocates 40Mi, grows to 60Mi, but limit is 50Mi -> OOMKilled (exit 137)
+# The remediation workflow (oomkill-increase-memory-job) fixes this by increasing the limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-eater
+  namespace: demo-workloads
+  labels:
+    app: memory-eater
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-eater
+  template:
+    metadata:
+      labels:
+        app: memory-eater
+        kubernaut.ai/managed: "true"
+    spec:
+      containers:
+        - name: memory-eater
+          image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
+          imagePullPolicy: IfNotPresent
+          # Args: initial_memory initial_duration target_memory target_duration hold_duration
+          args: ["40Mi", "1", "60Mi", "1", "0"]
+          resources:
+            limits:
+              memory: "50Mi"
+            requests:
+              memory: "20Mi"
