@@ -991,49 +991,72 @@ demo-status: ## Show demo cluster status
 
 ##@ Image Build & Push
 
-# Registry and tag (override via env or CLI)
+# Registry, tag, and architecture (override via env or CLI)
 IMAGE_REGISTRY ?= quay.io/kubernaut-ai
 IMAGE_TAG ?= latest
+# Auto-detect native architecture (maps uname output to Go-style names)
+IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 # All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
 IMAGE_SERVICES := $(DEMO_SERVICES)
 
-# _image_build_one builds a single service image (native arch, tagged).
+# _image_build_one builds a single service image (native arch, arch-suffixed tag).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
 define _image_build_one
-	@echo "  Building $(1)..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG) -f $(2) .
+	@echo "  Building $(1) [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
 
 endef
 
-# _image_push_one pushes a tagged image for a single service.
+# _image_push_one pushes an arch-suffixed image for a single service.
 # Usage: $(call _image_push_one,<service>)
 define _image_push_one
-	@echo "  Pushing $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)..."
-	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)
+	@echo "  Pushing $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH)
 
 endef
 
+# NOTE: Generated files (openapi_spec_data.yaml, ogen client) must be committed before
+# running image-build on hosts without Go. Run `make generate` locally first if needed.
 .PHONY: image-build
-image-build: generate ## Build images for all services (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
-	@echo "🐳 Building service images..."
+image-build: ## Build images for all services (native arch, arch-suffixed tag)
+	@echo "🐳 Building service images [$(IMAGE_ARCH)]..."
 	@echo "   Registry: $(IMAGE_REGISTRY)"
-	@echo "   Tag:      $(IMAGE_TAG)"
+	@echo "   Tag:      $(IMAGE_TAG)-$(IMAGE_ARCH)"
 	@echo ""
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
-	@echo "  Building holmesgpt-api..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG) -f holmesgpt-api/Dockerfile .
+	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
 	@echo ""
-	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG))."
+	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG)-$(IMAGE_ARCH))."
 	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
 
 .PHONY: image-push
-image-push: ## Push images to registry (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
+image-push: ## Push arch-suffixed images to registry
 	@echo "📤 Pushing images to $(IMAGE_REGISTRY)..."
-	@echo "   Tag: $(IMAGE_TAG)"
+	@echo "   Tag: $(IMAGE_TAG)-$(IMAGE_ARCH)"
 	@echo ""
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
-	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)..."
-	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)
+	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)
 	@echo ""
-	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)."
+	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
+
+.PHONY: image-manifest
+image-manifest: ## Create and push multi-arch manifests (run after both arches are pushed)
+	@echo "🔗 Creating multi-arch manifests..."
+	@echo "   Registry: $(IMAGE_REGISTRY)"
+	@echo "   Tag:      $(IMAGE_TAG)"
+	@echo "   Arches:   amd64, arm64"
+	@echo ""
+	@for svc in $(IMAGE_SERVICES) holmesgpt-api; do \
+	    echo "  Manifest: $$svc"; \
+	    $(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) 2>/dev/null || true; \
+	    $(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
+	        $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG)-amd64 \
+	        $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG)-arm64; \
+	    $(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
+	        docker://$(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG); \
+	done
+	@echo ""
+	@echo "✅ All manifests pushed as $(IMAGE_REGISTRY):$(IMAGE_TAG)."
