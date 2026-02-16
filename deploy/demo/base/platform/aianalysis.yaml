@@ -90,7 +90,7 @@ data:
       url: "http://holmesgpt-api:8080"
       timeout: "60s"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: "60s"
     rego:
       policy_path: "/etc/aianalysis/policies/approval.rego"
@@ -212,7 +212,7 @@ spec:
             - name: HOLMESGPT_API_URL
               value: http://holmesgpt-api:8080
             - name: DATASTORAGE_URL
-              value: http://data-storage-service:8080
+              value: http://data-storage-service.kubernaut-system.svc.cluster.local:8080
           volumeMounts:
             - name: config
               mountPath: /etc/aianalysis

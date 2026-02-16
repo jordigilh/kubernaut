@@ -52,7 +52,7 @@ data:
       routes:
         - match:
             - namespace: "demo-workloads"
-              receiver: gateway-webhook
+          receiver: gateway-webhook
           drop:
             - type: "Normal"
     receivers:
