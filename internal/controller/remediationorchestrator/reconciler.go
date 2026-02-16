@@ -454,6 +454,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Initialize phase if empty (new RemediationRequest from Gateway)
 	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
 	if rr.Status.OverallPhase == "" {
+		// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) to confirm the
+		// phase is genuinely empty. The informer cache is eventually consistent — a second
+		// reconcile may start with stale cache showing OverallPhase=="" even after a
+		// previous reconcile already set it to Pending in etcd. Without this check, both
+		// reconciles enter the initialization block and emit duplicate audit events.
+		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			logger.Error(err, "Failed to refetch RemediationRequest via apiReader")
+			return ctrl.Result{}, err
+		}
+		if rr.Status.OverallPhase != "" {
+			// Cache was stale — another reconcile already initialized this RR.
+			// Requeue to proceed with the now-initialized phase.
+			logger.V(1).Info("Skipped duplicate initialization (stale cache)",
+				"name", rr.Name, "phase", rr.Status.OverallPhase)
+			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		}
+
 		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
 
 		// ========================================
@@ -477,11 +494,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	// RO-AUDIT-IDEMPOTENCY: Emit initialization audit events ONLY after winning the
-	// AtomicStatusUpdate. Concurrent reconciles that both see OverallPhase == "" will
-	// race on the status update; only the winner proceeds here, preventing duplicate
-	// lifecycle.started/created events. Same pattern as RAR (ConditionAuditRecorded),
-	// Notification (NT-BUG-001), and WFE (DD-STATUS-001).
+	// RO-AUDIT-IDEMPOTENCY: Safe to emit — the apiReader refetch above confirmed this
+	// reconcile is the sole initializer. AtomicStatusUpdate handles optimistic locking
+	// conflicts via RetryOnConflict, but the phase transition is guaranteed to have
+	// been performed by this reconcile (not a stale-cache duplicate).
 	r.emitLifecycleStartedAudit(ctx, rr)
 
 	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
