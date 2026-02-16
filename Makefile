@@ -987,3 +987,52 @@ demo-status: ## Show demo cluster status
 	@echo "📊 Demo cluster status:"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true
+
+##@ Image Build & Push
+
+# Registry and tag (override via env or CLI)
+IMAGE_REGISTRY ?= quay.io/kubernaut-ai
+IMAGE_TAG ?= latest
+
+# All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
+IMAGE_SERVICES := $(DEMO_SERVICES)
+
+# _image_build_one builds a single service image (native arch, tagged).
+# Usage: $(call _image_build_one,<service>,<dockerfile>)
+define _image_build_one
+	@echo "  Building $(1)..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG) -f $(2) .
+
+endef
+
+# _image_push_one pushes a tagged image for a single service.
+# Usage: $(call _image_push_one,<service>)
+define _image_push_one
+	@echo "  Pushing $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)
+
+endef
+
+.PHONY: image-build
+image-build: generate ## Build images for all services (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
+	@echo "🐳 Building service images..."
+	@echo "   Registry: $(IMAGE_REGISTRY)"
+	@echo "   Tag:      $(IMAGE_TAG)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	@echo "  Building holmesgpt-api..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG) -f holmesgpt-api/Dockerfile .
+	@echo ""
+	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG))."
+	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
+
+.PHONY: image-push
+image-push: ## Push images to registry (IMAGE_TAG=<tag> IMAGE_REGISTRY=<registry>)
+	@echo "📤 Pushing images to $(IMAGE_REGISTRY)..."
+	@echo "   Tag: $(IMAGE_TAG)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
+	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)
+	@echo ""
+	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)."
