@@ -399,56 +399,32 @@ else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 
 import rego.v1
 
-# BR-SP-070: Rego-based priority assignment
-# BR-SP-071: Severity fallback matrix
-# Timestamps set by Go code (metav1.Time), not Rego
-# Using else chain to prevent eval_conflict_error
-# NOTE: input.environment is a STRING (e.g., "production"), not a struct
+# BR-SP-070: Score-based priority aggregation (issue #98)
+# Each dimension scored independently, then summed.
+severity_score := 3 if { lower(input.signal.severity) == "critical" }
+severity_score := 2 if { lower(input.signal.severity) == "warning" }
+severity_score := 2 if { lower(input.signal.severity) == "high" }
+severity_score := 1 if { lower(input.signal.severity) == "info" }
+default severity_score := 0
 
-# Priority matrix: environment × severity (DD-SEVERITY-001 v1.1)
-result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "production"
-    input.signal.severity == "critical"
-}
+env_scores contains 3 if { lower(input.environment) == "production" }
+env_scores contains 2 if { lower(input.environment) == "staging" }
+env_scores contains 1 if { lower(input.environment) == "development" }
+env_scores contains 1 if { lower(input.environment) == "test" }
+env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
+env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
 
-else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "production"
-    input.signal.severity == "high"
-}
+env_score := max(env_scores) if { count(env_scores) > 0 }
+default env_score := 0
 
-else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "staging"
-    input.signal.severity == "critical"
-}
+composite_score := severity_score + env_score
 
-else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "staging"
-    input.signal.severity == "high"
-}
+result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
 
-else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "development"
-    input.signal.severity == "critical"
-}
-
-else := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment == "development"
-    input.signal.severity == "high"
-}
-
-# BR-SP-071: Severity-only fallback
-else := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback"} if {
-    input.environment == "unknown"
-    input.signal.severity == "critical"
-}
-
-else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if {
-    input.environment == "unknown"
-    input.signal.severity == "high"
-}
-
-# Default
-else := {"priority": "P3", "confidence": 0.5, "source": "default"}
+default result := {"priority": "P3", "policy_name": "default-catch-all"}
 `)
 	Expect(err).NotTo(HaveOccurred())
 	_ = priorityPolicyFile.Close()

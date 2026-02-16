@@ -1128,69 +1128,35 @@ data:
     package aianalysis.approval
     import rego.v1
 
-    # Default values
     default require_approval := false
-    default reason := "Auto-approved"
 
-    # Production environment always requires approval (E2E test simplification)
-    require_approval if {
-        input.environment == "production"
-    }
+    require_approval if { input.environment == "production" }
+    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
+    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
+    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
 
-    # Multiple recovery attempts require approval (any environment)
-    require_approval if {
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number >= 3
-    }
-
-    # Data quality issues in production require approval (BR-AI-011)
-    # Check both warnings (from HAPI) and failed_detections (from SignalProcessing)
-    require_approval if {
-        input.environment == "production"
-        count(input.warnings) > 0
-    }
-
-    require_approval if {
-        input.environment == "production"
-        count(input.failed_detections) > 0
-    }
-
-    # Reason determination (single rule to avoid eval_conflict_error)
-    reason := msg if {
-        require_approval
+    # Scored risk factors for reason generation (issue #98)
+    risk_factors contains {"score": 100, "reason": msg} if {
         input.is_recovery_attempt == true
         input.recovery_attempt_number >= 3
         msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
     }
-
-    reason := "Data quality warnings in production environment" if {
-        require_approval
+    risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
         input.environment == "production"
         count(input.warnings) > 0
-        not input.is_recovery_attempt
     }
-
-    reason := "Data quality issues detected in production environment" if {
-        require_approval
+    risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
         input.environment == "production"
         count(input.failed_detections) > 0
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
+    }
+    risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
+        input.environment == "production"
     }
 
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
-    }
-
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number < 3
-    }
+    all_scores contains f.score if { some f in risk_factors }
+    max_risk_score := max(all_scores) if { count(all_scores) > 0 }
+    reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
+    default reason := "Auto-approved"
 `
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
