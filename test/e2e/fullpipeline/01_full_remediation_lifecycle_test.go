@@ -1154,10 +1154,13 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 
 		// Same expected audit events as the K8s event test — the full pipeline is identical
 		// after the signal enters Gateway, regardless of signal source.
+		// NOTE: orchestrator.lifecycle.created is at-least-once for the AlertManager path
+		// because AlertManager re-delivers the alert group on its group_interval, which
+		// can trigger a second Gateway dedup + RO reconciliation cycle that re-emits the
+		// "created" audit event. Kubernetes controllers are level-triggered by design.
 		exactlyOnceEvents := []string{
 			"gateway.signal.received",
 			"gateway.crd.created",
-			"orchestrator.lifecycle.created",
 			"orchestrator.lifecycle.started",
 			"orchestrator.lifecycle.completed",
 			"effectiveness.assessment.scheduled",
@@ -1169,6 +1172,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		}
 
 		atLeastOnceEvents := []string{
+			"orchestrator.lifecycle.created",
 			"orchestrator.lifecycle.transitioned",
 			"signalprocessing.enrichment.completed",
 			"signalprocessing.classification.decision",
