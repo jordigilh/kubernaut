@@ -44,15 +44,19 @@ class TestResolveOwnerChain:
 
         # Mock the K8s API responses for owner chain traversal
         mock_pod = MagicMock()
-        mock_pod.metadata.owner_references = [
-            MagicMock(kind="ReplicaSet", name="api-xyz", api_version="apps/v1")
-        ]
+        mock_owner_ref_rs = MagicMock()
+        mock_owner_ref_rs.kind = "ReplicaSet"
+        mock_owner_ref_rs.name = "api-xyz"
+        mock_owner_ref_rs.api_version = "apps/v1"
+        mock_pod.metadata.owner_references = [mock_owner_ref_rs]
         mock_pod.metadata.namespace = "production"
 
         mock_rs = MagicMock()
-        mock_rs.metadata.owner_references = [
-            MagicMock(kind="Deployment", name="api", api_version="apps/v1")
-        ]
+        mock_owner_ref_deploy = MagicMock()
+        mock_owner_ref_deploy.kind = "Deployment"
+        mock_owner_ref_deploy.name = "api"
+        mock_owner_ref_deploy.api_version = "apps/v1"
+        mock_rs.metadata.owner_references = [mock_owner_ref_deploy]
         mock_rs.metadata.namespace = "production"
 
         mock_deploy = MagicMock()
@@ -162,7 +166,7 @@ class TestGetResourceContextTool:
         )
 
         tool = toolset.tools[0]
-        result = await tool.invoke(kind="Pod", name="api-xyz-abc", namespace="production")
+        result = await tool._invoke_async(kind="Pod", name="api-xyz-abc", namespace="production")
 
         assert result.status.value == "success"
         data = result.data
@@ -188,7 +192,7 @@ class TestGetResourceContextTool:
         )
 
         tool = toolset.tools[0]
-        result = await tool.invoke(kind="Pod", name="missing", namespace="default")
+        result = await tool._invoke_async(kind="Pod", name="missing", namespace="default")
 
         assert result.status.value == "success"
         data = result.data

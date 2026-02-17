@@ -86,8 +86,24 @@ class GetResourceContextTool(Tool):
         object.__setattr__(self, "_k8s_client", k8s_client)
         object.__setattr__(self, "_history_fetcher", history_fetcher)
 
-    async def invoke(self, kind: str, name: str, namespace: str = "", **kwargs) -> StructuredToolResult:
-        """Execute the resource context lookup."""
+    def get_parameterized_one_liner(self, params: Dict) -> str:
+        kind = params.get("kind", "?")
+        name = params.get("name", "?")
+        namespace = params.get("namespace", "")
+        return f"Get resource context for {kind}/{namespace}/{name}"
+
+    def _invoke(self, params: Dict, user_approved: bool = False) -> StructuredToolResult:
+        """Execute the resource context lookup (sync wrapper for async tool)."""
+        import asyncio
+        kind = params.get("kind", "")
+        name = params.get("name", "")
+        namespace = params.get("namespace", "")
+        return asyncio.get_event_loop().run_until_complete(
+            self._invoke_async(kind, name, namespace)
+        )
+
+    async def _invoke_async(self, kind: str, name: str, namespace: str = "") -> StructuredToolResult:
+        """Async implementation of resource context lookup."""
         try:
             # Step 1: Resolve owner chain via K8s API
             owner_chain = await self._k8s_client.resolve_owner_chain(kind, name, namespace)
@@ -175,3 +191,11 @@ class ResourceContextToolset(Toolset):
             tools=[tool],
             enabled=True,
         )
+
+    def get_example_config(self) -> Dict[str, Any]:
+        return {
+            "resource_context": {
+                "enabled": True,
+                "description": "ADR-055: Post-RCA resource context enrichment",
+            }
+        }
