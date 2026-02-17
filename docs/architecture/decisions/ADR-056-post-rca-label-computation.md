@@ -2,8 +2,8 @@
 
 **Status**: PROPOSED
 **Decision Date**: 2026-02-12
-**Version**: 1.0
-**Confidence**: 85%
+**Version**: 1.1
+**Confidence**: 90%
 **Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
 
 ---
@@ -93,48 +93,72 @@ The gap was anticipated but never resolved:
 
 ## Decision
 
-### Relocate Label Computation from SignalProcessing to HAPI (Post-RCA)
+### Relocate Label Computation from SignalProcessing to HAPI (Post-RCA, Internal)
 
-Move label detection from signal time (SP) to post-RCA time (HAPI), aligned with the actual remediation target resource identified by the LLM.
+Move label detection from signal time (SP) to post-RCA time (HAPI), aligned with the actual remediation target resource identified by the LLM. Labels are computed and used **internally by HAPI** -- the LLM never sees or manages them.
+
+### Foundational Principle: Impact vs. Target
+
+The architecture separates two fundamentally different classification scopes:
+
+- **Impact-scoped (SP, pre-RCA)**: Business classification -- environment, priority, severity, business unit. These describe the **business impact of the signal**: which service is affected, in which environment, how urgent is it. These are valid at signal time and remain correct regardless of what the RCA identifies as the root cause. A Pod crash in production is P0 whether the fix targets a Pod, a Deployment, or a Node.
+
+- **Target-scoped (HAPI, post-RCA)**: DetectedLabels -- stateful, hpaManaged, helmManaged, pdbProtected, etc. These describe **operational properties of the remediation target**: what constraints apply to the resource we are about to fix. These can only be answered correctly for the actual target identified by RCA.
+
+SP owns impact classification. HAPI owns target properties. Neither crosses into the other's domain.
 
 ### Proposed Architecture
 
 ```
 SignalProcessing                  AIAnalysis              HAPI
 +-----------------------+         +----------+           +---------------------------+
-| 1. Compute OwnerChain |         |          |           | 1. LLM performs RCA       |
-| 2. Detect labels      |         | No label |           | 2. LLM calls              |
-|    (internal only)    |         | or owner |---------->|    get_resource_context()  |
-| 3. Labels stay in SP  |         | chain    |  signal   |    for RCA target          |
-|    for audit/classify |         | propagat.|  context  | 3. Tool resolves:          |
-+-----------------------+         +----------+  only     |    - Owner chain (target)  |
-                                                         |    - Spec hash             |
-                                                         |    - Remediation history   |
-                                                         |    - DetectedLabels (NEW)  |
-                                                         | 4. Workflow discovery uses |
-                                                         |    target-accurate labels  |
+| Business classif.:    |         |          |           | 1. LLM performs RCA       |
+|  - environment        |         | Signal   |           | 2. LLM calls              |
+|  - priority           |         | context  |---------->|    get_resource_context()  |
+|  - severity           |         | only     |  request  |    for RCA target          |
+|  - business unit      |         | (no      |           | 3. Tool internally:        |
+|                       |         |  labels  |           |    - Resolves owner chain  |
+| DetectedLabels:       |         |  or      |           |    - Computes spec hash    |
+|  (SP-internal only)   |         |  owner   |           |    - Fetches history       |
+|  for audit/classify   |         |  chain)  |           |    - Computes labels (NEW) |
++-----------------------+         +----------+           |    - Stores labels in      |
+                                                         |      session state         |
+                                                         |    Returns to LLM:         |
+                                                         |      root_owner + history  |
+                                                         |      (labels NOT returned) |
+                                                         |                            |
+                                                         | 4. LLM calls list_workflows|
+                                                         |    HAPI transparently      |
+                                                         |    injects stored labels   |
+                                                         |    into DataStorage query  |
                                                          +---------------------------+
 ```
 
 ### Key Design Principles
 
-1. **Labels must describe the remediation target, not the signal source.** The only component that knows the remediation target is the LLM after RCA. Therefore, label computation must happen post-RCA.
+1. **Impact vs. target separation.** Business classification (SP) describes signal impact and is stable across RCA outcomes. DetectedLabels (HAPI) describe the remediation target and must be computed post-RCA for the correct resource.
 
-2. **SP keeps its own labels for internal purposes.** SP still computes labels for signal classification, audit events (`HasOwnerChain`, `OwnerChainLength`), and internal detection. These do not leave SP.
+2. **DetectedLabels are HAPI-internal.** Labels are computed by `get_resource_context` and stored in session state. They are **not returned to the LLM** and **not passed as tool parameters**. HAPI transparently injects them into workflow discovery queries. The LLM's tool interface is simpler -- fewer parameters, no risk of label hallucination.
 
-3. **`get_resource_context` becomes the single source of truth for target context.** ADR-055 already made it the source for owner chain, spec hash, and remediation history. Adding label detection completes the picture.
+3. **Workflow discovery `list_workflows` drops the `detected_labels` parameter.** The LLM calls `list_workflows(action_type)` and HAPI internally applies the stored labels as filter criteria. This is completely transparent from the LLM's perspective.
 
-4. **No backwards compatibility required.** The system has not been released. All changes are forward-only.
+4. **SP keeps its own labels for internal purposes.** SP still computes labels for signal classification, audit events (`HasOwnerChain`, `OwnerChainLength`), and internal detection. These do not leave SP.
+
+5. **`get_resource_context` becomes the single source of truth for target context.** ADR-055 already made it the source for owner chain, spec hash, and remediation history. Adding label detection completes the picture.
+
+6. **CustomLabels (Rego-extracted) stay as-is.** Customer-defined Rego policies extract labels from the signal source resource. These are a customer extension point and should be designed for impact/signal-scoped properties (team, cost-center, service-tier) rather than resource-specific mechanics. Guidance will be documented. Moving customer Rego execution to HAPI post-RCA is a potential future iteration but out of scope for this decision.
+
+7. **No backwards compatibility required.** The system has not been released. All changes are forward-only.
 
 ---
 
 ## Changes Required
 
-### Phase 1: Extend `get_resource_context` with Label Detection
+### Phase 1: Extend `get_resource_context` with Internal Label Detection
 
 | File | Change | Rationale |
 |------|--------|-----------|
-| `holmesgpt-api/src/toolsets/resource_context.py` | Add label detection logic to `GetResourceContextTool._invoke_async()`. After resolving owner chain, detect: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh. Return labels in tool result. | Labels computed for the actual RCA target |
+| `holmesgpt-api/src/toolsets/resource_context.py` | Add label detection logic to `GetResourceContextTool._invoke_async()`. After resolving owner chain, detect: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh. **Store labels in session state, do NOT return them in tool result.** Tool still returns only `root_owner` + `remediation_history` to LLM. | Labels computed for the actual RCA target but kept internal to HAPI |
 | `holmesgpt-api/src/clients/k8s_client.py` | Add functions for label detection K8s API calls: PDB lookup, HPA lookup, NetworkPolicy lookup, annotation/label inspection | Mirrors SP's detection logic in Python for the target resource |
 | `deploy/holmesgpt-api/03-rbac.yaml` | Add RBAC for: `poddisruptionbudgets`, `horizontalpodautoscalers`, `networkpolicies` (GET/LIST) | Required for label detection API calls |
 | `holmesgpt-api/tests/unit/test_resource_context_tool.py` | Add tests for label detection in resource context tool | TDD: test each label detection path |
@@ -150,13 +174,13 @@ SignalProcessing                  AIAnalysis              HAPI
 | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Keep `OwnerChain` in `KubernetesContext` (SP-internal) | SP still needs it for its own label detection |
 | `pkg/shared/types/zz_generated.deepcopy.go` | Regenerate with `controller-gen` after type changes | DeepCopy must match updated types |
 
-### Phase 3: Update HAPI to Use Self-Computed Labels
+### Phase 3: Transparent Label Injection in Workflow Discovery
 
 | File | Change | Rationale |
 |------|--------|-----------|
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Update `build_cluster_context_section()` and `build_mcp_filter_instructions()` to accept labels from `get_resource_context` output instead of SP enrichment results | Labels now come from HAPI, not SP |
-| `holmesgpt-api/src/toolsets/workflow_discovery.py` | Remove `should_include_detected_labels()` function. Update toolset to receive labels from `get_resource_context` tool result instead of constructor injection. | Guard function no longer needed -- labels always match target |
-| `holmesgpt-api/src/extensions/llm_config.py` | Update `register_workflow_discovery_toolset()` to not pass `detected_labels` from enrichment results | Labels come from tool, not request |
+| `holmesgpt-api/src/toolsets/workflow_discovery.py` | Remove `should_include_detected_labels()` function. Remove `detected_labels` from `list_workflows` tool parameter schema. Update toolset to read labels from session state (stored by `get_resource_context`) and inject them transparently into DataStorage queries. LLM calls `list_workflows(action_type)` with no label parameters. | Labels are HAPI-internal; LLM never sees or manages them. Guard function no longer needed -- labels always match target. |
+| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Remove `build_cluster_context_section()` DetectedLabels rendering from LLM prompt. Labels are no longer provided as LLM context -- they are used internally for filtering only. | LLM does not need to reason about DetectedLabels |
+| `holmesgpt-api/src/extensions/llm_config.py` | Update `register_workflow_discovery_toolset()` to not pass `detected_labels` from enrichment results. Toolset reads from session state instead. | Labels come from internal state, not request |
 
 ### Phase 4: Update SP Internal Label Flow
 
@@ -182,13 +206,17 @@ SignalProcessing                  AIAnalysis              HAPI
 
 1. **Accurate workflow discovery**: Labels always describe the resource being remediated, not the signal source. Workflow selection matches the actual target.
 
-2. **Simpler pipeline**: Removes OwnerChain and DetectedLabels propagation across three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI). Fewer moving parts, fewer conversion points.
+2. **Simpler LLM interface**: The LLM never sees DetectedLabels. `list_workflows` drops the `detected_labels` parameter. Fewer tool parameters means less hallucination risk and simpler prompt engineering.
 
-3. **Eliminates dead code**: `should_include_detected_labels()` and the unused discovery SQL label filtering become unnecessary.
+3. **Simpler pipeline**: Removes OwnerChain and DetectedLabels propagation across three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI). Fewer moving parts, fewer conversion points.
 
-4. **Consistent with ADR-055**: Completes the architectural shift started by ADR-055. All target-specific context (owner chain, spec hash, history, labels) is now computed post-RCA for the actual target.
+4. **Clean separation of concerns**: SP owns business classification (impact-scoped, stable). HAPI owns target properties (resource-scoped, post-RCA). Each component classifies what it has visibility into.
 
-5. **SP simplification**: SP's enrichment results become lighter. SP still performs label detection for its own audit and classification needs, but the results don't need serialization into shared types.
+5. **Eliminates dead code**: `should_include_detected_labels()` and the unused discovery SQL label filtering become unnecessary.
+
+6. **Consistent with ADR-055**: Completes the architectural shift started by ADR-055. All target-specific context (owner chain, spec hash, history, labels) is now computed post-RCA for the actual target.
+
+7. **SP simplification**: SP's enrichment results become lighter. SP still performs label detection for its own audit and classification needs, but the results don't need serialization into shared types.
 
 ### Negative
 
