@@ -1,0 +1,24 @@
+# Valid AIAnalysis configuration for unit tests.
+# ADR-030: Service Configuration Management
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "aianalysis.kubernaut.ai"
+
+holmesgpt:
+  url: "http://holmesgpt-api:8080"
+  timeout: 180s
+  sessionPollInterval: 15s
+
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 20000
+    batchSize: 1000
+    flushInterval: 1s
+    maxRetries: 3
+
+rego:
+  policyPath: "/etc/aianalysis/policies/approval.rego"

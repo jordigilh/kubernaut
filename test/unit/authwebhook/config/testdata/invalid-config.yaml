@@ -1,0 +1,15 @@
+# Invalid AuthWebhook configuration for unit tests.
+# ADR-030: Validate() should reject this configuration.
+webhook:
+  port: -1
+  certDir: ""
+  healthProbeAddr: ""
+
+datastorage:
+  url: ""
+  timeout: 0s
+  buffer:
+    bufferSize: 0
+    batchSize: 0
+    flushInterval: 0s
+    maxRetries: -1

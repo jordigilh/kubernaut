@@ -1,0 +1,15 @@
+# Valid AuthWebhook configuration for unit tests.
+# ADR-030: Service Configuration Management
+webhook:
+  port: 9443
+  certDir: "/tmp/k8s-webhook-server/serving-certs"
+  healthProbeAddr: ":8081"
+
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3

@@ -1,0 +1,23 @@
+# Invalid RemediationOrchestrator configuration for unit tests.
+# ADR-030: Validate() should reject this configuration.
+controller:
+  metricsAddr: ""
+  healthProbeAddr: ""
+
+timeouts:
+  global: 0s
+  processing: 0s
+  analyzing: 0s
+  executing: 0s
+
+datastorage:
+  url: ""
+  timeout: 0s
+  buffer:
+    bufferSize: 0
+    batchSize: 0
+    flushInterval: 0s
+    maxRetries: -1
+
+effectivenessAssessment:
+  stabilizationWindow: 0s
