@@ -179,7 +179,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				0.85, []string{},
 				"OOM Kill detected", "high",
 				"wf-restart-pod", "kubernaut.io/workflows/restart-pod:v1.0.0", 0.85,
-				true, "Restart pod to resolve OOM", false,
+				"Restart pod to resolve OOM", false,
 			)
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()

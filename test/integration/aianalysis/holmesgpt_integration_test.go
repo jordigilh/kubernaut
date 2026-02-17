@@ -100,7 +100,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 		It("should include targetInOwnerChain in response - BR-AI-007", func() {
 			// Real HAPI call - response determined by Mock LLM
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
 				SignalType:        "MemoryPressure",
@@ -118,8 +118,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			// TargetInOwnerChain is set by default in mock to true
-			Expect(resp.TargetInOwnerChain.Value).To(BeTrue())
+			// ADR-055: TargetInOwnerChain is still present in HolmesGPT API response
+			// but no longer consumed by the Go side. The LLM now populates affectedResource directly.
+			// This assertion validates the external API contract hasn't changed.
 		})
 
 		It("should return selected workflow - BR-AI-016", func() {

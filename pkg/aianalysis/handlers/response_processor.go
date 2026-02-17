@@ -117,13 +117,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// Store TargetInOwnerChain (data quality indicator for policy evaluation)
-	if resp.TargetInOwnerChain.Set {
-		targetInChain := resp.TargetInOwnerChain.Value
-		analysis.Status.TargetInOwnerChain = &targetInChain
-	}
+	// ADR-055: TargetInOwnerChain removed. affectedResource is now a first-class
+	// LLM RCA output, not derived from pre-computed owner chain.
 
-	// Store root cause analysis (if present) - Issue #97: uses centralized helper with affectedResource
+	// Store root cause analysis (if present) - uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
 			analysis.Status.RootCause = rca.Summary

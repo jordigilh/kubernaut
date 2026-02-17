@@ -223,7 +223,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"wf-restart-pod",
 					"kubernaut.io/workflows/restart:v1.0.0",
 					0.9,
-					true,  // targetInOwnerChain
 					"",    // workflowRationale
 					false, // includeAlternatives
 				)
@@ -238,9 +237,6 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				// Business outcome: Investigation completes successfully
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should proceed to Analyzing phase")
-				// Business outcome: Data quality indicator captured for policy evaluation
-				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil(), "Data quality indicator should be captured")
-				Expect(*analysis.Status.TargetInOwnerChain).To(BeTrue(), "Target should be found in owner chain")
 			})
 		})
 
@@ -257,7 +253,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"wf-scale-deployment",                 // workflowID
 					"kubernaut.io/workflows/scale:v1.0.0", // containerImage
 					0.7,                                   // workflowConfidence
-					false,                                 // targetInOwnerChain - test expects false
 					"",                                    // workflowRationale
 					false,                                 // includeAlternatives
 				)
@@ -273,16 +268,6 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Warnings).To(ContainElement("High memory pressure"))
 				Expect(analysis.Status.Warnings).To(ContainElement("Node scheduling delayed"))
 			})
-
-			It("should set targetInOwnerChain to false", func() {
-				analysis := createTestAnalysis()
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
-				Expect(*analysis.Status.TargetInOwnerChain).To(BeFalse())
-			})
 		})
 
 		// BR-AI-008: v1.5 Response Fields - RootCauseAnalysis capture
@@ -297,7 +282,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"wf-restart-pod",                        // workflowID
 					"kubernaut.io/workflows/restart:v1.0.0", // containerImage
 					0.92,                                    // workflowConfidence
-					true,                                    // targetInOwnerChain
 					"Selected for OOM recovery",             // workflowRationale
 					true,                                    // includeAlternatives
 				)
@@ -735,7 +719,6 @@ var _ = Describe("InvestigatingHandler", func() {
 						"wf-test",
 						"test:v1",
 						confidence,
-						true,  // targetInOwnerChain
 						"",    // workflowRationale
 						false, // includeAlternatives
 					)
@@ -899,7 +882,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"restart-pod-v1",          // workflowID
 					"kubernaut/restart:v1",    // containerImage
 					0.90,                      // workflowConfidence
-					true,                      // targetInOwnerChain
 					"Pod restart recommended", // workflowRationale
 					false,                     // includeAlternatives
 				)
@@ -1070,7 +1052,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"restart-pod-v1",
 					"kubernaut.io/workflows/restart:v1",
 					0.9,
-					true,  // targetInOwnerChain
 					"",    // workflowRationale
 					false, // includeAlternatives
 				)

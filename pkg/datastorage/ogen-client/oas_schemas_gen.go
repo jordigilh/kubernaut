@@ -266,8 +266,6 @@ type AIAnalysisAuditPayload struct {
 	Confidence OptFloat32 `json:"confidence"`
 	// Selected workflow identifier.
 	WorkflowID OptString `json:"workflow_id"`
-	// Whether target is in owner chain.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
 	// Primary failure reason.
 	Reason OptString `json:"reason"`
 	// Detailed failure sub-reason.
@@ -324,11 +322,6 @@ func (s *AIAnalysisAuditPayload) GetConfidence() OptFloat32 {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
-}
-
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *AIAnalysisAuditPayload) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
 }
 
 // GetReason returns the value of Reason.
@@ -399,11 +392,6 @@ func (s *AIAnalysisAuditPayload) SetConfidence(val OptFloat32) {
 // SetWorkflowID sets the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
-}
-
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *AIAnalysisAuditPayload) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
 }
 
 // SetReason sets the value of Reason.
@@ -6844,8 +6832,6 @@ type IncidentResponseData struct {
 	NeedsHumanReview OptBool `json:"needs_human_review"`
 	// Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
 	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"human_review_reason"`
-	// Whether RCA target was found in OwnerChain.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues).
 	Warnings []string `json:"warnings"`
 	// Other workflows considered but not selected.
@@ -6890,11 +6876,6 @@ func (s *IncidentResponseData) GetNeedsHumanReview() OptBool {
 // GetHumanReviewReason returns the value of HumanReviewReason.
 func (s *IncidentResponseData) GetHumanReviewReason() OptIncidentResponseDataHumanReviewReason {
 	return s.HumanReviewReason
-}
-
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *IncidentResponseData) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
 }
 
 // GetWarnings returns the value of Warnings.
@@ -6945,11 +6926,6 @@ func (s *IncidentResponseData) SetNeedsHumanReview(val OptBool) {
 // SetHumanReviewReason sets the value of HumanReviewReason.
 func (s *IncidentResponseData) SetHumanReviewReason(val OptIncidentResponseDataHumanReviewReason) {
 	s.HumanReviewReason = val
-}
-
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *IncidentResponseData) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
 }
 
 // SetWarnings sets the value of Warnings.

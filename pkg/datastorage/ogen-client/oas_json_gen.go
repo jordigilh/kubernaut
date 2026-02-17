@@ -596,12 +596,6 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.TargetInOwnerChain.Set {
-			e.FieldStart("target_in_owner_chain")
-			s.TargetInOwnerChain.Encode(e)
-		}
-	}
-	{
 		if s.Reason.Set {
 			e.FieldStart("reason")
 			s.Reason.Encode(e)
@@ -627,7 +621,7 @@ func (s *AIAnalysisAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAIAnalysisAuditPayload = [15]string{
+var jsonFieldsNameOfAIAnalysisAuditPayload = [14]string{
 	0:  "event_type",
 	1:  "analysis_name",
 	2:  "namespace",
@@ -638,11 +632,10 @@ var jsonFieldsNameOfAIAnalysisAuditPayload = [15]string{
 	7:  "warnings_count",
 	8:  "confidence",
 	9:  "workflow_id",
-	10: "target_in_owner_chain",
-	11: "reason",
-	12: "sub_reason",
-	13: "provider_response_summary",
-	14: "error_details",
+	10: "reason",
+	11: "sub_reason",
+	12: "provider_response_summary",
+	13: "error_details",
 }
 
 // Decode decodes AIAnalysisAuditPayload from json.
@@ -763,16 +756,6 @@ func (s *AIAnalysisAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_id\"")
-			}
-		case "target_in_owner_chain":
-			if err := func() error {
-				s.TargetInOwnerChain.Reset()
-				if err := s.TargetInOwnerChain.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"target_in_owner_chain\"")
 			}
 		case "reason":
 			if err := func() error {
@@ -2683,12 +2666,6 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowID.Set {
 					e.FieldStart("workflow_id")
 					s.WorkflowID.Encode(e)
-				}
-			}
-			{
-				if s.TargetInOwnerChain.Set {
-					e.FieldStart("target_in_owner_chain")
-					s.TargetInOwnerChain.Encode(e)
 				}
 			}
 			{
@@ -5142,12 +5119,6 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowID.Set {
 					e.FieldStart("workflow_id")
 					s.WorkflowID.Encode(e)
-				}
-			}
-			{
-				if s.TargetInOwnerChain.Set {
-					e.FieldStart("target_in_owner_chain")
-					s.TargetInOwnerChain.Encode(e)
 				}
 			}
 			{
@@ -12633,12 +12604,6 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.TargetInOwnerChain.Set {
-			e.FieldStart("target_in_owner_chain")
-			s.TargetInOwnerChain.Encode(e)
-		}
-	}
-	{
 		if s.Warnings != nil {
 			e.FieldStart("warnings")
 			e.ArrStart()
@@ -12660,18 +12625,17 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseData = [11]string{
-	0:  "incident_id",
-	1:  "analysis",
-	2:  "root_cause_analysis",
-	3:  "selected_workflow",
-	4:  "confidence",
-	5:  "timestamp",
-	6:  "needs_human_review",
-	7:  "human_review_reason",
-	8:  "target_in_owner_chain",
-	9:  "warnings",
-	10: "alternative_workflows",
+var jsonFieldsNameOfIncidentResponseData = [10]string{
+	0: "incident_id",
+	1: "analysis",
+	2: "root_cause_analysis",
+	3: "selected_workflow",
+	4: "confidence",
+	5: "timestamp",
+	6: "needs_human_review",
+	7: "human_review_reason",
+	8: "warnings",
+	9: "alternative_workflows",
 }
 
 // Decode decodes IncidentResponseData from json.
@@ -12771,16 +12735,6 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"human_review_reason\"")
-			}
-		case "target_in_owner_chain":
-			if err := func() error {
-				s.TargetInOwnerChain.Reset()
-				if err := s.TargetInOwnerChain.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"target_in_owner_chain\"")
 			}
 		case "warnings":
 			if err := func() error {
