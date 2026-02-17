@@ -76,20 +76,17 @@ Notification ──> NotificationRequest CRD
 **CRD**: `SignalProcessing`
 
 **Key Features**:
-- Phase flow: Pending > Enriching > Classifying > Categorizing > Completed
 - K8s enrichment: namespace, pod, deployment, owner chain, node, PDB, HPA
 - 5 Rego classifiers: Environment, Priority, Severity, Business, CustomLabels
 - Detected labels: GitOps, Helm, PDB-protected, HPA-managed, service mesh, network isolation
 - Signal mode: predictive vs reactive
-- Recovery context propagation for retries
-- Degraded mode: partial enrichment when target resource is not found
 
 **Rego Policy -- Priority Classification** (`deploy/signalprocessing/policies/priority.rego`):
 
 ```rego
 package signalprocessing.priority
 
-import rego.v2
+import rego.v1
 
 # Severity rank: higher = more urgent
 severity_rank := 3 if { lower(input.signal.severity) == "critical" }
@@ -123,21 +120,16 @@ default result := {"priority": "P3", "policy_name": "default-catch-all"}
 **CRD**: `AIAnalysis`
 
 **Key Features**:
-- Phase flow: Pending > Investigating > Analyzing > Completed
-- HolmesGPT integration: async session (submit > poll > result)
 - Workflow selection: HAPI returns selected workflow (ID, image, parameters, rationale)
 - Rego approval policy: approved / manual_review_required / denied
 - Affected resource: LLM can identify a different target than the signal source (e.g., Deployment instead of Pod)
-- Recovery flow: uses previous execution history to avoid repeating failed remediations
-- Execution engine: supports `tekton` and `job` backends
-- WorkflowNotNeeded: LLM can determine the problem self-resolved (no workflow created)
 
 **Rego Policy -- Approval** (`config/rego/aianalysis/approval.rego`):
 
 ```rego
 package aianalysis.approval
 
-import rego.v2
+import rego.v1
 
 default require_approval := false
 
@@ -151,10 +143,9 @@ require_approval if {
     is_multiple_recovery
 }
 
-# Production + unvalidated target requires approval
+# Missing affected resource: default-deny (ADR-055)
 require_approval if {
-    is_production
-    not target_validated
+    not has_affected_resource
 }
 
 # Production + failed detections (GitOps, PDB) requires approval
@@ -179,16 +170,12 @@ require_approval if {
 **Architecture**: HTTP service (FastAPI). Not a controller.
 
 **Key Features**:
-- Three API endpoints: incident analysis, recovery analysis, post-execution analysis
-- 3-step workflow discovery protocol against DataStorage:
+- 3-step workflow discovery protocol against DataStorage (see Slide 6 for taxonomy and concrete example):
   1. `list_available_actions` (what can I do?)
   2. `list_workflows` (which workflows implement this action?)
   3. `get_workflow` (fetch the selected workflow's schema and parameters)
 - Remediation history enrichment: queries DataStorage for past remediations on the same target, injects into prompt so the LLM avoids repeating failed approaches
 - Three-way hash comparison: detects if the target spec drifted since last remediation
-- Session-based async API: submit investigation > poll for result
-- Mock LLM mode: deterministic responses for testing without a real LLM
-- Auth: K8s ServiceAccount tokens (TokenReview + SubjectAccessReview)
 
 **Pipeline Integration**:
 - AIAnalysis controller calls HAPI for incident/recovery analysis
@@ -197,7 +184,48 @@ require_approval if {
 
 ---
 
-## Slide 6: Remediation Orchestrator
+## Slide 6: Action Type Taxonomy and Workflow Discovery
+
+**Purpose**: The action type taxonomy is a curated set of remediation actions that Kubernaut knows how to perform. It powers the three-step discovery protocol that the LLM uses to find and select the right workflow for a given incident. Operators extend it by registering new workflows under existing or new action types.
+
+**V1.0 Action Type Taxonomy** (DD-WORKFLOW-016, 10 types):
+
+| Action Type | What It Does |
+|---|---|
+| **ScaleReplicas** | Horizontally scale a workload by adjusting the replica count |
+| **RestartPod** | Kill and recreate one or more pods |
+| **IncreaseCPULimits** | Increase CPU resource limits on containers |
+| **IncreaseMemoryLimits** | Increase memory resource limits on containers |
+| **RollbackDeployment** | Revert a deployment to its previous stable revision |
+| **DrainNode** | Drain and cordon a node, evicting all pods |
+| **CordonNode** | Cordon a node to prevent new scheduling without eviction |
+| **RestartDeployment** | Rolling restart of all pods in a workload |
+| **CleanupNode** | Reclaim disk space by purging temp files and unused images |
+| **DeletePod** | Delete pods stuck in a terminal state |
+
+Each action type also carries structured `whenToUse`, `whenNotToUse`, and `preconditions` descriptions that the LLM evaluates during workflow selection.
+
+**Three-Step Discovery Example** (OOMKill scenario):
+
+```
+Step 1: list_available_actions(severity=critical, environment=staging)
+  LLM asks: "What remediation actions are available for this context?"
+  -> Returns: IncreaseMemoryLimits, ScaleReplicas, RestartPod, RollbackDeployment, ...
+
+Step 2: list_workflows(action_type=IncreaseMemoryLimits, severity=critical)
+  LLM asks: "Which workflows implement IncreaseMemoryLimits?"
+  -> Returns: oomkill-increase-memory-v1 (engine: job), oomkill-increase-memory-v1 (engine: tekton)
+
+Step 3: get_workflow(workflow_id=oomkill-increase-memory-v1, version=1.0.0)
+  LLM asks: "Give me the full schema so I can populate the parameters."
+  -> Returns: full workflow-schema.yaml (see Slide 9)
+```
+
+The LLM populates the workflow parameters (e.g., `MEMORY_LIMIT_NEW=128Mi`) based on its root cause analysis and returns the selected workflow to the AIAnalysis controller.
+
+---
+
+## Slide 7: Remediation Orchestrator
 
 **Purpose**: Coordinates the full remediation lifecycle by creating and watching child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, Notification, EffectivenessAssessment). The conductor of the pipeline.
 
@@ -206,20 +234,16 @@ require_approval if {
 **CRD**: `RemediationRequest` (owns all child CRDs via owner references)
 
 **Key Features**:
-- Phase state machine: Pending > Processing > Analyzing > AwaitingApproval > Executing > Completed / Failed / TimedOut
 - Child CRD lifecycle: creates SP, AA, WE, NR, EA at the right phase transitions
 - Approval flow: creates `RemediationApprovalRequest` when Rego policy requires human approval
 - Routing engine: scope blocking, consecutive failure blocking, deduplication
 - Timeout handling: global (1h default) + per-phase (Processing 5m, Analyzing 10m, Executing 30m)
 - Pre-remediation spec hash: captures SHA-256 of target resource `.spec` before workflow runs
-- EffectivenessAssessment creation on all terminal phases (Completed, Failed, TimedOut)
 - AI-resolved target: uses LLM-identified `AffectedResource` (e.g., Deployment) instead of signal-sourced target (e.g., Pod)
-- Atomic status updates with optimistic concurrency (RetryOnConflict)
-- Full audit trail to DataStorage at every phase transition
 
 ---
 
-## Slide 7: Workflow Execution
+## Slide 8: Workflow Execution
 
 **Purpose**: Executes remediation workflows by creating Tekton PipelineRuns or Kubernetes Jobs, monitors their progress, and reports structured success/failure details back to the orchestrator.
 
@@ -239,7 +263,77 @@ require_approval if {
 
 ---
 
-## Slide 8: Effectiveness Monitor
+## Slide 9: Workflow Schema (workflow-schema.yaml)
+
+**Purpose**: Every remediation workflow ships as an OCI image containing a `/workflow-schema.yaml` that declares what the workflow does, when to use it, and what parameters it needs. This schema is extracted during registration and stored in the workflow catalog for LLM-driven discovery.
+
+**Container Image Reference** (DD-WORKFLOW-002 v2.4):
+- V1.0 requires **tag + digest** for immutability and audit compliance
+- Full pullspec: `container_image@container_digest`
+- The digest guarantees that the exact image bytes are auditable and reproducible
+
+**Example**: `workflow-schema.yaml` for the OOMKill increase-memory workflow:
+
+```yaml
+metadata:
+  workflowId: oomkill-increase-memory-v1
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for pods experiencing OOMKill events"
+    whenToUse: "When pods are OOMKilled due to insufficient memory limits"
+    whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
+
+actionType: IncreaseMemoryLimits
+
+labels:
+  signalType: OOMKilled
+  severity: [critical, high]
+  environment: [production, staging, test]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  # V1.0: tag + SHA256 digest for immutability and audit trail
+  containerImage: quay.io/kubernaut-cicd/workflows/oomkill-increase-memory:v1.0.0@sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
+
+# Operator-defined labels for additional filtering (separate from mandatory labels)
+customLabels:
+  team: platform-sre
+  cost-profile: memory-intensive
+  change-risk: low
+
+parameters:
+  - name: TARGET_RESOURCE_KIND
+    type: string
+    required: true
+    description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)"
+  - name: TARGET_RESOURCE_NAME
+    type: string
+    required: true
+    description: "Name of the resource to patch"
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the resource"
+  - name: MEMORY_LIMIT_NEW
+    type: string
+    required: true
+    description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"
+```
+
+**Key Design Decisions**:
+- `containerImage` with tag + digest ensures the exact workflow binary is traceable in the audit trail
+- `actionType` maps to the action taxonomy used by the LLM's three-step discovery protocol (list actions > list workflows > get schema)
+- `labels` (mandatory) enable catalog filtering: severity, environment, component, priority
+- `customLabels` (optional) are operator-defined key-value pairs for team/org-specific filtering -- stored separately from mandatory labels in their own JSONB column, passed through the discovery protocol for additional matching
+- `description` fields (`what`, `whenToUse`, `whenNotToUse`, `preconditions`) are shown to the LLM during workflow selection
+- `parameters` are populated by the LLM based on the incident context
+
+---
+
+## Slide 10: Effectiveness Monitor
 
 **Purpose**: Assesses whether the remediation actually worked by running four independent checks after a stabilization window, then emitting structured audit events. Closes the feedback loop.
 
@@ -262,7 +356,7 @@ require_approval if {
 
 ---
 
-## Slide 9: Notification
+## Slide 11: Notification
 
 **Purpose**: Delivers notifications to configured channels with retries, label-based routing, and circuit breakers. Informs operators about remediation outcomes, approvals, and escalations.
 
@@ -271,18 +365,15 @@ require_approval if {
 **CRD**: `NotificationRequest`
 
 **Key Features**:
-- Phase flow: Pending > Sending > Retrying > Sent / PartiallySent / Failed
 - Delivery channels: Slack (webhook with circuit breaker), Console, File, Log
 - Label-based routing: ConfigMap-driven rules with hot-reload (no restart required)
 - Exponential backoff retries
 - Circuit breaker: prevents cascading failures to external webhooks
 - Notification types: approval requests, timeout escalations, completion summaries
-- Audit events: message.sent, message.failed
-- Atomic status updates per delivery attempt
 
 ---
 
-## Slide 10: DataStorage
+## Slide 12: DataStorage
 
 **Purpose**: Centralized HTTP API that stores and serves audit events, the workflow catalog, and remediation history. The only service that talks directly to PostgreSQL. Every other service reads and writes through its REST API.
 
@@ -295,12 +386,10 @@ require_approval if {
 - Remediation history API: two-tier windowing (24h recent + 90d historical) with three-way hash comparison
 - OpenAPI-first: `data-storage-v1.yaml` spec with auto-generated Go and Python clients
 - PostgreSQL primary storage, Redis dead letter queue for failed audit writes
-- K8s auth: TokenReview + SubjectAccessReview for service-to-service authentication
-- Graceful shutdown with connection draining
 
 ---
 
-## Slide 11: AuthWebhook
+## Slide 13: AuthWebhook
 
 **Purpose**: Kubernetes admission webhook that injects authenticated user identity into CRD status updates for SOC2 CC8.1 audit compliance. Ensures every remediation action is traceable to a human or service account.
 

@@ -7,4 +7,4 @@ resources:
   # - OOMKill: triggers K8s OOMKill events -> Event Exporter -> Gateway
   # - HighUsage: triggers Prometheus alert -> AlertManager -> Gateway (~30s)
   - memory-eater-oomkill.yaml
-  - memory-eater-high-usage.yaml
+  #- memory-eater-high-usage.yaml
