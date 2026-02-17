@@ -351,7 +351,10 @@ data:
         flushInterval: 1s
         maxRetries: 3
     controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
       leaderElection: false
+      leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
       prometheusUrl: http://prometheus-svc:9090
       prometheusEnabled: true
@@ -423,8 +426,6 @@ spec:
         imagePullPolicy: %[3]s
         args:
         - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
-        - "--metrics-bind-address=:9090"
-        - "--health-probe-bind-address=:8081"
         ports:
         - containerPort: 9090
           name: metrics
