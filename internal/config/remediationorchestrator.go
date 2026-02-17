@@ -14,6 +14,9 @@ type Config struct {
 	// Controller runtime configuration (DD-005)
 	Controller ControllerConfig `yaml:"controller"`
 
+	// Timeouts for remediation workflow phases (BR-ORCH-027, BR-ORCH-028)
+	Timeouts TimeoutsConfig `yaml:"timeouts"`
+
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage DataStorageConfig `yaml:"datastorage"`
 
@@ -22,6 +25,28 @@ type Config struct {
 	// The RO only sets StabilizationWindow; all other assessment parameters
 	// (PrometheusEnabled, AlertManagerEnabled, ValidityWindow) are EM-internal config.
 	EA EACreationConfig `yaml:"effectivenessAssessment"`
+}
+
+// TimeoutsConfig holds timeout configuration for remediation workflow phases.
+// BR-ORCH-027: Global timeout for entire remediation workflow.
+// BR-ORCH-028: Per-phase timeouts for SignalProcessing, AIAnalysis, WorkflowExecution.
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
+type TimeoutsConfig struct {
+	// Global is the maximum duration for the entire remediation workflow.
+	// BR-ORCH-027, AC-027-3. Default: 1h.
+	Global time.Duration `yaml:"global"`
+
+	// Processing is the timeout for the SignalProcessing phase.
+	// BR-ORCH-028, AC-028-1. Default: 5m.
+	Processing time.Duration `yaml:"processing"`
+
+	// Analyzing is the timeout for the AIAnalysis phase.
+	// BR-ORCH-028, AC-028-1. Default: 10m.
+	Analyzing time.Duration `yaml:"analyzing"`
+
+	// Executing is the timeout for the WorkflowExecution phase.
+	// BR-ORCH-028, AC-028-1. Default: 30m.
+	Executing time.Duration `yaml:"executing"`
 }
 
 // EACreationConfig controls EffectivenessAssessment CRD creation by the RO.
@@ -52,6 +77,12 @@ func DefaultConfig() *Config {
 			HealthProbeAddr:  ":8081",
 			LeaderElection:   false,
 			LeaderElectionID: "remediationorchestrator.kubernaut.ai",
+		},
+		Timeouts: TimeoutsConfig{
+			Global:     1 * time.Hour,
+			Processing: 5 * time.Minute,
+			Analyzing:  10 * time.Minute,
+			Executing:  30 * time.Minute,
 		},
 		EA: EACreationConfig{
 			StabilizationWindow: 5 * time.Minute, // ADR-EM-001: default 5m (Section 8)
@@ -104,6 +135,24 @@ func (c *Config) Validate() error {
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
+	}
+
+	// Validate timeouts (BR-ORCH-027, BR-ORCH-028)
+	if c.Timeouts.Global <= 0 {
+		return fmt.Errorf("timeouts.global must be positive, got %v", c.Timeouts.Global)
+	}
+	if c.Timeouts.Processing <= 0 {
+		return fmt.Errorf("timeouts.processing must be positive, got %v", c.Timeouts.Processing)
+	}
+	if c.Timeouts.Analyzing <= 0 {
+		return fmt.Errorf("timeouts.analyzing must be positive, got %v", c.Timeouts.Analyzing)
+	}
+	if c.Timeouts.Executing <= 0 {
+		return fmt.Errorf("timeouts.executing must be positive, got %v", c.Timeouts.Executing)
+	}
+	phaseSum := c.Timeouts.Processing + c.Timeouts.Analyzing + c.Timeouts.Executing
+	if c.Timeouts.Global < phaseSum {
+		return fmt.Errorf("timeouts.global (%v) must be >= sum of phase timeouts (%v)", c.Timeouts.Global, phaseSum)
 	}
 
 	// Validate EA creation config (ADR-EM-001)

@@ -487,21 +487,26 @@ data:
     # RemediationOrchestrator E2E Configuration
     # Per ADR-030: YAML-based service configuration
     # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "remediationorchestrator.kubernaut.ai"
+    timeouts:
+      global: "1h"
+      processing: "5m"
+      analyzing: "10m"
+      executing: "30m"
     datastorage:
-      url: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
-      timeout: 10s
+      url: "http://data-storage-service:8080"
+      timeout: "10s"
       buffer:
         bufferSize: 10000
-        batchSize: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
-        flushInterval: 100ms  # E2E: Fast flush for test visibility (0.1s)
+        batchSize: 50
+        flushInterval: "100ms"
         maxRetries: 3
-    controller:
-      metricsAddr: :9093
-      healthProbeAddr: :8084
-      leaderElection: false
-      leaderElectionId: remediationorchestrator.kubernaut.ai
     effectivenessAssessment:
-      stabilizationWindow: 10s  # E2E: Allow OOMKill-restarted pods to recover before EM assesses health
+      stabilizationWindow: "10s"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -526,10 +531,10 @@ spec:
         args:
         - --config=/etc/config/remediationorchestrator.yaml
         ports:
-        - containerPort: 8084
+        - containerPort: 8081
           name: health
           protocol: TCP
-        - containerPort: 9093
+        - containerPort: 9090
           name: metrics
           protocol: TCP
         env:
@@ -570,8 +575,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - port: 9093
-    targetPort: 9093
+  - port: 9090
+    targetPort: 9090
     nodePort: 30183
     protocol: TCP
     name: metrics

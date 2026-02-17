@@ -25,3 +25,18 @@ controller:
   healthProbeAddr: ":8081"
   leaderElection: false
   leaderElectionId: remediationorchestrator.kubernaut.ai
+
+# ========================================
+# REMEDIATION WORKFLOW TIMEOUTS (BR-ORCH-027, BR-ORCH-028)
+# ========================================
+timeouts:
+  global: "1h"
+  processing: "5m"
+  analyzing: "10m"
+  executing: "30m"
+
+# ========================================
+# EFFECTIVENESS ASSESSMENT (ADR-EM-001)
+# ========================================
+effectivenessAssessment:
+  stabilizationWindow: "5m"
