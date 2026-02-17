@@ -13,10 +13,11 @@
 # limitations under the License.
 
 """
-Lightweight Kubernetes client for HAPI owner resolution and spec hash computation.
+Lightweight Kubernetes client for HAPI spec hash computation and resource access.
 
-Issue #97: HAPI needs to resolve the root owner from the owner chain and compute
-the canonical spec hash of the root owner's resource for remediation history lookups.
+ADR-055: Pre-computation of root owner from owner chain removed. Context
+enrichment (owner chain resolution, spec hash, remediation history) is now
+performed post-RCA by the LLM via the get_resource_context tool.
 
 Design Decisions:
 - DD-EM-002: Canonical spec hash cross-language compatibility
@@ -24,13 +25,13 @@ Design Decisions:
 - Async-safe via asyncio.to_thread() for blocking K8s API calls
 
 RBAC Requirements (ServiceAccount):
-- apps/v1: get on Deployments, StatefulSets, DaemonSets
+- apps/v1: get on Deployments, StatefulSets, DaemonSets, ReplicaSets
 - core/v1: get on Pods, Nodes (for bare resource fallback)
 """
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
@@ -174,45 +175,6 @@ class K8sResourceClient:
         if spec is None:
             return ""
         return canonical_spec_hash(spec)
-
-
-def resolve_root_owner(
-    owner_chain: Optional[List[Dict[str, str]]],
-    signal_target: Dict[str, str],
-) -> Dict[str, str]:
-    """Resolve the root owner from the owner chain.
-
-    Issue #97: The root owner is the actionable target for remediation history.
-
-    Algorithm:
-    - If owner_chain is non-empty, return the LAST entry (root controller).
-      Example: [Pod, ReplicaSet, Deployment] -> Deployment
-    - If owner_chain is empty or None, fall back to signal_target.
-      This handles bare Pods, Nodes, and resources without controllers.
-
-    Args:
-        owner_chain: List of owner chain entries, each with 'kind', 'name',
-                     and optional 'namespace'. May be None or empty.
-        signal_target: The signal's target resource with 'kind', 'name',
-                      and optional 'namespace'. Used as fallback.
-
-    Returns:
-        Dict with 'kind', 'name', and 'namespace' of the root owner.
-    """
-    if owner_chain and len(owner_chain) > 0:
-        root = owner_chain[-1]
-        return {
-            "kind": root.get("kind", ""),
-            "name": root.get("name", ""),
-            "namespace": root.get("namespace", ""),
-        }
-
-    # Fallback: bare resource (no controller)
-    return {
-        "kind": signal_target.get("kind", ""),
-        "name": signal_target.get("name", ""),
-        "namespace": signal_target.get("namespace", ""),
-    }
 
 
 # Module-level singleton (lazy-initialized)
