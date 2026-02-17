@@ -67,18 +67,18 @@ var _ = Describe("Config Integration Tests (ADR-030)", func() {
 server:
   port: %d # DD-TEST-001 + process offset
   host: "127.0.0.1"
-  read_timeout: 30s
-  write_timeout: 30s`, serverPort) + `
+  readTimeout: 30s
+  writeTimeout: 30s`, serverPort) + `
 database:
   host: localhost
   port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "` + dbSecretsPath + `"
   passwordKey: "password"
 redis:
@@ -150,18 +150,18 @@ logging:
 server:
   port: %d # DD-TEST-001 + process offset
   host: "127.0.0.1"
-  read_timeout: 30s
-  write_timeout: 30s`, serverPort) + `
+  readTimeout: 30s
+  writeTimeout: 30s`, serverPort) + `
 database:
   host: localhost
   port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "/nonexistent/db-secrets.yaml"
   passwordKey: "password"
 redis:
@@ -198,11 +198,11 @@ database:
   port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "` + dbSecretsPath + `"
   passwordKey: "password"
 redis:

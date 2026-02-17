@@ -1186,16 +1186,11 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
 	}
 
 	// 1. Create ConfigMap for service configuration
-	configYAML := fmt.Sprintf(`service:
-  name: data-storage
-  metricsPort: 9181
-  logLevel: debug
-  shutdownTimeout: 30s
-server:
-  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
+	configYAML := fmt.Sprintf(`server:
+  port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: postgresql.%s.svc.cluster.local
   port: 5432
@@ -2105,16 +2100,11 @@ func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 
 	// Create config.yaml (ADR-030)
 	configYAML := fmt.Sprintf(`
-service:
-  name: data-storage
-  metricsPort: 9181
-  logLevel: debug
-  shutdownTimeout: 30s
 server:
-  port: 8080  # DD-AUTH-014: Direct access (no oauth-proxy)
+  port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: %s
   port: 5432
