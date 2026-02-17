@@ -2,7 +2,7 @@
 
 **Status**: PROPOSED
 **Decision Date**: 2026-02-12
-**Version**: 1.1
+**Version**: 1.2
 **Confidence**: 90%
 **Applies To**: HolmesGPT API (HAPI), AIAnalysis Controller, SignalProcessing
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
 | 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: include recovery flow (§1), replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). |
+| 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 
 ---
 
@@ -69,10 +70,13 @@ Signal -> AIAnalysis Controller passes signal context to HAPI
   -> HAPI invokes LLM with signal context only (no pre-computed enrichment)
   -> Phase 1 (RCA): LLM analyzes signal, identifies root cause and affected resource
   -> Phase 2 (Context): LLM calls get_resource_context(target) tool
-      -> Tool traverses K8s ownerReferences for identified target
-      -> Tool computes spec hash for the target's root owner
-      -> Tool fetches remediation history for that resource + spec hash
-      -> Returns structured context to LLM
+      -> Tool internally:
+         1. Traverses K8s ownerReferences for identified target
+         2. Identifies root managing resource (e.g., Pod -> Deployment)
+         3. Computes spec hash for root owner
+         4. Queries DataStorage for remediation history (root owner + spec hash)
+      -> Returns to LLM: root_owner identity + remediation_history only
+         (owner chain and spec hash are internal, not exposed)
   -> Phase 3 (Workflow): LLM calls 3-step workflow discovery (DD-HAPI-017)
       -> list_available_actions(action_type)
       -> list_workflows(action_type, filters)
@@ -178,43 +182,37 @@ risk_factors contains {"score": 60, "reason": "Production environment with state
 
 ```python
 class GetResourceContextTool:
-    """Fetch Kubernetes context for a resource identified during RCA.
+    """Fetch remediation context for a resource identified during RCA.
 
-    Traverses K8s ownerReferences to build the ownership chain,
-    computes the spec hash of the root owner, and fetches remediation history.
+    Internally traverses K8s ownerReferences, computes spec hash,
+    and queries remediation history. Returns only the root owner
+    identity and history -- chain traversal and hash are internal.
 
-    Returns:
-    - owner_chain: K8s ownership chain (e.g., Pod -> ReplicaSet -> Deployment)
-    - root_owner: The actionable top-level resource
-    - current_spec_hash: SHA-256 of the root owner's current spec
-    - remediation_history: Past remediation attempts for this resource
+    Returns to LLM:
+    - root_owner: The root managing resource (kind, name, namespace)
+    - remediation_history: Past remediation attempts for that resource
     """
 
     def execute(self, kind: str, name: str, namespace: str) -> ResourceContext:
-        # 1. Traverse K8s ownerReferences to build ownership chain
-        #    NEW function: walks ownerReferences from the given resource upward
-        #    Similar to SP's ownerchain/builder.go, max depth 5
+        # 1. (Internal) Traverse K8s ownerReferences to find root owner
         owner_chain = k8s_client.resolve_owner_chain(kind, name, namespace)
 
-        # 2. Determine root owner (last in chain, or resource itself if no owners)
+        # 2. (Internal) Determine root owner (last in chain, or resource itself)
         root_owner = owner_chain[-1] if owner_chain else {
             "kind": kind, "name": name, "namespace": namespace
         }
 
-        # 3. Compute spec hash of root owner (existing function, reused)
+        # 3. (Internal) Compute spec hash of root owner
         spec_hash = k8s_client.compute_spec_hash(
             root_owner["kind"], root_owner["name"], namespace
         )
 
-        # 4. Fetch remediation history for root owner + spec hash
-        # Spec hash + remediation history can be fetched in parallel
-        # (independent once root owner is known)
+        # 4. (Internal) Fetch remediation history for root owner + spec hash
         history = remediation_history_client.fetch(root_owner, spec_hash)
 
+        # Return only what the LLM needs
         return ResourceContext(
-            owner_chain=owner_chain,
             root_owner=root_owner,
-            current_spec_hash=spec_hash,
             remediation_history=history,
         )
 ```
@@ -293,8 +291,8 @@ The `get_resource_context` tool must be registered in **both** the incident and 
 The HAPI system prompt instructs the LLM:
 
 1. **First**: Analyze the signal context and perform root cause analysis. Identify the root cause and the affected resource. The `affectedResource` field is **required** in your response.
-2. **Then**: Call `get_resource_context(kind, name, namespace)` for the identified target to get remediation history and ownership context.
-3. **Finally**: Use the three-step workflow discovery (DD-HAPI-017) to select the appropriate remediation workflow, informed by the resource context and history.
+2. **Then**: Call `get_resource_context(kind, name, namespace)` for the identified target. The tool returns: (a) `root_owner` -- the root managing resource (e.g., a Pod's Deployment); use this as your `affectedResource`; (b) `remediation_history` -- past remediations for that resource. Owner chain traversal and spec hash computation are internal to the tool.
+3. **Finally**: Use the three-step workflow discovery (DD-HAPI-017) to select the appropriate remediation workflow, informed by the remediation history.
 
 #### Response Validation
 
