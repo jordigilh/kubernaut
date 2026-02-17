@@ -41,7 +41,7 @@ import (
 // The RO creates an EA CRD when a RemediationRequest reaches a terminal phase (Completed).
 // The EA spec contains only StabilizationWindow (set by the RO from its config).
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled, ValidityWindow)
-// are EM-internal config read from EMConfig.
+// are EM-internal config read from effectivenessmonitor.Config.
 type EffectivenessAssessmentCreator struct {
 	client              client.Client
 	scheme              *runtime.Scheme

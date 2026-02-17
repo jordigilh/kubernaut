@@ -133,7 +133,7 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 
 // NOTE: withPrometheusDisabled and withAlertManagerDisabled were removed.
 // Per ADR-EM-001 v1.4: PrometheusEnabled and AlertManagerEnabled are EM operational
-// config (EMConfig.External), NOT per-EA spec fields. Component isolation in E2E
+// config (effectivenessmonitor.Config.External), NOT per-EA spec fields. Component isolation in E2E
 // tests requires deploying the EM with a different ConfigMap, not per-EA options.
 
 // withTargetPod sets the target pod name in the EA spec.
