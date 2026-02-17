@@ -296,8 +296,9 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).To(BeNil())
 			})
 
-			It("should handle SignalProcessing with empty OwnerChain gracefully", func() {
-				// Arrange - SP with KubernetesContext but we test empty OwnerChain in EnrichmentResults
+			It("should not propagate OwnerChain from SP to AIAnalysis (ADR-055)", func() {
+				// ADR-055: OwnerChain is no longer propagated from SP to AIAnalysis.
+				// HAPI resolves its own chain post-RCA via get_resource_context tool.
 				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
 					Phase: signalprocessingv1.PhaseCompleted,
 					KubernetesContext: &signalprocessingv1.KubernetesContext{
@@ -314,16 +315,15 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Act
 				name, err := aiCreator.Create(ctx, rr, completedSP)
 
-				// Assert - should succeed with empty owner chain
+				// Assert
 				Expect(err).ToNot(HaveOccurred())
 
 				createdAI := &aianalysisv1.AIAnalysis{}
 				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Verify AIAnalysis was created successfully even if OwnerChain is empty
 				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-				// OwnerChain in EnrichmentResults should be empty (zero length) when SP doesn't have owner traversal
+				// ADR-055: OwnerChain should always be empty -- no longer propagated
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.OwnerChain).To(BeEmpty())
 			})
 

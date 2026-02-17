@@ -209,16 +209,9 @@ func (c *AIAnalysisCreator) buildEnrichmentResults(sp *signalprocessingv1.Signal
 		}
 	}
 
-	// Pass through owner chain if available
-	if sp.Status.KubernetesContext != nil && len(sp.Status.KubernetesContext.OwnerChain) > 0 {
-		results.OwnerChain = make([]sharedtypes.OwnerChainEntry, len(sp.Status.KubernetesContext.OwnerChain))
-		for i, entry := range sp.Status.KubernetesContext.OwnerChain {
-			results.OwnerChain[i] = sharedtypes.OwnerChainEntry{
-				Kind: entry.Kind,
-				Name: entry.Name,
-			}
-		}
-	}
+	// ADR-055: OwnerChain no longer propagated to AIAnalysis. Context enrichment
+	// (owner chain, spec hash, history) is performed post-RCA by the LLM via
+	// get_resource_context. SP still computes the chain for its own label detection.
 
 	return results
 }

@@ -39,13 +39,15 @@ type EnrichmentResults struct {
 	// Used by HolmesGPT-API for: workflow filtering + LLM context
 	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 
-	// OwnerChain: K8s ownership traversal from signal source resource
-	// DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
-	// SignalProcessing traverses metadata.ownerReferences to build this chain
+	// OwnerChain: K8s ownership traversal from signal source resource.
+	// SignalProcessing traverses metadata.ownerReferences to build this chain.
 	// Example: Pod → ReplicaSet → Deployment
 	// Empty chain = orphan resource (no owners)
-	// HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
-	// identifies a different resource than the original signal source
+	//
+	// ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
+	// HAPI resolves its own chain post-RCA via get_resource_context tool.
+	// Field retained in shared types for SP internal use (label detection).
+	// ADR-056: Scheduled for relocation to SP-internal types.
 	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
 
 	// Custom labels from Rego policies - CUSTOMER DEFINED
