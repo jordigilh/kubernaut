@@ -31,7 +31,7 @@ RBAC Requirements (ServiceAccount):
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
@@ -163,6 +163,92 @@ class K8sResourceClient:
         return await asyncio.to_thread(
             self._get_resource_spec_sync, kind, name, namespace
         )
+
+    def _get_resource_metadata_sync(
+        self, kind: str, name: str, namespace: str
+    ) -> Optional[Any]:
+        """Synchronous GET of a K8s resource (for metadata/ownerReferences).
+
+        Returns the full resource object, or None if not found.
+        """
+        self._ensure_initialized()
+
+        try:
+            if kind == "Deployment":
+                return self._apps_v1.read_namespaced_deployment(name, namespace)
+            elif kind == "StatefulSet":
+                return self._apps_v1.read_namespaced_stateful_set(name, namespace)
+            elif kind == "DaemonSet":
+                return self._apps_v1.read_namespaced_daemon_set(name, namespace)
+            elif kind == "ReplicaSet":
+                return self._apps_v1.read_namespaced_replica_set(name, namespace)
+            elif kind == "Pod":
+                return self._core_v1.read_namespaced_pod(name, namespace)
+            elif kind == "Node":
+                return self._core_v1.read_node(name)
+            else:
+                logger.warning("Unsupported kind %s for metadata lookup", kind)
+                return None
+        except ApiException as e:
+            if e.status == 404:
+                logger.warning("Resource not found: %s/%s in %s", kind, name, namespace)
+            else:
+                logger.error("K8s API error: %s/%s in %s: %s", kind, name, namespace, e)
+            return None
+        except Exception as e:
+            logger.error("Unexpected error: %s/%s in %s: %s", kind, name, namespace, e)
+            return None
+
+    async def _get_resource_metadata(
+        self, kind: str, name: str, namespace: str
+    ) -> Optional[Any]:
+        """Async-safe GET of a K8s resource (for metadata/ownerReferences)."""
+        return await asyncio.to_thread(
+            self._get_resource_metadata_sync, kind, name, namespace
+        )
+
+    async def resolve_owner_chain(
+        self, kind: str, name: str, namespace: str = ""
+    ) -> List[Dict[str, str]]:
+        """Resolve the ownership chain for a K8s resource via ownerReferences.
+
+        ADR-055: Traverses the K8s API to build the owner chain from the given
+        resource up to the root controller.
+
+        Algorithm:
+        - GET the resource, extract ownerReferences
+        - For each ownerReference, recursively GET until no more owners
+        - Return the full chain [resource, parent, grandparent, ...]
+
+        Returns empty list if resource is not found.
+        Max depth of 10 to prevent infinite loops.
+        """
+        chain: List[Dict[str, str]] = []
+        current_kind = kind
+        current_name = name
+        current_ns = namespace
+
+        for _ in range(10):
+            obj = await self._get_resource_metadata(current_kind, current_name, current_ns)
+            if obj is None:
+                break
+
+            ns = getattr(obj.metadata, "namespace", None) or ""
+            chain.append({
+                "kind": current_kind,
+                "name": current_name,
+                "namespace": ns,
+            })
+
+            owner_refs = getattr(obj.metadata, "owner_references", None)
+            if not owner_refs:
+                break
+
+            owner = owner_refs[0]
+            current_kind = owner.kind
+            current_name = owner.name
+
+        return chain
 
     async def compute_spec_hash(
         self, kind: str, name: str, namespace: str = ""

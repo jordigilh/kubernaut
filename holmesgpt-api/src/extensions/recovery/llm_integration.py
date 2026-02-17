@@ -270,7 +270,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
     # (replaces single search_workflow_catalog tool from DD-WORKFLOW-002)
     # NOTE: Registration is done here (not in _get_holmes_config) because
     # context filters come from request_data which is only available in the caller.
-    from src.extensions.llm_config import register_workflow_discovery_toolset
+    from src.extensions.llm_config import register_workflow_discovery_toolset, register_resource_context_toolset
     config = register_workflow_discovery_toolset(
         config,
         app_config,
@@ -282,6 +282,9 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         environment=request_data.get("environment", ""),
         priority=request_data.get("priority", ""),
     )
+
+    # ADR-055: Register resource context toolset for post-RCA enrichment
+    config = register_resource_context_toolset(config, app_config)
 
     # Use HolmesGPT SDK with enhanced error handling
     # NOTE: Workflow discovery is handled by WorkflowDiscoveryToolset registered via
