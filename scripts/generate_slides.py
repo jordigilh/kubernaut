@@ -167,8 +167,11 @@ def slide_title(prs):
     _add_subtitle_box(slide, "Kubernetes-Native Autonomous Remediation Platform",
                       Inches(1), Inches(3.4), Inches(8), Inches(0.5),
                       font_size=16, color=DARK_GRAY)
+    _add_label(slide, "Jordi Gil",
+               Inches(1), Inches(4.1), Inches(8), Inches(0.4),
+               font_size=14, bold=True, color=DARK_GRAY)
     _add_label(slide, "Technical Audience  |  February 2026",
-               Inches(1), Inches(4.2), Inches(8), Inches(0.4),
+               Inches(1), Inches(4.6), Inches(8), Inches(0.4),
                font_size=12, bold=False, color=DARK_GRAY)
 
 
