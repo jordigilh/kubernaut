@@ -2785,6 +2785,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.PipelinerunName.Encode(e)
 				}
 			}
+			{
+				if s.Parameters.Set {
+					e.FieldStart("parameters")
+					s.Parameters.Encode(e)
+				}
+			}
 		}
 	case AuditEventEventDataWebhookNotificationAcknowledgedAuditEventEventData, AuditEventEventDataWebhookNotificationCancelledAuditEventEventData:
 		switch s.Type {
@@ -5236,6 +5242,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.PipelinerunName.Set {
 					e.FieldStart("pipelinerun_name")
 					s.PipelinerunName.Encode(e)
+				}
+			}
+			{
+				if s.Parameters.Set {
+					e.FieldStart("parameters")
+					s.Parameters.Encode(e)
 				}
 			}
 		}
@@ -19831,6 +19843,40 @@ func (s *OptWorkflowExecutionAuditPayloadFailureReason) UnmarshalJSON(data []byt
 	return s.Decode(d)
 }
 
+// Encode encodes WorkflowExecutionAuditPayloadParameters as json.
+func (o OptWorkflowExecutionAuditPayloadParameters) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes WorkflowExecutionAuditPayloadParameters from json.
+func (o *OptWorkflowExecutionAuditPayloadParameters) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptWorkflowExecutionAuditPayloadParameters to nil")
+	}
+	o.Set = true
+	o.Value = make(WorkflowExecutionAuditPayloadParameters)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptWorkflowExecutionAuditPayloadParameters) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptWorkflowExecutionAuditPayloadParameters) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes WorkflowResultAuditLabels as json.
 func (o OptWorkflowResultAuditLabels) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -28693,9 +28739,15 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 			s.PipelinerunName.Encode(e)
 		}
 	}
+	{
+		if s.Parameters.Set {
+			e.FieldStart("parameters")
+			s.Parameters.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkflowExecutionAuditPayload = [15]string{
+var jsonFieldsNameOfWorkflowExecutionAuditPayload = [16]string{
 	0:  "event_type",
 	1:  "workflow_id",
 	2:  "workflow_version",
@@ -28711,6 +28763,7 @@ var jsonFieldsNameOfWorkflowExecutionAuditPayload = [15]string{
 	12: "failed_task_name",
 	13: "error_details",
 	14: "pipelinerun_name",
+	15: "parameters",
 }
 
 // Decode decodes WorkflowExecutionAuditPayload from json.
@@ -28882,6 +28935,16 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"pipelinerun_name\"")
 			}
+		case "parameters":
+			if err := func() error {
+				s.Parameters.Reset()
+				if err := s.Parameters.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parameters\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -29033,6 +29096,62 @@ func (s WorkflowExecutionAuditPayloadFailureReason) MarshalJSON() ([]byte, error
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s WorkflowExecutionAuditPayloadParameters) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s WorkflowExecutionAuditPayloadParameters) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes WorkflowExecutionAuditPayloadParameters from json.
+func (s *WorkflowExecutionAuditPayloadParameters) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode WorkflowExecutionAuditPayloadParameters to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode WorkflowExecutionAuditPayloadParameters")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s WorkflowExecutionAuditPayloadParameters) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *WorkflowExecutionAuditPayloadParameters) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
