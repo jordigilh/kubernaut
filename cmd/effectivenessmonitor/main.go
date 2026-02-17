@@ -56,16 +56,11 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-	var probeAddr string
-	var enableLeaderElection bool
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
 	var configPath string
-
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{
@@ -99,11 +94,11 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
+			BindAddress: cfg.Controller.MetricsAddr,
 		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "effectivenessmonitor.kubernaut.ai",
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -160,8 +155,8 @@ func main() {
 
 	// Log configuration
 	setupLog.Info("EffectivenessMonitor controller configuration",
-		"metricsAddr", metricsAddr,
-		"probeAddr", probeAddr,
+		"metricsAddr", cfg.Controller.MetricsAddr,
+		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
 		"stabilizationWindow", cfg.Assessment.StabilizationWindow,
 		"validityWindow", cfg.Assessment.ValidityWindow,
 		"prometheusEnabled", cfg.External.PrometheusEnabled,
