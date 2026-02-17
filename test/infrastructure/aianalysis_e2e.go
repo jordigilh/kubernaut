@@ -672,6 +672,8 @@ func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, wr
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
 	manifest := fmt.Sprintf(`
+# ADR-030: AIAnalysis controller configuration (YAML ConfigMap)
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -679,22 +681,25 @@ metadata:
   namespace: kubernaut-system
 data:
   config.yaml: |
-    server:
-      port: 8080
-      host: "0.0.0.0"
-      read_timeout: "30s"
-      write_timeout: "30s"
-    logging:
-      level: "info"
-      format: "json"
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "aianalysis.kubernaut.ai"
     holmesgpt:
       url: "http://holmesgpt-api:8080"
       timeout: "60s"
+      sessionPollInterval: "15s"
     datastorage:
-      url: "http://data-storage-service:8080"  # DD-AUTH-011: Match Service name
-      timeout: "60s"
+      url: "http://data-storage-service:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 20000
+        batchSize: 1000
+        flushInterval: "1s"
+        maxRetries: 3
     rego:
-      policy_path: "/etc/aianalysis/policies/approval.rego"
+      policyPath: "/etc/aianalysis/policies/approval.rego"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -807,17 +812,15 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+        # ADR-030: Single -config flag; all functional config in YAML ConfigMap
         env:
         - name: CONFIG_PATH
           value: /etc/aianalysis/config.yaml
-        - name: REGO_POLICY_PATH
-          value: /etc/aianalysis/policies/approval.rego
-        - name: HOLMESGPT_API_URL
-          value: http://holmesgpt-api:8080
-        - name: DATASTORAGE_URL
-          value: http://data-storage-service:8080  # DD-AUTH-011: Match Service name
         # DD-TEST-007: GOCOVERDIR for E2E binary coverage (added dynamically below)
         %s
+        args:
+        - "-config"
+        - "$(CONFIG_PATH)"
         volumeMounts:
         - name: config
           mountPath: /etc/aianalysis
