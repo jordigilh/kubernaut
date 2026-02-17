@@ -224,64 +224,26 @@ async def analyze_incident(
     remediation_id = request_data.get("remediation_id", "")
 
     # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
-    # Issue #97: root_owner is declared here so Phase C (affectedResource) can access it
-    root_owner = {}
+    # ADR-055: Pre-computation of root_owner, spec hash, and owner-chain-based
+    # history removed. Context enrichment is now post-RCA via get_resource_context tool.
     try:
         # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
         # Graceful degradation: if DS unavailable or module not yet deployed, context is None
+        # ADR-055: Uses signal target directly (no root_owner override). Will be fully
+        # replaced by get_resource_context tool in Phase 2.
         remediation_history_context = None
         try:
             from src.clients.remediation_history_client import (
                 create_remediation_history_api,
                 fetch_remediation_history_for_request,
             )
-            from src.clients.k8s_client import get_k8s_client, resolve_root_owner
 
             rh_api = create_remediation_history_api(app_config)
-            enrichment_results = request_data.get("enrichment_results", {}) or {}
-
-            # Issue #97: Resolve root owner from owner chain (conditional)
-            owner_chain_for_history = None
-            if isinstance(enrichment_results, dict):
-                owner_chain_for_history = enrichment_results.get("ownerChain")
-            elif hasattr(enrichment_results, "ownerChain"):
-                owner_chain_for_history = enrichment_results.ownerChain
-
-            signal_target = {
-                "kind": request_data.get("resource_kind", ""),
-                "name": request_data.get("resource_name", ""),
-                "namespace": request_data.get("resource_namespace", ""),
-            }
-            root_owner = resolve_root_owner(owner_chain_for_history, signal_target)
-
-            # Issue #97: Compute spec hash from root owner via K8s API
-            current_spec_hash = ""
-            if root_owner.get("kind") and root_owner.get("name"):
-                try:
-                    k8s = get_k8s_client()
-                    current_spec_hash = await k8s.compute_spec_hash(
-                        kind=root_owner["kind"],
-                        name=root_owner["name"],
-                        namespace=root_owner.get("namespace", ""),
-                    )
-                except Exception as hash_err:
-                    logger.warning({
-                        "event": "spec_hash_computation_failed",
-                        "incident_id": incident_id,
-                        "error": str(hash_err),
-                    })
-
-            # Issue #97: Pass root owner identity for remediation history query
-            history_request_data = dict(request_data)
-            if root_owner.get("kind") and root_owner.get("name"):
-                history_request_data["resource_kind"] = root_owner["kind"]
-                history_request_data["resource_name"] = root_owner["name"]
-                history_request_data["resource_namespace"] = root_owner.get("namespace", "")
 
             remediation_history_context = fetch_remediation_history_for_request(
                 api=rh_api,
-                request_data=history_request_data,
-                current_spec_hash=current_spec_hash,
+                request_data=request_data,
+                current_spec_hash="",
             )
         except (ImportError, Exception) as rh_err:
             logger.warning({"event": "remediation_history_unavailable", "error": str(rh_err)})
@@ -384,17 +346,6 @@ async def analyze_incident(
             "name": request_data.get("resource_name", "")
         }
 
-        # DD-WORKFLOW-001 v1.7: Extract owner_chain from enrichment_results
-        # This is the K8s ownership chain from SignalProcessing (via ownerReferences)
-        # Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, {"kind": "Deployment", ...}]
-        # Used for PROVEN relationship validation (100% safe)
-        owner_chain = None
-        if enrichment_results:
-            if hasattr(enrichment_results, 'ownerChain'):
-                owner_chain = enrichment_results.ownerChain
-            elif isinstance(enrichment_results, dict):
-                owner_chain = enrichment_results.get('ownerChain')
-
         if detected_labels_for_toolset:
             # Get non-None fields from DetectedLabels model for logging
             label_fields = [f for f, v in detected_labels_for_toolset.model_dump(exclude_none=True).items() if f != "failedDetections"]
@@ -403,7 +354,6 @@ async def analyze_incident(
                 "incident_id": incident_id,
                 "fields": label_fields,
                 "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
-                "owner_chain_length": len(owner_chain) if owner_chain else 0,
                 "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels (100% safe validation)"
             })
 
@@ -505,7 +455,6 @@ async def analyze_incident(
             result, validation_result = parse_and_validate_investigation_result(
                 investigation_result,
                 request_data,
-                owner_chain=owner_chain,
                 data_storage_client=data_storage_client
             )
 
@@ -590,29 +539,14 @@ async def analyze_incident(
                 "count": len(result["validation_attempts_history"])
             })
 
-        # Issue #97 Phase C: Populate affectedResource in RCA if missing
-        # Derive from root_owner (computed from owner chain or signal target in Phase B)
-        rca = result.get("root_cause_analysis")
-        if isinstance(rca, dict):
-            existing_affected = rca.get("affectedResource") or rca.get("affected_resource")
-            if not existing_affected and root_owner.get("kind") and root_owner.get("name"):
-                rca["affectedResource"] = {
-                    "kind": root_owner["kind"],
-                    "name": root_owner["name"],
-                    "namespace": root_owner.get("namespace", ""),
-                }
-                logger.info({
-                    "event": "affected_resource_populated",
-                    "incident_id": incident_id,
-                    "source": "owner_chain" if (owner_chain and len(owner_chain) > 0) else "signal_target",
-                    "affected_resource": rca["affectedResource"],
-                })
+        # ADR-055: Phase C affectedResource population removed. The LLM now
+        # identifies and provides affectedResource during RCA (Phase 1 of the
+        # new 3-phase flow). Validated by result_parser.
 
         logger.info({
             "event": "incident_analysis_completed",
             "incident_id": incident_id,
             "has_workflow": result.get("selected_workflow") is not None,
-            "target_in_owner_chain": result.get("target_in_owner_chain", True),
             "warnings_count": len(result.get("warnings", [])),
             "needs_human_review": result.get("needs_human_review", False),
             "validation_attempts": len(validation_errors_history) + 1 if validation_errors_history else 1
