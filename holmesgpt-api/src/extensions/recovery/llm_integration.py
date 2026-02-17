@@ -67,7 +67,6 @@ def _get_holmes_config(
     custom_labels: Optional[Dict[str, List[str]]] = None,
     detected_labels: Optional[DetectedLabels] = None,
     source_resource: Optional[Dict[str, str]] = None,
-    owner_chain: Optional[List[Dict[str, str]]] = None
 ) -> Config:
     """
     Initialize HolmesGPT SDK Config from environment variables and app config
@@ -87,9 +86,6 @@ def _get_holmes_config(
         source_resource: Original signal's resource for DetectedLabels validation
                         Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
                         Compared against LLM's rca_resource.
-        owner_chain: K8s ownership chain from SignalProcessing enrichment
-                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
-                    Used for PROVEN relationship validation (100% safe).
 
     Required environment variables:
     - LLM_MODEL: Full litellm-compatible model identifier (e.g., "provider/model-name")
@@ -143,8 +139,7 @@ def _get_holmes_config(
         detected_labels_count = len([f for f in detected_labels.model_dump(exclude_none=True).keys() if f != "failedDetections"]) if detected_labels else 0
         detected_labels_info = f", detected_labels={detected_labels_count} fields" if detected_labels else ""
         source_info = f", source={source_resource.get('kind')}/{source_resource.get('namespace', 'cluster')}" if source_resource else ""
-        owner_info = f", owner_chain={len(owner_chain)} owners" if owner_chain else ""
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys()) if hasattr(config, 'toolset_manager') else 'N/A'}{custom_labels_info}{detected_labels_info}{source_info}{owner_info}")
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys()) if hasattr(config, 'toolset_manager') else 'N/A'}{custom_labels_info}{detected_labels_info}{source_info}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -240,10 +235,9 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         "name": request_data.get("resource_name", "")
     }
 
-    # DD-WORKFLOW-001 v1.7: Extract owner_chain from enrichment_results
-    # K8s ownership chain from SignalProcessing (via ownerReferences)
-    # Used for PROVEN relationship validation (100% safe)
-    owner_chain = enrichment_results.get("ownerChain")
+    # ADR-055: owner_chain no longer extracted from enrichment_results.
+    # Context enrichment (owner chain, spec hash, history) is now performed
+    # post-RCA by the LLM via the get_resource_context tool.
 
     if detected_labels:
         # Get non-None fields from DetectedLabels model for logging
@@ -253,8 +247,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             "incident_id": incident_id,
             "fields": label_fields,
             "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
-            "owner_chain_length": len(owner_chain) if owner_chain else 0,
-            "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels (100% safe validation)"
+            "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels"
         })
 
     config = _get_holmes_config(
@@ -263,7 +256,6 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         custom_labels=custom_labels,
         detected_labels=detected_labels,
         source_resource=source_resource,
-        owner_chain=owner_chain
     )
 
     # DD-HAPI-017: Register three-step workflow discovery toolset

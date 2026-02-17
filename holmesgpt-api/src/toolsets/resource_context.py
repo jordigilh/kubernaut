@@ -18,12 +18,19 @@ Resource Context Toolset for HolmesGPT SDK.
 ADR-055: LLM-Driven Context Enrichment (Post-RCA)
 
 After the LLM performs Root Cause Analysis and identifies the affected resource,
-it calls get_resource_context to fetch:
-  1. Owner chain (K8s ownerReferences traversal)
-  2. Current spec hash (canonical SHA-256)
-  3. Remediation history (from DataStorage, filtered by root owner + spec hash)
+it calls get_resource_context to fetch remediation history. The tool internally:
+  1. Resolves the owner chain via K8s ownerReferences traversal
+  2. Identifies the root managing resource (e.g., Pod -> RS -> Deployment)
+  3. Computes a canonical spec hash (SHA-256) for the root owner
+  4. Queries DataStorage for remediation history filtered by root owner + spec hash
 
-This replaces the pre-RCA computation that was removed in Phase 0.
+Returns to the LLM:
+  - root_owner: Identity of the root managing resource (kind, name, namespace)
+  - remediation_history: Past remediations for that resource
+
+Owner chain traversal and spec hash computation are internal implementation
+details not exposed to the LLM. The LLM only needs to know what resource
+was resolved as the root owner and what remediations have been tried before.
 """
 
 import asyncio
@@ -43,10 +50,11 @@ logger = logging.getLogger(__name__)
 
 
 class GetResourceContextTool(Tool):
-    """LLM-callable tool that fetches context for a K8s resource.
+    """LLM-callable tool that fetches remediation context for a K8s resource.
 
-    The LLM calls this after RCA to get owner chain, spec hash, and
-    remediation history for the identified target resource.
+    The LLM calls this after RCA to get the root managing resource and
+    remediation history for the identified target resource. Owner chain
+    traversal and spec hash computation are internal to the tool.
     """
 
     def __init__(
@@ -57,12 +65,13 @@ class GetResourceContextTool(Tool):
         super().__init__(
             name="get_resource_context",
             description=(
-                "Get the ownership chain, spec hash, and remediation history "
-                "for a Kubernetes resource. Call this AFTER identifying the "
-                "affected resource during Root Cause Analysis. The owner chain "
-                "shows the resource's controller hierarchy (e.g., Pod -> "
-                "ReplicaSet -> Deployment). The spec hash and history help "
-                "determine if this resource has been remediated before."
+                "Get remediation context for a Kubernetes resource. Call this "
+                "AFTER identifying the affected resource during Root Cause "
+                "Analysis. The tool resolves the root managing resource (e.g., "
+                "a Pod's managing Deployment) and returns its remediation "
+                "history. Use the root_owner in your response as the "
+                "affectedResource, and the history to avoid repeating "
+                "recently failed remediations."
             ),
             parameters={
                 "kind": ToolParameter(
@@ -105,18 +114,18 @@ class GetResourceContextTool(Tool):
     async def _invoke_async(self, kind: str, name: str, namespace: str = "") -> StructuredToolResult:
         """Async implementation of resource context lookup."""
         try:
-            # Step 1: Resolve owner chain via K8s API
+            # Step 1 (internal): Resolve owner chain via K8s API
             owner_chain = await self._k8s_client.resolve_owner_chain(kind, name, namespace)
 
-            # Determine root owner (last entry in chain, or signal target)
+            # Step 2 (internal): Determine root owner (last entry in chain, or the resource itself)
             root_owner = owner_chain[-1] if owner_chain else {"kind": kind, "name": name, "namespace": namespace}
 
-            # Step 2: Compute spec hash for root owner
+            # Step 3 (internal): Compute spec hash for root owner
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")
             )
 
-            # Step 3: Fetch remediation history for root owner
+            # Step 4 (internal): Fetch remediation history for root owner + spec hash
             history = []
             if self._history_fetcher:
                 try:
@@ -133,9 +142,9 @@ class GetResourceContextTool(Tool):
                         "error": str(e),
                     })
 
+            # Return only what the LLM needs: root owner identity + history
             result_data = {
-                "owner_chain": owner_chain,
-                "current_spec_hash": spec_hash,
+                "root_owner": root_owner,
                 "remediation_history": history,
             }
 
@@ -184,7 +193,7 @@ class ResourceContextToolset(Toolset):
 
         super().__init__(
             name="resource_context",
-            description="Fetch K8s resource ownership chain, spec hash, and remediation history",
+            description="Fetch remediation context (root owner + history) for a K8s resource",
             docs_url="",
             icon_url="",
             prerequisites=[],

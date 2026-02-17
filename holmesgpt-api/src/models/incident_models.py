@@ -328,15 +328,16 @@ class IncidentResponse(BaseModel):
     Response model for incident analysis endpoint
 
     Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
     Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
+    Design Decision: ADR-055 (LLM-Driven Context Enrichment)
 
     Fields added per AIAnalysis team requests:
-    - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
     - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
     - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
     - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
+
+    ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input.
     """
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
@@ -366,12 +367,7 @@ class IncidentResponse(BaseModel):
                     "no_matching_workflows, low_confidence, llm_parsing_error"
     )
 
-    # OwnerChain validation fields (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
-    target_in_owner_chain: bool = Field(
-        default=True,
-        description="Whether RCA-identified target resource was found in OwnerChain. "
-                    "If false, DetectedLabels may be from different scope than affected resource."
-    )
+    # ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input
     warnings: List[str] = Field(
         default_factory=list,
         description="Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"

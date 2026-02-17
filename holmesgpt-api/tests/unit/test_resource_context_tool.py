@@ -15,15 +15,16 @@
 """
 Tests for get_resource_context tool and resolve_owner_chain.
 
-ADR-055: The LLM calls get_resource_context after RCA to fetch owner chain,
-spec hash, and remediation history for the identified target resource.
+ADR-055: The LLM calls get_resource_context after RCA to fetch remediation
+context. The tool internally resolves the owner chain and spec hash, then
+returns only the root owner identity and remediation history to the LLM.
 
 Test Plan:
 - UT-RC-001: resolve_owner_chain traverses Pod -> RS -> Deployment via ownerReferences
 - UT-RC-002: resolve_owner_chain handles bare Pod (no ownerReferences)
 - UT-RC-003: resolve_owner_chain handles resource not found (empty chain)
 - UT-RC-004: resolve_owner_chain handles cluster-scoped resources (Node)
-- UT-RC-005: GetResourceContextTool returns owner chain, spec hash, and history
+- UT-RC-005: GetResourceContextTool returns root owner and history (not chain or hash)
 - UT-RC-006: GetResourceContextTool handles missing resource gracefully
 """
 
@@ -143,8 +144,8 @@ class TestGetResourceContextTool:
     """UT-RC-005 through UT-RC-006: Tool invocation tests."""
 
     @pytest.mark.asyncio
-    async def test_returns_owner_chain_hash_and_history(self):
-        """UT-RC-005: Tool returns complete context for valid resource."""
+    async def test_returns_root_owner_and_history(self):
+        """UT-RC-005: Tool returns root owner and history (not chain or hash)."""
         from toolsets.resource_context import ResourceContextToolset
 
         mock_k8s = AsyncMock()
@@ -170,9 +171,14 @@ class TestGetResourceContextTool:
 
         assert result.status.value == "success"
         data = result.data
-        assert len(data["owner_chain"]) == 3
-        assert data["current_spec_hash"] == "sha256:abc123"
+
+        # Root owner is the last entry in the chain (Deployment), not the Pod
+        assert data["root_owner"] == {"kind": "Deployment", "name": "api", "namespace": "production"}
         assert len(data["remediation_history"]) == 1
+
+        # Owner chain and spec hash are internal -- not exposed to the LLM
+        assert "owner_chain" not in data
+        assert "current_spec_hash" not in data
 
     @pytest.mark.asyncio
     async def test_handles_missing_resource(self):
@@ -196,6 +202,10 @@ class TestGetResourceContextTool:
 
         assert result.status.value == "success"
         data = result.data
-        assert data["owner_chain"] == []
-        assert data["current_spec_hash"] == ""
+        # When resource not found, root_owner falls back to the requested resource
+        assert data["root_owner"] == {"kind": "Pod", "name": "missing", "namespace": "default"}
         assert data["remediation_history"] == []
+
+        # Internal fields still not exposed
+        assert "owner_chain" not in data
+        assert "current_spec_hash" not in data

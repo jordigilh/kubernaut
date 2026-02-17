@@ -506,13 +506,13 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 ### Phase 3b: Identify the Affected Resource (MANDATORY for remediation)
 
-Determine the **root owner** resource that the remediation should target:
-- Call `get_resource_context` with the signal resource's kind, name, and namespace.
-- The tool returns the `owner_chain` (e.g., Pod → ReplicaSet → Deployment), `current_spec_hash`, and `remediation_history`.
-- The `affectedResource` in your response MUST be the **root owner** (the last entry in the owner chain), **NOT** the Pod.
-- **Example**: If the owner chain is [Pod, ReplicaSet, Deployment], the `affectedResource` is the Deployment.
-- Include `kind`, `name`, and `namespace` in the `affectedResource` field of `root_cause_analysis`.
-- Use `remediation_history` to inform your workflow selection (e.g., avoid repeating recently failed workflows).
+Determine the resource that the remediation should target:
+- Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace).
+- The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
+  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). Use this as your `affectedResource`.
+  - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
+- Set `affectedResource` in `root_cause_analysis` to the `root_owner` from the tool response.
+- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`. Your `affectedResource` is the Deployment, not the Pod.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
