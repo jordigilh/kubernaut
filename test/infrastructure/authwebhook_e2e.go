@@ -833,16 +833,11 @@ func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, node
 	}
 
 	// Create ConfigMap for service configuration (required by Data Storage)
-	configYAML := fmt.Sprintf(`service:
-  name: data-storage
-  metricsPort: 9181
-  logLevel: debug
-  shutdownTimeout: 30s
-server:
+	configYAML := fmt.Sprintf(`server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: postgresql.%s.svc.cluster.local
   port: 5432

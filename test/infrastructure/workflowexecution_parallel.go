@@ -351,10 +351,10 @@ data:
       host: postgresql
       port: 5432
       name: action_history
-      ssl_mode: disable
-      max_open_conns: 25
-      max_idle_conns: 5
-      conn_max_lifetime: 5m
+      sslMode: disable
+      maxOpenConns: 25
+      maxIdleConns: 5
+      connMaxLifetime: 5m
       # ADR-030 Section 6: Secrets from file
       secretsFile: /etc/datastorage/secrets/db-credentials.yaml
       usernameKey: username
@@ -362,9 +362,9 @@ data:
     redis:
       addr: redis:6379
       db: 0
-      dlq_stream_name: audit_dlq
-      dlq_max_len: 10000
-      dlq_consumer_group: audit_processors
+      dlqStreamName: audit_dlq
+      dlqMaxLen: 10000
+      dlqConsumerGroup: audit_processors
       # ADR-030 Section 6: Secrets from file
       secretsFile: /etc/datastorage/secrets/redis-credentials.yaml
       passwordKey: password

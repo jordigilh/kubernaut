@@ -59,18 +59,18 @@ var _ = Describe("Config Loading (ADR-030)", func() {
 server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: localhost:6379
   db: 0
@@ -130,18 +130,18 @@ server:
 			configYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "` + dbSecretsFile + `"
   usernameKey: "username"
   passwordKey: "password"
@@ -190,18 +190,18 @@ password: secretredispass456
 			configYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "` + dbSecretsFile + `"
   passwordKey: "db_password"
 redis:
@@ -240,18 +240,18 @@ logging:
 			configYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: localhost:6379
   db: 0
@@ -283,18 +283,18 @@ logging:
 			configYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "` + dbSecretsFile + `"
   passwordKey: "password"
 redis:
@@ -327,18 +327,18 @@ logging:
 server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: localhost:6379
   db: 0
@@ -361,18 +361,18 @@ logging:
 			invalidYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: ""
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: localhost:6379
   db: 0
@@ -396,18 +396,18 @@ logging:
 			invalidYAML := `
 server:
   port: 100
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: localhost:6379
   db: 0
@@ -431,18 +431,18 @@ logging:
 			invalidYAML := `
 server:
   port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
 redis:
   addr: ""
   db: 0
