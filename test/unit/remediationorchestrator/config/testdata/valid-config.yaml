@@ -1,0 +1,25 @@
+# Valid RemediationOrchestrator configuration for unit tests.
+# ADR-030: Service Configuration Management
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "remediationorchestrator.kubernaut.ai"
+
+timeouts:
+  global: 1h
+  processing: 5m
+  analyzing: 10m
+  executing: 30m
+
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
+
+effectivenessAssessment:
+  stabilizationWindow: 5m
