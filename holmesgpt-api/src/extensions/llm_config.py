@@ -439,7 +439,12 @@ def register_resource_context_toolset(
     from src.toolsets.resource_context import ResourceContextToolset
     from src.clients.k8s_client import get_k8s_client
 
-    k8s = get_k8s_client()
+    try:
+        k8s = get_k8s_client()
+    except Exception as e:
+        logger.warning({"event": "resource_context_k8s_unavailable", "error": str(e)})
+        logger.info("ADR-055: Resource context toolset not registered (K8s client unavailable)")
+        return config
 
     # History fetcher wraps the remediation history client
     history_fetcher = None
@@ -465,10 +470,15 @@ def register_resource_context_toolset(
     except (ImportError, Exception) as e:
         logger.warning({"event": "resource_context_history_unavailable", "error": str(e)})
 
-    context_toolset = ResourceContextToolset(
-        k8s_client=k8s,
-        history_fetcher=history_fetcher,
-    )
+    try:
+        context_toolset = ResourceContextToolset(
+            k8s_client=k8s,
+            history_fetcher=history_fetcher,
+        )
+    except Exception as e:
+        logger.warning({"event": "resource_context_toolset_creation_failed", "error": str(e)})
+        logger.info("ADR-055: Resource context toolset not registered (creation failed)")
+        return config
 
     # Initialize toolset manager if needed
     if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
