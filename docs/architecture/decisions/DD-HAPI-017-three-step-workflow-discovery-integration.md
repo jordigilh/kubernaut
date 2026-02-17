@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.1
+**Version**: 1.2
 **Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: replace `search_workflow_catalog` with three-step discovery tools for both incident and recovery flows. No migration -- pre-release greenfield replacement. |
 | 1.1 | 2026-02-15 | Architecture Team | Remove `actualSuccessRate` and `totalExecutions` from `list_workflows` LLM-facing response. These global aggregate metrics are misleading for per-incident workflow selection (Section 7). Clarify that contextual remediation history via spec-hash matching (DD-HAPI-016) is the correct mechanism for outcome-aware decisions. |
+| 1.2 | 2026-02-12 | Architecture Team | ADR-056 integration: Add Section 8 (tool-level flow enforcement requiring `get_resource_context` before workflow discovery). Remove `detected_labels` from LLM-facing tool parameters -- labels are now computed by HAPI internally and injected into DS queries transparently. Update BR-HAPI-017-001. Add DD-HAPI-018 cross-reference. |
 
 ---
 
@@ -131,7 +132,8 @@ Three new tool classes replace `SearchWorkflowCatalogTool`:
 
 Each tool:
 - Extends `Tool` with its own parameters, description, and `_invoke` method
-- Passes the full signal context filters (severity, component, environment, priority, custom_labels, detected_labels) to DS
+- Passes signal context filters (severity, component, environment, priority, custom_labels) to DS
+- **v1.2 (ADR-056)**: `detected_labels` is NOT an LLM-facing parameter. HAPI reads `detected_labels` from internal session state (populated by `get_resource_context`) and injects them into DS queries transparently. See Section 8.
 - Passes `remediationId` as a query parameter for audit correlation (BR-AUDIT-021)
 - Returns a `StructuredToolResult` with clean LLM-rendered output (scores stripped)
 
@@ -167,6 +169,8 @@ New client methods (generated):
 - `list_available_actions(severity, component, environment, priority, custom_labels, detected_labels, remediation_id, offset, limit)`
 - `list_workflows(action_type, severity, component, environment, priority, custom_labels, detected_labels, remediation_id, offset, limit)`
 - `get_workflow(workflow_id, severity, component, environment, priority, custom_labels, detected_labels, remediation_id)`
+
+**v1.2 note (ADR-056)**: The generated client methods still accept `detected_labels` as a parameter (the DS API requires it for filtering). However, HAPI tool implementations populate this parameter from internal session state, not from LLM input. The LLM tool schemas (`list_available_actions`, `list_workflows`, `get_workflow`) do NOT expose `detected_labels` as an LLM-facing parameter.
 
 The Go ogen client (`pkg/datastorage/ogen-client/`) is also regenerated from the same spec.
 
@@ -253,6 +257,82 @@ This contextual history is injected into the LLM prompt as the `## Remediation H
 - Workflow Discovery Guidance updated to remove success rate references
 - `ListWorkflowsTool` description and `additional_instructions` updated to remove success rate/execution count references
 
+### 8. Tool-Level Flow Enforcement: `get_resource_context` Prerequisite (v1.2, ADR-056)
+
+**Decision**: HAPI MUST enforce that `get_resource_context` is called before any workflow discovery tool (`list_available_actions`, `list_workflows`, `get_workflow`). This is a tool-level prerequisite check, not prompt-level guidance.
+
+**Rationale**: ADR-056 relocates `DetectedLabels` computation from SP (signal source, pre-RCA) to HAPI (remediation target, post-RCA). The `get_resource_context` tool resolves the root owner and computes `DetectedLabels` for the actual target resource, storing them in internal session state. Workflow discovery tools read these labels from session state and inject them into DS queries. If `get_resource_context` has not been called, the labels are unavailable and workflow discovery would proceed without target-specific filtering -- potentially selecting inappropriate workflows.
+
+Rather than degrading gracefully (proceeding without labels), HAPI enforces the correct flow by returning a structured error to the LLM, following the established self-correction pattern from DD-HAPI-002.
+
+#### Session State Mechanism
+
+A shared mutable Python dict is created per investigation and passed to both `ResourceContextToolset` and `WorkflowDiscoveryToolset` during per-request toolset registration:
+
+```python
+# Per-request setup in analyze_incident() / analyze_recovery()
+session_state = {}  # shared mutable dict, scoped to one investigation
+
+discovery_toolset = WorkflowDiscoveryToolset(
+    ..., session_state=session_state
+)
+resource_context_toolset = ResourceContextToolset(
+    ..., session_state=session_state
+)
+```
+
+Holmes SDK creates tool instances once per investigation and reuses them for all tool calls within that conversation. The same `session_state` dict reference is accessible to both toolsets.
+
+**No concurrency risk**: Phases 3b (`get_resource_context`) and 4 (workflow discovery) are sequential in the prompt. Holmes SDK only parallelizes tool calls within a single LLM response step, and these tools are in different prompt phases.
+
+#### Enforcement Flow
+
+1. **`get_resource_context._invoke()`**: After resolving the root owner and computing labels per DD-HAPI-018, writes to session state:
+   ```python
+   self._session_state["detected_labels"] = computed_labels  # DetectedLabels dict
+   ```
+   If label detection fails entirely (all K8s API queries fail), writes an empty dict as a sentinel:
+   ```python
+   self._session_state["detected_labels"] = {}  # sentinel: detection attempted, all failed
+   ```
+
+2. **Discovery tool `_invoke()` methods** (`list_available_actions`, `list_workflows`, `get_workflow`): Before calling DS, check session state:
+   ```python
+   detected_labels = self._session_state.get("detected_labels")
+   if detected_labels is None:
+       # Key absent = get_resource_context was never called
+       return StructuredToolResult(
+           result="FLOW ERROR: You must call `get_resource_context` first to identify "
+                  "the remediation target and compute environment characteristics. "
+                  "Call `get_resource_context` with the resource identified during your RCA.",
+           error=True,
+       )
+   # Key present (even if empty dict) = get_resource_context was called, proceed
+   # Inject labels into DS query parameters transparently
+   ```
+
+3. **LLM self-correction**: The LLM receives the flow error, calls `get_resource_context`, then retries the discovery tool. This follows the same self-correction pattern as DD-HAPI-002's workflow parameter validation.
+
+#### Failure Modes
+
+| Scenario | Behavior |
+|----------|----------|
+| LLM calls `list_workflows` before `get_resource_context` | Flow error returned; LLM self-corrects |
+| `get_resource_context` succeeds, all labels detected | Labels injected into DS queries normally |
+| `get_resource_context` succeeds, some labels fail (RBAC) | `detected_labels` contains partial results + `failedDetections`; DS queries use available labels |
+| `get_resource_context` succeeds, all label detections fail | Empty dict sentinel; DS queries proceed without label filters (acceptable -- equivalent to SP's all-fields-failed case) |
+| `get_resource_context` itself fails (K8s API unreachable) | Tool returns error to LLM; LLM may retry or proceed to workflow discovery which will also return flow error |
+
+#### Prompt Builder Impact (v1.2)
+
+The prompt builder changes for ADR-056 are:
+
+1. **Remove DetectedLabels from prompt context**: The `build_cluster_context_section()` and `build_mcp_filter_instructions()` functions in `prompt_builder.py` currently inject SP-computed `DetectedLabels` into the prompt. Once ADR-056 is implemented, these sections are removed -- HAPI computes and injects labels internally, the LLM does not need to see them.
+
+2. **Phase 3b instruction update**: The `get_resource_context` instruction already exists in the prompt (Phase 3b). No change needed to the instruction text -- the tool's internal behavior changes (now also computes labels) but the LLM-facing contract (call with kind/name/namespace, receive root_owner + history) is unchanged.
+
+3. **Phase 4 instruction update**: Remove any references to `detected_labels` as a parameter the LLM should provide. The "Signal context filters are automatically included" note already covers this.
+
 ---
 
 ## Blast Radius
@@ -325,10 +405,13 @@ This contextual history is injected into the LLM prompt as the `## Remediation H
 - **Description**: MUST implement three LLM tools (`list_available_actions`, `list_workflows`, `get_workflow`) per DD-WORKFLOW-016, registered for both incident and recovery flows.
 - **Acceptance Criteria**:
   - Three tool classes implemented, each with correct DS endpoint call and parameter mapping
-  - All tools pass full signal context filters (severity, component, environment, priority, custom_labels, detected_labels)
+  - All tools pass signal context filters (severity, component, environment, priority, custom_labels) to DS
+  - **v1.2**: `detected_labels` is NOT an LLM-facing parameter. Tools read labels from internal session state (populated by `get_resource_context` per ADR-056) and inject into DS queries transparently
+  - **v1.2**: All tools check session state for `get_resource_context` prerequisite (Section 8). If labels are absent, return flow error to LLM for self-correction
   - All tools pass `remediationId` as query parameter for audit correlation
   - Tools return `StructuredToolResult` with clean LLM-rendered output (finalScore stripped)
   - Toolset registered in both incident and recovery `llm_integration.py`
+  - **v1.2**: `WorkflowDiscoveryToolset` accepts `session_state` dict shared with `ResourceContextToolset`
 
 ### BR-HAPI-017-002: Prompt Template Update
 
@@ -397,6 +480,8 @@ This contextual history is injected into the LLM prompt as the `## Remediation H
 | **DD-004** | RFC 7807 error response standard. Error handling for DS responses follows this standard. |
 | **BR-HAPI-250** | Workflow catalog toolset (superseded BR-HAPI-046-050). **Superseded** by BR-HAPI-017-001 through 006. |
 | **BR-AUDIT-021-030 v2.0** | Workflow selection audit trail requirements. Updated for three-step protocol. |
+| **ADR-056** | Post-RCA label computation relocation. Section 8 of this DD implements the HAPI-side flow enforcement and label injection. |
+| **DD-HAPI-018** | DetectedLabels detection specification. Cross-language contract defining the 7 detection characteristics that HAPI implements per ADR-056. |
 
 ---
 
@@ -414,12 +499,12 @@ This contextual history is injected into the LLM prompt as the `## Remediation H
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: February 15, 2026
+**Document Version**: 1.2
+**Last Updated**: February 12, 2026
 **Status**: ✅ APPROVED
-**Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol)
+**Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol + ADR-056 flow enforcement)
 **Confidence**: 92%
 
 **Confidence Gap (8%)**:
 - Recovery validation latency (~4%): Adding `MAX_VALIDATION_ATTEMPTS = 3` to recovery may increase call duration. Mitigated by the fact that validation failures are rare with structured three-step discovery.
-- Prompt instruction effectiveness (~4%): The three-step instructions are more complex than the single-tool instruction. LLM compliance depends on prompt engineering quality. Mitigated by DD-WORKFLOW-016's tested prompt contract.
+- Prompt instruction effectiveness (~4%): The three-step instructions are more complex than the single-tool instruction. LLM compliance depends on prompt engineering quality. Mitigated by DD-WORKFLOW-016's tested prompt contract and tool-level flow enforcement (v1.2 Section 8).
