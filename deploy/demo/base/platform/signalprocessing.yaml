@@ -146,6 +146,35 @@ data:
       PredictedDiskPressure: DiskPressure
       PredictedNodeNotReady: NodeNotReady
 ---
+# 7. SignalProcessing Service Configuration (ADR-030)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "signalprocessing.kubernaut.ai"
+    enrichment:
+      cacheTtl: "5m"
+      timeout: "10s"
+    classifier:
+      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapKey: "policy.rego"
+      hotReloadInterval: "30s"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: "1s"
+        maxRetries: 3
+---
 # SignalProcessing RBAC
 apiVersion: v1
 kind: ServiceAccount
@@ -224,13 +253,13 @@ spec:
         - name: controller
           image: quay.io/kubernaut-ai/signalprocessing:demo-v1.0
           imagePullPolicy: IfNotPresent
+          args:
+            - "--config=/etc/signalprocessing/config.yaml"
           env:
             - name: NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: DATA_STORAGE_URL
-              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
           ports:
             - containerPort: 9090
               name: metrics
@@ -256,6 +285,10 @@ spec:
               cpu: 500m
               memory: 256Mi
           volumeMounts:
+            - name: config
+              mountPath: /etc/signalprocessing/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: policies
               mountPath: /etc/signalprocessing/policies
               readOnly: true
@@ -264,6 +297,9 @@ spec:
               subPath: predictive-signal-mappings.yaml
               readOnly: true
       volumes:
+        - name: config
+          configMap:
+            name: signalprocessing-config
         - name: policies
           projected:
             sources:

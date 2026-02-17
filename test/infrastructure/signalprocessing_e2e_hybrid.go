@@ -881,6 +881,34 @@ func signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPo
 
 	return fmt.Sprintf(`
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "signalprocessing.kubernaut.ai"
+    enrichment:
+      cacheTtl: "5m"
+      timeout: "10s"
+    classifier:
+      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapKey: "policy.rego"
+      hotReloadInterval: "30s"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: "100ms"
+        maxRetries: 3
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: signalprocessing-controller
@@ -956,16 +984,13 @@ spec:
       - name: controller
         image: %s
         imagePullPolicy: %s
+        args:
+        - "--config=/etc/signalprocessing/config.yaml"
         env:
         - name: NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
-        # Fix: Correct service name is data-storage-service (not datastorage)
-        - name: DATA_STORAGE_URL
-          value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-        # E2E Coverage: Set GOCOVERDIR to enable coverage capture
         - name: GOCOVERDIR
           value: /coverdata
         ports:
@@ -993,6 +1018,11 @@ spec:
             cpu: 500m
             memory: 256Mi
         volumeMounts:
+        # ADR-030: Mount service config at /etc/signalprocessing/config.yaml
+        - name: config
+          mountPath: /etc/signalprocessing/config.yaml
+          subPath: config.yaml
+          readOnly: true
         # Mount policies at /etc/signalprocessing/policies (same as standard manifest)
         - name: policies
           mountPath: /etc/signalprocessing/policies
@@ -1006,6 +1036,10 @@ spec:
         - name: coverdata
           mountPath: /coverdata
       volumes:
+      # ADR-030: Service configuration ConfigMap
+      - name: config
+        configMap:
+          name: signalprocessing-config
       # Projected volume for all policies (includes severity policy for BR-SP-105)
       - name: policies
         projected:

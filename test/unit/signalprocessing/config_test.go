@@ -176,7 +176,7 @@ var _ = Describe("DefaultControllerConfig", func() {
 		cfg := config.DefaultControllerConfig()
 
 		Expect(cfg).ToNot(BeNil())
-		Expect(cfg.MetricsAddr).To(Equal(":8080"))
+		Expect(cfg.MetricsAddr).To(Equal(":9090"))
 		Expect(cfg.HealthProbeAddr).To(Equal(":8081"))
 		Expect(cfg.LeaderElection).To(BeFalse())
 		Expect(cfg.LeaderElectionID).To(Equal("signalprocessing.kubernaut.ai"))
