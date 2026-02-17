@@ -222,6 +222,24 @@ func (r *RetrySettings) Validate() error {
 	return nil
 }
 
+// DefaultServerConfig returns safe defaults for the Gateway service.
+// ADR-030: Used when no --config file is specified.
+func DefaultServerConfig() *ServerConfig {
+	return &ServerConfig{
+		Server: ServerSettings{
+			ListenAddr:            ":8080",
+			MaxConcurrentRequests: 100,
+			ReadTimeout:           30 * time.Second,
+			WriteTimeout:          30 * time.Second,
+			IdleTimeout:           120 * time.Second,
+		},
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Processing: ProcessingSettings{
+			Retry: DefaultRetrySettings(),
+		},
+	}
+}
+
 // LoadFromFile loads configuration from a YAML file
 func LoadFromFile(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
