@@ -3734,6 +3734,13 @@ components:
           description: Name of the associated Tekton PipelineRun
           example: "restart-payment-api-2025-12-17-abc123-run"
 
+        # Execution Parameters (SOC2 chain of custody - Issue #103)
+        parameters:
+          type: object
+          additionalProperties:
+            type: string
+          description: Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody.
+
     # ========================================
     # Webhooks Audit Payloads
     # From: pkg/authwebhook/audit_types.go

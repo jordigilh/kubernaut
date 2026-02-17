@@ -13400,6 +13400,52 @@ func (o OptWorkflowExecutionAuditPayloadFailureReason) Or(d WorkflowExecutionAud
 	return d
 }
 
+// NewOptWorkflowExecutionAuditPayloadParameters returns new OptWorkflowExecutionAuditPayloadParameters with value set to v.
+func NewOptWorkflowExecutionAuditPayloadParameters(v WorkflowExecutionAuditPayloadParameters) OptWorkflowExecutionAuditPayloadParameters {
+	return OptWorkflowExecutionAuditPayloadParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkflowExecutionAuditPayloadParameters is optional WorkflowExecutionAuditPayloadParameters.
+type OptWorkflowExecutionAuditPayloadParameters struct {
+	Value WorkflowExecutionAuditPayloadParameters
+	Set   bool
+}
+
+// IsSet returns true if OptWorkflowExecutionAuditPayloadParameters was set.
+func (o OptWorkflowExecutionAuditPayloadParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkflowExecutionAuditPayloadParameters) Reset() {
+	var v WorkflowExecutionAuditPayloadParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkflowExecutionAuditPayloadParameters) SetTo(v WorkflowExecutionAuditPayloadParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkflowExecutionAuditPayloadParameters) Get() (v WorkflowExecutionAuditPayloadParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkflowExecutionAuditPayloadParameters) Or(d WorkflowExecutionAuditPayloadParameters) WorkflowExecutionAuditPayloadParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptWorkflowResultAuditLabels returns new OptWorkflowResultAuditLabels with value set to v.
 func NewOptWorkflowResultAuditLabels(v WorkflowResultAuditLabels) OptWorkflowResultAuditLabels {
 	return OptWorkflowResultAuditLabels{
@@ -18540,6 +18586,9 @@ type WorkflowExecutionAuditPayload struct {
 	ErrorDetails   OptErrorDetails `json:"error_details"`
 	// Name of the associated Tekton PipelineRun.
 	PipelinerunName OptString `json:"pipelinerun_name"`
+	// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
+	// 3 chain of custody.
+	Parameters OptWorkflowExecutionAuditPayloadParameters `json:"parameters"`
 }
 
 // GetEventType returns the value of EventType.
@@ -18617,6 +18666,11 @@ func (s *WorkflowExecutionAuditPayload) GetPipelinerunName() OptString {
 	return s.PipelinerunName
 }
 
+// GetParameters returns the value of Parameters.
+func (s *WorkflowExecutionAuditPayload) GetParameters() OptWorkflowExecutionAuditPayloadParameters {
+	return s.Parameters
+}
+
 // SetEventType sets the value of EventType.
 func (s *WorkflowExecutionAuditPayload) SetEventType(val WorkflowExecutionAuditPayloadEventType) {
 	s.EventType = val
@@ -18690,6 +18744,11 @@ func (s *WorkflowExecutionAuditPayload) SetErrorDetails(val OptErrorDetails) {
 // SetPipelinerunName sets the value of PipelinerunName.
 func (s *WorkflowExecutionAuditPayload) SetPipelinerunName(val OptString) {
 	s.PipelinerunName = val
+}
+
+// SetParameters sets the value of Parameters.
+func (s *WorkflowExecutionAuditPayload) SetParameters(val OptWorkflowExecutionAuditPayloadParameters) {
+	s.Parameters = val
 }
 
 // Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution
@@ -18838,6 +18897,19 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
+// 3 chain of custody.
+type WorkflowExecutionAuditPayloadParameters map[string]string
+
+func (s *WorkflowExecutionAuditPayloadParameters) init() WorkflowExecutionAuditPayloadParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Current phase of the WorkflowExecution.
