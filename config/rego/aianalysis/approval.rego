@@ -37,9 +37,19 @@ is_stateful if {
     input.detected_labels["stateful"] == true
 }
 
-# Check if target is validated
-target_validated if {
-    input.target_in_owner_chain == true
+# ADR-055: Check if affected_resource is present (required LLM output)
+has_affected_resource if {
+    input.affected_resource
+    input.affected_resource.kind != ""
+}
+
+# ADR-055: Check if affected resource is a sensitive kind
+is_sensitive_resource if {
+    input.affected_resource.kind == "Node"
+}
+
+is_sensitive_resource if {
+    input.affected_resource.kind == "StatefulSet"
 }
 
 # Check if warnings exist
@@ -93,10 +103,15 @@ require_approval if {
     is_multiple_recovery
 }
 
-# Production + unvalidated target requires approval (BR-AI-013)
+# BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
+require_approval if {
+    not has_affected_resource
+}
+
+# ADR-055: Production + sensitive resource kind requires approval
 require_approval if {
     is_production
-    not target_validated
+    is_sensitive_resource
 }
 
 # Production + failed detections requires approval (BR-AI-013)
@@ -134,9 +149,13 @@ risk_factors contains {"score": 100, "reason": msg} if {
     msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
 }
 
-risk_factors contains {"score": 80, "reason": "Production environment with unvalidated target - requires manual approval"} if {
+risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
+    not has_affected_resource
+}
+
+risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
     is_production
-    not target_validated
+    is_sensitive_resource
 }
 
 risk_factors contains {"score": 70, "reason": "Production environment with failed detections - requires manual approval"} if {
@@ -170,9 +189,7 @@ all_scores contains f.score if {
 # Find the maximum score among all risk factors
 max_risk_score := max(all_scores) if {
     count(all_scores) > 0
-}
-
-# Select the reason with the highest score
+}# Select the reason with the highest score
 reason := f.reason if {
     some f in risk_factors
     f.score == max_risk_score

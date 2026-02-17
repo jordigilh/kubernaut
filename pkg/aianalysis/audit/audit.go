@@ -122,9 +122,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 		payload.Confidence.SetTo(confidence)
 		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
 	}
-	if analysis.Status.TargetInOwnerChain != nil {
-		payload.TargetInOwnerChain.SetTo(*analysis.Status.TargetInOwnerChain)
-	}
+	// ADR-055: TargetInOwnerChain removed - affectedResource is now in RCA
 	if analysis.Status.Reason != "" {
 		payload.Reason.SetTo(analysis.Status.Reason)
 	}
@@ -643,9 +641,7 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 		payload.Confidence.SetTo(confidence)
 		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
 	}
-	if analysis.Status.TargetInOwnerChain != nil {
-		payload.TargetInOwnerChain.SetTo(*analysis.Status.TargetInOwnerChain)
-	}
+	// ADR-055: TargetInOwnerChain removed - affectedResource is now in RCA
 	if analysis.Status.Reason != "" {
 		payload.Reason.SetTo(analysis.Status.Reason)
 	}

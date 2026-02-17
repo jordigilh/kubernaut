@@ -71,9 +71,11 @@ var _ = Describe("RegoEvaluator", func() {
 			// BR-AI-013: Business outcome - production with clean state should auto-approve
 			It("should auto-approve production environment with clean state and high confidence", func() {
 				input := &rego.PolicyInput{
-					Environment:        "production",
-					TargetInOwnerChain: true,
-					Confidence:         0.85,
+					Environment: "production",
+					AffectedResource: &rego.AffectedResourceInput{
+						Kind: "Deployment", Name: "api", Namespace: "production",
+					},
+					Confidence: 0.85,
 					DetectedLabels: map[string]interface{}{
 						"gitOpsManaged": true,
 						"pdbProtected":  true,
@@ -106,13 +108,13 @@ var _ = Describe("RegoEvaluator", func() {
 			})
 
 			DescribeTable("based on environment and data quality",
-				func(env string, targetInChain bool, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
+				func(env string, affectedResource *rego.AffectedResourceInput, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
 					input := &rego.PolicyInput{
-						Environment:        env,
-						TargetInOwnerChain: targetInChain,
-						Confidence:         confidence,
-						FailedDetections:   failedDetections,
-						Warnings:           warnings,
+						Environment:      env,
+						AffectedResource: affectedResource,
+						Confidence:       confidence,
+						FailedDetections: failedDetections,
+						Warnings:         warnings,
 					}
 
 					result, err := evaluator.Evaluate(ctx, input)
@@ -120,33 +122,35 @@ var _ = Describe("RegoEvaluator", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(result.ApprovalRequired).To(Equal(expectedApproval))
 				},
-				// Production + data quality issues = approval required
-				Entry("production + target not in chain",
-					"production", false, 0.9, nil, nil, true),
+				// BR-AI-085-005: Missing affected resource = approval required (default-deny)
+				Entry("production + missing affected resource",
+					"production", (*rego.AffectedResourceInput)(nil), 0.9, nil, nil, true),
 				Entry("production + failed detections",
-					"production", true, 0.9, []string{"gitOpsManaged"}, nil, true),
+					"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, []string{"gitOpsManaged"}, nil, true),
 				Entry("production + warnings",
-					"production", true, 0.9, nil, []string{"High memory pressure"}, true),
+					"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, []string{"High memory pressure"}, true),
 				Entry("production + low confidence",
-					"production", true, 0.6, nil, nil, true),
+					"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.6, nil, nil, true),
 
 				// Non-production = auto-approve (regardless of issues)
-				Entry("development + any state",
-					"development", false, 0.5, []string{"gitOpsManaged"}, nil, false),
+				Entry("development + missing affected resource",
+					"development", (*rego.AffectedResourceInput)(nil), 0.5, []string{"gitOpsManaged"}, nil, true),
 				Entry("staging + any state",
-					"staging", true, 0.8, nil, nil, false),
+					"staging", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "staging"}, 0.8, nil, nil, false),
 
 				// Production ALWAYS requires approval per BR-AI-013
 				Entry("production + clean state + high confidence",
-					"production", true, 0.9, nil, nil, true),
+					"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, nil, true),
 			)
 
 			// BR-AI-013: Recovery scenario tests (per IMPLEMENTATION_PLAN_V1.0.md)
 			DescribeTable("based on recovery context",
 				func(isRecovery bool, recoveryAttemptNumber int, severity string, env string, expectedApproval bool) {
 					input := &rego.PolicyInput{
-						Environment:           env,
-						TargetInOwnerChain:    true,
+						Environment: env,
+						AffectedResource: &rego.AffectedResourceInput{
+							Kind: "Deployment", Name: "api", Namespace: env,
+						},
 						Confidence:            0.9, // High confidence
 						IsRecoveryAttempt:     isRecovery,
 						RecoveryAttemptNumber: recoveryAttemptNumber,
@@ -198,7 +202,9 @@ var _ = Describe("RegoEvaluator", func() {
 							Name:      "test-pod",
 							Namespace: "default",
 						},
-						TargetInOwnerChain:    true,
+						AffectedResource: &rego.AffectedResourceInput{
+							Kind: "Deployment", Name: "api", Namespace: "default",
+						},
 						Confidence:            0.9,
 						IsRecoveryAttempt:     true,
 						RecoveryAttemptNumber: 1,

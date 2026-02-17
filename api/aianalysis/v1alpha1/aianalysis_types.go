@@ -473,13 +473,9 @@ type AIAnalysisStatus struct {
 	InvestigationTime int64 `json:"investigationTime,omitempty"`
 
 	// ========================================
-	// HAPI RESPONSE METADATA (Dec 2025)
+	// HAPI RESPONSE METADATA
 	// ========================================
-	// Whether the RCA-identified target resource was found in OwnerChain
-	// If false, DetectedLabels may be from different scope than affected resource
-	// Used for: Rego policy input, audit trail, operator notifications, metrics
-	TargetInOwnerChain *bool `json:"targetInOwnerChain,omitempty"`
-	// Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
+	// Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
 	Warnings []string `json:"warnings,omitempty"`
 	// ValidationAttemptsHistory contains complete history of all HAPI validation attempts
 	// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction

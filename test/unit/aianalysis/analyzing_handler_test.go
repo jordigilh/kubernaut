@@ -398,16 +398,27 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
 			})
 
-			It("should pass TargetInOwnerChain from status", func() {
+			// ADR-055: TargetInOwnerChain replaced by AffectedResource
+			It("should pass AffectedResource from RCA status", func() {
 				analysis := createTestAnalysis()
-				targetInChain := true
-				analysis.Status.TargetInOwnerChain = &targetInChain
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary:  "OOM detected",
+					Severity: "high",
+					AffectedResource: &aianalysisv1.AffectedResource{
+						Kind:      "Deployment",
+						Name:      "api-server",
+						Namespace: "production",
+					},
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.TargetInOwnerChain).To(BeTrue())
+				Expect(mockEvaluator.LastInput.AffectedResource).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.AffectedResource.Kind).To(Equal("Deployment"))
+				Expect(mockEvaluator.LastInput.AffectedResource.Name).To(Equal("api-server"))
+				Expect(mockEvaluator.LastInput.AffectedResource.Namespace).To(Equal("production"))
 			})
 
 			It("should pass Warnings from status", func() {

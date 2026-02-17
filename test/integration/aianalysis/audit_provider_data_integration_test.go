@@ -457,7 +457,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// Decision metadata - strongly-typed optional fields
 			// needs_human_review defaults to false, so just check field exists
 			Expect(responseData.Warnings).ToNot(BeNil(), "Required: warnings array")
-			// target_in_owner_chain defaults to true, field always present
+			// ADR-055: target_in_owner_chain removed, replaced by affected_resource in RCA
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ RR RECONSTRUCTION VALIDATION PASSED")

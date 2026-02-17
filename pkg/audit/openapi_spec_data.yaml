@@ -3649,9 +3649,6 @@ components:
         workflow_id:
           type: string
           description: Selected workflow identifier
-        target_in_owner_chain:
-          type: boolean
-          description: Whether target is in owner chain
         reason:
           type: string
           description: Primary failure reason
@@ -4819,10 +4816,6 @@ components:
           type: string
           enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete]
           description: Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)
-        target_in_owner_chain:
-          type: boolean
-          default: true
-          description: Whether RCA target was found in OwnerChain
         warnings:
           type: array
           items:

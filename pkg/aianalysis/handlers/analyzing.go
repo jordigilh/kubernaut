@@ -350,9 +350,14 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
 	}
 
-	// Get TargetInOwnerChain from status (populated by InvestigatingHandler)
-	if analysis.Status.TargetInOwnerChain != nil {
-		input.TargetInOwnerChain = *analysis.Status.TargetInOwnerChain
+	// ADR-055: Populate AffectedResource for Rego policy evaluation
+	if analysis.Status.RootCauseAnalysis != nil && analysis.Status.RootCauseAnalysis.AffectedResource != nil {
+		ar := analysis.Status.RootCauseAnalysis.AffectedResource
+		input.AffectedResource = &rego.AffectedResourceInput{
+			Kind:      ar.Kind,
+			Name:      ar.Name,
+			Namespace: ar.Namespace,
+		}
 	}
 
 	// Populate DetectedLabels from EnrichmentResults (per DD-WORKFLOW-001 v2.2)

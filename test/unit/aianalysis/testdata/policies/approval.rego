@@ -36,11 +36,22 @@ is_high_severity if {
     input.severity == "P0"
 }
 
+# ADR-055: Check if affected_resource is present
+has_affected_resource if {
+    input.affected_resource
+    input.affected_resource.kind != ""
+}
+
 # =============================================================================
 # Approval Rules (independent boolean checks)
 # =============================================================================
 
 default require_approval := false
+
+# BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
+require_approval if {
+    not has_affected_resource
+}
 
 # Production environment ALWAYS requires approval (BR-AI-013)
 require_approval if {
@@ -64,6 +75,10 @@ require_approval if {
 # =============================================================================
 # Each risk factor independently contributes a scored entry.
 # The highest-scored reason wins. No exclusion chains needed.
+
+risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
+    not has_affected_resource
+}
 
 risk_factors contains {"score": 100, "reason": msg} if {
     is_multiple_recovery

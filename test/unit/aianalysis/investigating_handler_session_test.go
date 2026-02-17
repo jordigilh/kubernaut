@@ -312,7 +312,6 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					"wf-restart-pod",
 					"kubernaut.io/workflows/restart:v1.0.0",
 					0.9,
-					true,
 					"Selected for OOM recovery",
 					false,
 				)

@@ -507,11 +507,12 @@ Based on your RCA, determine the signal_type that best describes the effect:
 ### Phase 3b: Identify the Affected Resource (MANDATORY for remediation)
 
 Determine the **root owner** resource that the remediation should target:
-- From the signal resource (e.g., Pod), trace the OwnerReferences chain UP to the root owner.
-- **Example**: Pod `memory-eater-abc` → owned by ReplicaSet `memory-eater-xyz` → owned by **Deployment** `memory-eater`
-- The `affectedResource` in your response MUST be the **root owner** (e.g., Deployment, StatefulSet, DaemonSet), **NOT** the Pod.
-- Use `kubectl get pod <name> -n <ns> -o jsonpath='{{.metadata.ownerReferences}}'` to find the owner.
+- Call `get_resource_context` with the signal resource's kind, name, and namespace.
+- The tool returns the `owner_chain` (e.g., Pod → ReplicaSet → Deployment), `current_spec_hash`, and `remediation_history`.
+- The `affectedResource` in your response MUST be the **root owner** (the last entry in the owner chain), **NOT** the Pod.
+- **Example**: If the owner chain is [Pod, ReplicaSet, Deployment], the `affectedResource` is the Deployment.
 - Include `kind`, `name`, and `namespace` in the `affectedResource` field of `root_cause_analysis`.
+- Use `remediation_history` to inform your workflow selection (e.g., avoid repeating recently failed workflows).
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:

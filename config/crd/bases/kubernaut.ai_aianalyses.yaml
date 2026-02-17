@@ -1221,15 +1221,6 @@ spec:
                 - MaxRetriesExceeded
                 - SessionRegenerationExceeded
                 type: string
-              targetInOwnerChain:
-                description: |-
-                  ========================================
-                  HAPI RESPONSE METADATA (Dec 2025)
-                  ========================================
-                  Whether the RCA-identified target resource was found in OwnerChain
-                  If false, DetectedLabels may be from different scope than affected resource
-                  Used for: Rego policy input, audit trail, operator notifications, metrics
-                type: boolean
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
                   in seconds

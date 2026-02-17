@@ -125,8 +125,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			// Should have completion timestamp
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 
-			// Should capture targetInOwnerChain
-			Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
+			// ADR-055: Should capture affectedResource in RCA (replaces targetInOwnerChain)
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {

@@ -202,6 +202,7 @@ func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence fl
 }
 
 // WithFullResponse configures the mock to return a complete response including RCA and workflow.
+// ADR-055: targetInOwnerChain parameter removed - affectedResource is now in RCA output.
 func (m *MockHolmesGPTClient) WithFullResponse(
 	analysis string,
 	confidence float64,
@@ -211,7 +212,6 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	workflowID string,
 	containerImage string,
 	workflowConfidence float64,
-	targetInOwnerChain bool,
 	workflowRationale string,
 	includeAlternatives bool,
 ) *MockHolmesGPTClient {
@@ -264,9 +264,6 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	if len(swMap) > 0 {
 		m.Response.SelectedWorkflow.SetTo(swMap)
 	}
-
-	// Set TargetInOwnerChain from parameter
-	m.Response.TargetInOwnerChain.SetTo(targetInOwnerChain)
 
 	m.Err = nil
 	return m
