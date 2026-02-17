@@ -189,8 +189,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionCreated"))
 
-				// Result: RequeueAfter: 10s (non-blocking return for polling)
-				Expect(result.RequeueAfter).To(Equal(10 * time.Second), "Should requeue after 10s for first poll")
+				// Result: RequeueAfter at configured session poll interval (non-blocking return for polling)
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Should requeue at session poll interval for first poll")
 
 				// Audit side effect: exactly 1 aiagent.submit event
 				Expect(auditSpy.submitEvents).To(HaveLen(1), "Should record exactly 1 submit audit event")
@@ -232,8 +232,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionRegenerated"))
 
-				// Should requeue for polling
-				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+				// Should requeue at session poll interval for first poll
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Regenerated session should requeue at standard poll interval")
 			})
 		})
 	})
@@ -243,12 +243,10 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 	// ========================================
 	Describe("Session Poll Flow", func() {
 		// UT-AA-064-003: Poll session -- status "pending"
-		// PollCount is incremented before backoff computation, so first poll
-		// uses backoff(1) = 20s (not backoff(0) = 10s).
-		// SetInvestigationSessionReady is not called in the poll-pending path;
-		// the condition is only set during session creation/regeneration/loss.
+		// BR-AA-HAPI-064.8: Constant poll interval (not backoff). Polling is normal
+		// async behavior, not error recovery. Interval is configurable (default 15s).
 		Context("UT-AA-064-003: Poll session -- status pending, controller requeues", func() {
-			It("should update LastPolled and PollCount, requeue after 20s", func() {
+			It("should update LastPolled and PollCount, requeue at constant interval", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
 					ID:         "session-poll-001",
@@ -263,15 +261,15 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.InvestigationSession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
 				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
-				Expect(result.RequeueAfter).To(Equal(20 * time.Second), "First poll should requeue at 20s (backoff computed after PollCount increment)")
+				// BR-AA-HAPI-064.8: Constant interval, default 15s
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "First poll should requeue at constant interval (15s)")
 			})
 		})
 
-		// UT-AA-064-004: Poll session -- status "investigating", backoff increases
-		// PollCount starts at 1 (already polled once), incremented to 2 before
-		// backoff computation: backoff(2) = min(10s * 2^2, 30s) = 30s (capped).
-		Context("UT-AA-064-004: Poll session -- investigating, backoff increases", func() {
-			It("should use 30s backoff for second consecutive poll", func() {
+		// UT-AA-064-004: Poll session -- status "investigating", same constant interval
+		// BR-AA-HAPI-064.8: Constant poll interval regardless of PollCount.
+		Context("UT-AA-064-004: Poll session -- investigating, constant interval", func() {
+			It("should use same constant interval for second consecutive poll", func() {
 				analysis := createSessionTestAnalysis()
 				lastPoll := metav1.Now()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
@@ -287,7 +285,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(30 * time.Second), "Second poll should use 30s backoff (capped)")
+				// BR-AA-HAPI-064.8: Constant interval, same as first poll
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Second poll should use same constant interval (15s)")
 			})
 		})
 
@@ -354,18 +353,14 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			})
 		})
 
-		// UT-AA-064-007: Polling backoff caps at 30s
-		// PollCount is incremented before backoff computation, so the sequence is:
-		// Poll 1: PollCount 0->1, backoff(1) = min(10s * 2^1, 30s) = 20s
-		// Poll 2: PollCount 1->2, backoff(2) = min(10s * 2^2, 30s) = 30s (capped)
-		// Poll 3: PollCount 2->3, backoff(3) = min(10s * 2^3, 30s) = 30s (capped)
-		// Poll 4: PollCount 3->4, backoff(4) = min(10s * 2^4, 30s) = 30s (capped)
-		Context("UT-AA-064-007: Polling backoff caps at 30s", func() {
-			It("should cap polling interval at MaxPollInterval", func() {
+		// UT-AA-064-007: Polling interval is constant across all polls
+		// BR-AA-HAPI-064.8: Constant interval -- polling is not error recovery.
+		// Every poll uses the same configured interval regardless of PollCount.
+		Context("UT-AA-064-007: Polling interval is constant across all polls", func() {
+			It("should use the same constant interval for every poll", func() {
 				analysis := createSessionTestAnalysis()
-				// Simulate multiple polls by setting LastPolled multiple times
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
-					ID:         "session-backoff-001",
+					ID:         "session-constant-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
 				}
@@ -380,11 +375,12 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					intervals = append(intervals, result.RequeueAfter)
 				}
 
+				// BR-AA-HAPI-064.8: All polls use the same constant interval
 				Expect(intervals).To(HaveLen(4))
-				Expect(intervals[0]).To(Equal(20 * time.Second), "1st poll: 20s (PollCount 0->1, backoff(1))")
-				Expect(intervals[1]).To(Equal(30 * time.Second), "2nd poll: 30s (PollCount 1->2, capped)")
-				Expect(intervals[2]).To(Equal(30 * time.Second), "3rd poll: 30s (still capped)")
-				Expect(intervals[3]).To(Equal(30 * time.Second), "4th poll: 30s (still capped)")
+				for i, interval := range intervals {
+					Expect(interval).To(Equal(handlers.DefaultSessionPollInterval),
+						"Poll %d should use constant interval (15s)", i+1)
+				}
 			})
 		})
 	})
@@ -540,7 +536,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 		// UT-AA-064-013: GetSessionResult returns 409
 		Context("UT-AA-064-013: GetSessionResult returns 409 Conflict", func() {
-			It("should re-poll gracefully (treat as transient)", func() {
+			It("should re-poll at standard session poll interval (treat as transient)", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
 					ID:         "session-409",
@@ -555,10 +551,12 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Should requeue for re-poll (treated as transient)
-				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should requeue for re-poll")
+				// BR-AA-HAPI-064.8: Re-poll at standard constant interval (not backoff)
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "409 should re-poll at standard session poll interval (15s)")
 				// Phase should NOT be Failed
 				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail on 409 (transient)")
+				// PollCount should be incremented for observability
+				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(1)), "PollCount should be incremented after 409 re-poll")
 			})
 		})
 	})

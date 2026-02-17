@@ -50,15 +50,16 @@ import (
 // Refactoring P1.2: Uses RequestBuilder for request construction
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 type InvestigatingHandler struct {
-	log             logr.Logger
-	hgClient        HolmesGPTClientInterface
-	metrics         *metrics.Metrics     // DD-METRICS-001: Injected metrics
-	auditClient     AuditClientInterface // DD-AUDIT-003: Injected audit client
-	processor       *ResponseProcessor   // P1.1: Response processing logic
-	builder         *RequestBuilder      // P1.2: Request construction logic
-	errorClassifier *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode  bool                 // BR-AA-HAPI-064: Enable async session-based flow
-	recorder        record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
+	log                 logr.Logger
+	hgClient            HolmesGPTClientInterface
+	metrics             *metrics.Metrics     // DD-METRICS-001: Injected metrics
+	auditClient         AuditClientInterface // DD-AUDIT-003: Injected audit client
+	processor           *ResponseProcessor   // P1.1: Response processing logic
+	builder             *RequestBuilder      // P1.2: Request construction logic
+	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
+	useSessionMode      bool                 // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval time.Duration        // BR-AA-HAPI-064.8: Constant interval between session polls
+	recorder            record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -81,6 +82,15 @@ func WithRecorder(r record.EventRecorder) InvestigatingHandlerOption {
 	}
 }
 
+// WithSessionPollInterval sets the constant interval between session status polls.
+// BR-AA-HAPI-064.8: Polling is normal async behavior, not error recovery, so a constant
+// interval is used instead of exponential backoff. Default: DefaultSessionPollInterval (15s).
+func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.sessionPollInterval = d
+	}
+}
+
 // P1.3 Refactoring: AuditClientInterface moved to interfaces.go
 
 // NewInvestigatingHandler creates a new InvestigatingHandler
@@ -94,13 +104,14 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
-		hgClient:        hgClient,
-		metrics:         m,
-		auditClient:     auditClient,
-		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m, auditClient),   // P1.1: Initialize response processor (audit recorded by processor for failures)
-		builder:         NewRequestBuilder(log),                      // P1.2: Initialize request builder
-		errorClassifier: NewErrorClassifier(handlerLog),              // P2.1: Initialize error classifier
+		hgClient:            hgClient,
+		metrics:             m,
+		auditClient:         auditClient,
+		log:                 handlerLog,
+		sessionPollInterval: DefaultSessionPollInterval,                  // BR-AA-HAPI-064.8: Constant poll interval (configurable via WithSessionPollInterval)
+		processor:           NewResponseProcessor(log, m, auditClient),   // P1.1: Initialize response processor (audit recorded by processor for failures)
+		builder:             NewRequestBuilder(log),                      // P1.2: Initialize request builder
+		errorClassifier:     NewErrorClassifier(handlerLog),              // P2.1: Initialize error classifier
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -469,8 +480,8 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 		"isRegeneration", isRegeneration,
 	)
 
-	// Requeue for first poll at DefaultPollInterval
-	return ctrl.Result{RequeueAfter: DefaultPollInterval}, nil
+	// Requeue for first poll at configured session poll interval
+	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
 
 // handleSessionPoll polls the status of an active HAPI session.
@@ -507,18 +518,13 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 }
 
 // handleSessionPollPending handles poll results where investigation is still in progress.
-// BR-AA-HAPI-064.8: Exponential backoff (10s base, 2x multiplier, 30s cap)
+// BR-AA-HAPI-064.8: Constant poll interval (not backoff -- polling is normal async behavior).
 //
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *hgptclient.SessionStatus) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
-
-	// Compute backoff interval BEFORE incrementing PollCount.
-	// PollCount=0 → 10s, PollCount=1 → 20s, PollCount=2+ → 30s (capped).
-	// This ensures the first poll happens 10s after session creation (not 20s).
-	interval := h.computePollBackoff(session.PollCount)
 
 	// Update poll tracking fields for observability
 	session.PollCount++
@@ -527,11 +533,11 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 
 	h.log.Info("Session still in progress, requeuing",
 		"status", status.Status,
-		"nextPollIn", interval,
+		"nextPollIn", h.sessionPollInterval,
 		"pollCount", session.PollCount,
 	)
 
-	return ctrl.Result{RequeueAfter: interval}, nil
+	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
 
 // handleSessionPollCompleted handles poll results where investigation has completed.
@@ -730,35 +736,21 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 }
 
 // handleSessionGetResultError handles errors when fetching the session result.
-// BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully)
+// BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully at standard interval)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	// Check for 409 Conflict - treat as transient, re-poll
+	// Check for 409 Conflict - treat as transient, re-poll at standard interval
 	var apiErr *hgptclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 		h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
 			"sessionID", analysis.Status.InvestigationSession.ID,
 		)
 		session := analysis.Status.InvestigationSession
-		interval := h.computePollBackoff(session.PollCount)
 		now := metav1.Now()
 		session.LastPolled = &now
 		session.PollCount++
-		return ctrl.Result{RequeueAfter: interval}, nil
+		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 	}
 
 	// For other errors, use standard error classification
 	return h.handleError(ctx, analysis, err)
-}
-
-// computePollBackoff calculates the poll interval using exponential backoff.
-// BR-AA-HAPI-064.8: DefaultPollInterval * 2^pollCount, capped at MaxPollInterval
-func (h *InvestigatingHandler) computePollBackoff(pollCount int32) time.Duration {
-	interval := DefaultPollInterval
-	for i := int32(0); i < pollCount; i++ {
-		interval *= time.Duration(PollBackoffMultiplier)
-		if interval > MaxPollInterval {
-			return MaxPollInterval
-		}
-	}
-	return interval
 }
