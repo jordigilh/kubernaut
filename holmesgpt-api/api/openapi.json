@@ -1461,12 +1461,6 @@
             ],
             "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
           },
-          "target_in_owner_chain": {
-            "type": "boolean",
-            "title": "Target In Owner Chain",
-            "description": "Whether RCA-identified target resource was found in OwnerChain. If false, DetectedLabels may be from different scope than affected resource.",
-            "default": true
-          },
           "warnings": {
             "items": {
               "type": "string"
@@ -1501,7 +1495,7 @@
           "timestamp"
         ],
         "title": "IncidentResponse",
-        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)"
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed - replaced by affected_resource in Rego input."
       },
       "OriginalRCA": {
         "properties": {

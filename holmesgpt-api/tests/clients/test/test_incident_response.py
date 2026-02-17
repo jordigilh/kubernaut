@@ -43,7 +43,6 @@ class TestIncidentResponse(unittest.TestCase):
                 timestamp = '',
                 needs_human_review = True,
                 human_review_reason = 'workflow_not_found',
-                target_in_owner_chain = True,
                 warnings = [
                     ''
                     ],

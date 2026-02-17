@@ -75,7 +75,6 @@ Name | Type | Description | Notes
 **approval_reason** | **str** | Reason for approval requirement | 
 **warnings_count** | **int** | Number of warnings encountered | 
 **confidence** | **float** | Workflow confidence level (optional) | 
-**target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 

@@ -72,10 +72,6 @@ func (s *IncidentResponse) setDefaults() {
 		val := bool(false)
 		s.NeedsHumanReview.SetTo(val)
 	}
-	{
-		val := bool(true)
-		s.TargetInOwnerChain.SetTo(val)
-	}
 }
 
 // setDefaults set default value of fields.
