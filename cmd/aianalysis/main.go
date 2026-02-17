@@ -38,14 +38,15 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
 var (
@@ -64,21 +65,12 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var holmesGPTURL string
-	var holmesGPTTimeout time.Duration
-	var regoPolicyPath string
-	var dataStorageURL string
-
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
-	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
-	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-timeout", 180*time.Second, "HolmesGPT API HTTP client timeout.")
-	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
-	flag.StringVar(&dataStorageURL, "datastorage-url", getEnvOrDefault("DATASTORAGE_URL", "http://datastorage:8080"), "Data Storage Service URL for audit events.")
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single -config flag; all functional config in YAML ConfigMap
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -93,14 +85,28 @@ func main() {
 		"buildTime", BuildTime,
 	)
 
+	// ========================================
+	// CONFIGURATION LOADING (ADR-030)
+	// ========================================
+	cfg, err := config.LoadAAConfigFromFile(configPath)
+	if err != nil {
+		setupLog.Error(err, "Failed to load configuration from file, using defaults",
+			"configPath", configPath)
+		cfg = config.DefaultAAConfig()
+	} else if configPath != "" {
+		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
+	} else {
+		setupLog.Info("No config file specified, using defaults")
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
+			BindAddress: cfg.Controller.MetricsAddr,
 		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "aianalysis.kubernaut.ai",
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -114,10 +120,13 @@ func main() {
 	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
 	// With asyncio.to_thread on the HAPI side, 202 responses are instant,
 	// but a generous timeout guards against network latency edge cases.
-	setupLog.Info("Creating HolmesGPT-API client (generated)", "url", holmesGPTURL, "timeout", holmesGPTTimeout)
+	setupLog.Info("Creating HolmesGPT-API client (generated)",
+		"url", cfg.HolmesGPT.URL,
+		"timeout", cfg.HolmesGPT.Timeout,
+		"sessionPollInterval", cfg.HolmesGPT.SessionPollInterval)
 	holmesGPTClient, err := client.NewHolmesGPTClient(client.Config{
-		BaseURL: holmesGPTURL,
-		Timeout: holmesGPTTimeout,
+		BaseURL: cfg.HolmesGPT.URL,
+		Timeout: cfg.HolmesGPT.Timeout,
 	})
 	if err != nil {
 		setupLog.Error(err, "failed to create HolmesGPT-API client")
@@ -130,16 +139,16 @@ func main() {
 	// ADR-050: Configuration Validation Strategy (fail-fast at startup)
 	// DD-AIANALYSIS-002: Rego Policy Startup Validation
 	// ========================================
-	setupLog.Info("Creating Rego evaluator", "policyPath", regoPolicyPath)
+	setupLog.Info("Creating Rego evaluator", "policyPath", cfg.Rego.PolicyPath)
 	regoEvaluator := rego.NewEvaluator(rego.Config{
-		PolicyPath: regoPolicyPath,
+		PolicyPath: cfg.Rego.PolicyPath,
 	}, ctrl.Log.WithName("rego"))
 
 	// ADR-050: Startup validation - fails fast on invalid policy
 	ctx := context.Background()
 	if err := regoEvaluator.StartHotReload(ctx); err != nil {
 		setupLog.Error(err, "failed to load approval policy")
-		os.Exit(1) // ✅ Fatal error at startup per ADR-050
+		os.Exit(1)
 	}
 	setupLog.Info("approval policy loaded successfully",
 		"policyHash", regoEvaluator.GetPolicyHash())
@@ -150,27 +159,41 @@ func main() {
 	// ========================================
 	// DD-AUDIT-003: Wire audit client for P0 audit traces
 	// DD-API-001: Use OpenAPI generated client (MANDATORY)
+	// ADR-030: DataStorage URL and buffer config from YAML config
 	// ========================================
-	setupLog.Info("Creating audit client", "dataStorageURL", dataStorageURL)
-	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	setupLog.Info("Creating audit client",
+		"dataStorageURL", cfg.DataStorage.URL,
+		"dataStorageTimeout", cfg.DataStorage.Timeout)
+	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "failed to create Data Storage client")
 		os.Exit(1)
 	}
+
+	// ADR-030: Use buffer config from YAML (not hardcoded RecommendedConfig)
+	auditConfig := sharedaudit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
 	auditStore, err := sharedaudit.NewBufferedStore(
 		dsClient,
-		sharedaudit.RecommendedConfig("aianalysis"), // DD-AUDIT-004: LOW tier (20K buffer)
+		auditConfig,
 		"aianalysis",
 		ctrl.Log.WithName("audit"),
 	)
 	if err != nil {
 		setupLog.Error(err, "failed to create audit store - audit is a P0 requirement (BR-AI-090)")
-		os.Exit(1) // Fatal: Cannot run without audit trail
+		os.Exit(1)
 	}
 
 	// Create service-specific audit client (guaranteed non-nil)
 	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
-	setupLog.Info("✅ Audit client initialized successfully")
+	setupLog.Info("Audit client initialized successfully",
+		"bufferSize", auditConfig.BufferSize,
+		"batchSize", auditConfig.BatchSize,
+		"flushInterval", auditConfig.FlushInterval)
 
 	// ========================================
 	// DD-METRICS-001: Initialize Metrics
@@ -189,8 +212,9 @@ func main() {
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
 	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog, aianalysisMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder), // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode())           // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(cfg.HolmesGPT.SessionPollInterval)) // BR-AA-HAPI-064.8: From config
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient)
 
 	// ========================================
@@ -221,24 +245,20 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	
+
 	// Per RCA (Jan 31, 2026): Readyz must wait for controller caches to sync.
 	// healthz.Ping returns 200 immediately, causing tests to start before watches are ready.
 	// This leads to 10-15 second delay between test creation and first reconciliation.
 	// Solution: Custom check that verifies manager's cache sync status.
 	cacheSyncCheck := func(_ *http.Request) error {
-		// Use a short timeout context for the sync check
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		
-		// Check if caches have synced (non-blocking)
-		// WaitForCacheSync returns immediately if already synced, or false if not yet synced
 		if synced := mgr.GetCache().WaitForCacheSync(ctx); !synced {
 			return fmt.Errorf("controller caches not yet synced")
 		}
 		return nil
 	}
-	
+
 	if err := mgr.AddReadyzCheck("readyz", cacheSyncCheck); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
@@ -272,18 +292,10 @@ func main() {
 		setupLog.Info("Flushing audit events on shutdown (DD-007, ADR-032 §2, BR-AI-091)")
 		if err := auditStore.Close(); err != nil {
 			setupLog.Error(err, "FATAL: Failed to close audit store - audit loss detected")
-			os.Exit(1) // Fatal error - audit loss violates ADR-032 §2
+			os.Exit(1)
 		}
 		setupLog.Info("Audit store closed successfully, all events flushed")
 	}
 
 	setupLog.Info("AIAnalysis controller shutdown complete")
-}
-
-// getEnvOrDefault returns the value of environment variable or default if not set
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

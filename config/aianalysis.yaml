@@ -1,0 +1,43 @@
+# AIAnalysis Controller Configuration
+# ADR-030: Service Configuration Management
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
+
+# ========================================
+# CONTROLLER RUNTIME (DD-005)
+# ========================================
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: aianalysis.kubernaut.ai
+
+# ========================================
+# HOLMESGPT-API CONNECTIVITY (BR-AI-007, BR-AA-HAPI-064)
+# ========================================
+holmesgpt:
+  url: http://holmesgpt-api:8080
+  # LLM RCA + 3-step workflow discovery can take 2-3 min with real Vertex AI
+  timeout: 180s
+  # BR-AA-HAPI-064.8: Constant interval between session status polls.
+  # Polling is normal async behavior, not error recovery.
+  sessionPollInterval: 15s
+
+# ========================================
+# DATASTORAGE CONNECTIVITY (ADR-030)
+# Audit trail + workflow catalog
+# ========================================
+datastorage:
+  url: http://data-storage-service:8080
+  timeout: 10s
+  buffer:
+    # DD-AUDIT-004: LOW tier (500 events/day → 20K for burst handling)
+    bufferSize: 20000
+    batchSize: 1000
+    flushInterval: 1s
+    maxRetries: 3
+
+# ========================================
+# REGO POLICY (BR-AI-012)
+# ========================================
+rego:
+  policyPath: /etc/aianalysis/policies/approval.rego
