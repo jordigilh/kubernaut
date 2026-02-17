@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package aianalysis
 
 import (
 	"fmt"
@@ -22,20 +22,26 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
-// AAConfig represents the complete AIAnalysis controller configuration.
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/aianalysis/config.yaml"
+
+// Config represents the complete AIAnalysis controller configuration.
 // ADR-030: Service Configuration Management
 // Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
-type AAConfig struct {
+type Config struct {
 	// Controller runtime configuration (DD-005)
-	Controller ControllerConfig `yaml:"controller"`
+	Controller sharedconfig.ControllerConfig `yaml:"controller"`
 
 	// HolmesGPT-API connectivity and session polling (BR-AI-007, BR-AA-HAPI-064)
 	HolmesGPT HolmesGPTConfig `yaml:"holmesgpt"`
 
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
-	DataStorage DataStorageConfig `yaml:"datastorage"`
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
 	// Rego policy evaluation configuration (BR-AI-012)
 	Rego RegoConfig `yaml:"rego"`
@@ -48,13 +54,10 @@ type HolmesGPTConfig struct {
 	URL string `yaml:"url"`
 
 	// Timeout is the HTTP client timeout for HolmesGPT-API calls.
-	// BR-AA-HAPI-064: With async sessions, 202 responses are instant,
-	// but a generous timeout guards against network latency edge cases.
 	Timeout time.Duration `yaml:"timeout"`
 
 	// SessionPollInterval is the constant interval between session status polls.
 	// BR-AA-HAPI-064.8: Polling is normal async behavior, not error recovery.
-	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
 	// Default: 15s. Range: [1s, 5m].
 	SessionPollInterval time.Duration `yaml:"sessionPollInterval"`
 }
@@ -63,20 +66,19 @@ type HolmesGPTConfig struct {
 // Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
 type RegoConfig struct {
 	// PolicyPath is the file path to the Rego approval policy.
-	// DD-AIANALYSIS-001: Rego policy loading
 	PolicyPath string `yaml:"policyPath"`
 }
 
-// DefaultAAConfig returns safe defaults for the AIAnalysis controller.
+// DefaultConfig returns safe defaults for the AIAnalysis controller.
 // DD-AUDIT-004: AA-specific buffer defaults (LOW tier: 20K buffer, 1K batch)
 // override the shared DefaultDataStorageConfig() values.
-func DefaultAAConfig() *AAConfig {
-	ds := DefaultDataStorageConfig()
-	ds.Buffer.BufferSize = 20000 // DD-AUDIT-004: LOW tier (500 events/day)
-	ds.Buffer.BatchSize = 1000   // DD-AUDIT-004: Optimal for PostgreSQL INSERT
+func DefaultConfig() *Config {
+	ds := sharedconfig.DefaultDataStorageConfig()
+	ds.Buffer.BufferSize = 20000
+	ds.Buffer.BatchSize = 1000
 
-	return &AAConfig{
-		Controller: ControllerConfig{
+	return &Config{
+		Controller: sharedconfig.ControllerConfig{
 			MetricsAddr:      ":9090",
 			HealthProbeAddr:  ":8081",
 			LeaderElection:   false,
@@ -94,11 +96,11 @@ func DefaultAAConfig() *AAConfig {
 	}
 }
 
-// LoadAAConfigFromFile loads AIAnalysis configuration from YAML file with defaults.
+// LoadFromFile loads AIAnalysis configuration from YAML file with defaults.
 // ADR-030: Service Configuration Management pattern.
 // Graceful degradation: Falls back to defaults if file not found or invalid.
-func LoadAAConfigFromFile(path string) (*AAConfig, error) {
-	cfg := DefaultAAConfig()
+func LoadFromFile(path string) (*Config, error) {
+	cfg := DefaultConfig()
 
 	if path == "" {
 		return cfg, nil
@@ -121,7 +123,7 @@ func LoadAAConfigFromFile(path string) (*AAConfig, error) {
 }
 
 // Validate checks AIAnalysis configuration for common issues.
-func (c *AAConfig) Validate() error {
+func (c *Config) Validate() error {
 	// Validate controller config
 	if c.Controller.MetricsAddr == "" {
 		return fmt.Errorf("controller.metricsAddr is required")
@@ -145,7 +147,7 @@ func (c *AAConfig) Validate() error {
 	}
 
 	// Validate DataStorage config (ADR-030)
-	if err := ValidateDataStorageConfig(&c.DataStorage); err != nil {
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err
 	}
 

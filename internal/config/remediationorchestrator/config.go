@@ -1,4 +1,20 @@
-package config
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package remediationorchestrator
 
 import (
 	"fmt"
@@ -6,19 +22,25 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
-// Config represents the complete RemediationOrchestrator configuration
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/remediationorchestrator/config.yaml"
+
+// Config represents the complete RemediationOrchestrator configuration.
 // ADR-030: Service Configuration Management
 type Config struct {
 	// Controller runtime configuration (DD-005)
-	Controller ControllerConfig `yaml:"controller"`
+	Controller sharedconfig.ControllerConfig `yaml:"controller"`
 
 	// Timeouts for remediation workflow phases (BR-ORCH-027, BR-ORCH-028)
 	Timeouts TimeoutsConfig `yaml:"timeouts"`
 
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
-	DataStorage DataStorageConfig `yaml:"datastorage"`
+	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
 	// EffectivenessAssessment configuration (ADR-EM-001)
 	// Controls how the RO creates EffectivenessAssessment CRDs on remediation completion.
@@ -59,20 +81,11 @@ type EACreationConfig struct {
 	StabilizationWindow time.Duration `yaml:"stabilizationWindow"`
 }
 
-// ControllerConfig defines controller runtime settings
-// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
-type ControllerConfig struct {
-	MetricsAddr      string `yaml:"metricsAddr"`
-	HealthProbeAddr  string `yaml:"healthProbeAddr"`
-	LeaderElection   bool   `yaml:"leaderElection"`
-	LeaderElectionID string `yaml:"leaderElectionId"`
-}
-
-// DefaultConfig returns safe defaults matching pkg/audit defaults.
+// DefaultConfig returns safe defaults for the RemediationOrchestrator.
 func DefaultConfig() *Config {
 	return &Config{
-		DataStorage: DefaultDataStorageConfig(),
-		Controller: ControllerConfig{
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Controller: sharedconfig.ControllerConfig{
 			MetricsAddr:      ":9090",
 			HealthProbeAddr:  ":8081",
 			LeaderElection:   false,
@@ -85,36 +98,30 @@ func DefaultConfig() *Config {
 			Executing:  30 * time.Minute,
 		},
 		EA: EACreationConfig{
-			StabilizationWindow: 5 * time.Minute, // ADR-EM-001: default 5m (Section 8)
+			StabilizationWindow: 5 * time.Minute,
 		},
 	}
 }
 
-// LoadFromFile loads configuration from YAML file with defaults
-// ADR-030: Service Configuration Management pattern
-// Graceful degradation: Falls back to defaults if file not found or invalid
+// LoadFromFile loads configuration from YAML file with defaults.
+// ADR-030: Service Configuration Management pattern.
+// Graceful degradation: Falls back to defaults if file not found or invalid.
 func LoadFromFile(path string) (*Config, error) {
-	// Start with defaults
 	cfg := DefaultConfig()
 
-	// If path is empty, return defaults
 	if path == "" {
 		return cfg, nil
 	}
 
-	// Read YAML file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// Graceful degradation: Return defaults with error
 		return cfg, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse YAML into config struct
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return cfg, fmt.Errorf("failed to parse config YAML: %w", err)
 	}
 
-	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -125,7 +132,7 @@ func LoadFromFile(path string) (*Config, error) {
 // Validate checks configuration for common issues.
 func (c *Config) Validate() error {
 	// Validate DataStorage config (ADR-030)
-	if err := ValidateDataStorageConfig(&c.DataStorage); err != nil {
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err
 	}
 
@@ -165,7 +172,3 @@ func (c *Config) Validate() error {
 
 	return nil
 }
-
-
-
-
