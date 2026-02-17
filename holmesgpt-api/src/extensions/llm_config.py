@@ -416,6 +416,109 @@ def register_workflow_discovery_toolset(
     return config
 
 
+def register_resource_context_toolset(
+    config: Config,
+    app_config: Optional[Dict[str, Any]] = None,
+) -> Config:
+    """
+    Register the resource context toolset with HolmesGPT SDK Config.
+
+    ADR-055: LLM-Driven Context Enrichment (Post-RCA)
+
+    After RCA, the LLM calls get_resource_context to fetch owner chain,
+    spec hash, and remediation history for the identified target resource.
+    Registered in both incident and recovery tool registries.
+
+    Args:
+        config: HolmesGPT SDK Config instance (already initialized)
+        app_config: Optional application configuration
+
+    Returns:
+        The same Config instance with resource context toolset registered
+    """
+    from src.toolsets.resource_context import ResourceContextToolset
+    from src.clients.k8s_client import get_k8s_client
+
+    k8s = get_k8s_client()
+
+    # History fetcher wraps the remediation history client
+    history_fetcher = None
+    try:
+        from src.clients.remediation_history_client import (
+            create_remediation_history_api,
+            fetch_remediation_history_for_request,
+        )
+        rh_api = create_remediation_history_api(app_config)
+
+        def _fetch_history(resource_kind, resource_name, resource_namespace, current_spec_hash):
+            request_data = {
+                "resource_kind": resource_kind,
+                "resource_name": resource_name,
+                "resource_namespace": resource_namespace,
+            }
+            return fetch_remediation_history_for_request(
+                api=rh_api,
+                request_data=request_data,
+                current_spec_hash=current_spec_hash,
+            )
+        history_fetcher = _fetch_history
+    except (ImportError, Exception) as e:
+        logger.warning({"event": "resource_context_history_unavailable", "error": str(e)})
+
+    context_toolset = ResourceContextToolset(
+        k8s_client=k8s,
+        history_fetcher=history_fetcher,
+    )
+
+    # Initialize toolset manager if needed
+    if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
+        from holmes.core.tool_calling_llm import ToolsetManager
+        config.toolset_manager = ToolsetManager(toolsets=config.toolsets)
+
+    # Monkey-patch to inject resource context toolset (same pattern as workflow discovery)
+    original_list = config.toolset_manager.list_server_toolsets
+    context_injected = [False]
+
+    def patched_list(dal=None, refresh_status=True):
+        toolsets = original_list(dal=dal, refresh_status=refresh_status)
+        if not context_injected[0]:
+            has_context = any(
+                hasattr(t, 'name') and t.name == "resource_context"
+                for t in toolsets
+            )
+            if not has_context:
+                toolsets.append(context_toolset)
+                context_injected[0] = True
+                logger.info("ADR-055: Injected resource_context toolset into SDK")
+        return toolsets
+
+    config.toolset_manager.list_server_toolsets = patched_list
+
+    import types
+    original_executor = config.create_tool_executor
+    context_injected_executor = [False]
+
+    def patched_executor(self, dal=None):
+        tool_executor = original_executor(dal=dal)
+        if not context_injected_executor[0]:
+            has_context = any(
+                hasattr(ts, 'name') and ts.name == "resource_context"
+                for ts in tool_executor.toolsets
+            )
+            if not has_context:
+                tool_executor.toolsets.append(context_toolset)
+                context_injected_executor[0] = True
+                logger.info("ADR-055: Injected resource_context into tool_executor")
+        _wrap_tool_results_with_sanitization(tool_executor)
+        return tool_executor
+
+    object.__setattr__(config, 'create_tool_executor', types.MethodType(patched_executor, config))
+
+    logger.info("ADR-055: Registered resource_context toolset for post-RCA context enrichment")
+
+    return config
+
+
 def prepare_toolsets_config_for_sdk(
     app_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Dict[str, Any]]:

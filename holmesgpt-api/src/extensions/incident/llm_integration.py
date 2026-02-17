@@ -263,7 +263,8 @@ async def analyze_incident(
         from src.extensions.llm_config import (
             get_model_config_for_sdk,
             prepare_toolsets_config_for_sdk,
-            register_workflow_discovery_toolset
+            register_workflow_discovery_toolset,
+            register_resource_context_toolset,
         )
 
         try:
@@ -370,6 +371,9 @@ async def analyze_incident(
             environment=request_data.get("environment", ""),
             priority=request_data.get("priority", ""),
         )
+
+        # ADR-055: Register resource context toolset for post-RCA enrichment
+        config = register_resource_context_toolset(config, app_config)
 
         # DD-HAPI-002 v1.2: Create Data Storage client for workflow validation
         data_storage_client = create_data_storage_client(app_config)
