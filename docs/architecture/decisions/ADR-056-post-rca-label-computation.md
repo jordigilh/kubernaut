@@ -2,8 +2,8 @@
 
 **Status**: PROPOSED
 **Decision Date**: 2026-02-12
-**Version**: 1.1
-**Confidence**: 90%
+**Version**: 1.2
+**Confidence**: 96%
 **Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
 
 ---
@@ -222,7 +222,7 @@ SignalProcessing                  AIAnalysis              HAPI
 
 1. **Additional K8s API calls at RCA time**: Label detection requires API calls (PDB lookup, HPA lookup, NetworkPolicy list, annotation inspection) during HAPI tool execution. Estimated ~5-8 additional API calls per investigation. Mitigated by K8s client caching.
 
-2. **Label detection logic duplication**: SP has Go label detection in `pkg/signalprocessing/detection/labels.go`. HAPI will need Python equivalents. The implementations must stay aligned. Consider extracting shared documentation of detection criteria.
+2. **Label detection logic duplication**: SP has Go label detection in `pkg/signalprocessing/detection/labels.go`. HAPI will need Python equivalents. **Mitigated by DD-HAPI-018**: a cross-language detection specification extracted from the SP reference implementation, including conformance test vectors that both implementations must pass.
 
 3. **Increased HAPI RBAC surface**: HAPI's ServiceAccount needs additional RBAC permissions for PDB, HPA, and NetworkPolicy resources.
 
@@ -265,8 +265,26 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 ## Related Decisions
 
 - **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: LLM-Driven Context Enrichment (Post-RCA) -- prerequisite; established `get_resource_context` tool and post-RCA pattern
+- **[DD-HAPI-018](DD-HAPI-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- cross-language contract for the 7 detection characteristics, including conformance test vectors. Ensures SP (Go) and HAPI (Python) implementations produce identical results.
+- **[DD-HAPI-017 v1.2](DD-HAPI-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- v1.2 adds tool-level flow enforcement requiring `get_resource_context` before workflow discovery, and removes `detected_labels` from LLM-facing tool parameters.
 - **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation framework
 - **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields
 - **BR-SP-101**: DetectedLabels auto-detection -- scope narrows to SP-internal
 - **BR-HAPI-194**: Honor failedDetections -- relocates to HAPI-computed labels
 - **BR-HAPI-250/252**: DetectedLabels in workflow search -- source changes from SP to HAPI
+- **Issue #102**: Implementation tracking issue
+
+---
+
+## Confidence Assessment
+
+**Confidence: 96%** (up from 90% in v1.1)
+
+| Risk | v1.1 | v1.2 | Mitigation |
+|------|------|------|------------|
+| Label detection parity between SP (Go) and HAPI (Python) | 5% | ~2% | DD-HAPI-018 provides a formal cross-language specification with 16 conformance test vectors |
+| Session state management for internal label injection | 5% | ~2% | DD-HAPI-017 v1.2 defines tool-level flow enforcement with self-correction (not graceful degradation). Shared dict mechanism confirmed viable with Holmes SDK architecture. |
+
+**Residual gap (4%)**:
+- Python K8s client behavioral differences (~2%): Label selector matching, error types, and timeout behavior differ between Go's controller-runtime and Python's `kubernetes` client. Mitigated by conformance test vectors.
+- RBAC configuration for HAPI (~2%): HAPI's ServiceAccount needs PDB, HPA, and NetworkPolicy RBAC. If not granted, all API-based detections fail via FailedDetections. Mitigated by Helm chart RBAC templates.
