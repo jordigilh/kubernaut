@@ -135,7 +135,7 @@ type TargetResource struct {
 // Only StabilizationWindow is set by the RO — it controls how long the EM
 // waits after remediation before starting assessment checks.
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
-// ValidityWindow) are EM-internal configuration read from EMConfig.
+// ValidityWindow) are EM-internal configuration read from effectivenessmonitor.Config.
 // The EM emits individual component audit events to DataStorage; the overall
 // effectiveness score is computed by DataStorage on demand, not by the EM.
 type EAConfig struct {

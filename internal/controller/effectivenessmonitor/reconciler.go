@@ -100,7 +100,7 @@ type ReconcilerConfig struct {
 	// ValidityWindow is the maximum duration for assessment completion.
 	// The EM computes ValidityDeadline = EA.creationTimestamp + ValidityWindow
 	// on first reconciliation and stores it in EA.Status.ValidityDeadline.
-	// Default: 30m (from EMConfig.Assessment.ValidityWindow).
+	// Default: 30m (from effectivenessmonitor.Config.Assessment.ValidityWindow).
 	ValidityWindow time.Duration
 
 	// PrometheusLookback is the duration before EA creation to query Prometheus.
