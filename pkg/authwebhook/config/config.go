@@ -32,6 +32,10 @@ import (
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/authwebhook/config.yaml"
+
 // Config holds the complete configuration for the AuthWebhook admission controller.
 // ADR-030: YAML-based configuration with camelCase field names.
 type Config struct {
@@ -69,17 +73,23 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadFromFile loads configuration from a YAML file.
-// ADR-030: Primary configuration source is YAML ConfigMap.
+// LoadFromFile loads configuration from a YAML file with defaults.
+// ADR-030: Service Configuration Management pattern.
+// Graceful degradation: Falls back to defaults if file not found or invalid.
 func LoadFromFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
 	}
 
-	cfg := DefaultConfig()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, nil
+	}
+
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return cfg, nil
 	}
 
 	return cfg, nil

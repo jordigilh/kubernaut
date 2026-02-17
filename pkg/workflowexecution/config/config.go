@@ -28,7 +28,6 @@ limitations under the License.
 package config
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -37,6 +36,10 @@ import (
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
+
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/workflowexecution/config.yaml"
 
 // Config holds the complete configuration for the WorkflowExecution controller.
 // Issue #99: BackoffConfig removed (DD-RO-002 Phase 3 -- RO handles all routing/backoff)
@@ -104,49 +107,26 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadFromFile loads configuration from a YAML file.
-//
-// If the file doesn't exist or can't be parsed, returns error.
-// Recommended usage: Load file if exists, otherwise use DefaultConfig().
-//
-// See: ADR-030 Section 4 (Configuration Loading)
+// LoadFromFile loads configuration from a YAML file with defaults.
+// ADR-030: Service Configuration Management pattern.
+// Graceful degradation: Falls back to defaults if file not found or invalid.
 func LoadFromFile(path string) (*Config, error) {
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return cfg, nil
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return cfg, nil
 	}
 
-	// Apply defaults for any missing values
-	if cfg.Execution.Namespace == "" {
-		cfg.Execution.Namespace = "kubernaut-workflows"
-	}
-	if cfg.Execution.ServiceAccount == "" {
-		cfg.Execution.ServiceAccount = "kubernaut-workflow-runner"
-	}
-	if cfg.Execution.CooldownPeriod == 0 {
-		cfg.Execution.CooldownPeriod = 5 * time.Minute
-	}
-	// Issue #99: BackoffConfig defaults removed (DD-RO-002 Phase 3)
-	if cfg.DataStorage.URL == "" {
-		ds := sharedconfig.DefaultDataStorageConfig()
-		cfg.DataStorage = ds
-	}
-	if cfg.Controller.MetricsAddr == "" {
-		cfg.Controller.MetricsAddr = ":9090"
-	}
-	if cfg.Controller.HealthProbeAddr == "" {
-		cfg.Controller.HealthProbeAddr = ":8081"
-	}
-	if cfg.Controller.LeaderElectionID == "" {
-		cfg.Controller.LeaderElectionID = "workflowexecution.kubernaut.ai"
-	}
-
-	return &cfg, nil
+	return cfg, nil
 }
 
 // Validate checks if the configuration is valid.

@@ -41,7 +41,8 @@ var (
 
 func main() {
 	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
-	configPath := flag.String("config", "", "Path to YAML configuration file (optional, falls back to defaults)")
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 	flag.Parse()
 
 	// DD-005: Initialize logger using shared logging library (logr.Logger interface)
@@ -57,19 +58,19 @@ func main() {
 		"version", version,
 		"git_commit", gitCommit,
 		"build_date", buildDate,
-		"config_path", *configPath)
+		"config_path", configPath)
 
 	// ADR-030: Load configuration from YAML file
 	var serverCfg *config.ServerConfig
-	if *configPath != "" {
+	if configPath != "" {
 		var err error
-		serverCfg, err = config.LoadFromFile(*configPath)
+		serverCfg, err = config.LoadFromFile(configPath)
 		if err != nil {
 			logger.Error(err, "Failed to load configuration",
-				"config_path", *configPath)
+				"config_path", configPath)
 			os.Exit(1)
 		}
-		logger.Info("Configuration loaded successfully", "config_path", *configPath)
+		logger.Info("Configuration loaded successfully", "config_path", configPath)
 	} else {
 		logger.Info("No config file specified, using defaults")
 		serverCfg = config.DefaultServerConfig()

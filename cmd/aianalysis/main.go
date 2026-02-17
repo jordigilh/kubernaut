@@ -38,7 +38,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/config"
+	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -70,7 +70,7 @@ func main() {
 	// Single -config flag; all functional config in YAML ConfigMap
 	// ========================================
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -88,15 +88,21 @@ func main() {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
 	// ========================================
-	cfg, err := config.LoadAAConfigFromFile(configPath)
+	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration from file, using defaults",
 			"configPath", configPath)
-		cfg = config.DefaultAAConfig()
+		cfg = config.DefaultConfig()
 	} else if configPath != "" {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
+	}
+
+	// Validate configuration (ADR-030)
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{

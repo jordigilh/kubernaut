@@ -35,6 +35,10 @@ import (
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/signalprocessing/config.yaml"
+
 // Config holds the complete configuration for the SignalProcessing controller.
 // ADR-030: YAML-based configuration with camelCase field names.
 type Config struct {

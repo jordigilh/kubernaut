@@ -36,7 +36,7 @@ func init() {
 func main() {
 	// ADR-030: YAML-based configuration via -config flag
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (ADR-030)")
+	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))

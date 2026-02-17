@@ -34,7 +34,7 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/config"
+	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
@@ -61,7 +61,7 @@ func main() {
 	// Single --config flag; all functional config in YAML ConfigMap
 	// ========================================
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{
 		Development: true,
@@ -74,15 +74,21 @@ func main() {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
 	// ========================================
-	cfg, err := config.LoadEMConfigFromFile(configPath)
+	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration from file, using defaults",
 			"configPath", configPath)
-		cfg = config.DefaultEMConfig()
+		cfg = config.DefaultConfig()
 	} else if configPath != "" {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
+	}
+
+	// Validate configuration (ADR-030)
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
 	}
 
 	// ========================================
