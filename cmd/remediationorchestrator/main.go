@@ -36,7 +36,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/config"
+	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
@@ -66,7 +66,7 @@ func main() {
 	// Single --config flag; all functional config in YAML ConfigMap
 	// ========================================
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{
 		Development: true,
@@ -88,6 +88,12 @@ func main() {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
+	}
+
+	// Validate configuration (ADR-030)
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{

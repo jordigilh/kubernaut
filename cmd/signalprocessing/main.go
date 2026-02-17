@@ -82,7 +82,7 @@ func main() {
 	// Single --config flag; all functional config in YAML ConfigMap
 	// ========================================
 	var configFile string
-	flag.StringVar(&configFile, "config", "/etc/signalprocessing/config.yaml", "Path to configuration file")
+	flag.StringVar(&configFile, "config", config.DefaultConfigPath, "Path to configuration file")
 
 	opts := zap.Options{
 		Development: true,

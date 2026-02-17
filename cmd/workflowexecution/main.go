@@ -59,7 +59,7 @@ func main() {
 	// Only --config flag is supported. All other settings are in the YAML config file.
 	// ========================================
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to configuration file (optional, uses defaults if not provided)")
+	flag.StringVar(&configPath, "config", weconfig.DefaultConfigPath, "Path to configuration file (optional, uses defaults if not provided)")
 
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
