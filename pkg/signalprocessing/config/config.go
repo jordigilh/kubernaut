@@ -69,9 +69,10 @@ type ControllerConfig struct {
 }
 
 // DefaultControllerConfig returns the default controller configuration.
+// Per STATELESS_SERVICES_PORT_STANDARD.md: :9090 metrics, :8081 health.
 func DefaultControllerConfig() *ControllerConfig {
 	return &ControllerConfig{
-		MetricsAddr:      ":8080",
+		MetricsAddr:      ":9090",
 		HealthProbeAddr:  ":8081",
 		LeaderElection:   false,
 		LeaderElectionID: "signalprocessing.kubernaut.ai",
@@ -96,18 +97,20 @@ func DefaultConfig() *Config {
 }
 
 // LoadFromFile loads configuration from a YAML file.
+// ADR-030: Unmarshal into DefaultConfig() so missing YAML fields retain defaults.
 func LoadFromFile(path string) (*Config, error) {
+	cfg := DefaultConfig()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 // Validate checks if the configuration is valid.

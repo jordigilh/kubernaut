@@ -1,0 +1,40 @@
+# SignalProcessing Controller Configuration
+# ADR-030: Service Configuration Management
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
+
+# ========================================
+# CONTROLLER RUNTIME (DD-005)
+# ========================================
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: signalprocessing.kubernaut.ai
+
+# ========================================
+# ENRICHMENT SETTINGS (BR-SP-001)
+# ========================================
+enrichment:
+  cacheTtl: "5m"
+  timeout: "10s"
+
+# ========================================
+# CLASSIFIER SETTINGS (BR-SP-070)
+# ========================================
+classifier:
+  regoConfigMapName: signalprocessing-rego-policy
+  regoConfigMapKey: policy.rego
+  hotReloadInterval: "30s"
+
+# ========================================
+# DATASTORAGE CONNECTIVITY (ADR-030)
+# Audit trail + workflow catalog
+# ========================================
+datastorage:
+  url: http://data-storage-service:8080
+  timeout: "10s"
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: "1s"
+    maxRetries: 3
