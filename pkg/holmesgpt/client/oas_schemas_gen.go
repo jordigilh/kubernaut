@@ -1370,14 +1370,14 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 
 // Response model for incident analysis endpoint
 // Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-// Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
 // Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 // Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
+// Design Decision: ADR-055 (LLM-Driven Context Enrichment)
 // Fields added per AIAnalysis team requests:
-// - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
 // - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
 // - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
-// - needs_human_review: AI could not produce reliable result (Dec 6, 2025).
+// - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
+// ADR-055: target_in_owner_chain removed - replaced by affected_resource in Rego input.
 // Ref: #/components/schemas/IncidentResponse
 type IncidentResponse struct {
 	// Incident identifier from request.
@@ -1401,9 +1401,6 @@ type IncidentResponse struct {
 	// parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed,
 	// no_matching_workflows, low_confidence, llm_parsing_error.
 	HumanReviewReason OptNilHumanReviewReason `json:"human_review_reason"`
-	// Whether RCA-identified target resource was found in OwnerChain. If false, DetectedLabels may be
-	// from different scope than affected resource.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence).
 	Warnings []string `json:"warnings"`
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
@@ -1453,11 +1450,6 @@ func (s *IncidentResponse) GetNeedsHumanReview() OptBool {
 // GetHumanReviewReason returns the value of HumanReviewReason.
 func (s *IncidentResponse) GetHumanReviewReason() OptNilHumanReviewReason {
 	return s.HumanReviewReason
-}
-
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *IncidentResponse) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
 }
 
 // GetWarnings returns the value of Warnings.
@@ -1513,11 +1505,6 @@ func (s *IncidentResponse) SetNeedsHumanReview(val OptBool) {
 // SetHumanReviewReason sets the value of HumanReviewReason.
 func (s *IncidentResponse) SetHumanReviewReason(val OptNilHumanReviewReason) {
 	s.HumanReviewReason = val
-}
-
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *IncidentResponse) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
 }
 
 // SetWarnings sets the value of Warnings.

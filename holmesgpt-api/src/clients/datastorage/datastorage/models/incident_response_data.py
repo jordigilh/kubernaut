@@ -42,10 +42,9 @@ class IncidentResponseData(BaseModel):
     timestamp: datetime = Field(description="ISO timestamp of analysis completion")
     needs_human_review: Optional[StrictBool] = Field(default=False, description="True when AI could not produce reliable result")
     human_review_reason: Optional[StrictStr] = Field(default=None, description="Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)")
-    target_in_owner_chain: Optional[StrictBool] = Field(default=True, description="Whether RCA target was found in OwnerChain")
     warnings: Optional[List[StrictStr]] = Field(default=None, description="Non-fatal warnings (e.g., OwnerChain validation issues)")
     alternative_workflows: Optional[List[IncidentResponseDataAlternativeWorkflowsInner]] = Field(default=None, description="Other workflows considered but not selected")
-    __properties: ClassVar[List[str]] = ["incident_id", "analysis", "root_cause_analysis", "selected_workflow", "confidence", "timestamp", "needs_human_review", "human_review_reason", "target_in_owner_chain", "warnings", "alternative_workflows"]
+    __properties: ClassVar[List[str]] = ["incident_id", "analysis", "root_cause_analysis", "selected_workflow", "confidence", "timestamp", "needs_human_review", "human_review_reason", "warnings", "alternative_workflows"]
 
     @field_validator('human_review_reason')
     def human_review_reason_validate_enum(cls, value):
@@ -127,7 +126,6 @@ class IncidentResponseData(BaseModel):
             "timestamp": obj.get("timestamp"),
             "needs_human_review": obj.get("needs_human_review") if obj.get("needs_human_review") is not None else False,
             "human_review_reason": obj.get("human_review_reason"),
-            "target_in_owner_chain": obj.get("target_in_owner_chain") if obj.get("target_in_owner_chain") is not None else True,
             "warnings": obj.get("warnings"),
             "alternative_workflows": [IncidentResponseDataAlternativeWorkflowsInner.from_dict(_item) for _item in obj.get("alternative_workflows")] if obj.get("alternative_workflows") is not None else None
         })

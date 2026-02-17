@@ -16,7 +16,6 @@ Name | Type | Description | Notes
 **warnings_count** | **int** | Number of warnings encountered | 
 **confidence** | **float** | Workflow selection confidence (0.0-1.0) | [optional] 
 **workflow_id** | **str** | Selected workflow identifier | [optional] 
-**target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **reason** | **str** | Primary failure reason | [optional] 
 **sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 

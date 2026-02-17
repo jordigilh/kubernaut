@@ -2850,12 +2850,6 @@ func (s *IncidentResponse) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.TargetInOwnerChain.Set {
-			e.FieldStart("target_in_owner_chain")
-			s.TargetInOwnerChain.Encode(e)
-		}
-	}
-	{
 		if s.Warnings != nil {
 			e.FieldStart("warnings")
 			e.ArrStart()
@@ -2887,7 +2881,7 @@ func (s *IncidentResponse) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponse = [12]string{
+var jsonFieldsNameOfIncidentResponse = [11]string{
 	0:  "incident_id",
 	1:  "analysis",
 	2:  "root_cause_analysis",
@@ -2896,10 +2890,9 @@ var jsonFieldsNameOfIncidentResponse = [12]string{
 	5:  "timestamp",
 	6:  "needs_human_review",
 	7:  "human_review_reason",
-	8:  "target_in_owner_chain",
-	9:  "warnings",
-	10: "alternative_workflows",
-	11: "validation_attempts_history",
+	8:  "warnings",
+	9:  "alternative_workflows",
+	10: "validation_attempts_history",
 }
 
 // Decode decodes IncidentResponse from json.
@@ -2999,16 +2992,6 @@ func (s *IncidentResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"human_review_reason\"")
-			}
-		case "target_in_owner_chain":
-			if err := func() error {
-				s.TargetInOwnerChain.Reset()
-				if err := s.TargetInOwnerChain.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"target_in_owner_chain\"")
 			}
 		case "warnings":
 			if err := func() error {

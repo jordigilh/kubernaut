@@ -118,7 +118,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 approval_reason = 'Production environment requires manual approval',
                 warnings_count = 56,
                 confidence = 0.95,
-                target_in_owner_chain = True,
                 provider_response_summary = datastorage.models.provider_response_summary.ProviderResponseSummary(
                     incident_id = 'incident-payment-api-2025-12-17-abc123', 
                     analysis_preview = 'Root cause: Database connection pool exhausted...', 
@@ -255,7 +254,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
                     needs_human_review = True, 
                     human_review_reason = 'workflow_not_found', 
-                    target_in_owner_chain = True, 
                     warnings = [
                         ''
                         ], 
@@ -469,7 +467,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
                     needs_human_review = True, 
                     human_review_reason = 'workflow_not_found', 
-                    target_in_owner_chain = True, 
                     warnings = [
                         ''
                         ], 
