@@ -48,7 +48,8 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                             when_not_to_use = '', 
                             preconditions = '', ), 
                         version = '', 
-                        container_image = '', 
+                        schema_image = '', 
+                        execution_bundle = '', 
                         execution_engine = 'tekton', )
                     ],
                 pagination = datastorage.models.pagination_metadata.PaginationMetadata(
@@ -71,7 +72,8 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                             when_not_to_use = '', 
                             preconditions = '', ), 
                         version = '', 
-                        container_image = '', 
+                        schema_image = '', 
+                        execution_bundle = '', 
                         execution_engine = 'tekton', )
                     ],
                 pagination = datastorage.models.pagination_metadata.PaginationMetadata(

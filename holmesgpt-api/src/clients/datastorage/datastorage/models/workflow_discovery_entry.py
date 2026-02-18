@@ -36,9 +36,10 @@ class WorkflowDiscoveryEntry(BaseModel):
     name: StrictStr = Field(description="Display name")
     description: StructuredDescription
     version: StrictStr = Field(description="Semantic version")
-    container_image: StrictStr = Field(description="OCI image reference", alias="containerImage")
+    schema_image: StrictStr = Field(description="OCI image used to extract the workflow schema", alias="schemaImage")
+    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
     execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "containerImage", "executionEngine"]
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "schemaImage", "executionBundle", "executionEngine"]
 
     @field_validator('execution_engine')
     def execution_engine_validate_enum(cls, value):
@@ -107,7 +108,8 @@ class WorkflowDiscoveryEntry(BaseModel):
             "name": obj.get("name"),
             "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "version": obj.get("version"),
-            "containerImage": obj.get("containerImage"),
+            "schemaImage": obj.get("schemaImage"),
+            "executionBundle": obj.get("executionBundle"),
             "executionEngine": obj.get("executionEngine")
         })
         return _obj

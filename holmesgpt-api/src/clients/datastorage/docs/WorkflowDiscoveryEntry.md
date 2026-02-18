@@ -11,7 +11,8 @@ Name | Type | Description | Notes
 **name** | **str** | Display name | 
 **description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **version** | **str** | Semantic version | 
-**container_image** | **str** | OCI image reference | 
+**schema_image** | **str** | OCI image used to extract the workflow schema | 
+**execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 
 
 ## Example

@@ -1,6 +1,6 @@
 # MandatoryLabels
 
-4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)
+4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional)
 
 ## Properties
 

@@ -33,9 +33,9 @@ class WorkflowSearchResponse(BaseModel):
     WorkflowSearchResponse
     """ # noqa: E501
     workflows: Optional[List[WorkflowSearchResult]] = None
-    total_results: Optional[StrictInt] = Field(default=None, description="Total number of matching workflows")
+    total_results: Optional[StrictInt] = Field(default=None, description="Total number of matching workflows", alias="totalResults")
     filters: Optional[WorkflowSearchFilters] = None
-    __properties: ClassVar[List[str]] = ["workflows", "total_results", "filters"]
+    __properties: ClassVar[List[str]] = ["workflows", "totalResults", "filters"]
 
     model_config = {
         "populate_by_name": True,
@@ -97,7 +97,7 @@ class WorkflowSearchResponse(BaseModel):
 
         _obj = cls.model_validate({
             "workflows": [WorkflowSearchResult.from_dict(_item) for _item in obj.get("workflows")] if obj.get("workflows") is not None else None,
-            "total_results": obj.get("total_results"),
+            "totalResults": obj.get("totalResults"),
             "filters": WorkflowSearchFilters.from_dict(obj.get("filters")) if obj.get("filters") is not None else None
         })
         return _obj

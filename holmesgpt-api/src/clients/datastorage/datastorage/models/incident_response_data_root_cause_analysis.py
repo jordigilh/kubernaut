@@ -28,12 +28,12 @@ except ImportError:
 
 class IncidentResponseDataRootCauseAnalysis(BaseModel):
     """
-    Structured RCA with summary, severity, contributing_factors
+    Structured RCA with summary, severity, contributingFactors
     """ # noqa: E501
     summary: StrictStr = Field(description="Brief RCA summary")
     severity: StrictStr = Field(description="Incident severity (BR-SEVERITY-001)")
-    contributing_factors: List[StrictStr] = Field(description="List of contributing factors")
-    __properties: ClassVar[List[str]] = ["summary", "severity", "contributing_factors"]
+    contributing_factors: List[StrictStr] = Field(description="List of contributing factors", alias="contributingFactors")
+    __properties: ClassVar[List[str]] = ["summary", "severity", "contributingFactors"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
@@ -93,7 +93,7 @@ class IncidentResponseDataRootCauseAnalysis(BaseModel):
         _obj = cls.model_validate({
             "summary": obj.get("summary"),
             "severity": obj.get("severity"),
-            "contributing_factors": obj.get("contributing_factors")
+            "contributingFactors": obj.get("contributingFactors")
         })
         return _obj
 

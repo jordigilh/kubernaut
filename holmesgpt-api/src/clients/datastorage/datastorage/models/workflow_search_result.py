@@ -32,21 +32,23 @@ class WorkflowSearchResult(BaseModel):
     """
     Flat response structure (DD-WORKFLOW-002 v3.0)
     """ # noqa: E501
-    workflow_id: StrictStr = Field(description="UUID primary key (DD-WORKFLOW-002 v3.0)")
+    workflow_id: StrictStr = Field(description="UUID primary key (DD-WORKFLOW-002 v3.0)", alias="workflowId")
     title: StrictStr = Field(description="Human-readable workflow name")
     description: StrictStr = Field(description="Workflow description")
-    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles")
-    container_image: Optional[StrictStr] = Field(default=None, description="OCI image reference")
-    container_digest: Optional[StrictStr] = Field(default=None, description="OCI image digest")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles", alias="signalType")
+    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
+    schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
+    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
+    execution_bundle_digest: Optional[StrictStr] = Field(default=None, description="OCI execution bundle digest", alias="executionBundleDigest")
     confidence: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Normalized label score (0.0-1.0)")
-    label_boost: Optional[Union[Annotated[float, Field(le=0.39, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Boost from matching DetectedLabels")
-    label_penalty: Optional[Union[Annotated[float, Field(le=0.2, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Penalty from conflicting DetectedLabels")
-    final_score: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Final normalized score (same as confidence)")
+    label_boost: Optional[Union[Annotated[float, Field(le=0.39, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Boost from matching DetectedLabels", alias="labelBoost")
+    label_penalty: Optional[Union[Annotated[float, Field(le=0.2, strict=True, ge=0.0)], Annotated[int, Field(le=0, strict=True, ge=0)]]] = Field(default=None, description="Penalty from conflicting DetectedLabels", alias="labelPenalty")
+    final_score: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Final normalized score (same as confidence)", alias="finalScore")
     rank: Annotated[int, Field(strict=True, ge=1)] = Field(description="Position in result set (1-based)")
-    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format")
-    detected_labels: Optional[DetectedLabels] = None
+    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
+    detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameter schema (JSONB) - describes expected parameters")
-    __properties: ClassVar[List[str]] = ["workflow_id", "title", "description", "signal_type", "container_image", "container_digest", "confidence", "label_boost", "label_penalty", "final_score", "rank", "custom_labels", "detected_labels", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "signalType", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -87,7 +89,7 @@ class WorkflowSearchResult(BaseModel):
         )
         # override the default output from pydantic by calling `to_dict()` of detected_labels
         if self.detected_labels:
-            _dict['detected_labels'] = self.detected_labels.to_dict()
+            _dict['detectedLabels'] = self.detected_labels.to_dict()
         return _dict
 
     @classmethod
@@ -100,19 +102,21 @@ class WorkflowSearchResult(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflow_id": obj.get("workflow_id"),
+            "workflowId": obj.get("workflowId"),
             "title": obj.get("title"),
             "description": obj.get("description"),
-            "signal_type": obj.get("signal_type"),
-            "container_image": obj.get("container_image"),
-            "container_digest": obj.get("container_digest"),
+            "signalType": obj.get("signalType"),
+            "schemaImage": obj.get("schemaImage"),
+            "schemaDigest": obj.get("schemaDigest"),
+            "executionBundle": obj.get("executionBundle"),
+            "executionBundleDigest": obj.get("executionBundleDigest"),
             "confidence": obj.get("confidence"),
-            "label_boost": obj.get("label_boost"),
-            "label_penalty": obj.get("label_penalty"),
-            "final_score": obj.get("final_score"),
+            "labelBoost": obj.get("labelBoost"),
+            "labelPenalty": obj.get("labelPenalty"),
+            "finalScore": obj.get("finalScore"),
             "rank": obj.get("rank"),
-            "custom_labels": obj.get("custom_labels"),
-            "detected_labels": DetectedLabels.from_dict(obj.get("detected_labels")) if obj.get("detected_labels") is not None else None,
+            "customLabels": obj.get("customLabels"),
+            "detectedLabels": DetectedLabels.from_dict(obj.get("detectedLabels")) if obj.get("detectedLabels") is not None else None,
             "parameters": obj.get("parameters")
         })
         return _obj

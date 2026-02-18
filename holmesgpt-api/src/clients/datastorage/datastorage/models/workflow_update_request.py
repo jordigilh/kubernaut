@@ -31,9 +31,9 @@ class WorkflowUpdateRequest(BaseModel):
     Update mutable workflow fields only (DD-WORKFLOW-012)
     """ # noqa: E501
     status: Optional[StrictStr] = Field(default=None, description="Workflow status (mutable)")
-    disabled_by: Optional[StrictStr] = Field(default=None, description="Who disabled the workflow")
-    disabled_reason: Optional[StrictStr] = Field(default=None, description="Why the workflow was disabled")
-    __properties: ClassVar[List[str]] = ["status", "disabled_by", "disabled_reason"]
+    disabled_by: Optional[StrictStr] = Field(default=None, description="Who disabled the workflow", alias="disabledBy")
+    disabled_reason: Optional[StrictStr] = Field(default=None, description="Why the workflow was disabled", alias="disabledReason")
+    __properties: ClassVar[List[str]] = ["status", "disabledBy", "disabledReason"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -95,8 +95,8 @@ class WorkflowUpdateRequest(BaseModel):
 
         _obj = cls.model_validate({
             "status": obj.get("status"),
-            "disabled_by": obj.get("disabled_by"),
-            "disabled_reason": obj.get("disabled_reason")
+            "disabledBy": obj.get("disabledBy"),
+            "disabledReason": obj.get("disabledReason")
         })
         return _obj
 

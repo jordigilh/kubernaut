@@ -2522,7 +2522,7 @@ components:
         - name
         - description
         - version
-        - containerImage
+        - schemaImage
       properties:
         workflowId:
           type: string
@@ -2539,9 +2539,12 @@ components:
         version:
           type: string
           description: "Semantic version"
-        containerImage:
+        schemaImage:
           type: string
-          description: "OCI image reference"
+          description: "OCI image used to extract the workflow schema"
+        executionBundle:
+          type: string
+          description: "OCI execution bundle reference (digest-pinned)"
         executionEngine:
           type: string
           description: "Execution engine (tekton, job)"
@@ -2642,7 +2645,7 @@ components:
         - environment
         - priority
       properties:
-        signal_type:
+        signalType:
           type: string
           description: "Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.)"
           example: "OOMKilled"
@@ -2664,9 +2667,9 @@ components:
           description: "Priority level (mandatory: P0, P1, P2, P3)"
           enum: [P0, P1, P2, P3]
           example: "P0"
-        custom_labels:
+        customLabels:
           $ref: '#/components/schemas/CustomLabels'
-        detected_labels:
+        detectedLabels:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: array
@@ -2677,14 +2680,14 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)"
+      description: "4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional)"
       required:
         - severity
         - component
         - environment
         - priority
       properties:
-        signal_type:
+        signalType:
           type: string
           description: "Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)"
           example: "OOMKilled"
@@ -2729,7 +2732,7 @@ components:
       type: object
       description: "Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types"
       properties:
-        failed_detections:
+        failedDetections:
           type: array
           items:
             type: string
@@ -2772,7 +2775,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkflowSearchResult'
-        total_results:
+        totalResults:
           type: integer
           description: Total number of matching workflows
         filters:
@@ -2782,14 +2785,14 @@ components:
       type: object
       description: "Flat response structure (DD-WORKFLOW-002 v3.0)"
       required:
-        - workflow_id
+        - workflowId
         - title
         - description
         - confidence
-        - final_score
+        - finalScore
         - rank
       properties:
-        workflow_id:
+        workflowId:
           type: string
           format: uuid
           description: "UUID primary key (DD-WORKFLOW-002 v3.0)"
@@ -2799,36 +2802,42 @@ components:
         description:
           type: string
           description: "Workflow description"
-        signal_type:
+        signalType:
           type: string
           description: "Signal type this workflow handles"
-        container_image:
+        schemaImage:
           type: string
-          description: "OCI image reference"
+          description: "OCI image used to extract the workflow schema"
           example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..."
-        container_digest:
+        schemaDigest:
           type: string
-          description: "OCI image digest"
+          description: "OCI schema image digest"
           example: "sha256:abc123..."
+        executionBundle:
+          type: string
+          description: "OCI execution bundle reference (digest-pinned)"
+        executionBundleDigest:
+          type: string
+          description: "OCI execution bundle digest"
         confidence:
           type: number
           format: float
           minimum: 0.0
           maximum: 1.0
           description: "Normalized label score (0.0-1.0)"
-        label_boost:
+        labelBoost:
           type: number
           format: float
           minimum: 0.0
           maximum: 0.39
           description: "Boost from matching DetectedLabels"
-        label_penalty:
+        labelPenalty:
           type: number
           format: float
           minimum: 0.0
           maximum: 0.20
           description: "Penalty from conflicting DetectedLabels"
-        final_score:
+        finalScore:
           type: number
           format: float
           minimum: 0.0
@@ -2838,9 +2847,9 @@ components:
           type: integer
           minimum: 1
           description: "Position in result set (1-based)"
-        custom_labels:
+        customLabels:
           $ref: '#/components/schemas/CustomLabels'
-        detected_labels:
+        detectedLabels:
           $ref: '#/components/schemas/DetectedLabels'
         parameters:
           type: object
@@ -2850,9 +2859,9 @@ components:
     CreateWorkflowFromOCIRequest:
       type: object
       required:
-        - container_image
+        - schemaImage
       properties:
-        container_image:
+        schemaImage:
           type: string
           description: |
             OCI image pullspec. Data Storage pulls this image, extracts
@@ -2863,26 +2872,26 @@ components:
     RemediationWorkflow:
       type: object
       required:
-        - workflow_name
+        - workflowName
         - version
         - name
         - description
         - content
-        - content_hash
+        - contentHash
         - labels
-        - execution_engine
+        - executionEngine
         - status
-        - action_type
+        - actionType
       properties:
-        workflow_id:
+        workflowId:
           type: string
           format: uuid
           description: "Unique workflow identifier (UUID, auto-generated)"
-        workflow_name:
+        workflowName:
           type: string
           maxLength: 255
           description: "Workflow name (identifier for versions)"
-        action_type:
+        actionType:
           type: string
           description: "Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy."
           example: "ScaleReplicas"
@@ -2908,7 +2917,7 @@ components:
         content:
           type: string
           description: "YAML workflow definition"
-        content_hash:
+        contentHash:
           type: string
           minLength: 64
           maxLength: 64
@@ -2917,96 +2926,96 @@ components:
           type: object
           additionalProperties: true
           description: "Workflow parameters (JSONB)"
-        execution_engine:
+        executionEngine:
           type: string
           description: "Execution engine (e.g., argo-workflows)"
-        container_image:
+        containerImage:
           type: string
           description: "OCI image reference"
           example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..."
-        container_digest:
+        containerDigest:
           type: string
           description: "OCI image digest"
           example: "sha256:abc123..."
         labels:
           $ref: '#/components/schemas/MandatoryLabels'
-        custom_labels:
+        customLabels:
           $ref: '#/components/schemas/CustomLabels'
-        detected_labels:
+        detectedLabels:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
           enum: [active, disabled, deprecated, archived]
           description: "Workflow lifecycle status"
-        disabled_at:
+        disabledAt:
           type: string
           format: date-time
           description: "When workflow was disabled"
-        disabled_by:
+        disabledBy:
           type: string
           maxLength: 255
           description: "Who disabled the workflow"
-        disabled_reason:
+        disabledReason:
           type: string
           description: "Why workflow was disabled"
-        is_latest_version:
+        isLatestVersion:
           type: boolean
           description: "Is this the latest version?"
-        previous_version:
+        previousVersion:
           type: string
           maxLength: 50
           description: "Previous version identifier"
-        deprecation_notice:
+        deprecationNotice:
           type: string
           description: "Deprecation notice"
-        version_notes:
+        versionNotes:
           type: string
           description: "Version release notes"
-        change_summary:
+        changeSummary:
           type: string
           description: "Summary of changes in this version"
-        approved_by:
+        approvedBy:
           type: string
           maxLength: 255
           description: "Who approved this version"
-        approved_at:
+        approvedAt:
           type: string
           format: date-time
           description: "When this version was approved"
-        expected_success_rate:
+        expectedSuccessRate:
           type: number
           format: float
           minimum: 0.0
           maximum: 1.0
           description: "Expected success rate (0.0-1.0)"
-        expected_duration_seconds:
+        expectedDurationSeconds:
           type: integer
           minimum: 0
           description: "Expected execution duration"
-        actual_success_rate:
+        actualSuccessRate:
           type: number
           format: float
           minimum: 0.0
           maximum: 1.0
           description: "Actual success rate (0.0-1.0)"
-        total_executions:
+        totalExecutions:
           type: integer
           minimum: 0
           description: "Total number of executions"
-        successful_executions:
+        successfulExecutions:
           type: integer
           minimum: 0
           description: "Number of successful executions"
-        created_at:
+        createdAt:
           type: string
           format: date-time
-        updated_at:
+        updatedAt:
           type: string
           format: date-time
-        created_by:
+        createdBy:
           type: string
           maxLength: 255
-        updated_by:
+        updatedBy:
           type: string
           maxLength: 255
 
@@ -3032,10 +3041,10 @@ components:
           type: string
           enum: [active, disabled, deprecated, archived]
           description: "Workflow status (mutable)"
-        disabled_by:
+        disabledBy:
           type: string
           description: "Who disabled the workflow"
-        disabled_reason:
+        disabledReason:
           type: string
           description: "Why the workflow was disabled"
 
@@ -3049,7 +3058,7 @@ components:
           type: string
           minLength: 1
           description: "Why the lifecycle operation is being performed (mandatory)"
-        updated_by:
+        updatedBy:
           type: string
           description: "Who is performing the operation"
 
@@ -3060,7 +3069,7 @@ components:
         reason:
           type: string
           description: "Why the workflow is being disabled"
-        updated_by:
+        updatedBy:
           type: string
           description: "Who is disabling the workflow"
 
@@ -4751,10 +4760,10 @@ components:
 
     IncidentResponseData:
       type: object
-      required: [incident_id, analysis, root_cause_analysis, confidence, timestamp]
+      required: [incidentId, analysis, rootCauseAnalysis, confidence, timestamp]
       description: Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no additionalProperties)
       properties:
-        incident_id:
+        incidentId:
           type: string
           description: Incident identifier from request
           example: "incident-payment-api-2025-12-17-abc123"
@@ -4762,10 +4771,10 @@ components:
           type: string
           description: Natural language analysis from LLM
           example: "Root cause analysis indicates..."
-        root_cause_analysis:
+        rootCauseAnalysis:
           type: object
-          description: Structured RCA with summary, severity, contributing_factors
-          required: [summary, severity, contributing_factors]
+          description: Structured RCA with summary, severity, contributingFactors
+          required: [summary, severity, contributingFactors]
           properties:
             summary:
               type: string
@@ -4775,25 +4784,25 @@ components:
               enum: [critical, high, medium, low, unknown]
               description: Incident severity (BR-SEVERITY-001)
               example: "high"
-            contributing_factors:
+            contributingFactors:
               type: array
               items:
                 type: string
               description: List of contributing factors
           additionalProperties: false
-        selected_workflow:
+        selectedWorkflow:
           type: object
-          description: Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
+          description: Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional)
           properties:
-            workflow_id:
+            workflowId:
               type: string
-            action_type:
+            actionType:
               type: string
               description: |
                 Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
                 Propagated from HAPI three-step discovery protocol.
               example: "ScaleReplicas"
-            container_image:
+            executionBundle:
               type: string
             confidence:
               type: number
@@ -4815,25 +4824,25 @@ components:
           type: string
           format: date-time
           description: ISO timestamp of analysis completion
-        needs_human_review:
+        needsHumanReview:
           type: boolean
           default: false
           description: True when AI could not produce reliable result
-        human_review_reason:
+        humanReviewReason:
           type: string
           enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete]
-          description: Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)
+          description: Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)
         warnings:
           type: array
           items:
             type: string
           description: Non-fatal warnings (e.g., OwnerChain validation issues)
-        alternative_workflows:
+        alternativeWorkflows:
           type: array
           items:
             type: object
             properties:
-              workflow_id:
+              workflowId:
                 type: string
               rationale:
                 type: string

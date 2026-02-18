@@ -1,6 +1,6 @@
 # IncidentResponseDataRootCauseAnalysis
 
-Structured RCA with summary, severity, contributing_factors
+Structured RCA with summary, severity, contributingFactors
 
 ## Properties
 

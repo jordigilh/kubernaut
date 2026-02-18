@@ -132,6 +132,9 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 failure_message = '',
                 failed_task_name = '',
                 pipelinerun_name = 'restart-payment-api-2025-12-17-abc123-run',
+                parameters = {
+                    'key' : ''
+                    },
                 notification_id = '',
                 type = '',
                 notification_type = 'escalation',
@@ -238,16 +241,16 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 response_data = datastorage.models.incident_response_data.IncidentResponseData(
                     incident_id = 'incident-payment-api-2025-12-17-abc123', 
                     analysis = 'Root cause analysis indicates...', 
-                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_rootCauseAnalysis(
                         summary = '', 
                         severity = 'high', 
                         contributing_factors = [
                             ''
                             ], ), 
-                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selectedWorkflow(
                         workflow_id = '', 
                         action_type = 'ScaleReplicas', 
-                        container_image = '', 
+                        execution_bundle = '', 
                         confidence = 0.0, 
                         parameters = { }, ), 
                     confidence = 0.85, 
@@ -258,7 +261,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                         ''
                         ], 
                     alternative_workflows = [
-                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternativeWorkflows_inner(
                             workflow_id = '', 
                             rationale = '', )
                         ], ),
@@ -451,16 +454,16 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 response_data = datastorage.models.incident_response_data.IncidentResponseData(
                     incident_id = 'incident-payment-api-2025-12-17-abc123', 
                     analysis = 'Root cause analysis indicates...', 
-                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_rootCauseAnalysis(
                         summary = '', 
                         severity = 'high', 
                         contributing_factors = [
                             ''
                             ], ), 
-                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selectedWorkflow(
                         workflow_id = '', 
                         action_type = 'ScaleReplicas', 
-                        container_image = '', 
+                        execution_bundle = '', 
                         confidence = 0.0, 
                         parameters = { }, ), 
                     confidence = 0.85, 
@@ -471,7 +474,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                         ''
                         ], 
                     alternative_workflows = [
-                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternativeWorkflows_inner(
                             workflow_id = '', 
                             rationale = '', )
                         ], ),
