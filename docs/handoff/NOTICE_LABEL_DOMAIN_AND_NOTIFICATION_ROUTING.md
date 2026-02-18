@@ -1,5 +1,7 @@
 # NOTICE: Label Domain Correction & Notification Routing Changes
 
+> **Note (Issue #91):** CRD routing labels (`kubernaut.ai/signal-type`, `kubernaut.ai/severity`, etc.) referenced in this document were migrated to immutable spec fields. See Issue #91.
+
 **Date**: 2025-12-04
 **From**: Remediation Orchestrator Team
 **To**: All Service Teams (Gateway, SignalProcessing, AIAnalysis, WorkflowExecution, Notification)
