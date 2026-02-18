@@ -393,8 +393,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			// 6. Verify all expected conditions are present
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
-			Expect(updated.Status.Conditions).To(HaveLen(4),
-				"Complete lifecycle should have 4 conditions: Created, Running, Complete, AuditRecorded")
+			Expect(updated.Status.Conditions).To(HaveLen(5),
+				"Complete lifecycle should have 5 conditions: Created, Running, Complete, AuditRecorded, Ready")
 
 			// Verify all conditions are True (success scenario)
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())

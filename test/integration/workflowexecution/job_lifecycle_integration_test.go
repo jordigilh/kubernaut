@@ -575,8 +575,8 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 			By("Verifying all 4 conditions are present")
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
-			Expect(updated.Status.Conditions).To(HaveLen(4),
-				"Complete Job lifecycle should have 4 conditions: Created, Running, Complete, AuditRecorded")
+			Expect(updated.Status.Conditions).To(HaveLen(5),
+				"Complete Job lifecycle should have 5 conditions: Created, Running, Complete, AuditRecorded, Ready")
 
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionCreated)).To(BeTrue())
 			Expect(weconditions.IsConditionTrue(updated, weconditions.ConditionExecutionRunning)).To(BeTrue())

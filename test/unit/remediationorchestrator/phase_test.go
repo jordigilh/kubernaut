@@ -49,6 +49,8 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 				phase.TimedOut, true, "TimedOut indicates phase/global timeout exceeded"),
 			Entry("Skipped is terminal (BR-ORCH-032 resource lock)",
 				phase.Skipped, true, "Skipped indicates duplicate remediation prevented"),
+			Entry("Cancelled is terminal (manual cancellation)",
+				phase.Cancelled, true, "Cancelled indicates remediation was manually cancelled"),
 
 			// Non-terminal states - remediation in progress
 			Entry("Pending is NOT terminal (initial state)",
