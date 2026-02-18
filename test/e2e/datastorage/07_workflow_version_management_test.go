@@ -140,7 +140,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			// DD-WORKFLOW-017: Register workflow v1.0.0 from OCI image
 			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/oom-recovery:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/oom-recovery:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
@@ -150,7 +150,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
 			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
-			workflowV1UUID = workflowResp.WorkflowID.Value.String()
+			workflowV1UUID = workflowResp.WorkflowId.Value.String()
 			Expect(workflowV1UUID).ToNot(BeEmpty())
 			// DD-WORKFLOW-017: Capture workflow name from OCI schema for subsequent assertions
 			workflowName = workflowResp.WorkflowName
@@ -172,7 +172,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			// DD-WORKFLOW-017: Register workflow v1.1.0 from OCI image
 			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/oom-recovery:v1.1.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/oom-recovery:v1.1.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
@@ -182,7 +182,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
 			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
-			workflowV2UUID = workflowResp.WorkflowID.Value.String()
+			workflowV2UUID = workflowResp.WorkflowId.Value.String()
 			Expect(workflowV2UUID).ToNot(BeEmpty())
 			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
 			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
@@ -210,7 +210,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			// DD-WORKFLOW-017: Register workflow v2.0.0 from OCI image
 			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/oom-recovery:v2.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/oom-recovery:v2.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
@@ -219,7 +219,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
 			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
-			workflowV3UUID = workflowResp.WorkflowID.Value.String()
+			workflowV3UUID = workflowResp.WorkflowId.Value.String()
 			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 
 			// Verify only v2.0.0 is latest
@@ -260,7 +260,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
 
 			// Verify UUID matches
-			Expect(workflow.WorkflowID.Value.String()).To(Equal(workflowV3UUID))
+			Expect(workflow.WorkflowId.Value.String()).To(Equal(workflowV3UUID))
 
 			// Verify workflow_name and version are present (for human reference)
 			Expect(workflow.WorkflowName).To(Equal(workflowName))

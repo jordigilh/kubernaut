@@ -312,7 +312,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// DD-WORKFLOW-017: Register workflow from OCI image for SAR validation
 			workflowReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/sar-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/sar-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			// Create workflow (requires "create" permission)
@@ -329,11 +329,11 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					"actual", fmt.Sprintf("%T", resp))
 			}
 			Expect(ok).To(BeTrue(), fmt.Sprintf("Response should be RemediationWorkflow, got: %T", resp))
-			Expect(workflow.WorkflowID.IsSet()).To(BeTrue(), "WorkflowID should be set by DataStorage")
+			Expect(workflow.WorkflowId.IsSet()).To(BeTrue(), "WorkflowID should be set by DataStorage")
 			Expect(workflow.WorkflowName).ToNot(BeEmpty(), "WorkflowName should be extracted from OCI schema")
 
 			// DataStorage generates workflow_id (PostgreSQL UUID), not client-provided
-			generatedWorkflowID := workflow.WorkflowID.Value
+			generatedWorkflowID := workflow.WorkflowId.Value
 			logger.Info("✅ Workflow created successfully", "workflowID", generatedWorkflowID)
 
 			// Verify audit event was created with user attribution
@@ -377,7 +377,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			// DD-WORKFLOW-017: Attempt to create workflow from OCI image with unauthorized client
 			// This workflow is never created (403 expected), but request must be valid for SAR check
 			workflowReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/sar-test-unauth:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/sar-test-unauth:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			// Attempt to create workflow (should fail with 403)
