@@ -64,7 +64,7 @@ import (
 // ========================================
 
 // resolveChannelsFromRouting resolves notification channels using routing rules.
-// BR-NOT-065: Use routing rules to determine channels based on CRD labels.
+// BR-NOT-065: Use routing rules to determine channels based on CRD spec fields.
 //
 // Routing Priority (DD-WE-004):
 //   - PreviousExecutionFailed → CRITICAL (PagerDuty)
@@ -94,23 +94,11 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 			"No routing configuration, using console fallback"
 	}
 
-	// Find receiver based on notification labels
-	labels := notification.Labels
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-
-	// Extract kubernaut.ai labels for routing
-	routingLabels := make(map[string]string)
-	for k, v := range labels {
-		if strings.HasPrefix(k, "kubernaut.ai/") {
-			routingLabels[k] = v
-		}
-	}
-	logger.V(1).Info("Routing labels", "labels", routingLabels)
+	routingAttrs := routing.RoutingAttributesFromSpec(notification)
+	logger.V(1).Info("Routing attributes from spec", "attributes", routingAttrs)
 
 	// BR-NOT-067: Find matching receiver using thread-safe Router
-	receiver := r.Router.FindReceiver(labels)
+	receiver := r.Router.FindReceiver(routingAttrs)
 
 	// Convert receiver to channels
 	channels := r.receiverToChannels(receiver)
@@ -123,15 +111,13 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 	// BR-NOT-069: Build routing message for RoutingResolved condition
 	var routingMessage string
 	if receiver.Name == "console-fallback" || len(channels) == 0 {
-		// Fallback scenario
-		labelsPart := r.formatLabelsForCondition(routingLabels)
-		routingMessage = fmt.Sprintf("No routing rules matched %s, using console fallback", labelsPart)
+		attrsPart := r.formatAttributesForCondition(routingAttrs)
+		routingMessage = fmt.Sprintf("No routing rules matched %s, using console fallback", attrsPart)
 	} else {
-		// Rule matched
-		labelsPart := r.formatLabelsForCondition(routingLabels)
+		attrsPart := r.formatAttributesForCondition(routingAttrs)
 		channelsPart := r.formatChannelsForCondition(channels)
 		routingMessage = fmt.Sprintf("Matched rule '%s' %s → channels: %s",
-			receiver.Name, labelsPart, channelsPart)
+			receiver.Name, attrsPart, channelsPart)
 	}
 
 	return channels, routingMessage
@@ -141,20 +127,17 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 // FORMATTING HELPERS
 // ========================================
 
-// formatLabelsForCondition formats labels for RoutingResolved condition message
-func (r *NotificationRequestReconciler) formatLabelsForCondition(labels map[string]string) string {
-	if len(labels) == 0 {
-		return "(no labels)"
+// formatAttributesForCondition formats routing attributes for RoutingResolved condition message
+func (r *NotificationRequestReconciler) formatAttributesForCondition(attrs map[string]string) string {
+	if len(attrs) == 0 {
+		return "(no attributes)"
 	}
 
-	// Format as (key1=value1, key2=value2)
-	labelPairs := make([]string, 0, len(labels))
-	for k, v := range labels {
-		// Strip kubernaut.ai/ prefix for readability
-		shortKey := strings.TrimPrefix(k, "kubernaut.ai/")
-		labelPairs = append(labelPairs, fmt.Sprintf("%s=%s", shortKey, v))
+	pairs := make([]string, 0, len(attrs))
+	for k, v := range attrs {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
 	}
-	return fmt.Sprintf("(labels: %s)", strings.Join(labelPairs, ", "))
+	return fmt.Sprintf("(attributes: %s)", strings.Join(pairs, ", "))
 }
 
 // formatChannelsForCondition formats channels for RoutingResolved condition message
