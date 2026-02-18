@@ -105,7 +105,7 @@ def strip_failed_detections(detected_labels: DetectedLabels) -> DetectedLabels:
 
     # Handle both dict and Pydantic model
     if isinstance(detected_labels, dict):
-        failed_fields = set(detected_labels.get("failed_detections", []))
+        failed_fields = set(detected_labels.get("failedDetections") or detected_labels.get("failed_detections") or [])
         clean_dict = {k: v for k, v in detected_labels.items() if v is not None}
     else:
         # Get list of failed detection field names

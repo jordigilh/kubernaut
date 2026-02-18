@@ -443,7 +443,7 @@ You must understand what was attempted and why it failed before recommending alt
 **Workflow Selected Based on RCA**:
 - **Workflow ID**: `{selected_workflow.get('workflow_id', 'Unknown')}`
 - **Version**: {selected_workflow.get('version', 'Unknown')}
-- **Container Image**: `{selected_workflow.get('container_image', 'Unknown')}`
+- **Execution Bundle**: `{selected_workflow.get('execution_bundle', 'Unknown')}`
 - **Selection Rationale**: {selected_workflow.get('rationale', 'Not recorded')}
 """
 

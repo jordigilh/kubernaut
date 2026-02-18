@@ -350,13 +350,13 @@ class TestGetWorkflowTool:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "workflow_id": "wf-uuid-001",
-            "workflow_name": "scale-conservative",
+            "workflowId": "wf-uuid-001",
+            "workflowName": "scale-conservative",
             "name": "Conservative Scale",
             "description": "Scales replicas conservatively",
             "version": "v1.0.0",
-            "container_image": "quay.io/kubernaut-ai/scale:v1.0.0",
-            "action_type": "ScaleReplicas",
+            "containerImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+            "actionType": "ScaleReplicas",
             "parameters": {
                 "schema": {
                     "parameters": [
@@ -372,7 +372,7 @@ class TestGetWorkflowTool:
 
         assert result.status == StructuredToolResultStatus.SUCCESS
         data = json.loads(result.data)
-        assert data["workflow_id"] == "wf-uuid-001"
+        assert data["workflowId"] == "wf-uuid-001"
         assert "parameters" in data
 
     def test_missing_workflow_id_ut_008(self):
@@ -808,11 +808,11 @@ class TestRemediationIdPropagation:
         mock_get.return_value = Mock(
             status_code=200,
             json=Mock(return_value={
-                "workflow_id": "wf-001",
+                "workflowId": "wf-001",
                 "name": "Test Workflow",
-                "action_type": "scale_up",
+                "actionType": "scale_up",
                 "version": "1.0.0",
-                "container_image": "registry.io/wf:1.0",
+                "containerImage": "registry.io/wf:1.0",
                 "parameters": {},
             }),
             raise_for_status=Mock(),

@@ -318,7 +318,7 @@ class AlternativeWorkflow(BaseModel):
     - Transparency into AI reasoning
     """
     workflow_id: str = Field(..., description="Workflow identifier")
-    container_image: Optional[str] = Field(None, description="OCI image reference")
+    execution_bundle: Optional[str] = Field(None, description="OCI execution bundle reference")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score for this alternative")
     rationale: str = Field(..., description="Why this alternative was considered but not selected")
 
