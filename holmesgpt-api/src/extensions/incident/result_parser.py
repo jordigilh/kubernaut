@@ -217,7 +217,7 @@ def parse_and_validate_investigation_result(
                     rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
-                        "container_image": alt.get("container_image"),
+                        "execution_bundle": alt.get("execution_bundle"),
                         "confidence": float(alt.get("confidence", 0.0)),
                         "rationale": rationale
                     })
@@ -227,19 +227,17 @@ def parse_and_validate_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2: Workflow Response Validation
-            # Validates: workflow existence, container image consistency, parameter schema
+            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
             if selected_workflow and data_storage_client:
                 validator = WorkflowResponseValidator(data_storage_client)
                 validation_result = validator.validate(
                     workflow_id=selected_workflow.get("workflow_id", ""),
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
                 if validation_result.is_valid:
-                    # Use validated container image from catalog
-                    if validation_result.validated_container_image:
-                        selected_workflow["container_image"] = validation_result.validated_container_image
+                    if validation_result.validated_execution_bundle:
+                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
                     validation_result = None  # Clear to indicate success
 
         except (json.JSONDecodeError, ValueError, SyntaxError) as e:
@@ -561,7 +559,7 @@ def parse_investigation_result(
                     rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
-                        "container_image": alt.get("container_image"),
+                        "execution_bundle": alt.get("execution_bundle"),
                         "confidence": float(alt.get("confidence", 0.0)),
                         "rationale": rationale
                     })
@@ -571,19 +569,16 @@ def parse_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2: Workflow Response Validation
-            # Validates: workflow existence, container image consistency, parameter schema
+            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
             if selected_workflow and data_storage_client:
                 from src.validation.workflow_response_validator import WorkflowResponseValidator
                 validator = WorkflowResponseValidator(data_storage_client)
                 validation_result = validator.validate(
                     workflow_id=selected_workflow.get("workflow_id", ""),
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
                 if not validation_result.is_valid:
-                    # Add validation errors as warnings (LLM self-correction would have happened in-session)
-                    # If we reach here, it means the LLM failed to provide valid workflow after max attempts
                     workflow_validation_failed = True
                     workflow_validation_errors = validation_result.errors
                     logger.warning({
@@ -593,17 +588,15 @@ def parse_investigation_result(
                         "errors": validation_result.errors,
                         "message": "DD-HAPI-002 v1.2: Workflow response validation failed"
                     })
-                    # Add validation errors to workflow for transparency
                     selected_workflow["validation_errors"] = validation_result.errors
                 else:
-                    # Use validated container image from catalog
-                    if validation_result.validated_container_image:
-                        selected_workflow["container_image"] = validation_result.validated_container_image
+                    if validation_result.validated_execution_bundle:
+                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
                         logger.debug({
                             "event": "workflow_validation_passed",
                             "incident_id": request_data.get("incident_id", "unknown"),
                             "workflow_id": selected_workflow.get("workflow_id"),
-                            "container_image": validation_result.validated_container_image
+                            "execution_bundle": validation_result.validated_execution_bundle
                         })
         except json.JSONDecodeError:
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}

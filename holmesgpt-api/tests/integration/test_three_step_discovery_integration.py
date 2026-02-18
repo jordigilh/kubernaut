@@ -256,10 +256,10 @@ class TestSingleWorkflowRetrieval:
         )
 
         data = json.loads(result.data)
-        assert "action_type" in data, "Missing action_type in workflow detail"
-        assert "container_image" in data, "Missing container_image in workflow detail"
+        assert "actionType" in data, "Missing actionType in workflow detail"
+        assert "containerImage" in data, "Missing containerImage in workflow detail"
         assert "content" in data, "Missing content (YAML) in workflow detail"
-        assert data["workflow_id"] == known_workflow_id
+        assert data["workflowId"] == known_workflow_id
 
 
 # ========================================

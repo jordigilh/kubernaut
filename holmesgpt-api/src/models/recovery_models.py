@@ -56,7 +56,7 @@ class SelectedWorkflowSummary(BaseModel):
     """Summary of the workflow that was executed and failed"""
     workflow_id: str = Field(..., description="Workflow identifier that was executed")
     version: str = Field(..., description="Workflow version")
-    container_image: str = Field(..., description="Container image used for execution")
+    execution_bundle: str = Field(..., description="Execution bundle used for workflow execution")
     parameters: Dict[str, str] = Field(default_factory=dict, description="Parameters passed to workflow")
     rationale: str = Field(..., description="Why this workflow was originally selected")
 
@@ -222,7 +222,7 @@ class RecoveryRequest(BaseModel):
                     "selected_workflow": {
                         "workflow_id": "scale-horizontal-v1",
                         "version": "1.0.0",
-                        "container_image": "kubernaut/workflow-scale:v1.0.0",
+                        "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                         "parameters": {"TARGET_REPLICAS": "5"},
                         "rationale": "Scaling out to distribute memory load"
                     },

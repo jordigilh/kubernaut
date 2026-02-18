@@ -279,7 +279,7 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             if isinstance(alt, dict) and alt.get("workflow_id"):
                 alternative_workflows.append({
                     "workflow_id": alt.get("workflow_id", ""),
-                    "container_image": alt.get("container_image"),
+                    "execution_bundle": alt.get("execution_bundle"),
                     "confidence": float(alt.get("confidence", 0.0)),
                     "rationale": alt.get("rationale") or "Alternative recovery workflow"
                 })

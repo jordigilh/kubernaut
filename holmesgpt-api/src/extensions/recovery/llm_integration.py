@@ -455,7 +455,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             if validator:
                 validation_result = validator.validate(
                     workflow_id=workflow_id,
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {}),
                 )
                 is_valid = validation_result.is_valid
