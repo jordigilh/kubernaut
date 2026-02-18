@@ -66,7 +66,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// The image at quay.io contains /workflow-schema.yaml with ScaleReplicas action type,
 			// OOMKilled signal type, and production labels for discovery E2E tests.
 			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/discovery-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/discovery-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
@@ -74,7 +74,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			workflow, ok := resp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Expected *RemediationWorkflow response")
-			discoveryWorkflowID = workflow.WorkflowID.Value.String()
+			discoveryWorkflowID = workflow.WorkflowId.Value.String()
 			logger.Info("✅ Discovery test workflow created", "uuid", discoveryWorkflowID)
 		})
 
@@ -149,12 +149,12 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			fullWorkflow, ok := step3Resp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue(), "Expected *RemediationWorkflow from Step 3")
-			Expect(fullWorkflow.WorkflowID.Value.String()).To(Equal(discoveryWorkflowID))
+			Expect(fullWorkflow.WorkflowId.Value.String()).To(Equal(discoveryWorkflowID))
 			Expect(fullWorkflow.Content).ToNot(BeEmpty(), "Full workflow should include content (YAML)")
 			Expect(fullWorkflow.ActionType).To(Equal("ScaleReplicas"))
 
 			logger.Info("✅ Step 3: Full workflow detail retrieved",
-				"workflow_id", fullWorkflow.WorkflowID.Value.String(),
+				"workflow_id", fullWorkflow.WorkflowId.Value.String(),
 				"action_type", fullWorkflow.ActionType)
 
 			logger.Info("✅ E2E-DS-017-001-001: Three-step discovery happy path PASSED")
@@ -172,23 +172,23 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// Create ACTIVE workflow via OCI pullspec (DD-WORKFLOW-017)
 			activeReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/rollback-deployment-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/rollback-deployment-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 			activeResp, err := DSClient.CreateWorkflow(testCtx, &activeReq)
 			Expect(err).ToNot(HaveOccurred())
 			activeWorkflow, ok := activeResp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue())
-			activeUUID := activeWorkflow.WorkflowID.Value.String()
+			activeUUID := activeWorkflow.WorkflowId.Value.String()
 
 			// Create a second workflow from OCI, then disable it via PATCH (DD-WORKFLOW-017)
 			disabledReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/rollback-deployment-disabled-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/rollback-deployment-disabled-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 			disabledResp, err := DSClient.CreateWorkflow(testCtx, &disabledReq)
 			Expect(err).ToNot(HaveOccurred())
 			disabledWorkflow, ok := disabledResp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue())
-			disabledUUID := disabledWorkflow.WorkflowID.Value
+			disabledUUID := disabledWorkflow.WorkflowId.Value
 
 			// Disable the workflow via PATCH endpoint (GAP-WF-5: reason mandatory)
 			disableReq := &dsgen.WorkflowLifecycleRequest{
@@ -241,14 +241,14 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// DD-WORKFLOW-017: Register workflow from OCI image for security gate test
 			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				ContainerImage: fmt.Sprintf("%s/security-gate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+				SchemaImage: fmt.Sprintf("%s/security-gate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 			}
 
 			resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 			workflow, ok := resp.(*dsgen.RemediationWorkflow)
 			Expect(ok).To(BeTrue())
-			workflowUUID := workflow.WorkflowID.Value
+			workflowUUID := workflow.WorkflowId.Value
 
 			// GetWorkflow with MISMATCHED context — should return 404
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
@@ -279,7 +279,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// Use AuthHTTPClient for raw HTTP request (endpoint no longer in ogen client)
 			searchURL := fmt.Sprintf("%s/api/v1/workflows/search", dataStorageURL)
-			body := bytes.NewBufferString(`{"filters":{"signal_type":"OOMKilled","severity":"critical","component":"pod","environment":"production","priority":"P0"}}`)
+			body := bytes.NewBufferString(`{"filters":{"signalType":"OOMKilled","severity":"critical","component":"pod","environment":"production","priority":"P0"}}`)
 
 			req, err := http.NewRequestWithContext(testCtx, http.MethodPost, searchURL, body)
 			Expect(err).ToNot(HaveOccurred())

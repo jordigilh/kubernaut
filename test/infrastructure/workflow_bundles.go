@@ -132,7 +132,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 
 	// DD-WORKFLOW-017: Pullspec-only registration request
 	req := &dsgen.CreateWorkflowFromOCIRequest{
-		ContainerImage: containerImage,
+		SchemaImage: containerImage,
 	}
 
 	// Register workflow via OpenAPI client
@@ -145,7 +145,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 	// Validate response - success returns *RemediationWorkflow
 	if createdWorkflow, ok := resp.(*dsgen.RemediationWorkflow); ok {
 		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
-		if wfID, exists := createdWorkflow.WorkflowID.Get(); exists {
+		if wfID, exists := createdWorkflow.WorkflowId.Get(); exists {
 			_, _ = fmt.Fprintf(output, "       UUID: %s\n", wfID.String())
 		}
 		return nil

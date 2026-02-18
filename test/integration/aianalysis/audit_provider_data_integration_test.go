@@ -280,7 +280,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
 			responseData := hapiPayload.ResponseData
-			Expect(responseData.IncidentID).ToNot(BeEmpty(), "response_data should have incident_id")
+			Expect(responseData.IncidentId).ToNot(BeEmpty(), "response_data should have incident_id")
 			Expect(responseData.Analysis).ToNot(BeEmpty(), "response_data should have analysis text")
 			Expect(responseData.RootCauseAnalysis.Summary).ToNot(BeEmpty(), "Should have root_cause_analysis.summary")
 			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Should have confidence > 0")
@@ -430,7 +430,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			By("Validating COMPLETE IncidentResponse structure for RR reconstruction")
 
 			// Core analysis fields (strongly-typed)
-			Expect(responseData.IncidentID).ToNot(BeEmpty(), "Required: incident_id")
+			Expect(responseData.IncidentId).ToNot(BeEmpty(), "Required: incident_id")
 			Expect(responseData.Analysis).ToNot(BeEmpty(), "Required: analysis text")
 			Expect(responseData.Timestamp).ToNot(BeZero(), "Required: timestamp")
 			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Required: confidence score")
@@ -443,12 +443,12 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			if responseData.SelectedWorkflow.IsSet() {
 				workflow := responseData.SelectedWorkflow.Value
 				// Workflow ID is mandatory if workflow is selected
-				Expect(workflow.WorkflowID.IsSet()).To(BeTrue(), "Workflow should have workflow_id")
-				if workflow.WorkflowID.IsSet() {
-					Expect(workflow.WorkflowID.Value).ToNot(BeEmpty(), "Workflow ID should not be empty")
+				Expect(workflow.WorkflowId.IsSet()).To(BeTrue(), "Workflow should have workflow_id")
+				if workflow.WorkflowId.IsSet() {
+					Expect(workflow.WorkflowId.Value).ToNot(BeEmpty(), "Workflow ID should not be empty")
 				}
 				// Other fields are truly optional and may not be set in all scenarios
-				GinkgoWriter.Printf("✅ Selected workflow present: workflow_id=%v\n", workflow.WorkflowID)
+				GinkgoWriter.Printf("✅ Selected workflow present: workflow_id=%v\n", workflow.WorkflowId)
 			}
 
 			// Alternative workflows (audit trail) - strongly-typed array

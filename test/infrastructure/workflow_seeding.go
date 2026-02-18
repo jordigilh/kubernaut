@@ -133,7 +133,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 
 	// DD-WORKFLOW-017: Pullspec-only registration request
 	workflowReq := &ogenclient.CreateWorkflowFromOCIRequest{
-		ContainerImage: containerImage,
+		SchemaImage: containerImage,
 	}
 
 	// POST to DataStorage workflow creation endpoint
@@ -147,7 +147,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	if err == nil {
 		switch r := resp.(type) {
 		case *ogenclient.RemediationWorkflow:
-			return r.WorkflowID.Value.String(), nil
+			return r.WorkflowId.Value.String(), nil
 		case *ogenclient.CreateWorkflowConflict:
 			// DS-BUG-001: 409 Conflict - workflow already exists
 			_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409 Conflict), querying for UUID...\n")
@@ -170,7 +170,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		if len(r.Workflows) == 0 {
 			return "", fmt.Errorf("workflow exists but query returned no results")
 		}
-		return r.Workflows[0].WorkflowID.Value.String(), nil
+		return r.Workflows[0].WorkflowId.Value.String(), nil
 	default:
 		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
 	}
