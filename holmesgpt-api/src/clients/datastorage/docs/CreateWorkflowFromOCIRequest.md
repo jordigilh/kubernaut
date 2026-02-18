@@ -5,7 +5,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**container_image** | **str** | OCI image pullspec. Data Storage pulls this image, extracts /workflow-schema.yaml (ADR-043), validates it, and populates all catalog fields from the extracted schema.  | 
+**schema_image** | **str** | OCI image pullspec. Data Storage pulls this image, extracts /workflow-schema.yaml (ADR-043), validates it, and populates all catalog fields from the extracted schema.  | 
 
 ## Example
 

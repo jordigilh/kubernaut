@@ -1,6 +1,6 @@
 # IncidentResponseDataSelectedWorkflow
 
-Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
+Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **workflow_id** | **str** |  | [optional] 
 **action_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from HAPI three-step discovery protocol.  | [optional] 
-**container_image** | **str** |  | [optional] 
+**execution_bundle** | **str** |  | [optional] 
 **confidence** | **float** |  | [optional] 
 **parameters** | **Dict[str, object]** |  | [optional] 
 

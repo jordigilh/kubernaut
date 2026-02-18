@@ -29,14 +29,14 @@ except ImportError:
 
 class IncidentResponseDataSelectedWorkflow(BaseModel):
     """
-    Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional)
+    Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional)
     """ # noqa: E501
-    workflow_id: Optional[StrictStr] = None
-    action_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from HAPI three-step discovery protocol. ")
-    container_image: Optional[StrictStr] = None
+    workflow_id: Optional[StrictStr] = Field(default=None, alias="workflowId")
+    action_type: Optional[StrictStr] = Field(default=None, description="Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from HAPI three-step discovery protocol. ", alias="actionType")
+    execution_bundle: Optional[StrictStr] = Field(default=None, alias="executionBundle")
     confidence: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = None
     parameters: Optional[Dict[str, Any]] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "action_type", "container_image", "confidence", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflowId", "actionType", "executionBundle", "confidence", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -87,9 +87,9 @@ class IncidentResponseDataSelectedWorkflow(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflow_id": obj.get("workflow_id"),
-            "action_type": obj.get("action_type"),
-            "container_image": obj.get("container_image"),
+            "workflowId": obj.get("workflowId"),
+            "actionType": obj.get("actionType"),
+            "executionBundle": obj.get("executionBundle"),
             "confidence": obj.get("confidence"),
             "parameters": obj.get("parameters")
         })

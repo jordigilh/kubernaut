@@ -10,8 +10,10 @@ Name | Type | Description | Notes
 **title** | **str** | Human-readable workflow name | 
 **description** | **str** | Workflow description | 
 **signal_type** | **str** | Signal type this workflow handles | [optional] 
-**container_image** | **str** | OCI image reference | [optional] 
-**container_digest** | **str** | OCI image digest | [optional] 
+**schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
+**schema_digest** | **str** | OCI schema image digest | [optional] 
+**execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
+**execution_bundle_digest** | **str** | OCI execution bundle digest | [optional] 
 **confidence** | **float** | Normalized label score (0.0-1.0) | 
 **label_boost** | **float** | Boost from matching DetectedLabels | [optional] 
 **label_penalty** | **float** | Penalty from conflicting DetectedLabels | [optional] 

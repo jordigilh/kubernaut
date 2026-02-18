@@ -31,8 +31,8 @@ class WorkflowDisableRequest(BaseModel):
     Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)
     """ # noqa: E501
     reason: Optional[StrictStr] = Field(default=None, description="Why the workflow is being disabled")
-    updated_by: Optional[StrictStr] = Field(default=None, description="Who is disabling the workflow")
-    __properties: ClassVar[List[str]] = ["reason", "updated_by"]
+    updated_by: Optional[StrictStr] = Field(default=None, description="Who is disabling the workflow", alias="updatedBy")
+    __properties: ClassVar[List[str]] = ["reason", "updatedBy"]
 
     model_config = {
         "populate_by_name": True,
@@ -84,7 +84,7 @@ class WorkflowDisableRequest(BaseModel):
 
         _obj = cls.model_validate({
             "reason": obj.get("reason"),
-            "updated_by": obj.get("updated_by")
+            "updatedBy": obj.get("updatedBy")
         })
         return _obj
 
