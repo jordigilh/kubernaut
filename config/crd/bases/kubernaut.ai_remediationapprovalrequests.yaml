@@ -33,6 +33,10 @@ spec:
     - jsonPath: .spec.requiredBy
       name: RequiredBy
       type: date
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

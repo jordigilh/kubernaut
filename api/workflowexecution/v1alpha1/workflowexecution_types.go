@@ -487,6 +487,7 @@ const (
 //+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
 //+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
 //+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
+//+kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // WorkflowExecution is the Schema for the workflowexecutions API

@@ -30,6 +30,10 @@ spec:
     - jsonPath: .status.totalAttempts
       name: Attempts
       type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
