@@ -36,7 +36,7 @@ class TestAlternativeWorkflow(unittest.TestCase):
         if include_optional:
             return AlternativeWorkflow(
                 workflow_id = '',
-                container_image = '',
+                execution_bundle = '',
                 confidence = 0.0,
                 rationale = ''
             )

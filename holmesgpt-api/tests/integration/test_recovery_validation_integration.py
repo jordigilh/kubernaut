@@ -148,7 +148,7 @@ class TestRecoveryValidationRetry:
             fake_workflow_id = str(uuid.uuid4())
             result_1 = validator.validate(
                 workflow_id=fake_workflow_id,
-                container_image=None,
+                execution_bundle=None,
                 parameters={},
             )
 
@@ -160,7 +160,7 @@ class TestRecoveryValidationRetry:
             # required parameter (buildWorkflowSchemaContent in workflow_seeding.go)
             result_2 = validator.validate(
                 workflow_id=known_workflow_id,
-                container_image=None,  # Skip image validation
+                execution_bundle=None,
                 parameters={"TARGET_RESOURCE": "my-deployment"},
             )
 
@@ -210,7 +210,7 @@ class TestRecoveryValidationParameterCorrection:
             # Go-seeded workflows have TARGET_RESOURCE as the only required param
             result_1 = validator.validate(
                 workflow_id=known_workflow_id,
-                container_image=None,
+                execution_bundle=None,
                 parameters={},  # Missing required params
             )
 
@@ -223,7 +223,7 @@ class TestRecoveryValidationParameterCorrection:
             # required parameter (buildWorkflowSchemaContent in workflow_seeding.go)
             result_2 = validator.validate(
                 workflow_id=known_workflow_id,
-                container_image=None,
+                execution_bundle=None,
                 parameters={"TARGET_RESOURCE": "my-deployment"},
             )
 
@@ -231,6 +231,6 @@ class TestRecoveryValidationParameterCorrection:
                 f"Attempt 2 should succeed with correct parameters, "
                 f"but got errors: {result_2.errors}"
             )
-            assert result_2.validated_container_image is not None, (
-                "Expected container image from catalog after successful validation"
+            assert result_2.validated_execution_bundle is not None, (
+                "Expected execution bundle from catalog after successful validation"
             )

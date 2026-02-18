@@ -242,7 +242,8 @@ class TestListWorkflowsTool:
                     "name": "Conservative Scale",
                     "description": "Scales replicas conservatively",
                     "version": "v1.0.0",
-                    "containerImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+                    "schemaImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+                    "executionBundle": "quay.io/kubernaut-ai/scale:v1.0.0",
                     "executionEngine": "tekton",
                     "actualSuccessRate": 0.95,
                     "totalExecutions": 42
@@ -355,7 +356,8 @@ class TestGetWorkflowTool:
             "name": "Conservative Scale",
             "description": "Scales replicas conservatively",
             "version": "v1.0.0",
-            "containerImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+            "schemaImage": "quay.io/kubernaut-ai/scale:v1.0.0",
+            "executionBundle": "quay.io/kubernaut-ai/scale:v1.0.0",
             "actionType": "ScaleReplicas",
             "parameters": {
                 "schema": {
@@ -812,7 +814,8 @@ class TestRemediationIdPropagation:
                 "name": "Test Workflow",
                 "actionType": "scale_up",
                 "version": "1.0.0",
-                "containerImage": "registry.io/wf:1.0",
+                "schemaImage": "registry.io/wf:1.0",
+                "executionBundle": "registry.io/wf:1.0",
                 "parameters": {},
             }),
             raise_for_status=Mock(),

@@ -119,7 +119,7 @@ MINIMAL_RECOVERY_REQUEST = {
         "selected_workflow": {
             "workflow_id": "scale-up-v1",
             "version": "1.0.0",
-            "container_image": "kubernaut/scale-up:1.0",
+            "execution_bundle": "kubernaut/scale-up:1.0",
             "rationale": "Scale up replicas to handle load",
         },
         "failure": {

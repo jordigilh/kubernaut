@@ -141,7 +141,7 @@ class TestSecurityGateMismatch:
             # ACT
             result = validator.validate(
                 workflow_id=known_workflow_id,
-                container_image=None,
+                execution_bundle=None,
                 parameters={},
             )
 
@@ -198,7 +198,7 @@ class TestSecurityGateMatch:
             # required parameter (buildWorkflowSchemaContent in workflow_seeding.go)
             result = validator.validate(
                 workflow_id=known_workflow_id,
-                container_image=None,  # Skip image validation for this test
+                execution_bundle=None,
                 parameters={"TARGET_RESOURCE": "my-deployment"},
             )
 
@@ -207,6 +207,6 @@ class TestSecurityGateMatch:
                 f"Expected validation to pass with matching context, "
                 f"but got errors: {result.errors}"
             )
-            assert result.validated_container_image is not None, (
-                "Expected container image from catalog"
+            assert result.validated_execution_bundle is not None, (
+                "Expected execution bundle from catalog"
             )

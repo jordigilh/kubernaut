@@ -95,7 +95,7 @@ Based on my investigation, the pod was killed due to OOM.
   "selected_workflow": {
     "workflow_id": "restart-pod-v1",
     "version": "1.0.0",
-    "container_image": "ghcr.io/kubernaut/restart:v1.0.0",
+    "execution_bundle": "ghcr.io/kubernaut/restart:v1.0.0",
     "confidence": 0.95,
     "rationale": "Standard OOM recovery",
     "parameters": {
