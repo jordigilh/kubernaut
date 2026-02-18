@@ -293,11 +293,13 @@ test/e2e/workflowexecution/
 
 | Location | Condition | When | Priority |
 |----------|-----------|------|----------|
+| Terminal phase transitions | Ready | On Completed/Failed/Skipped | P0 |
 | `Reconcile()` after CreatePipelineRun | TektonPipelineCreated | After PipelineRun creation | P0 |
 | `syncPipelineRunStatus()` | TektonPipelineRunning | When PR.Status.IsRunning() | P0 |
 | `syncPipelineRunStatus()` | TektonPipelineComplete | When PR.Status.IsCompleted() | P0 |
 | `emitAudit()` | AuditRecorded | After audit.StoreAudit() | P0 |
-| `checkResourceLock()` | ResourceLocked | When lock detected | P0 |
+
+**Note** (Issue #79): ResourceLocked was removed (dead code, never implemented). Ready condition added per DD-CRD-002.
 
 ---
 

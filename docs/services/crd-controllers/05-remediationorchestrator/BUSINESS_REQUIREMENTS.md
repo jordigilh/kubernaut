@@ -218,7 +218,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 - On user cancellation:
   - Set `status.phase = Completed` (NOT Failed)
   - Set `status.notificationStatus = "Cancelled"`
-  - Add condition: `NotificationDelivered=False` with reason `UserCancelled`
+  - Add condition: `NotificationDelivered=False` with reason `ReasonUserCancelled` (from `pkg/remediationrequest/conditions.go`)
   - DO NOT trigger escalation workflows
 
 **Acceptance Criteria**:
@@ -252,9 +252,11 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 - Update `status.notificationStatus` based on NotificationRequest phase:
   - `Pending` → `notificationStatus = "Pending"`
   - `Sending` → `notificationStatus = "InProgress"`
-  - `Sent` → `notificationStatus = "Sent"`, condition `NotificationDelivered=True`
-  - `Failed` → `notificationStatus = "Failed"`, condition `NotificationDelivered=False` with reason `DeliveryFailed`
-  - `Deleted` → `notificationStatus = "Cancelled"`, condition `NotificationDelivered=False` with reason `UserCancelled`
+  - `Sent` → `notificationStatus = "Sent"`, condition `NotificationDelivered=True` (reason `ReasonDeliverySucceeded`)
+  - `Failed` → `notificationStatus = "Failed"`, condition `NotificationDelivered=False` with reason `ReasonDeliveryFailed`
+  - `Deleted` → `notificationStatus = "Cancelled"`, condition `NotificationDelivered=False` with reason `ReasonUserCancelled`
+
+**Constants**: Use centralized constants from `pkg/remediationrequest/conditions.go`: `ReasonDeliverySucceeded`, `ReasonDeliveryFailed`, `ReasonUserCancelled`.
 - Set `NotificationDelivered` condition with appropriate status and reason
 - Store NotificationRequest name in `status.notificationRequestName` for tracking
 

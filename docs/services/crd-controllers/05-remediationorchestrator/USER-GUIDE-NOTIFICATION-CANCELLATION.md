@@ -115,7 +115,7 @@ kubectl get remediationrequest <rr-name> -n <namespace> -o jsonpath='{.status.co
 # {
 #   "type": "NotificationDelivered",
 #   "status": "False",
-#   "reason": "UserCancelled",
+#   "reason": "UserCancelled",   # Constant: remediationrequest.ReasonUserCancelled
 #   "message": "NotificationRequest deleted by user",
 #   "lastTransitionTime": "2025-12-13T10:30:00Z"
 # }

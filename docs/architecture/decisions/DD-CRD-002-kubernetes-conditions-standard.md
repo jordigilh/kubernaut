@@ -2,7 +2,7 @@
 
 **Status**: ✅ **APPROVED** (2025-12-16)
 **Priority**: 🚨 **MANDATORY FOR V1.0**
-**Last Reviewed**: 2025-12-16
+**Last Reviewed**: 2026-02-18
 **Confidence**: 95%
 **Owner**: Platform Team
 **Applies To**: All CRD Controller Services
@@ -37,27 +37,39 @@ Kubernetes Conditions are a standard pattern for surfacing detailed status infor
 
 **ALL CRD controllers MUST implement Kubernetes Conditions infrastructure by V1.0 release.**
 
+**Excluded**: KubernetesExecution is deprecated and excluded from conditions implementation.
+
 ### Requirements
 
-1. **Schema Field** (ALREADY EXISTS for all 6 CRDs):
+1. **Ready Condition** (MANDATORY for all active CRDs):
+   - Every CRD MUST implement a `Ready` condition as an aggregate status
+   - **Aggregation semantics**: `Ready=True` on success terminal states; `Ready=False` on failure terminal states
+   - Enables `kubectl wait --for=condition=Ready` and Reason printer column (DD-CRD-003)
+
+2. **ObservedGeneration** (MANDATORY):
+   - All condition setters MUST set `ObservedGeneration` on every condition update
+   - Prevents stale condition display when spec changes but reconcile has not yet processed
+
+3. **Schema Field** (ALREADY EXISTS for all 7 CRDs):
    ```go
    // Conditions for detailed status
    Conditions []metav1.Condition `json:"conditions,omitempty"`
    ```
 
-2. **Infrastructure File** (`pkg/{service}/conditions.go`):
-   - Condition type constants
+4. **Infrastructure File** (`pkg/{service}/conditions.go`):
+   - Condition type constants (including `Ready`)
    - Condition reason constants
-   - `SetCondition()` helper function
+   - `SetCondition()` helper function (must set `ObservedGeneration`)
+   - `SetReady()` helper function
    - `GetCondition()` helper function
    - Phase-specific helper functions (e.g., `SetValidationComplete()`)
 
-3. **Controller Integration**:
+5. **Controller Integration**:
    - Set conditions during phase transitions
    - Include failure reasons in condition messages
    - Update conditions on status updates
 
-4. **Test Coverage**:
+6. **Test Coverage**:
    - Unit tests for condition helper functions
    - Integration tests verifying conditions are populated
 
@@ -79,7 +91,8 @@ Kubernetes Conditions are a standard pattern for surfacing detailed status infor
 Every `conditions.go` MUST include:
 
 ```go
-// SetCondition sets or updates a condition on the CRD status
+// SetCondition sets or updates a condition on the CRD status.
+// MUST set ObservedGeneration on every update (DD-CRD-002 requirement).
 func SetCondition(obj *v1alpha1.YourCRD, conditionType string, status metav1.ConditionStatus, reason, message string) {
     condition := metav1.Condition{
         Type:               conditionType,
@@ -87,6 +100,7 @@ func SetCondition(obj *v1alpha1.YourCRD, conditionType string, status metav1.Con
         LastTransitionTime: metav1.Now(),
         Reason:             reason,
         Message:            message,
+        ObservedGeneration: obj.Generation, // REQUIRED: prevents stale condition display
     }
     meta.SetStatusCondition(&obj.Status.Conditions, condition)
 }
@@ -358,8 +372,9 @@ Before V1.0 release, each team must verify:
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2025-12-16
+**Last Updated**: 2026-02-18 (Issue #79: Ready condition, ObservedGeneration, KubernetesExecution excluded)
 **Author**: Platform Team
 **File**: `docs/architecture/decisions/DD-CRD-002-kubernetes-conditions-standard.md`
 
