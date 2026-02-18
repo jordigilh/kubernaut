@@ -123,7 +123,7 @@ spec:
               originalPayload:
                 description: |-
                   Complete original webhook payload for debugging and audit
-                  Stored as []byte to preserve exact format
+                  Issue #96: stored as string to avoid base64 encoding in CEL validation
                 type: string
               providerData:
                 description: |-
@@ -1031,6 +1031,8 @@ spec:
         type: object
     selectableFields:
     - jsonPath: .spec.signalFingerprint
+    - jsonPath: .spec.signalType
+    - jsonPath: .spec.severity
     served: true
     storage: true
     subresources:

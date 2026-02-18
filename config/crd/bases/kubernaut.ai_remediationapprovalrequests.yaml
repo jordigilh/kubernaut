@@ -376,6 +376,9 @@ spec:
                 type: string
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    - jsonPath: .spec.aiAnalysisRef.name
     served: true
     storage: true
     subresources:
