@@ -1182,6 +1182,9 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 			weconditions.ReasonExecutionSucceeded,
 			fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
 
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
+
 		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
 		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
@@ -1300,6 +1303,9 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 			failureReason,
 			failureMessage)
 
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
+
 		// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
 		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
@@ -1399,6 +1405,9 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 		weconditions.SetExecutionCreated(wfe, false,
 			conditionReason,
 			fmt.Sprintf("Failed to create PipelineRun: %s", message))
+
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
 
 		// Issue #99: Deprecated backoff block removed (DD-RO-002 Phase 3)
 		// RO handles all routing/backoff decisions via RR.Status

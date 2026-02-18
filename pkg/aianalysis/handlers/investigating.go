@@ -317,6 +317,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 		}
 
+		aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v", analysis.Status.ConsecutiveFailures, err))
 		return ctrl.Result{}, nil
 	}
 
@@ -341,6 +342,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Permanent error: %v", err))
 	return ctrl.Result{}, nil
 }
 // setRetryCount writes retry count to annotations
@@ -655,6 +657,11 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
+	msg := status.Error
+	if msg == "" {
+		msg = "Investigation failed on HAPI side"
+	}
+	aianalysis.SetInvestigationComplete(analysis, false, msg)
 	return ctrl.Result{}, nil
 }
 
@@ -724,6 +731,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 				fmt.Sprintf("Max session regenerations (%d) exceeded, failing investigation", MaxSessionRegenerations))
 		}
 
+		aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Session regeneration cap exceeded (%d regenerations)", session.Generation))
 		return ctrl.Result{}, nil
 	}
 

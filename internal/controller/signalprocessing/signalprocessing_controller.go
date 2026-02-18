@@ -369,15 +369,17 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	k8sCtx, err := r.K8sEnricher.Enrich(ctx, signal)
 	if err != nil {
 		logger.Error(err, "K8sEnricher failed", "targetKind", targetKind, "targetName", targetName)
-		// DD-005: Track enrichment failure
 		r.Metrics.IncrementProcessingTotal("enriching", "failure")
 		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
 
-		// BR-SP-090: Emit error audit event before returning (ADR-038: non-blocking)
-		// Test: audit_integration_test.go:761 expects error.occurred OR signal.processed
-		// NOTE: NotFound errors enter degraded mode (return success), so this only fires for
-		//       other errors: namespace fetch failures, API timeouts, RBAC denials, etc.
-		// **Refactoring**: 2026-01-22 - Phase 3: Use AuditManager
+		// BR-SP-110: Set EnrichmentComplete=False condition (best-effort, survives refetch)
+		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			spconditions.SetEnrichmentComplete(sp, false, spconditions.ReasonEnrichmentFailed, err.Error())
+			return nil
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to persist EnrichmentComplete=False condition")
+		}
+
 		if r.AuditManager != nil {
 			_ = r.AuditManager.RecordError(ctx, sp, "Enriching", err)
 		}
@@ -559,18 +561,34 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// 1. Environment Classification (BR-SP-051-053) - MANDATORY
 	envClass, err := r.classifyEnvironment(ctx, k8sCtx, signal, logger)
 	if err != nil {
-		// DD-005: Track phase processing failure
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+
+		// BR-SP-110: Set ClassificationComplete=False condition (best-effort)
+		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
+			return nil
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to persist ClassificationComplete=False condition")
+		}
+
 		return ctrl.Result{}, err
 	}
 
 	// 2. Priority Assignment (BR-SP-070-072) - MANDATORY
 	priorityAssignment, err := r.assignPriority(ctx, k8sCtx, envClass, signal, logger)
 	if err != nil {
-		// DD-005: Track phase processing failure
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+
+		// BR-SP-110: Set ClassificationComplete=False condition (best-effort)
+		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
+			return nil
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to persist ClassificationComplete=False condition")
+		}
+
 		return ctrl.Result{}, err
 	}
 
@@ -591,6 +609,9 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 			updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
 				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
+				spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
+				// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+				spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
 				return nil
 			})
 			if updateErr != nil {
@@ -772,6 +793,8 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		// BR-SP-110: Set conditions AFTER refetch to prevent wipe
 		spconditions.SetCategorizationComplete(sp, true, "", categorizationMessage)
 		spconditions.SetProcessingComplete(sp, true, "", processingMessage)
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		spconditions.SetReady(sp, true, spconditions.ReasonReady, "Signal processing completed")
 		return nil
 	})
 	if updateErr != nil {

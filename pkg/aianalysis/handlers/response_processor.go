@@ -433,6 +433,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		}
 	}
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -524,6 +525,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
 
+	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -615,6 +617,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -687,6 +690,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	analysis.Status.Message = strings.Join(messageParts, " ")
 	analysis.Status.Warnings = resp.Warnings
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("recovery workflow resolution failed: %s", humanReviewReason))
 	return ctrl.Result{}, nil
 }
 
@@ -728,6 +732,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailureFromRecovery(ctx cont
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
 
+	aianalysis.SetInvestigationComplete(analysis, false, "no recovery workflow selected: no matching workflows found")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -794,6 +799,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.C
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence recovery: %.2f below threshold %.2f", resp.AnalysisConfidence, confidenceThreshold))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -832,6 +838,7 @@ func (p *ResponseProcessor) handleRecoveryNotPossible(ctx context.Context, analy
 	analysis.Status.Message = "HAPI determined recovery is not possible for this failure"
 	analysis.Status.Warnings = resp.Warnings
 
+	aianalysis.SetInvestigationComplete(analysis, false, "recovery not possible: no recovery strategy available")
 	return ctrl.Result{}, nil
 }
 

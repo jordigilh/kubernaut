@@ -280,6 +280,11 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 		// Clear blocking fields since we're transitioning to terminal
 		rr.Status.BlockedUntil = nil
 		// Keep BlockReason for audit trail
+
+		// BR-ORCH-043: Set Ready and RecoveryComplete conditions (terminal blocked)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation blocked", r.Metrics)
+		remediationrequest.SetRecoveryComplete(rr, false, "RecoveryBlocked", "Resource blocking prevented remediation", r.Metrics)
+
 		return nil
 	})
 	if err != nil {

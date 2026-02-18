@@ -26,6 +26,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aaconditions "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
@@ -148,6 +149,11 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 				return handlerErr
 			}
 
+			// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+			if analysis.Status.Phase == PhaseFailed {
+				aaconditions.SetReady(analysis, false, aaconditions.ReasonNotReady, "Analysis failed: "+analysis.Status.Message)
+			}
+
 			return nil
 		}); err != nil {
 			log.Error(err, "Failed to atomically update status after Investigating phase")
@@ -226,6 +232,14 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			if handlerErr != nil {
 				return handlerErr
 			}
+
+			// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+			if analysis.Status.Phase == PhaseCompleted {
+				aaconditions.SetReady(analysis, true, aaconditions.ReasonReady, "Analysis completed")
+			} else if analysis.Status.Phase == PhaseFailed {
+				aaconditions.SetReady(analysis, false, aaconditions.ReasonNotReady, "Analysis failed: "+analysis.Status.Message)
+			}
+
 			return nil
 		}); err != nil {
 			log.Error(err, "Failed to atomically update status after Analyzing phase")
