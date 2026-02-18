@@ -24885,15 +24885,27 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 		e.Str(s.ExecutionEngine)
 	}
 	{
-		if s.ContainerImage.Set {
-			e.FieldStart("containerImage")
-			s.ContainerImage.Encode(e)
+		if s.SchemaImage.Set {
+			e.FieldStart("schemaImage")
+			s.SchemaImage.Encode(e)
 		}
 	}
 	{
-		if s.ContainerDigest.Set {
-			e.FieldStart("containerDigest")
-			s.ContainerDigest.Encode(e)
+		if s.SchemaDigest.Set {
+			e.FieldStart("schemaDigest")
+			s.SchemaDigest.Encode(e)
+		}
+	}
+	{
+		if s.ExecutionBundle.Set {
+			e.FieldStart("executionBundle")
+			s.ExecutionBundle.Encode(e)
+		}
+	}
+	{
+		if s.ExecutionBundleDigest.Set {
+			e.FieldStart("executionBundleDigest")
+			s.ExecutionBundleDigest.Encode(e)
 		}
 	}
 	{
@@ -25032,7 +25044,7 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationWorkflow = [37]string{
+var jsonFieldsNameOfRemediationWorkflow = [39]string{
 	0:  "workflowId",
 	1:  "workflowName",
 	2:  "actionType",
@@ -25045,31 +25057,33 @@ var jsonFieldsNameOfRemediationWorkflow = [37]string{
 	9:  "contentHash",
 	10: "parameters",
 	11: "executionEngine",
-	12: "containerImage",
-	13: "containerDigest",
-	14: "labels",
-	15: "customLabels",
-	16: "detectedLabels",
-	17: "status",
-	18: "disabledAt",
-	19: "disabledBy",
-	20: "disabledReason",
-	21: "isLatestVersion",
-	22: "previousVersion",
-	23: "deprecationNotice",
-	24: "versionNotes",
-	25: "changeSummary",
-	26: "approvedBy",
-	27: "approvedAt",
-	28: "expectedSuccessRate",
-	29: "expectedDurationSeconds",
-	30: "actualSuccessRate",
-	31: "totalExecutions",
-	32: "successfulExecutions",
-	33: "createdAt",
-	34: "updatedAt",
-	35: "createdBy",
-	36: "updatedBy",
+	12: "schemaImage",
+	13: "schemaDigest",
+	14: "executionBundle",
+	15: "executionBundleDigest",
+	16: "labels",
+	17: "customLabels",
+	18: "detectedLabels",
+	19: "status",
+	20: "disabledAt",
+	21: "disabledBy",
+	22: "disabledReason",
+	23: "isLatestVersion",
+	24: "previousVersion",
+	25: "deprecationNotice",
+	26: "versionNotes",
+	27: "changeSummary",
+	28: "approvedBy",
+	29: "approvedAt",
+	30: "expectedSuccessRate",
+	31: "expectedDurationSeconds",
+	32: "actualSuccessRate",
+	33: "totalExecutions",
+	34: "successfulExecutions",
+	35: "createdAt",
+	36: "updatedAt",
+	37: "createdBy",
+	38: "updatedBy",
 }
 
 // Decode decodes RemediationWorkflow from json.
@@ -25215,28 +25229,48 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"executionEngine\"")
 			}
-		case "containerImage":
+		case "schemaImage":
 			if err := func() error {
-				s.ContainerImage.Reset()
-				if err := s.ContainerImage.Decode(d); err != nil {
+				s.SchemaImage.Reset()
+				if err := s.SchemaImage.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"containerImage\"")
+				return errors.Wrap(err, "decode field \"schemaImage\"")
 			}
-		case "containerDigest":
+		case "schemaDigest":
 			if err := func() error {
-				s.ContainerDigest.Reset()
-				if err := s.ContainerDigest.Decode(d); err != nil {
+				s.SchemaDigest.Reset()
+				if err := s.SchemaDigest.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"containerDigest\"")
+				return errors.Wrap(err, "decode field \"schemaDigest\"")
+			}
+		case "executionBundle":
+			if err := func() error {
+				s.ExecutionBundle.Reset()
+				if err := s.ExecutionBundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"executionBundle\"")
+			}
+		case "executionBundleDigest":
+			if err := func() error {
+				s.ExecutionBundleDigest.Reset()
+				if err := s.ExecutionBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"executionBundleDigest\"")
 			}
 		case "labels":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				if err := s.Labels.Decode(d); err != nil {
 					return err
@@ -25266,7 +25300,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"detectedLabels\"")
 			}
 		case "status":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -25476,8 +25510,8 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
 		0b00111110,
-		0b01001011,
-		0b00000010,
+		0b00001011,
+		0b00001001,
 		0b00000000,
 		0b00000000,
 	} {

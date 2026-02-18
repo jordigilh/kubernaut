@@ -16286,13 +16286,17 @@ type RemediationWorkflow struct {
 	Parameters OptRemediationWorkflowParameters `json:"parameters"`
 	// Execution engine (e.g., argo-workflows).
 	ExecutionEngine string `json:"executionEngine"`
-	// OCI image reference.
-	ContainerImage OptString `json:"containerImage"`
-	// OCI image digest.
-	ContainerDigest OptString         `json:"containerDigest"`
-	Labels          MandatoryLabels   `json:"labels"`
-	CustomLabels    OptCustomLabels   `json:"customLabels"`
-	DetectedLabels  OptDetectedLabels `json:"detectedLabels"`
+	// OCI image used to extract the workflow schema (DD-WORKFLOW-017).
+	SchemaImage OptString `json:"schemaImage"`
+	// OCI schema image digest.
+	SchemaDigest OptString `json:"schemaDigest"`
+	// OCI execution bundle reference (digest-pinned).
+	ExecutionBundle OptString `json:"executionBundle"`
+	// OCI execution bundle digest.
+	ExecutionBundleDigest OptString         `json:"executionBundleDigest"`
+	Labels                MandatoryLabels   `json:"labels"`
+	CustomLabels          OptCustomLabels   `json:"customLabels"`
+	DetectedLabels        OptDetectedLabels `json:"detectedLabels"`
 	// Workflow lifecycle status.
 	Status RemediationWorkflowStatus `json:"status"`
 	// When workflow was disabled.
@@ -16391,14 +16395,24 @@ func (s *RemediationWorkflow) GetExecutionEngine() string {
 	return s.ExecutionEngine
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *RemediationWorkflow) GetContainerImage() OptString {
-	return s.ContainerImage
+// GetSchemaImage returns the value of SchemaImage.
+func (s *RemediationWorkflow) GetSchemaImage() OptString {
+	return s.SchemaImage
 }
 
-// GetContainerDigest returns the value of ContainerDigest.
-func (s *RemediationWorkflow) GetContainerDigest() OptString {
-	return s.ContainerDigest
+// GetSchemaDigest returns the value of SchemaDigest.
+func (s *RemediationWorkflow) GetSchemaDigest() OptString {
+	return s.SchemaDigest
+}
+
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *RemediationWorkflow) GetExecutionBundle() OptString {
+	return s.ExecutionBundle
+}
+
+// GetExecutionBundleDigest returns the value of ExecutionBundleDigest.
+func (s *RemediationWorkflow) GetExecutionBundleDigest() OptString {
+	return s.ExecutionBundleDigest
 }
 
 // GetLabels returns the value of Labels.
@@ -16576,14 +16590,24 @@ func (s *RemediationWorkflow) SetExecutionEngine(val string) {
 	s.ExecutionEngine = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *RemediationWorkflow) SetContainerImage(val OptString) {
-	s.ContainerImage = val
+// SetSchemaImage sets the value of SchemaImage.
+func (s *RemediationWorkflow) SetSchemaImage(val OptString) {
+	s.SchemaImage = val
 }
 
-// SetContainerDigest sets the value of ContainerDigest.
-func (s *RemediationWorkflow) SetContainerDigest(val OptString) {
-	s.ContainerDigest = val
+// SetSchemaDigest sets the value of SchemaDigest.
+func (s *RemediationWorkflow) SetSchemaDigest(val OptString) {
+	s.SchemaDigest = val
+}
+
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *RemediationWorkflow) SetExecutionBundle(val OptString) {
+	s.ExecutionBundle = val
+}
+
+// SetExecutionBundleDigest sets the value of ExecutionBundleDigest.
+func (s *RemediationWorkflow) SetExecutionBundleDigest(val OptString) {
+	s.ExecutionBundleDigest = val
 }
 
 // SetLabels sets the value of Labels.

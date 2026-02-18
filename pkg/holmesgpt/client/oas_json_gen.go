@@ -25,9 +25,9 @@ func (s *AlternativeWorkflow) encodeFields(e *jx.Encoder) {
 		e.Str(s.WorkflowID)
 	}
 	{
-		if s.ContainerImage.Set {
-			e.FieldStart("container_image")
-			s.ContainerImage.Encode(e)
+		if s.ExecutionBundle.Set {
+			e.FieldStart("execution_bundle")
+			s.ExecutionBundle.Encode(e)
 		}
 	}
 	{
@@ -42,7 +42,7 @@ func (s *AlternativeWorkflow) encodeFields(e *jx.Encoder) {
 
 var jsonFieldsNameOfAlternativeWorkflow = [4]string{
 	0: "workflow_id",
-	1: "container_image",
+	1: "execution_bundle",
 	2: "confidence",
 	3: "rationale",
 }
@@ -68,15 +68,15 @@ func (s *AlternativeWorkflow) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_id\"")
 			}
-		case "container_image":
+		case "execution_bundle":
 			if err := func() error {
-				s.ContainerImage.Reset()
-				if err := s.ContainerImage.Decode(d); err != nil {
+				s.ExecutionBundle.Reset()
+				if err := s.ExecutionBundle.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"container_image\"")
+				return errors.Wrap(err, "decode field \"execution_bundle\"")
 			}
 		case "confidence":
 			requiredBitSet[0] |= 1 << 2
@@ -6938,8 +6938,8 @@ func (s *SelectedWorkflowSummary) encodeFields(e *jx.Encoder) {
 		e.Str(s.Version)
 	}
 	{
-		e.FieldStart("container_image")
-		e.Str(s.ContainerImage)
+		e.FieldStart("execution_bundle")
+		e.Str(s.ExecutionBundle)
 	}
 	{
 		if s.Parameters.Set {
@@ -6956,7 +6956,7 @@ func (s *SelectedWorkflowSummary) encodeFields(e *jx.Encoder) {
 var jsonFieldsNameOfSelectedWorkflowSummary = [5]string{
 	0: "workflow_id",
 	1: "version",
-	2: "container_image",
+	2: "execution_bundle",
 	3: "parameters",
 	4: "rationale",
 }
@@ -6994,17 +6994,17 @@ func (s *SelectedWorkflowSummary) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"version\"")
 			}
-		case "container_image":
+		case "execution_bundle":
 			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
-				s.ContainerImage = string(v)
+				s.ExecutionBundle = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"container_image\"")
+				return errors.Wrap(err, "decode field \"execution_bundle\"")
 			}
 		case "parameters":
 			if err := func() error {

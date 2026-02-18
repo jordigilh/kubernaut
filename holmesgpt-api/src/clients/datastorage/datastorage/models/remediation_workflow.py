@@ -46,8 +46,10 @@ class RemediationWorkflow(BaseModel):
     content_hash: Annotated[str, Field(min_length=64, strict=True, max_length=64)] = Field(description="SHA-256 hash of content", alias="contentHash")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameters (JSONB)")
     execution_engine: StrictStr = Field(description="Execution engine (e.g., argo-workflows)", alias="executionEngine")
-    container_image: Optional[StrictStr] = Field(default=None, description="OCI image reference", alias="containerImage")
-    container_digest: Optional[StrictStr] = Field(default=None, description="OCI image digest", alias="containerDigest")
+    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema (DD-WORKFLOW-017)", alias="schemaImage")
+    schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
+    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
+    execution_bundle_digest: Optional[StrictStr] = Field(default=None, description="OCI execution bundle digest", alias="executionBundleDigest")
     labels: MandatoryLabels
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
@@ -71,7 +73,7 @@ class RemediationWorkflow(BaseModel):
     updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
     created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="createdBy")
     updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="updatedBy")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "containerImage", "containerDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -150,8 +152,10 @@ class RemediationWorkflow(BaseModel):
             "contentHash": obj.get("contentHash"),
             "parameters": obj.get("parameters"),
             "executionEngine": obj.get("executionEngine"),
-            "containerImage": obj.get("containerImage"),
-            "containerDigest": obj.get("containerDigest"),
+            "schemaImage": obj.get("schemaImage"),
+            "schemaDigest": obj.get("schemaDigest"),
+            "executionBundle": obj.get("executionBundle"),
+            "executionBundleDigest": obj.get("executionBundleDigest"),
             "labels": MandatoryLabels.from_dict(obj.get("labels")) if obj.get("labels") is not None else None,
             "customLabels": obj.get("customLabels"),
             "detectedLabels": DetectedLabels.from_dict(obj.get("detectedLabels")) if obj.get("detectedLabels") is not None else None,
