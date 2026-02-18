@@ -581,33 +581,38 @@ Status:
 
 **Related Documentation**:
 - Full specification: [BR-NOT-069](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
-- Routing rules: BR-NOT-065 (Channel Routing Based on Labels)
+- Routing rules: BR-NOT-065 (Channel Routing Based on Spec Fields)
 
 ---
 
-## 🏷️ Routing Labels (BR-NOT-065)
+## 🏷️ Routing Spec Fields (BR-NOT-065, Issue #91)
 
-The Notification Service supports **label-based routing** for notifications. When `NotificationRequest.spec.channels` is NOT specified, the service uses labels on the CRD to determine which channels to route to.
+The Notification Service supports **spec-field-based routing** for notifications. When `NotificationRequest.spec.channels` is NOT specified, the service uses spec fields and `spec.metadata` to determine which channels to route to.
 
-### **Supported Routing Labels**
+**Issue #91**: `kubernaut.ai/*` metadata labels were migrated to immutable CRD spec fields. Routing config keys are simplified (e.g., `severity` not `kubernaut.ai/severity`). Field selectors (`+kubebuilder:selectablefield`) replace label-based filtering.
 
-All labels use the `kubernaut.ai/` domain (NOT `kubernaut.io/`).
+### **Supported Routing Attributes**
 
-| Label Key | Purpose | Values | Example |
-|-----------|---------|--------|---------|
-| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed`, `status_update` | Route approvals to PagerDuty |
-| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` | Route critical to PagerDuty |
-| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
-| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` | Route P0 to all channels |
-| `kubernaut.ai/namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
-| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution`, etc. | Route by source |
-| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name | Link to parent remediation |
-| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
-| `kubernaut.ai/investigation-outcome` | HolmesGPT investigation outcome routing (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow-selected` | Route inconclusive to ops for review |
+Routing uses spec fields and `spec.metadata` keys. Config match keys use simplified names (no `kubernaut.ai/` prefix).
 
-### **Skip-Reason Label (DD-WE-004 Integration)**
+| Spec Field / Metadata Key | Config Match Key | Purpose | Values | Example |
+|---------------------------|------------------|---------|--------|---------|
+| `spec.type` | `type` | Notification type routing | `escalation`, `approval`, `completion`, `manual-review`, `status-update` | Route approvals to PagerDuty |
+| `spec.severity` | `severity` | Severity-based routing | `critical`, `high`, `medium`, `low` | Route critical to PagerDuty |
+| `spec.metadata["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
+| `spec.priority` | `priority` | Priority-based routing | `critical`, `high`, `medium`, `low` | Route P0 to all channels |
+| `spec.metadata["namespace"]` | `namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
+| `spec.phase` | `phase` | Phase that triggered notification | `signal-processing`, `ai-analysis`, `workflow-execution`, etc. | Route by phase |
+| `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries`, etc. | Route by review trigger |
+| `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference | ownerRef/spec ref sufficient |
+| `spec.metadata["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
+| `spec.metadata["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
 
-The `kubernaut.ai/skip-reason` label enables fine-grained routing based on WorkflowExecution skip reasons:
+**Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
+
+### **Skip-Reason Routing (DD-WE-004 Integration)**
+
+The `spec.metadata["skip-reason"]` attribute enables fine-grained routing based on WorkflowExecution skip reasons:
 
 | Skip Reason | Severity | Recommended Routing | Rationale |
 |-------------|----------|---------------------|-----------|
@@ -616,23 +621,23 @@ The `kubernaut.ai/skip-reason` label enables fine-grained routing based on Workf
 | `ResourceBusy` | LOW | Console/Bulk | Temporary - auto-resolves |
 | `RecentlyRemediated` | LOW | Console/Bulk | Temporary - auto-resolves |
 
-**Example Routing Configuration** (Alertmanager-compatible per BR-NOT-066):
+**Example Routing Configuration** (Alertmanager-compatible per BR-NOT-066, Issue #91):
 ```yaml
 route:
   routes:
     # CRITICAL: Execution failures → PagerDuty
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: pagerduty-oncall
 
     # HIGH: Exhausted retries → Slack
     - match:
-        kubernaut.ai/skip-reason: ExhaustedRetries
+        skip-reason: ExhaustedRetries
       receiver: slack-ops
 
     # LOW: Temporary conditions → Console only
     - match_re:
-        kubernaut.ai/skip-reason: "^(ResourceBusy|RecentlyRemediated)$"
+        skip-reason: "^(ResourceBusy|RecentlyRemediated)$"
       receiver: console-only
 
   receiver: default-slack
@@ -652,9 +657,9 @@ receivers:
       - channel: '#kubernaut-alerts'
 ```
 
-### **Investigation-Outcome Label (BR-HAPI-200)**
+### **Investigation-Outcome Routing (BR-HAPI-200)**
 
-The `kubernaut.ai/investigation-outcome` label enables routing based on HolmesGPT investigation results:
+The `spec.metadata["investigation-outcome"]` attribute enables routing based on HolmesGPT investigation results:
 
 | Investigation Outcome | Scenario | Recommended Routing | Rationale |
 |-----------------------|----------|---------------------|-----------|
@@ -662,23 +667,23 @@ The `kubernaut.ai/investigation-outcome` label enables routing based on HolmesGP
 | `inconclusive` | LLM cannot determine root cause | Slack (#ops channel) | Human review required |
 | `workflow-selected` | Normal workflow execution | Continue to default routing | Standard flow |
 
-**Example Routing Configuration** (Alertmanager-compatible):
+**Example Routing Configuration** (Alertmanager-compatible, Issue #91):
 ```yaml
 route:
   routes:
     # Self-resolved: Skip notification by default
     - match:
-        kubernaut.ai/investigation-outcome: resolved
+        investigation-outcome: resolved
       receiver: null-receiver  # No notification
 
     # Inconclusive: Route to ops for manual review
     - match:
-        kubernaut.ai/investigation-outcome: inconclusive
+        investigation-outcome: inconclusive
       receiver: slack-ops
 
     # Workflow selected: Fall through to normal routing
     - match:
-        kubernaut.ai/investigation-outcome: workflow-selected
+        investigation-outcome: workflow-selected
       continue: true
 
   receiver: default-slack
@@ -699,46 +704,53 @@ receivers:
 
 ---
 
-### **Go Constants** (`pkg/notification/routing/labels.go`)
+### **Go Constants** (`pkg/notification/routing/attributes.go`)
 
 ```go
-// Label keys
+// Routing attribute keys (Issue #91: spec fields + spec.metadata)
 const (
-    LabelNotificationType    = "kubernaut.ai/notification-type"
-    LabelSeverity            = "kubernaut.ai/severity"
-    LabelEnvironment         = "kubernaut.ai/environment"
-    LabelPriority            = "kubernaut.ai/priority"
-    LabelNamespace           = "kubernaut.ai/namespace"
-    LabelComponent           = "kubernaut.ai/component"
-    LabelRemediationRequest  = "kubernaut.ai/remediation-request"
-    LabelSkipReason          = "kubernaut.ai/skip-reason"
-    LabelInvestigationOutcome = "kubernaut.ai/investigation-outcome"  // BR-HAPI-200
+    AttrType                = "type"                 // spec.type
+    AttrSeverity            = "severity"             // spec.severity
+    AttrEnvironment         = "environment"         // spec.metadata["environment"]
+    AttrPhase               = "phase"                // spec.phase
+    AttrReviewSource        = "review-source"        // spec.reviewSource
+    AttrPriority            = "priority"             // spec.priority
+    AttrNamespace           = "namespace"            // spec.metadata["namespace"]
+    AttrSkipReason          = "skip-reason"          // spec.metadata["skip-reason"]
+    AttrInvestigationOutcome = "investigation-outcome" // spec.metadata["investigation-outcome"]
 )
 
 // Skip reason values (DD-WE-004)
 const (
     SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"  // CRITICAL
     SkipReasonExhaustedRetries        = "ExhaustedRetries"         // HIGH
-    SkipReasonResourceBusy            = "ResourceBusy"             // LOW
+    SkipReasonResourceBusy            = "ResourceBusy"            // LOW
     SkipReasonRecentlyRemediated      = "RecentlyRemediated"       // LOW
 )
 
 // Investigation outcome values (BR-HAPI-200)
 const (
-    InvestigationOutcomeResolved        = "resolved"          // No action needed
-    InvestigationOutcomeInconclusive    = "inconclusive"      // Human review required
-    InvestigationOutcomeWorkflowSelected = "workflow-selected" // Normal flow
+    InvestigationOutcomeResolved         = "resolved"          // No action needed
+    InvestigationOutcomeInconclusive     = "inconclusive"      // Human review required
+    InvestigationOutcomeWorkflowSelected = "workflow_selected" // Normal flow
 )
 ```
 
 ### **Routing Resolution Priority**
 
 1. If `spec.channels` is specified → Use those channels directly
-2. If `spec.channels` is empty → Resolve from routing rules based on labels
+2. If `spec.channels` is empty → Resolve from routing rules based on spec fields and spec.metadata
 3. If no routing rules match → Use default receiver (console)
 
+### **Field Selectors**
+
+NotificationRequest supports `+kubebuilder:selectablefield` for server-side filtering (replaces label-based filtering):
+- `spec.remediationRequestRef.name`
+- `spec.type`
+- `spec.severity`
+
 **Related Documentation**:
-- [BR-NOT-065: Channel Routing Based on Labels](./BUSINESS_REQUIREMENTS.md#br-not-065-channel-routing-based-on-labels)
+- [BR-NOT-065: Channel Routing Based on Spec Fields](./BUSINESS_REQUIREMENTS.md#br-not-065-channel-routing-based-on-spec-fields)
 - [BR-NOT-066: Alertmanager-Compatible Configuration Format](./BUSINESS_REQUIREMENTS.md#br-not-066-alertmanager-compatible-configuration-format)
 - [DD-WE-004: Exponential Backoff Cooldown](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
 - [Cross-Team Notice](../../../../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)

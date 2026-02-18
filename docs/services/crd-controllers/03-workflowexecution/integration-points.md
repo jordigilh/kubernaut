@@ -9,6 +9,9 @@
 
 ## Changelog
 
+### Version 4.2 (2026-02-18)
+- ✅ **Issue #91**: Removed `kubernaut.ai/remediation-request` label from WorkflowExecution creation; use `spec.remediationRequestRef`. `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource).
+
 ### Version 4.1 (2025-12-07)
 - ✅ **Fixed**: RemediationRequestRef type corrected to `corev1.ObjectReference` (was incorrectly documented as custom type)
 
@@ -33,9 +36,9 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-wfe", rr.Name),
             Namespace: rr.Namespace,
+            // Issue #91: kubernaut.ai/remediation-request removed; use spec.remediationRequestRef
             Labels: map[string]string{
-                "kubernaut.ai/remediation-request": rr.Name,
-                "kubernaut.ai/correlation-id":      rr.Labels["kubernaut.ai/correlation-id"],
+                "kubernaut.ai/correlation-id": rr.Labels["kubernaut.ai/correlation-id"],
             },
             OwnerReferences: []metav1.OwnerReference{
                 *metav1.NewControllerRef(rr, remediationv1.GroupVersion.WithKind("RemediationRequest")),
@@ -101,6 +104,7 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
             Name:      wfe.Name,
             Namespace: r.ExecutionNamespace,  // "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
+                // Issue #91: KEPT - label on external K8s resource (PipelineRun) for WE-to-PipelineRun correlation
                 "kubernaut.ai/workflow-execution": wfe.Name,
                 "kubernaut.ai/source-namespace":   wfe.Namespace,  // Track source for cleanup
                 "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,

@@ -148,8 +148,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kubernaut-notifications
-  labels:
-    kubernaut.ai/component: notification-controller
 ```
 
 ---
@@ -326,7 +324,7 @@ status:
 | **BR-NOT-062** | Unified Audit Table | ADR-034 unified `audit_events` table | 100% |
 | **BR-NOT-063** | Audit Graceful Degradation | Fire-and-forget + DLQ fallback | 100% |
 | **BR-NOT-064** | Event Correlation | Remediation ID propagation | 100% |
-| **BR-NOT-065** | Channel Routing | Label-based routing (DD-WE-004) | 100% |
+| **BR-NOT-065** | Channel Routing | Spec-field-based routing (DD-WE-004, Issue #91) | 100% |
 | **BR-NOT-066** | Alertmanager Config | Alertmanager-compatible routing format | 100% |
 | **BR-NOT-067** | Config Hot-Reload | ConfigMap hot-reload without restart | 100% |
 | **BR-NOT-068** | Multi-Channel Fanout | Single notification to multiple channels | 100% |
@@ -754,14 +752,14 @@ err := r.Create(ctx, notification)
 
 ### **V1.x Enhancements (In Progress)**
 
-1. **Label-Based Routing** (BR-NOT-065, BR-NOT-066) - ✅ **COMPLETE**:
+1. **Spec-Field-Based Routing** (BR-NOT-065, BR-NOT-066) - ✅ **COMPLETE**:
    - Alertmanager-compatible routing configuration
-   - Label-based channel selection (`kubernaut.ai/notification-type`, `kubernaut.ai/severity`, `kubernaut.ai/skip-reason`)
+   - Spec-field-based channel selection (`spec.type`, `spec.severity`, `spec.metadata["skip-reason"]`)
    - ConfigMap hot-reload for routing rules
    - Multi-channel fanout
 
-2. **Skip-Reason Routing** (DD-WE-004) - 📋 **Day 13 Scheduled**:
-   - `kubernaut.ai/skip-reason` label routing
+2. **Skip-Reason Routing** (DD-WE-004) - ✅ **COMPLETE**:
+   - `spec.metadata["skip-reason"]` attribute routing
    - `PreviousExecutionFailed` → PagerDuty (CRITICAL)
    - `ExhaustedRetries` → Slack #ops (HIGH)
    - `ResourceBusy`/`RecentlyRemediated` → Console (LOW)

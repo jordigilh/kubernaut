@@ -198,7 +198,7 @@ notify {
 - **Body**: Includes signal context, target resource, remediation history summary, policy reason
 - **Channels**: From policy output (default: `[slack, file]`)
 - **Metadata**: `remediationRequest`, `signalFingerprint`, `policyReason`, `remediationCount1h`
-- **Labels**: `kubernaut.ai/notification-type=operational-awareness`, `kubernaut.ai/remediation-request={name}`, `kubernaut.ai/component=remediation-orchestrator`
+- **Spec fields**: `spec.type=operational-awareness`, `spec.remediationRequestRef` (Issue #91: labels removed; ownerRef sufficient for component)
 - **OwnerReference**: RemediationRequest (for cascade deletion per BR-ORCH-031)
 
 **Acceptance Criteria**:

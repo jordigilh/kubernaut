@@ -31,7 +31,7 @@ When RemediationOrchestrator creates any NotificationRequest CRD (approval, comp
 ### Rationale
 
 **Without notification reference tracking:**
-- Operators must query notifications separately: `kubectl get notificationrequests -l kubernaut.ai/remediation-request=<name>`
+- Operators must query notifications separately via field selector: `kubectl get notificationrequests --field-selector spec.remediationRequestRef.name=<name>` (Issue #91: spec.remediationRequestRef replaces label)
 - Compliance audits require manual correlation between RR and notification logs
 - Incident investigation: "Did we notify?" requires multiple queries
 - Dashboard/UI requires N+1 API calls to show complete remediation story

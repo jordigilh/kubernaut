@@ -94,13 +94,11 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
     copyStormAndDeduplicationData(signalContext, rr)
     
     // Create AIAnalysis with snapshot
+    // Note: Issue #91 - kubernaut.ai/remediation-request label REMOVED; spec.remediationRequestRef and ownerRef are sufficient
     ai := &aianalysisv1alpha1.AIAnalysis{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-aianalysis", rr.Name),
             Namespace: rr.Namespace,
-            Labels: map[string]string{
-                "kubernaut.ai/remediation-request": rr.Name,
-            },
         },
         Spec: aianalysisv1alpha1.AIAnalysisSpec{
             RemediationRequestRef: rr.Name,
